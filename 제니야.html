@@ -148,8 +148,11 @@ body{font-family:'Pretendard',-apple-system,sans-serif;font-weight:500;backgroun
 .inputbar .row:focus-within{border-color:var(--agent);box-shadow:0 0 0 4px rgba(29,158,117,.14)}
 .inputbar .plus{width:36px;height:36px;border-radius:50%;background:var(--proj-soft);color:var(--proj-deep);border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:18px;transition:.2s;flex-shrink:0}
 .inputbar .plus:hover{background:var(--proj);color:#fff}
-.inputbar input{flex:1;min-width:0;border:none;background:transparent;font-family:inherit;font-size:13.5px;font-weight:500;outline:none;color:var(--ink)}
-/* min-width:0 — 텍스트칸이 좁은 화면에서 옆 버튼(마이크·전송)을 밀어내지 못하게 (마이크 잘림 버그의 원인) */
+.inputbar input{flex:1 1 0;width:0;min-width:0;border:none;background:transparent;font-family:inherit;font-size:13.5px;font-weight:500;outline:none;color:var(--ink)}
+/* width:0 + min-width:0 — 텍스트칸은 "남는 공간만" 차지한다.
+   placeholder(안내문)가 아무리 길어도 칸이 늘어나 마이크·전송을 밀어내지 못함 */
+.inputbar .plus,.inputbar .mic,.inputbar .send{flex:0 0 auto}
+/* 버튼 3개는 고정폭 — 절대 줄어들거나 밀려나지 않음 */
 .inputbar .mic{width:36px;height:36px;border-radius:50%;background:var(--agent-soft);color:var(--agent-deep);border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:17px;transition:.2s;flex-shrink:0}
 .inputbar .mic:hover{background:var(--agent);color:#fff}
 .inputbar .mic.live{background:#B3261E;color:#fff;animation:micpulse 1.6s infinite}
@@ -503,9 +506,13 @@ function renderContext(){
 // D-3d-1. 회의 중단줄 표시 + 입력창 안내문 — 회의 중에만 중단 버튼이 보인다
 function renderMeetButtons(){
   document.getElementById('meetbar').className = 'meetbar' + (meeting.running ? ' show' : '');
-  document.getElementById('inp').placeholder = state.agent.boss
-    ? '말씀 입력 — "○○ 회의 열어줘"=7명 회의 / @발굴팀장=호명 / @전체=7명 모두 답변'
-    : state.agent.name + '에게 말씀 입력… (@호명으로 다른 팀장, @전체로 7명 모두 부를 수 있어요)';
+  // 폰(좁은 화면)에서는 안내문을 아주 짧게 — 긴 placeholder가 입력칸을 키우는 것 방지
+  var mobile = window.matchMedia('(max-width:900px)').matches;
+  document.getElementById('inp').placeholder = mobile
+    ? '말씀하세요'
+    : (state.agent.boss
+        ? '말씀 입력 — "○○ 회의 열어줘"=7명 회의 / @발굴팀장=호명 / @전체=7명 모두 답변'
+        : state.agent.name + '에게 말씀 입력… (@호명으로 다른 팀장, @전체로 7명 모두 부를 수 있어요)');
 }
 
 // D-3d-2. 자동 스크롤 — 새 말풍선이 생기면 카톡처럼 맨 아래로 따라 내려간다.
