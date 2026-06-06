@@ -73,5 +73,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **모든 작업 전에 docs와 agents 폴더를 함께 읽는다.**
 
+**대표가 "오늘 일 정리하자"고 하면 docs/진행기록.md에 그날 한 일과 다음 할 일을 자동으로 기록한다.**
+
 - `docs/` — **프로젝트 백서(영구 기억 저장소).** `00_백서_개요.md`가 목차. 여기 적힌 정의·원칙은 임의로 바꾸지 않는다. 작업 전 관련 백서를 펼쳐 읽는다.
 - `agents/` — 지니야 시스템 프롬프트 모음.
