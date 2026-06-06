@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>오상열 대표 지니야 — 총괄 모드 견본</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Gowun+Dodum&family=Black+Han+Sans&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.7.0/dist/tabler-icons.min.css" rel="stylesheet">
+<style>
+:root{
+  --teal-900:#04342C; --teal-700:#0F6E56; --teal-500:#1D9E75; --teal-300:#5DCAA5; --teal-50:#E1F5EE;
+  --ink:#0E1A17; --muted:#5B6B66; --line:#E3ECE8; --bg:#F4F8F6; --card:#FFFFFF;
+  --warn-bg:#FFF3E0; --warn:#C77700; --gold:#E0A800; --night:#0B2A23;
+  --shadow:0 1px 2px rgba(4,52,44,.04),0 8px 24px rgba(4,52,44,.06);
+  --shadow-lg:0 12px 40px rgba(4,52,44,.12);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Gowun Dodum',sans-serif;background:
+  radial-gradient(1200px 600px at 85% -10%,rgba(93,202,165,.18),transparent 60%),
+  radial-gradient(900px 500px at -10% 110%,rgba(29,158,117,.12),transparent 55%),var(--bg);
+  color:var(--ink);min-height:100vh;padding:20px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1240px;margin:0 auto}
+.titlebar{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+.titlebar .logo{width:46px;height:46px;border-radius:14px;background:linear-gradient(135deg,var(--teal-500),var(--teal-700));display:flex;align-items:center;justify-content:center;color:#fff;box-shadow:var(--shadow);font-size:24px}
+.titlebar h1{font-size:18px;font-weight:400}
+.titlebar .sub{font-size:12px;color:var(--muted)}
+.mode{margin-left:auto;font-size:11px;color:#fff;background:linear-gradient(135deg,var(--gold),#C99700);padding:6px 13px;border-radius:99px;box-shadow:var(--shadow)}
+
+/* 상단 프로젝트 탭 */
+.projects{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.proj{display:flex;align-items:center;gap:7px;padding:9px 15px;border-radius:13px;background:var(--card);border:1px solid var(--line);font-size:12.5px;cursor:pointer;transition:.18s;color:var(--muted)}
+.proj i{font-size:15px}
+.proj:hover{border-color:var(--teal-300)}
+.proj.on{background:linear-gradient(135deg,var(--teal-500),var(--teal-700));color:#fff;border-color:transparent;box-shadow:0 8px 18px rgba(29,158,117,.35)}
+.proj .k{font-size:10px;opacity:.75}
+.proj.add{border-style:dashed;color:var(--teal-700)}
+
+.app{display:grid;grid-template-columns:172px 1fr 188px;gap:13px;background:var(--card);border:1px solid var(--line);border-radius:22px;box-shadow:var(--shadow-lg);overflow:hidden;min-height:560px}
+
+/* 좌측 에이전트 군단 */
+.nav{background:linear-gradient(180deg,#0B3D31,#04342C);padding:16px 11px;display:flex;flex-direction:column;gap:4px}
+.nav .lbl{color:var(--teal-300);font-size:10px;padding:2px 6px 8px;letter-spacing:.04em}
+.nav button{display:flex;align-items:center;gap:10px;padding:10px 11px;border:none;background:transparent;color:rgba(255,255,255,.62);font-family:inherit;font-size:12.5px;border-radius:11px;cursor:pointer;text-align:left;width:100%;transition:.18s;position:relative}
+.nav button i{font-size:17px}
+.nav button:hover{background:rgba(255,255,255,.07);color:#fff}
+.nav button.on{background:linear-gradient(135deg,var(--teal-500),var(--teal-700));color:#fff;box-shadow:0 6px 16px rgba(29,158,117,.4)}
+.nav button .dot{position:absolute;right:9px;width:6px;height:6px;border-radius:50%;background:var(--teal-300);box-shadow:0 0 0 0 rgba(93,202,165,.6);animation:pulse 2s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(93,202,165,.5)}70%{box-shadow:0 0 0 7px rgba(93,202,165,0)}100%{box-shadow:0 0 0 0 rgba(93,202,165,0)}}
+.nav .boss{margin-top:6px;border-top:1px solid rgba(255,255,255,.08);padding-top:10px}
+
+/* 중앙 */
+.center{display:flex;flex-direction:column;min-width:0;background:linear-gradient(180deg,#FBFDFC,#F4F8F6)}
+.ctx{padding:12px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);background:var(--card)}
+.ctx b{color:var(--teal-700);font-weight:400}
+.ctx .chip{background:var(--teal-50);color:var(--teal-900);padding:3px 10px;border-radius:99px;font-size:11px}
+
+.night{margin:14px 18px 4px;background:linear-gradient(135deg,var(--night),#04342C);border-radius:16px;padding:13px 15px;color:#fff;position:relative;overflow:hidden}
+.night .moon{position:absolute;right:14px;top:12px;font-size:34px;opacity:.22}
+.night .t{font-size:10.5px;color:var(--teal-300);display:flex;align-items:center;gap:5px;margin-bottom:7px}
+.night .items{display:flex;flex-direction:column;gap:6px}
+.night .it{display:flex;align-items:center;gap:8px;font-size:12px}
+.night .it i{font-size:14px;color:var(--teal-300)}
+.night .it .dl{margin-left:auto;font-size:10px;background:rgba(255,255,255,.12);padding:3px 9px;border-radius:99px;cursor:pointer}
+
+.convtitle{padding:14px 18px 6px;font-size:11px;color:var(--muted);display:flex;align-items:center;gap:6px}
+.conv{flex:1;overflow-y:auto;padding:2px 18px 10px;display:flex;flex-direction:column;gap:10px;min-height:120px}
+.msg{display:flex;gap:9px;align-items:flex-start;animation:rise .4s ease both}
+.msg .ico{width:29px;height:29px;border-radius:50%;background:var(--teal-50);color:var(--teal-700);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:15px}
+.msg .bubble{background:var(--teal-50);color:var(--teal-900);padding:10px 13px;border-radius:15px 15px 15px 4px;font-size:13px;line-height:1.6;max-width:80%}
+.msg.u{justify-content:flex-end}
+.msg.u .bubble{background:var(--card);border:1px solid var(--line);color:var(--ink);border-radius:15px 15px 4px 15px}
+@keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+.inputbar{padding:11px 18px 16px;border-top:1px solid var(--line);background:var(--card)}
+.inputbar .up{display:flex;gap:7px;margin-bottom:9px}
+.inputbar .up .b{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);border:1px dashed var(--line);border-radius:10px;padding:7px 11px;cursor:pointer;transition:.18s}
+.inputbar .up .b:hover{border-color:var(--teal-300);color:var(--teal-700)}
+.inputbar .up .b i{font-size:14px;color:var(--teal-700)}
+.inputbar .row{display:flex;align-items:center;gap:10px;background:var(--bg);border:1px solid var(--line);border-radius:99px;padding:6px 6px 6px 15px;transition:.2s}
+.inputbar .row:focus-within{border-color:var(--teal-300);box-shadow:0 0 0 4px rgba(93,202,165,.18)}
+.inputbar input{flex:1;border:none;background:transparent;font-family:inherit;font-size:13px;outline:none;color:var(--ink)}
+.inputbar .mic{width:36px;height:36px;border-radius:50%;background:var(--teal-50);color:var(--teal-700);border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:17px;transition:.2s}
+.inputbar .mic:hover{background:var(--teal-300);color:#fff}
+.inputbar .send{width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--teal-500),var(--teal-700));color:#fff;border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:16px;box-shadow:0 6px 14px rgba(29,158,117,.4)}
+
+/* 우측 도구 세트 */
+.tools{background:linear-gradient(180deg,#FBFDFC,#EFF6F2);border-left:1px solid var(--line);padding:15px 11px;display:flex;flex-direction:column;gap:7px;overflow-y:auto}
+.tools .h{font-size:10.5px;color:var(--muted);display:flex;align-items:center;gap:5px;margin-bottom:1px}
+.tool{display:flex;align-items:center;gap:9px;padding:9px 10px;border-radius:12px;cursor:pointer;transition:.2s;font-size:11.5px}
+.tool.on{border:1px solid var(--teal-300);background:linear-gradient(135deg,#fff,var(--teal-50));color:var(--teal-900)}
+.tool.on:hover{transform:translateX(-2px);box-shadow:var(--shadow)}
+.tool.on i{color:var(--teal-700);font-size:17px}
+.tool.lock{border:1px dashed var(--line);color:var(--muted);background:rgba(255,255,255,.5)}
+.tool.lock i{font-size:17px;opacity:.7}
+.tool .g{margin-left:auto;width:7px;height:7px;border-radius:50%;background:var(--teal-500)}
+.divider{font-size:9.5px;color:var(--muted);margin:5px 2px 0}
+.tool.flash{animation:flash .9s ease}
+@keyframes flash{0%{box-shadow:0 0 0 0 rgba(29,158,117,.5)}100%{box-shadow:0 0 0 12px rgba(29,158,117,0)}}
+
+.foot{text-align:center;font-size:11px;color:var(--muted);margin-top:13px}
+.foot b{color:var(--teal-700);font-weight:400}
+
+@media(max-width:900px){
+  .app{grid-template-columns:1fr}
+  .nav{flex-direction:row;overflow-x:auto;gap:6px}
+  .nav .lbl,.nav .boss{display:none}
+  .nav button{white-space:nowrap}
+  .tools{border-left:none;border-top:1px solid var(--line);flex-direction:row;flex-wrap:wrap}
+  .tools .h{width:100%}
+  .tool{flex:1;min-width:120px}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="titlebar">
+    <div class="logo"><i class="ti ti-sparkles"></i></div>
+    <div>
+      <h1>오상열 대표님의 지니야</h1>
+      <div class="sub">오원트금융연구소 · 본사 총괄 작업공간</div>
+    </div>
+    <div class="mode"><i class="ti ti-crown" style="font-size:12px;vertical-align:-2px"></i> 총괄 모드 (제니야)</div>
+  </div>
+
+  <!-- 상단: 프로젝트 -->
+  <div class="projects" id="projects">
+    <div class="proj on" data-p="부트캠프"><i class="ti ti-school"></i>부트캠프 <span class="k">3/8</span></div>
+    <div class="proj" data-p="일반인 비대면강의"><i class="ti ti-device-laptop"></i>일반인 비대면</div>
+    <div class="proj" data-p="전문가 대면강의"><i class="ti ti-users-group"></i>전문가 대면</div>
+    <div class="proj" data-p="일반인 상담"><i class="ti ti-message-heart"></i>일반인 상담</div>
+    <div class="proj" data-p="AI머니야 일반"><i class="ti ti-coin"></i>AI머니야 일반</div>
+    <div class="proj" data-p="AI머니야 전문가"><i class="ti ti-coins"></i>AI머니야 전문가</div>
+    <div class="proj add" data-p="__add"><i class="ti ti-plus"></i>프로젝트 추가</div>
+  </div>
+
+  <div class="app">
+
+    <!-- 좌측: 에이전트 군단 -->
+    <nav class="nav">
+      <div class="lbl">에이전트 군단</div>
+      <button class="on" data-a="발굴"><i class="ti ti-user-search"></i>고객발굴<span class="dot"></span></button>
+      <button data-a="관리"><i class="ti ti-heart-handshake"></i>고객관리</button>
+      <button data-a="마케팅"><i class="ti ti-speakerphone"></i>마케팅<span class="dot"></span></button>
+      <button data-a="디자인"><i class="ti ti-palette"></i>디자인</button>
+      <button data-a="개발"><i class="ti ti-code"></i>개발</button>
+      <button data-a="법무"><i class="ti ti-scale"></i>법무·보안</button>
+      <button data-a="매출"><i class="ti ti-chart-line"></i>매출·재무</button>
+      <div class="boss"></div>
+      <button data-a="총괄"><i class="ti ti-crown"></i>총괄(전체회의)</button>
+    </nav>
+
+    <!-- 중앙 -->
+    <section class="center">
+      <div class="ctx">
+        <i class="ti ti-focus-2" style="color:var(--teal-700)"></i>
+        지금 <b id="ctx-proj">부트캠프</b> 프로젝트에서 <span class="chip" id="ctx-agent">고객발굴</span> 에이전트와 대화 중
+      </div>
+
+      <!-- 밤샘 결과물 -->
+      <div class="night">
+        <i class="ti ti-moon-stars moon"></i>
+        <div class="t"><i class="ti ti-moon-stars"></i> 밤사이 에이전트가 한 일 (클라우드 자율 작업)</div>
+        <div class="items" id="night">
+          <div class="it"><i class="ti ti-user-plus"></i> 부트캠프 가망 리드 7명 발굴 <span class="dl">보기</span></div>
+          <div class="it"><i class="ti ti-video"></i> 쇼츠 2편 자동 제작·예약 <span class="dl">보기</span></div>
+        </div>
+      </div>
+
+      <div class="convtitle"><i class="ti ti-messages"></i> 대화</div>
+      <div class="conv" id="conv"></div>
+
+      <!-- 하단: 업로드 + 입력 -->
+      <div class="inputbar">
+        <div class="up">
+          <div class="b"><i class="ti ti-file-upload"></i>고객자료</div>
+          <div class="b"><i class="ti ti-shield-check"></i>보험증권</div>
+          <div class="b"><i class="ti ti-files"></i>기본문서</div>
+        </div>
+        <div class="row">
+          <button class="mic"><i class="ti ti-microphone"></i></button>
+          <input id="inp" placeholder="지니야 또는 에이전트에게 말하거나 입력…">
+          <button class="send" id="send"><i class="ti ti-arrow-up"></i></button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 우측: 도구 세트 -->
+    <aside class="tools">
+      <div class="h"><i class="ti ti-tools"></i> 도구 · 연결됨</div>
+      <div class="tool on" data-t="구글 캘린더"><i class="ti ti-calendar"></i>구글 캘린더<span class="g"></span></div>
+      <div class="tool on" data-t="구글 이메일"><i class="ti ti-mail"></i>구글 이메일<span class="g"></span></div>
+      <div class="tool on" data-t="구글 드라이브"><i class="ti ti-brand-google-drive"></i>구글 드라이브<span class="g"></span></div>
+      <div class="tool on" data-t="구글 시트"><i class="ti ti-table"></i>구글 시트<span class="g"></span></div>
+      <div class="tool on" data-t="OCR 문서이해"><i class="ti ti-scan"></i>OCR 문서<span class="g"></span></div>
+      <div class="tool on" data-t="스킬·MCP"><i class="ti ti-bolt"></i>스킬·MCP<span class="g"></span></div>
+      <div class="divider">상급 (안전장치 후)</div>
+      <div class="tool lock" data-t="컴퓨터 유스"><i class="ti ti-device-desktop-cog"></i>컴퓨터 유스</div>
+      <div class="tool lock" data-t="자율 루프"><i class="ti ti-refresh"></i>자율 루프</div>
+      <div class="tool lock" data-t="능력 더하기"><i class="ti ti-plus"></i>능력 더하기</div>
+    </aside>
+
+  </div>
+
+  <div class="foot">시뮬레이터 — 오상열 대표 지니야(총괄 모드) · <b>상단 프로젝트 × 좌측 에이전트 × 우측 도구</b> 교차 구조</div>
+</div>
+
+<script>
+(function(){
+  var conv=document.getElementById('conv');
+  var inp=document.getElementById('inp');
+  var ctxProj=document.getElementById('ctx-proj');
+  var ctxAgent=document.getElementById('ctx-agent');
+  var nightBox=document.getElementById('night');
+  var curProj='부트캠프', curAgent='발굴';
+
+  var agentName={발굴:'고객발굴',관리:'고객관리',마케팅:'마케팅',디자인:'디자인',개발:'개발',법무:'법무·보안',매출:'매출·재무',총괄:'총괄'};
+
+  // 프로젝트×에이전트 교차 첫 멘트
+  function opener(proj,agent){
+    var P='<b>'+proj+'</b>';
+    var map={
+      발굴:'안녕하세요, 발굴 에이전트입니다. '+proj+' 프로젝트의 가망 고객을 찾고 있어요. 어젯밤 7명 확보했고, 오늘은 어떤 채널을 더 팔까요?',
+      관리:proj+' 기존 고객 중 재참여 가능성 높은 분들을 추렸어요. 안내 메시지 초안을 보여드릴까요?',
+      마케팅:proj+' 홍보용 쇼츠·카피를 만들고 있어요. 오늘 2편 올렸는데, 다음 주제를 정해주실래요?',
+      디자인:proj+' 포스터·상세페이지를 브랜드 규칙대로 제작합니다. 어떤 걸 먼저 만들까요?',
+      개발:proj+' 관련 기능을 개발·디버깅합니다. 지금 지니야빌더 온보딩 화면 작업이 대기 중이에요.',
+      법무:proj+'의 법적 위험(표현·개인정보)을 점검합니다. 확인할 문구가 있나요?',
+      매출:proj+'의 매출·정산 현황을 시트로 관리합니다. 이번 달 목표 대비 진척을 볼까요?',
+      총괄:proj+' 전체 회의를 엽니다. 발굴·관리·마케팅·개발 보고를 모아 아침 브리핑을 드릴게요. 시작할까요?'
+    };
+    return map[agent]||(proj+' 에서 일합니다.');
+  }
+  function nightFor(proj){
+    var m={
+      '부트캠프':[['ti-user-plus','부트캠프 가망 리드 7명 발굴'],['ti-video','쇼츠 2편 자동 제작·예약']],
+      '일반인 비대면강의':[['ti-user-plus','비대면 강의 문의 5건 정리'],['ti-mail','대기자 안내 메일 초안 12통']],
+      '전문가 대면강의':[['ti-user-plus','전문가 과정 가망 3명'],['ti-file-text','커리큘럼 PDF 갱신']],
+      '일반인 상담':[['ti-calendar','상담 예약 4건 캘린더 등록'],['ti-message','후속 안내 초안 작성']],
+      'AI머니야 일반':[['ti-coin','신규 가입 18명 리포트'],['ti-chart-line','전환율 분석 완료']],
+      'AI머니야 전문가':[['ti-coins','전문가 결제 6건'],['ti-file-text','정산 시트 자동 업데이트']]
+    };
+    var arr=m[proj]||[['ti-checklist','자율 작업 결과 정리']];
+    nightBox.innerHTML=arr.map(function(x){return '<div class="it"><i class="ti '+x[0]+'"></i> '+x[1]+' <span class="dl">보기</span></div>';}).join('');
+  }
+  function add(t,who){
+    var d=document.createElement('div');
+    d.className='msg'+(who==='u'?' u':'');
+    d.innerHTML=(who==='u'?'':'<div class="ico"><i class="ti ti-sparkles"></i></div>')+'<div class="bubble">'+t+'</div>';
+    conv.appendChild(d); conv.scrollTop=conv.scrollHeight;
+  }
+  function refresh(){
+    ctxProj.textContent=curProj;
+    ctxAgent.textContent=agentName[curAgent];
+    conv.innerHTML='';
+    add(opener(curProj,curAgent),'');
+  }
+
+  // 프로젝트 클릭
+  document.querySelectorAll('.proj').forEach(function(p){
+    p.onclick=function(){
+      if(p.getAttribute('data-p')==='__add'){ add('새 프로젝트 이름을 말씀해 주세요. 상단에 추가하고 전용 현황판을 만들어 드릴게요.',''); return; }
+      document.querySelectorAll('.proj').forEach(function(x){x.classList.remove('on');});
+      p.classList.add('on');
+      curProj=p.getAttribute('data-p');
+      nightFor(curProj);
+      refresh();
+    };
+  });
+  // 에이전트 클릭
+  document.querySelectorAll('.nav button').forEach(function(b){
+    b.onclick=function(){
+      document.querySelectorAll('.nav button').forEach(function(x){x.classList.remove('on');});
+      b.classList.add('on');
+      curAgent=b.getAttribute('data-a');
+      refresh();
+    };
+  });
+  // 도구 클릭
+  document.querySelectorAll('.tool').forEach(function(t){
+    t.onclick=function(){
+      var s=t.getAttribute('data-t');
+      if(t.classList.contains('lock')){
+        if(s==='능력 더하기') add('어떤 능력이 필요하세요? 말씀하시면 새 도구로 만들어 연결해 드려요.','');
+        else add('「'+s+'」는 상급 기술이라, 안전장치(승인·울타리)와 법무 검토 후 켜집니다. 준비되면 알려드릴게요.','');
+      } else {
+        t.classList.remove('flash'); void t.offsetWidth; t.classList.add('flash');
+        add('「'+s+'」를 '+curProj+' / '+agentName[curAgent]+' 작업에 연결했어요.','');
+      }
+    };
+  });
+  function send(){ var v=inp.value.trim(); if(!v)return; add(v,'u'); inp.value=''; setTimeout(function(){ add('네, '+curProj+' 프로젝트 기준으로 '+agentName[curAgent]+' 에이전트가 처리할게요. (견본 화면)',''); },400); }
+  document.getElementById('send').onclick=send;
+  inp.addEventListener('keydown',function(e){ if(e.key==='Enter')send(); });
+
+  refresh();
+})();
+</script>
+</body>
+</html>

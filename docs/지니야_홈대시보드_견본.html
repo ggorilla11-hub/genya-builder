@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>지니야 홈 대시보드 — 견본</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Gowun+Dodum&family=Black+Han+Sans&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.7.0/dist/tabler-icons.min.css" rel="stylesheet">
+<style>
+:root{
+  --teal-900:#04342C; --teal-700:#0F6E56; --teal-500:#1D9E75; --teal-300:#5DCAA5; --teal-50:#E1F5EE;
+  --ink:#0E1A17; --muted:#5B6B66; --line:#E3ECE8; --bg:#F4F8F6; --card:#FFFFFF;
+  --warn-bg:#FFF3E0; --warn:#C77700; --gold:#E0A800;
+  --shadow:0 1px 2px rgba(4,52,44,.04),0 8px 24px rgba(4,52,44,.06);
+  --shadow-lg:0 12px 40px rgba(4,52,44,.12);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Gowun Dodum',sans-serif;background:
+  radial-gradient(1200px 600px at 80% -10%,rgba(93,202,165,.18),transparent 60%),
+  radial-gradient(900px 500px at -10% 110%,rgba(29,158,117,.12),transparent 55%),
+  var(--bg);
+  color:var(--ink);min-height:100vh;padding:22px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1180px;margin:0 auto}
+.titlebar{display:flex;align-items:center;gap:12px;margin-bottom:16px}
+.titlebar .logo{width:46px;height:46px;border-radius:14px;background:linear-gradient(135deg,var(--teal-500),var(--teal-700));display:flex;align-items:center;justify-content:center;color:#fff;box-shadow:var(--shadow);font-size:24px}
+.titlebar h1{font-size:18px;font-weight:400}
+.titlebar .sub{font-size:12px;color:var(--muted)}
+.badge{margin-left:auto;font-size:11px;color:var(--teal-700);background:var(--teal-50);border:1px solid var(--teal-300);padding:6px 12px;border-radius:99px}
+
+.app{display:grid;grid-template-columns:184px 1fr 200px;gap:14px;background:var(--card);border:1px solid var(--line);border-radius:24px;box-shadow:var(--shadow-lg);overflow:hidden;min-height:600px}
+
+/* ===== 좌측 메뉴 ===== */
+.nav{background:linear-gradient(180deg,#0B3D31,#04342C);padding:18px 12px;display:flex;flex-direction:column;gap:4px}
+.nav .me{display:flex;align-items:center;gap:10px;padding:6px 8px 16px;border-bottom:1px solid rgba(255,255,255,.08);margin-bottom:10px}
+.nav .me .av{width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,var(--teal-300),var(--teal-500));display:flex;align-items:center;justify-content:center;color:#fff;font-size:18px}
+.nav .me .nm{color:#fff;font-size:13px}
+.nav .me .rl{color:var(--teal-300);font-size:10px}
+.nav button{display:flex;align-items:center;gap:11px;padding:10px 12px;border:none;background:transparent;color:rgba(255,255,255,.62);font-family:inherit;font-size:13px;border-radius:11px;cursor:pointer;text-align:left;width:100%;transition:.18s}
+.nav button i{font-size:18px}
+.nav button:hover{background:rgba(255,255,255,.07);color:#fff}
+.nav button.on{background:linear-gradient(135deg,var(--teal-500),var(--teal-700));color:#fff;box-shadow:0 6px 16px rgba(29,158,117,.4)}
+.nav .spacer{flex:1}
+
+/* ===== 중앙 ===== */
+.center{display:flex;flex-direction:column;min-width:0;background:linear-gradient(180deg,#FBFDFC,#F4F8F6)}
+.dash{padding:18px 20px 6px}
+.dash .lbl{font-size:11px;color:var(--muted);margin-bottom:10px;letter-spacing:.02em}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:13px 14px;position:relative;overflow:hidden;transition:.2s}
+.kpi:hover{transform:translateY(-2px);box-shadow:var(--shadow)}
+.kpi .t{font-size:10.5px;color:var(--muted);display:flex;align-items:center;gap:4px}
+.kpi .v{font-size:26px;font-weight:400;font-family:'Black Han Sans',sans-serif;letter-spacing:.5px;margin-top:3px}
+.kpi .v small{font-size:13px;color:var(--muted);font-family:'Gowun Dodum'}
+.kpi.green{background:linear-gradient(135deg,var(--teal-50),#fff)}
+.kpi.green .v{color:var(--teal-700)}
+.kpi.warn{background:linear-gradient(135deg,var(--warn-bg),#fff)}
+.kpi.warn .v{color:var(--warn)}
+.kpi .spark{position:absolute;right:8px;bottom:6px;opacity:.16;font-size:40px}
+
+.convtitle{padding:16px 20px 8px;font-size:11px;color:var(--muted);display:flex;align-items:center;gap:6px}
+.conv{flex:1;overflow-y:auto;padding:4px 20px 12px;display:flex;flex-direction:column;gap:11px}
+.msg{display:flex;gap:9px;align-items:flex-start;animation:rise .4s ease both}
+.msg .ico{width:30px;height:30px;border-radius:50%;background:var(--teal-50);color:var(--teal-700);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:16px}
+.msg .bubble{background:var(--teal-50);color:var(--teal-900);padding:11px 14px;border-radius:16px 16px 16px 4px;font-size:13.5px;line-height:1.65;max-width:78%}
+.msg.u{justify-content:flex-end}
+.msg.u .bubble{background:var(--card);border:1px solid var(--line);color:var(--ink);border-radius:16px 16px 4px 16px}
+.msg .file{margin-top:8px;border:1px solid var(--teal-300);border-radius:12px;overflow:hidden}
+.msg .file .h{background:var(--teal-50);padding:8px 11px;display:flex;align-items:center;gap:7px;font-size:12px;font-weight:400;color:var(--teal-900)}
+.msg .file .a{display:flex}
+.msg .file .a span{flex:1;text-align:center;padding:8px;font-size:11.5px;color:var(--teal-700);cursor:pointer}
+.msg .file .a span:first-child{border-right:1px solid var(--line)}
+@keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+.inputbar{padding:12px 20px 18px;border-top:1px solid var(--line);background:var(--card)}
+.inputbar .row{display:flex;align-items:center;gap:10px;background:var(--bg);border:1px solid var(--line);border-radius:99px;padding:7px 7px 7px 16px;transition:.2s}
+.inputbar .row:focus-within{border-color:var(--teal-300);box-shadow:0 0 0 4px rgba(93,202,165,.18)}
+.inputbar input{flex:1;border:none;background:transparent;font-family:inherit;font-size:13.5px;outline:none;color:var(--ink)}
+.inputbar .mic{width:38px;height:38px;border-radius:50%;background:var(--teal-50);color:var(--teal-700);border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:18px;transition:.2s}
+.inputbar .mic:hover{background:var(--teal-300);color:#fff}
+.inputbar .send{width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,var(--teal-500),var(--teal-700));color:#fff;border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:17px;box-shadow:0 6px 14px rgba(29,158,117,.4)}
+.inputbar .hint{font-size:10px;color:var(--muted);text-align:center;margin-top:8px}
+
+/* ===== 우측 무기고 ===== */
+.armory{background:linear-gradient(180deg,#FBFDFC,#EFF6F2);border-left:1px solid var(--line);padding:16px 13px;display:flex;flex-direction:column;gap:8px;overflow-y:auto}
+.armory .h{font-size:11px;color:var(--muted);display:flex;align-items:center;gap:5px;margin-bottom:2px}
+.tool{display:flex;flex-direction:column;gap:5px;padding:11px 11px;border-radius:14px;cursor:pointer;transition:.2s;position:relative}
+.tool.on{border:1px solid var(--teal-300);background:linear-gradient(135deg,#fff,var(--teal-50));color:var(--teal-900);box-shadow:var(--shadow)}
+.tool.on:hover{transform:translateY(-2px);box-shadow:var(--shadow-lg)}
+.tool.on i{color:var(--teal-700);font-size:19px}
+.tool.on .nm{font-size:11.5px}
+.tool.on .st{font-size:9px;color:var(--teal-500);display:flex;align-items:center;gap:3px}
+.tool.lock{border:1px dashed var(--line);color:var(--muted);background:rgba(255,255,255,.5)}
+.tool.lock i{font-size:19px;opacity:.7}
+.tool.lock .nm{font-size:11.5px}
+.tool.lock .st{font-size:9px}
+.divider{font-size:10px;color:var(--muted);margin:6px 2px 0}
+.tool.flash{animation:flash .9s ease}
+@keyframes flash{0%{box-shadow:0 0 0 0 rgba(29,158,117,.5)}100%{box-shadow:0 0 0 14px rgba(29,158,117,0)}}
+
+.foot{text-align:center;font-size:11px;color:var(--muted);margin-top:14px}
+.foot b{color:var(--teal-700);font-weight:400}
+
+@media(max-width:880px){
+  .app{grid-template-columns:1fr}
+  .nav{flex-direction:row;overflow-x:auto;gap:6px}
+  .nav .me{display:none}
+  .nav button{white-space:nowrap}
+  .nav .spacer{display:none}
+  .armory{border-left:none;border-top:1px solid var(--line);flex-direction:row;flex-wrap:wrap}
+  .armory .h{width:100%}
+  .tool{flex:1;min-width:96px}
+  .kpis{grid-template-columns:repeat(2,1fr)}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="titlebar">
+    <div class="logo"><i class="ti ti-sparkles"></i></div>
+    <div>
+      <h1>김행정님의 지니야</h1>
+      <div class="sub">행정사 비서 · 오원트금융연구소</div>
+    </div>
+    <div class="badge"><i class="ti ti-device-desktop" style="font-size:12px;vertical-align:-2px"></i> 웹·앱 반응형 하이브리드</div>
+  </div>
+
+  <div class="app">
+
+    <!-- 좌측 메뉴 -->
+    <nav class="nav">
+      <div class="me">
+        <div class="av"><i class="ti ti-user"></i></div>
+        <div><div class="nm">김행정</div><div class="rl">행정사 · 1인</div></div>
+      </div>
+      <button class="on" data-v="home"><i class="ti ti-layout-dashboard"></i>홈</button>
+      <button data-v="chat"><i class="ti ti-message-2"></i>대화</button>
+      <button data-v="lead"><i class="ti ti-user-search"></i>고객발굴</button>
+      <button data-v="care"><i class="ti ti-heart-handshake"></i>고객관리</button>
+      <button data-v="mkt"><i class="ti ti-speakerphone"></i>마케팅</button>
+      <button data-v="design"><i class="ti ti-palette"></i>디자인</button>
+      <button data-v="doc"><i class="ti ti-file-text"></i>서류업무</button>
+      <button data-v="task"><i class="ti ti-checklist"></i>작업목록</button>
+      <div class="spacer"></div>
+      <button data-v="set"><i class="ti ti-settings"></i>설정</button>
+    </nav>
+
+    <!-- 중앙 -->
+    <section class="center">
+      <!-- 중앙 상단: 대시보드 -->
+      <div class="dash">
+        <div class="lbl">오늘 한눈에 보기</div>
+        <div class="kpis">
+          <div class="kpi"><div class="t"><i class="ti ti-folders" style="font-size:12px"></i>진행 건</div><div class="v">9</div><i class="ti ti-folders spark"></i></div>
+          <div class="kpi"><div class="t"><i class="ti ti-file-check" style="font-size:12px"></i>이번달 처리</div><div class="v">63</div><i class="ti ti-file-check spark"></i></div>
+          <div class="kpi green"><div class="t"><i class="ti ti-inbox" style="font-size:12px"></i>신규 문의</div><div class="v">4</div><i class="ti ti-inbox spark"></i></div>
+          <div class="kpi warn"><div class="t"><i class="ti ti-alarm" style="font-size:12px"></i>기한 임박</div><div class="v">3</div><i class="ti ti-alarm spark"></i></div>
+        </div>
+      </div>
+
+      <!-- 중앙의 중앙: 자연어 대화 목록 -->
+      <div class="convtitle"><i class="ti ti-messages"></i> 지니야와의 대화</div>
+      <div class="conv" id="conv">
+        <div class="msg"><div class="ico"><i class="ti ti-sparkles"></i></div><div class="bubble">김행정님, 좋은 아침이에요. 오늘 <b>신규 문의 4건</b>과 <b>기한 임박 3건</b>이 있어요. 무엇부터 도와드릴까요?</div></div>
+        <div class="msg u"><div class="bubble">○○식당 영업신고서 만들어줘. 대표 홍길동, 서울 강남구.</div></div>
+        <div class="msg"><div class="ico"><i class="ti ti-sparkles"></i></div><div class="bubble">정부 양식에 맞춰 작성했어요. 제출 전 한 번만 검토해 주세요.
+          <div class="file">
+            <div class="h"><i class="ti ti-file-text" style="color:var(--teal-700)"></i> ○○식당_영업신고서.pdf · 3p</div>
+            <div class="a"><span><i class="ti ti-eye" style="font-size:12px;vertical-align:-2px"></i> 검토</span><span><i class="ti ti-download" style="font-size:12px;vertical-align:-2px"></i> 다운로드</span></div>
+          </div>
+        </div></div>
+      </div>
+
+      <!-- 하단: 음성·텍스트 입력 -->
+      <div class="inputbar">
+        <div class="row">
+          <button class="mic" title="음성"><i class="ti ti-microphone"></i></button>
+          <input id="inp" placeholder="지니야에게 말하거나 입력하세요…">
+          <button class="send" id="send"><i class="ti ti-arrow-up"></i></button>
+        </div>
+        <div class="hint">말로도, 글로도 시킬 수 있어요 · 결과는 파일로 받아요</div>
+      </div>
+    </section>
+
+    <!-- 우측 무기고 -->
+    <aside class="armory">
+      <div class="h"><i class="ti ti-swords"></i> 무기고 · 장착됨</div>
+      <div class="tool on" data-skill="서류 자동작성"><i class="ti ti-file-text"></i><span class="nm">서류 자동작성</span><span class="st"><i class="ti ti-circle-filled" style="font-size:6px"></i> 작동중</span></div>
+      <div class="tool on" data-skill="OCR 서류검토"><i class="ti ti-scan"></i><span class="nm">OCR 서류검토</span><span class="st"><i class="ti ti-circle-filled" style="font-size:6px"></i> 작동중</span></div>
+      <div class="tool on" data-skill="기한 관리"><i class="ti ti-calendar-due"></i><span class="nm">기한 관리</span><span class="st"><i class="ti ti-circle-filled" style="font-size:6px"></i> 작동중</span></div>
+      <div class="tool on" data-skill="문의 응대"><i class="ti ti-message-2"></i><span class="nm">문의 응대</span><span class="st"><i class="ti ti-circle-filled" style="font-size:6px"></i> 작동중</span></div>
+      <div class="tool on" data-skill="스킬·MCP"><i class="ti ti-bolt"></i><span class="nm">스킬·MCP</span><span class="st"><i class="ti ti-circle-filled" style="font-size:6px"></i> 연결됨</span></div>
+      <div class="divider">추가 가능</div>
+      <div class="tool lock" data-skill="정부사이트 자동제출"><i class="ti ti-lock"></i><span class="nm">정부사이트 제출</span><span class="st">곧 추가</span></div>
+      <div class="tool lock" data-skill="능력 더하기"><i class="ti ti-plus"></i><span class="nm">능력 더하기</span><span class="st">대화로 장착</span></div>
+    </aside>
+
+  </div>
+
+  <div class="foot">시뮬레이터 — 지니야 홈 대시보드 견본 · <b>좌측 메뉴 / 중앙 대시보드+대화 / 하단 입력 / 우측 무기고</b></div>
+</div>
+
+<script>
+(function(){
+  var conv=document.getElementById('conv');
+  var inp=document.getElementById('inp');
+  function add(t,who){
+    var d=document.createElement('div');
+    d.className='msg'+(who==='u'?' u':'');
+    d.innerHTML=(who==='u'?'':'<div class="ico"><i class="ti ti-sparkles"></i></div>')+'<div class="bubble">'+t+'</div>';
+    conv.appendChild(d); conv.scrollTop=conv.scrollHeight;
+  }
+  function send(){
+    var v=inp.value.trim(); if(!v)return;
+    add(v,'u'); inp.value='';
+    setTimeout(function(){ add('네, 바로 처리할게요. (견본 화면이라 실제 작업은 빌더 완성 후 작동합니다.)',''); },400);
+  }
+  document.getElementById('send').onclick=send;
+  inp.addEventListener('keydown',function(e){ if(e.key==='Enter')send(); });
+
+  // 좌측 메뉴
+  document.querySelectorAll('.nav button').forEach(function(b){
+    b.onclick=function(){
+      document.querySelectorAll('.nav button').forEach(function(x){x.classList.remove('on');});
+      b.classList.add('on');
+      var name=b.textContent.trim();
+      if(b.getAttribute('data-v')!=='home') add(name+' 작업공간을 열었어요. 무엇을 할까요?','');
+    };
+  });
+
+  // 무기고 클릭
+  document.querySelectorAll('.tool').forEach(function(t){
+    t.onclick=function(){
+      var s=t.getAttribute('data-skill');
+      if(t.classList.contains('lock')){
+        if(s==='능력 더하기'){ add('어떤 능력이 필요하세요? 자주 하시는 일을 말씀하시면 새 무기로 만들어 무기고에 장착해 드려요.',''); }
+        else{ add('「'+s+'」 능력은 곧 추가됩니다. 준비되면 알려드릴게요.',''); }
+      } else {
+        t.classList.remove('flash'); void t.offsetWidth; t.classList.add('flash');
+        add('「'+s+'」 능력으로 들어왔어요. 바로 시켜보세요.','');
+      }
+    };
+  });
+})();
+</script>
+</body>
+</html>

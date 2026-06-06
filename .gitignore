@@ -1,0 +1,4 @@
+# 금고와 데이터는 깃에 올리지 않는다 (server/.gitignore에도 있지만 이중 안전장치)
+server/.env
+server/node_modules/
+server/data/
