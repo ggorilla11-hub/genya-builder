@@ -167,6 +167,8 @@ app.use(express.json());
 // 배포(Render)에서는 이 서버 하나가 화면+두뇌를 모두 담당한다.
 // 주소(/)로 들어오면 제니야.html을 보여준다. (다른 폴더는 노출하지 않음)
 app.get('/', (req, res) => {
+  // 캐시 금지 — 폰·브라우저가 항상 최신 화면을 받게 한다 (수정이 즉시 반영)
+  res.set('Cache-Control', 'no-store');
   res.sendFile(path.join(__dirname, '..', '제니야.html'));
 });
 

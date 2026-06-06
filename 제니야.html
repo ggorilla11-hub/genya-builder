@@ -105,7 +105,8 @@ body{font-family:'Pretendard',-apple-system,sans-serif;font-weight:500;backgroun
 .conv{flex:1;overflow-y:auto;padding:2px 18px 10px;display:flex;flex-direction:column;gap:10px;position:relative}
 .msg{display:flex;gap:9px;align-items:flex-start;animation:rise .4s ease both}
 .msg .ico{width:29px;height:29px;border-radius:50%;background:var(--agent-soft);color:var(--agent-deep);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:15px}
-.msg .bubble{background:var(--agent-soft);color:var(--ink);padding:10px 13px;border-radius:15px 15px 15px 4px;font-size:13.5px;font-weight:500;line-height:1.65;max-width:80%}
+.msg .bubble{background:var(--agent-soft);color:var(--ink);padding:10px 13px;border-radius:15px 15px 15px 4px;font-size:13.5px;font-weight:500;line-height:1.65;max-width:80%;overflow-wrap:anywhere}
+/* overflow-wrap:anywhere — 긴 주소(URL) 등 안 끊기는 글자가 화면 폭을 밀어내지 못하게 */
 .msg .who{font-size:11px;font-weight:800;color:var(--agent-deep);margin-bottom:3px}
 .msg.u{justify-content:flex-end}
 .msg.u .bubble{background:var(--card);border:1px solid var(--line);border-radius:15px 15px 4px 15px}
@@ -229,11 +230,13 @@ body{font-family:'Pretendard',-apple-system,sans-serif;font-weight:500;backgroun
   .msg .bubble{max-width:88%;font-size:13px}
   .canvas-slot{display:none}
 
-  /* ★ 입력줄: ＋·텍스트·마이크·전송 4개가 반드시 다 보이게 */
+  /* ★ 입력줄: 폰에서는 두 줄 구조 — 윗줄=텍스트칸 / 아랫줄=＋·마이크·전송.
+     버튼이 화면 밖으로 밀려나는 것이 구조적으로 불가능하다 */
   .inputbar{padding:9px 10px 12px}
-  .inputbar .row{gap:6px;padding:5px 5px 5px 6px}
-  .inputbar input{font-size:13px}
-  .inputbar .plus,.inputbar .mic,.inputbar .send{width:34px;height:34px;font-size:15px}
+  .inputbar .row{flex-wrap:wrap;gap:6px;padding:8px;border-radius:16px}
+  .inputbar input{flex:1 1 100%;width:100%;order:-1;font-size:14px;padding:4px 4px 9px;border-bottom:1px solid var(--line)}
+  .inputbar .plus{margin-right:auto}   /* ＋는 왼쪽 끝, 마이크·전송은 오른쪽 끝 */
+  .inputbar .plus,.inputbar .mic,.inputbar .send{width:38px;height:38px;font-size:17px}
   .inputbar .hint{font-size:10px}
 
   /* 도구: 대화 아래 한 줄 가로 스크롤 */
@@ -330,7 +333,7 @@ body{font-family:'Pretendard',-apple-system,sans-serif;font-weight:500;backgroun
 
   </div>
 
-  <div class="foot">제니야 — <b>상단 프로젝트 × 좌측 에이전트 × 우측 도구</b> 교차 구조 · 3단계: 두뇌 연결됨 (정체성·회의는 다음 차례)</div>
+  <div class="foot">제니야 — <b>상단 프로젝트 × 좌측 에이전트 × 우측 도구</b> 교차 구조 · v0.4 (음성·모바일)</div>
 </div>
 
 <!-- C-6. 업로드 모달 (+ 버튼으로 열림 — 실제 업로드는 3단계) -->
