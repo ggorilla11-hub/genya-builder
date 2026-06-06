@@ -112,6 +112,28 @@ function diaryDigest(message) {
   ).join('\n');
 }
 
+// 최근 영업일기 — 평상시 대화용 실시간 현황.
+// 총괄(zenya)은 전 팀의 기록을, 일반 에이전트는 자기 기록만 본다.
+function recentDiary(agentId) {
+  const from = Date.now() - 48 * 3600 * 1000;          // 최근 48시간
+  let entries = DIARY.filter((d) => new Date(d.ts).getTime() >= from);
+  if (agentId && agentId !== 'zenya') entries = entries.filter((d) => d.agentId === agentId);
+  entries = entries.slice(-30);                         // 최대 30건 (토큰 절약)
+  if (!entries.length) return '(최근 48시간 영업일기 없음 — 지어내지 말고 "기록 없음"이라고 답할 것)';
+  return entries.map((d) =>
+    `[${new Date(d.ts).toLocaleString('ko-KR')}] [${d.agentName} / ${d.project} / ${d.kind}] ${String(d.entry).slice(0, 200)}`
+  ).join('\n');
+}
+
+// 시스템 프롬프트에 실시간 현황을 붙인다 (모든 창구에서 공용)
+function withLiveStatus(system, agentId) {
+  const isBoss = !agentId || agentId === 'zenya';
+  return system
+    + `\n\n=== 실시간 현황: 최근 영업일기 (${isBoss ? '전 팀' : '나의 활동'} · 최근 48시간) ===\n`
+    + recentDiary(agentId)
+    + '\n(팀 현황 질문에는 이 기록을 근거로 즉시 답하라. 기록 밖의 일은 지어내지 말 것)';
+}
+
 // 에이전트의 시스템 프롬프트 조립: 공통 규칙(00) + 전용 문서 + 현재 프로젝트 맥락
 function buildSystemPrompt(agentId, projectName) {
   const a = AGENT_DOCS[agentId] || AGENT_DOCS.zenya;   // 모르는 id면 총괄이 받는다
@@ -130,7 +152,8 @@ function buildSystemPrompt(agentId, projectName) {
     '2. 절대 대행 금지: 다른 에이전트의 의견을 대신 말하거나 요약하지 마라. "○○팀 관점을 정리하면" 같은 화법 금지. ' +
     '단, "그건 @○○팀장에게 물어봐 주세요" 안내는 대표님이 명시적으로 남의 일을 대신 말하라고 시킬 때만 짧게 한 번 한다. ' +
     '평소 답변이나 @전체 답변 끝에 이 안내를 습관처럼 붙이지 마라 — 네 몫만 답하고 깔끔하게 끝내라. ' +
-    '(대행의 유일한 예외: 총괄이 회의 종합 단계에서 회의록을 인용할 때)',
+    '(대행이 아닌 것 2가지: ① 총괄이 회의 종합 단계에서 회의록을 인용하는 것 ' +
+    '② 총괄이 영업일기 기록에 근거해 팀 현황·숫자를 보고하는 것 — 이것은 총괄의 본업이다)',
     '3. 답변은 기본 2~4문장, 실제로 입으로 말하듯 구어체로. 마크다운 표·헤더·긴 목록·장문 서술 금지. ' +
     '대표님이 문서·표·상세 산출물을 명시적으로 요청할 때만 길게 써라.',
     '4. 보고는 숫자와 결과 중심(00 보고 원칙). "열심히 하겠습니다" 금지, "리드 47명·초안 8건"처럼. ' +
@@ -194,11 +217,14 @@ app.post('/chat', async (req, res) => {
     // ── 진짜 정체성: 공통 규칙(00) + 에이전트 전용 문서 + 프로젝트 맥락 ──
     let system = buildSystemPrompt(agentId, project);
 
-    // 총괄에게 모닝브리핑/저녁보고를 시키면 영업일기 실데이터를 함께 준다
-    const isBriefing = (!agentId || agentId === 'zenya') && /모닝브리핑|저녁보고/.test(message);
+    // 보고 요청(모닝브리핑/저녁보고/현황/대시보드)이면 취합용 일기 전체를,
+    // 평상시 대화면 실시간 현황(최근 48시간 일기)을 항상 붙인다 → 언제 물어도 즉답
+    const isBriefing = (!agentId || agentId === 'zenya') && /모닝브리핑|저녁보고|현황|대시보드/.test(message);
     if (isBriefing) {
-      system += '\n\n=== 영업일기 실데이터 (취합 대상 — 오직 이 기록만 근거로 숫자 보고하라) ===\n'
+      system += '\n\n=== 영업일기 실데이터 (취합 대상 — 오직 이 기록만 근거로 팀별 숫자 요약을 보고하라) ===\n'
               + diaryDigest(message);
+    } else {
+      system = withLiveStatus(system, agentId);
     }
 
     const response = await anthropic.messages.create({
@@ -267,8 +293,8 @@ app.post('/meeting/speak', async (req, res) => {
       ? transcript.map((t) => `[${t.agent}]\n${t.text}`).join('\n\n')
       : '(아직 발언 없음 — 네가 첫 발언자다)';
 
-    // 정체성(공통규칙+프로젝트정의+전용문서+맥락) 위에 회의 역할을 얹는다
-    const system = buildSystemPrompt(agentId, project)
+    // 정체성(공통규칙+프로젝트정의+전용문서+맥락) + 자기 활동기록 위에 회의 역할을 얹는다
+    const system = withLiveStatus(buildSystemPrompt(agentId, project), agentId)
       + '\n\n=== 회의 모드 ===\n'
       + (PHASE_GUIDE[phase] || PHASE_GUIDE.round1);
 
@@ -329,7 +355,7 @@ app.post(['/vapi', '/vapi/chat/completions', '/vapi/chat/completions/chat/comple
     while (conv.length && conv[0].role === 'assistant') conv.shift();
     if (!conv.length) conv = [{ role: 'user', content: '(인사해줘)' }];
 
-    const system = buildSystemPrompt(agentId, project)
+    const system = withLiveStatus(buildSystemPrompt(agentId, project), agentId)
       + '\n\n=== 음성 통화 모드 ===\n'
       + '지금은 대표님과 음성 통화 중이다. 최종 답만 1~3문장으로 아주 짧게, 귀로 듣기 좋은 구어체로 말하라. '
       + '마크다운·기호·이모지·목록·괄호 절대 금지. 숫자는 읽기 쉽게.';
@@ -373,6 +399,26 @@ app.post(['/vapi', '/vapi/chat/completions', '/vapi/chat/completions/chat/comple
     console.error('[/vapi 오류]', err.message);
     try { res.status(500).json({ error: err.message }); } catch (e) {}
   }
+});
+
+// ── /dashboard 창구: 팀별 활동 숫자 (화면 상단 대시보드용) ──
+// 영업일기에서 팀별로 "오늘 건수 / 48시간 건수 / 마지막 활동 시각"을 계산해 준다.
+// 실데이터(시트·SNS)가 연결되기 전까지는 활동 건수가 가장 정직한 숫자다.
+app.get('/dashboard', (req, res) => {
+  const now = Date.now();
+  const todayStr = new Date().toDateString();
+  const teams = Object.keys(AGENT_DOCS).map((id) => {
+    const mine = DIARY.filter((d) => d.agentId === id);
+    return {
+      id,
+      name: AGENT_DOCS[id].name,
+      today: mine.filter((d) => new Date(d.ts).toDateString() === todayStr).length,
+      h48:   mine.filter((d) => now - new Date(d.ts).getTime() <= 48 * 3600 * 1000).length,
+      total: mine.length,
+      last:  mine.length ? mine[mine.length - 1].ts : null,
+    };
+  });
+  res.json({ teams });
 });
 
 // ── 대화기록 창구: 불러오기 + 대표님 말씀 저장 ──────────────

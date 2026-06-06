@@ -71,6 +71,14 @@ body{font-family:'Pretendard',-apple-system,sans-serif;font-weight:500;backgroun
 .proj.on{background:linear-gradient(135deg,var(--proj),var(--proj-deep));color:#fff;border-color:transparent;box-shadow:0 8px 18px rgba(83,74,183,.3)}
 .proj.add{border-style:dashed;color:var(--proj);background:transparent}
 
+/* ---------- B-2b. 팀별 대시보드 띠 (영업일기 숫자 자동 표시) ---------- */
+.dash{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+.dash .dchip{display:flex;align-items:center;gap:6px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:6px 11px;font-size:11.5px;font-weight:600;color:var(--muted)}
+.dash .dchip .dot{width:8px;height:8px;border-radius:50%}
+.dash .dchip b{font-weight:800;font-size:13px}
+.dash .dchip.zero{opacity:.45}
+.dash .dnote{align-self:center;font-size:11px;color:var(--muted);font-weight:500}
+
 /* ---------- B-3. 본체 3단 그리드 ---------- */
 .app{display:grid;grid-template-columns:176px 1fr 192px;gap:0;background:var(--card);border:1px solid var(--line);border-radius:22px;box-shadow:var(--shadow-lg);overflow:hidden;min-height:560px}
 
@@ -211,6 +219,11 @@ body{font-family:'Pretendard',-apple-system,sans-serif;font-weight:500;backgroun
   .projects::-webkit-scrollbar{display:none}
   .proj{flex-shrink:0;padding:8px 12px;font-size:12px}
 
+  /* 팀 대시보드: 한 줄 가로 스크롤 */
+  .dash{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;gap:5px;margin-bottom:10px;scrollbar-width:none}
+  .dash::-webkit-scrollbar{display:none}
+  .dash .dchip{flex-shrink:0;padding:5px 9px;font-size:11px}
+
   /* 본체: 세로 1단 */
   .app{grid-template-columns:1fr;min-height:auto;border-radius:16px}
 
@@ -266,6 +279,9 @@ body{font-family:'Pretendard',-apple-system,sans-serif;font-weight:500;backgroun
 
   <!-- C-2. 상단 프로젝트 탭 (보라 구역 · JS가 채움) -->
   <div class="projects" id="projects"></div>
+
+  <!-- C-2b. 팀별 대시보드 띠 — 영업일기 숫자가 자동으로 채워진다 (JS가 채움) -->
+  <div class="dash" id="dash"></div>
 
   <div class="app">
 
@@ -617,6 +633,27 @@ function saveMsg(who, text){
   }).catch(function(){});
 }
 
+// 팀별 대시보드 — 서버의 영업일기 숫자로 상단 띠를 채운다 (답이 올 때마다 갱신)
+function loadDashboard(){
+  fetch(SERVER_URL + '/dashboard')
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      var box = document.getElementById('dash');
+      var teams = data.teams || [];
+      var anyData = teams.some(function(t){ return t.h48 > 0; });
+      box.innerHTML = teams.map(function(t){
+        var a = AGENTS.filter(function(x){ return x.id === t.id; })[0];
+        var color = (a && a.color) ? a.color : '#66736E';
+        var short = t.name.split('(')[0];
+        return '<div class="dchip' + (t.h48 ? '' : ' zero') + '" title="오늘 ' + t.today + '건 · 48시간 ' + t.h48 + '건 · 누적 ' + t.total + '건">'
+             + '<span class="dot" style="background:' + color + '"></span>'
+             + short + ' <b style="color:' + color + '">' + t.h48 + '</b></div>';
+      }).join('')
+      + (anyData ? '' : '<span class="dnote">팀별 활동(영업일기 48시간) — 대화·회의가 쌓이면 자동으로 채워집니다</span>');
+    })
+    .catch(function(){});
+}
+
 // 저장된 과거 대화 불러오기 — 화면이 열릴 때 한 번 (날짜 구분선과 함께 렌더링)
 function loadHistory(){
   fetch(SERVER_URL + '/history')
@@ -654,6 +691,7 @@ function askAgent(agent, message){
     var text = data.reply ? escapeHtml(data.reply).replace(/\n/g, '<br>')
                           : '⚠️ ' + escapeHtml(data.error || '답을 받지 못했습니다.');
     updateMessage(waiting, text);
+    loadDashboard();   // 새 영업일기가 생겼으니 상단 숫자 갱신
   })
   .catch(function(){
     updateMessage(waiting, '⚠️ 중계 서버에 연결할 수 없습니다. server 폴더에서 <b>npm start</b>로 서버를 켰는지 확인해 주세요.');
@@ -828,6 +866,7 @@ function speak(agent, phase, topic, transcript){
     if(data.reply){
       updateMessage(waiting, escapeHtml(data.reply).replace(/\n/g, '<br>'));
       transcript.push({ agent: agent.name, text: data.reply });   // 회의록에 기록
+      loadDashboard();   // 회의 발언도 영업일기 — 상단 숫자 갱신
     } else {
       updateMessage(waiting, '(발언 실패: ' + escapeHtml(data.error || '알 수 없는 오류') + ' — 다음 발언자로 넘어갑니다)');
     }
@@ -946,7 +985,8 @@ renderProjects();
 renderAgents();
 renderTools();
 renderContext();
-loadHistory();   // 저장된 과거 대화를 불러온다 (없으면 첫 인사)
+loadHistory();     // 저장된 과거 대화를 불러온다 (없으면 첫 인사)
+loadDashboard();   // 팀별 대시보드 숫자를 채운다
 
 })();
 </script>
