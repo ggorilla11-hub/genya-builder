@@ -311,6 +311,8 @@ app.post('/meeting/speak', async (req, res) => {
 app.post(['/vapi', '/vapi/chat/completions', '/vapi/chat/completions/chat/completions'], async (req, res) => {
   try {
     const body = req.body || {};
+    // Vapi 요청 도착 로그 — Render Logs 화면에서 "🎙️ Vapi 요청"이 보이면 연결 성공
+    console.log(`🎙️ Vapi 요청 도착 — ${new Date().toLocaleString('ko-KR')} / 메시지 ${Array.isArray(body.messages) ? body.messages.length : 0}개`);
     const inMsgs = Array.isArray(body.messages) ? body.messages : [];
 
     // Vapi 대시보드 시스템 프롬프트에 심어둔 마커에서 현재 맥락을 읽는다
