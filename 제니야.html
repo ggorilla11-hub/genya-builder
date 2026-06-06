@@ -889,10 +889,9 @@ async function startVoice(){
 
     vapi.on('error', function(e){ console.warn('[Vapi 오류]', e); });
 
-    // ★ 두뇌 강제 덮어쓰기: 어시스턴트의 대시보드 설정(옛 두뇌)을 무시하고
-    //   무조건 우리 서버(/vapi 창구)가 답을 만들게 한다.
-    //   목소리·한국어 인식은 어시스턴트의 기존(검증된) 설정 그대로.
-    await vapi.start(VAPI_ASSISTANT_ID, {
+    // ★ 두뇌 강제 덮어쓰기: 답은 무조건 우리 서버(/vapi 창구)가 만든다.
+    //   통화 중 "개발팀장", "제니야", "다같이" 호명도 서버가 알아채고 전환한다.
+    var startCfg = {
       model: {
         provider: 'custom-llm',
         url: 'https://jenya.onrender.com/vapi',   // Vapi가 /chat/completions를 붙여 호출
@@ -904,7 +903,13 @@ async function startVoice(){
         }]
       },
       firstMessage: '네 대표님, 제니야입니다. 말씀하세요.'
-    });
+    };
+    // 목소리 분리(시작 시): 팀장을 선택하고 통화하면 여성 목소리, 총괄이면 기존(남성) 그대로
+    if(state.agent.id !== 'zenya'){
+      startCfg.voice = { provider: 'vapi', voiceId: 'Paige' };
+      startCfg.firstMessage = '네 대표님, ' + state.agent.name.split('(')[0] + ' 팀장입니다. 말씀하세요.';
+    }
+    await vapi.start(VAPI_ASSISTANT_ID, startCfg);
   } catch(e){
     voiceConnecting = false; voiceActive = false; setMicState();
     addMessage('⚠️ 음성 연결 실패: ' + escapeHtml(e.message || '알 수 없는 오류'), 'zenya');

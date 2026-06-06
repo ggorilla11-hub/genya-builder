@@ -166,9 +166,10 @@ function buildSystemPrompt(agentId, projectName) {
     '이때는 보고 산출물이므로 01 문서의 브리핑 형식(어제 성과/오늘 우선순위/주의/대기 승인)을 써도 된다.',
     '- 영업일기: 모든 에이전트는 일을 마칠 때마다 "영업일기"를 남긴다. 형식: 무엇을 했나 / 왜 했나 / ' +
     '결과(숫자·파일·링크) / 다음 할 일. 총괄의 정기보고는 이 영업일기들의 취합이다.',
-    '- ★ 정직 원칙: 영업일기 실제 저장은 아직 연결 전이다. 저장된 일기가 없는데 한 일을 지어내지 마라. ' +
-    '데이터가 없으면 "아직 영업일기 저장이 연결되지 않아 보고할 실데이터가 없습니다"라고 밝히고, ' +
-    '보고 형식의 틀만 보여줘라. "열심히 했습니다"식 거짓 보고 절대 금지.',
+    '- ★ 정직 원칙: 영업일기는 서버에 자동 저장되고 있고, 시스템이 "실시간 현황" 또는 "영업일기 실데이터" ' +
+    '섹션으로 너에게 보여준다. 보고는 오직 그 기록만 근거로 하라. 기록에 없는 일을 지어내지 말고, ' +
+    '기록이 비어 있으면 "해당 기간 기록 없음"이라고 그대로 보고하라. "열심히 했습니다"식 거짓 보고 절대 금지. ' +
+    '(외부 실데이터 연결 — CRM 시트·SNS 등 — 은 아직 전이라, 외부 숫자가 필요한 질문엔 그렇게 답하라)',
     '',
     '=== 현재 작업 맥락 ===',
     `지금 대표님은 "${projectName || '일반'}" 프로젝트 화면에서 너(${a.name})와 대화 중이다. ` +
@@ -329,6 +330,49 @@ app.post('/meeting/speak', async (req, res) => {
   }
 });
 
+// ── 음성 호명 라우팅 보조 ───────────────────────────────────
+// 통화별로 "지금 누구와 대화 중인지"를 기억한다 (통화가 끝나면 자연 소멸)
+const CALL_AGENTS = new Map();   // callId → { agentId, ts }
+
+// 대표님 말에서 호명을 찾아낸다. 'ALL'=전체 호출, null=호명 없음(현재 에이전트 유지)
+function detectVoiceTarget(text) {
+  if (!text) return null;
+  if (/다\s?같이|모든\s?팀|전체\s?(팀장|보고|불러|에게|회의)/.test(text)) return 'ALL';
+  const patterns = [
+    ['lead',    /발굴\s?팀장/],
+    ['care',    /관리\s?팀장/],
+    ['mkt',     /마케팅\s?팀장/],
+    ['design',  /디자인\s?팀장/],
+    ['dev',     /개발\s?팀장/],
+    ['legal',   /법무\s?팀장|보안\s?팀장/],
+    ['finance', /재무\s?팀장|매출\s?팀장/],
+    ['zenya',   /제니야|총괄/],
+  ];
+  for (const [id, re] of patterns) if (re.test(text)) return id;
+  return null;
+}
+
+// 음성 공통 지침
+const VOICE_RULES =
+  '\n\n=== 음성 통화 모드 ===\n'
+  + '지금은 대표님과 음성 통화 중이다. 최종 답만 1~3문장으로 아주 짧게, 귀로 듣기 좋은 구어체로 말하라. '
+  + '마크다운·기호·이모지·목록·괄호 절대 금지. 숫자는 읽기 쉽게.';
+
+// 전체 호출 모드: 7명 팀장이 차례로 1~2문장씩 릴레이 보고 (음성판 @전체)
+function buildAllVoicePrompt(project) {
+  const docs = ['lead', 'care', 'mkt', 'design', 'dev', 'legal', 'finance']
+    .map((id) => `[${AGENT_DOCS[id].name}]\n${AGENT_DOCS[id].doc}`).join('\n\n');
+  return COMMON_RULES
+    + '\n\n=== 프로젝트 정의 ===\n' + PROJECT_DEFS
+    + '\n\n=== 전체 호출 모드 (음성판 @전체 — 정해진 보고 형식이므로 대행 금지의 예외) ===\n'
+    + '대표님이 전체 팀장을 호출했다. 아래 7명 팀장이 발굴→관리→마케팅→디자인→개발→법무보안→매출재무 순서로, '
+    + '각자 "○○팀장입니다"라고 자기를 밝히고 1~2문장씩 구어체로 답하는 릴레이 보고를 만들어라. '
+    + '각 팀장은 자기 문서의 말투·관점을 따른다.\n\n' + docs
+    + '\n\n=== 최근 영업일기 (전 팀) ===\n' + recentDiary('zenya')
+    + `\n\n현재 프로젝트: ${project}`
+    + VOICE_RULES;
+}
+
 // ── /vapi 창구: 음성 통화의 두뇌 ────────────────────────────
 // Vapi(귀·입)가 대표님 말씀(글로 변환됨)을 OpenAI 형식으로 보내오면,
 // 텍스트와 똑같은 정체성(공통규칙+에이전트 문서+프로젝트 정의)으로
@@ -341,12 +385,12 @@ app.post(['/vapi', '/vapi/chat/completions', '/vapi/chat/completions/chat/comple
     console.log(`🎙️ Vapi 요청 도착 — ${new Date().toLocaleString('ko-KR')} / 메시지 ${Array.isArray(body.messages) ? body.messages.length : 0}개`);
     const inMsgs = Array.isArray(body.messages) ? body.messages : [];
 
-    // Vapi 대시보드 시스템 프롬프트에 심어둔 마커에서 현재 맥락을 읽는다
+    // Vapi 대시보드 시스템 프롬프트에 심어둔 마커에서 시작 맥락을 읽는다
     const sysText = inMsgs.filter((m) => m.role === 'system')
       .map((m) => (typeof m.content === 'string' ? m.content : '')).join('\n');
     const project = (sysText.match(/\[PROJECT:([^\]]*)\]/) || [])[1] || '일반';
-    let agentId = (sysText.match(/\[AGENT:([^\]]*)\]/) || [])[1] || 'zenya';
-    if (!AGENT_DOCS[agentId]) agentId = 'zenya';
+    let markerAgent = (sysText.match(/\[AGENT:([^\]]*)\]/) || [])[1] || 'zenya';
+    if (!AGENT_DOCS[markerAgent]) markerAgent = 'zenya';
 
     // 대화 이력 정리: user/assistant만, 클로드 규칙(첫 메시지=user)에 맞게
     let conv = inMsgs
@@ -355,10 +399,31 @@ app.post(['/vapi', '/vapi/chat/completions', '/vapi/chat/completions/chat/comple
     while (conv.length && conv[0].role === 'assistant') conv.shift();
     if (!conv.length) conv = [{ role: 'user', content: '(인사해줘)' }];
 
-    const system = withLiveStatus(buildSystemPrompt(agentId, project), agentId)
-      + '\n\n=== 음성 통화 모드 ===\n'
-      + '지금은 대표님과 음성 통화 중이다. 최종 답만 1~3문장으로 아주 짧게, 귀로 듣기 좋은 구어체로 말하라. '
-      + '마크다운·기호·이모지·목록·괄호 절대 금지. 숫자는 읽기 쉽게.';
+    // ── 음성 호명 라우팅: "개발팀장", "제니야", "다같이" 등을 알아챈다 ──
+    const callId = (body.call && body.call.id) || 'default';
+    if (CALL_AGENTS.size > 200) {   // 오래된 통화 기억 청소
+      for (const [k, v] of CALL_AGENTS) if (Date.now() - v.ts > 2 * 3600 * 1000) CALL_AGENTS.delete(k);
+    }
+    const lastUserText = ([...conv].reverse().find((m) => m.role === 'user') || {}).content || '';
+    const target = detectVoiceTarget(lastUserText);
+    const allMode = (target === 'ALL');
+    let agentId = (target && !allMode) ? target
+                : (CALL_AGENTS.get(callId) || {}).agentId || markerAgent;
+    const prevAgent = (CALL_AGENTS.get(callId) || {}).agentId || markerAgent;
+    const switched = (target && !allMode && target !== prevAgent);
+    CALL_AGENTS.set(callId, { agentId, ts: Date.now() });
+    if (target) console.log(`🎙️ 호명 감지: ${allMode ? '전체 호출' : AGENT_DOCS[agentId].name} (통화 ${callId.slice(0, 8)})`);
+
+    // 시스템 프롬프트: 전체 호출이면 릴레이 보고, 아니면 현재 에이전트 정체성
+    let system;
+    if (allMode) {
+      system = buildAllVoicePrompt(project);
+    } else {
+      system = withLiveStatus(buildSystemPrompt(agentId, project), agentId) + VOICE_RULES;
+      if (switched) {
+        system += '\n방금 대표님이 너를 호명해 대화 상대가 너로 바뀌었다. 첫 마디에 "네 대표님, ○○팀장입니다"처럼 짧게 자기를 밝히고 답하라.';
+      }
+    }
 
     // OpenAI 호환 SSE 스트리밍 응답
     res.setHeader('Content-Type', 'text/event-stream');
@@ -386,15 +451,17 @@ app.post(['/vapi', '/vapi/chat/completions', '/vapi/chat/completions/chat/comple
     res.end();
 
     // 저장: 음성 대화도 대화기록 + 영업일기에 (화면은 표시만, 저장은 여기서)
+    // 전체 호출 릴레이 보고는 총괄(zenya) 이름으로 기록한다
+    const saveAs = allMode ? 'zenya' : agentId;
     const reply = finalMsg.content.filter((b) => b.type === 'text').map((b) => b.text).join('\n');
     const lastUser = [...conv].reverse().find((m) => m.role === 'user');
-    const sp = AGENT_DOCS[agentId];
+    const sp = AGENT_DOCS[saveAs];
     const ts = new Date().toISOString();
     if (lastUser && lastUser.content !== '(인사해줘)') {
       appendHistory({ ts, who: 'u', text: '🎤 ' + lastUser.content, project });
     }
-    appendHistory({ ts, who: agentId, text: reply, project });
-    appendDiary({ ts, agentId, agentName: sp.name, project, kind: 'voice', entry: reply });
+    appendHistory({ ts, who: saveAs, text: reply, project });
+    appendDiary({ ts, agentId: saveAs, agentName: sp.name, project, kind: 'voice', entry: reply });
   } catch (err) {
     console.error('[/vapi 오류]', err.message);
     try { res.status(500).json({ error: err.message }); } catch (e) {}
