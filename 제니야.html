@@ -182,6 +182,17 @@ body{font-family:'Pretendard',-apple-system,sans-serif;font-weight:500;backgroun
 .tool .g{margin-left:auto;width:7px;height:7px;border-radius:50%;background:var(--agent)}
 .divider{font-size:10px;font-weight:700;color:var(--muted);margin:5px 2px 0}
 
+/* ---------- B-6b. 질문 도움말(FAQ) — 도구 영역 맨 아래 접이식 ---------- */
+.faq{border-top:1px dashed var(--tool-line);margin-top:6px;padding-top:7px;display:flex;flex-direction:column;gap:4px}
+.faq-h{display:flex;align-items:center;gap:5px;border:none;background:transparent;color:var(--tool-deep);font-family:inherit;font-size:11px;font-weight:800;cursor:pointer;padding:4px 2px;letter-spacing:.04em}
+.faq-h .ti-chevron-down{margin-left:auto;transition:.2s}
+.faq.open .faq-h .ti-chevron-down{transform:rotate(180deg)}
+.faq-body{display:none;flex-direction:column;gap:3px}
+.faq.open .faq-body{display:flex}
+.faq-g{font-size:10px;font-weight:700;color:var(--muted);margin:5px 2px 1px}
+.faq-q{text-align:left;border:1px solid var(--tool-line);background:#fff;border-radius:8px;padding:6px 9px;font-size:11px;font-weight:500;color:var(--ink);font-family:inherit;cursor:pointer;transition:.15s;line-height:1.4}
+.faq-q:hover{border-color:var(--tool);background:var(--tool-soft)}
+
 /* ---------- B-7. 업로드 모달 (+ 버튼으로 열림) ---------- */
 .modal-bg{position:fixed;inset:0;background:rgba(26,36,33,.4);display:none;align-items:center;justify-content:center;z-index:50}
 .modal-bg.open{display:flex}
@@ -258,6 +269,11 @@ body{font-family:'Pretendard',-apple-system,sans-serif;font-weight:500;backgroun
   .tools .h{width:auto;flex-shrink:0;margin:0 4px 0 0;align-self:center}
   .tool{flex-shrink:0;min-width:auto;padding:8px 11px;font-size:11px}
   .divider{flex-shrink:0;align-self:center;margin:0 2px}
+
+  /* 질문 도움말: 폰에서는 버튼만 도구 줄에 있고, 펼치면 화면 가운데 떠오른다 */
+  .faq{border-top:none;margin-top:0;padding-top:0;flex-shrink:0;align-self:center}
+  .faq-h{border:1px solid var(--tool-line);border-radius:12px;padding:8px 11px;background:#fff;white-space:nowrap}
+  .faq.open .faq-body{position:fixed;left:12px;right:12px;bottom:90px;max-height:55vh;overflow-y:auto;background:#fff;border:1px solid var(--tool-line);border-radius:14px;padding:12px;box-shadow:var(--shadow-lg);z-index:60}
 
   .foot{font-size:10px;margin-top:10px}
 }
@@ -437,6 +453,29 @@ var SERVER_URL = (location.protocol === 'file:') ? 'http://localhost:3000' : '';
 var VAPI_PUBLIC_KEY   = '40b0ac9b-d60d-416d-a552-e22b68a26ad2';
 var VAPI_ASSISTANT_ID = '30c25f5c-dac1-4b23-92f6-5be977ca69f5';   // 제니야 어시스턴트
 
+// 질문 도움말(FAQ) — 대표님이 뭘 물을지 막힐 때. 질문을 탭하면 입력창에 들어가고
+// 그 팀이 자동 선택된다. 추가·수정은 이 명단표만 고치면 된다.
+var FAQS = [
+  { group:'제니야(총괄)', agentId:'zenya',
+    items:['지금 회사 전체 현황 한 장으로 보고해줘','오늘 가장 급한 것 3개','어디가 막혔어?'] },
+  { group:'고객발굴', agentId:'lead',
+    items:['이번 주 발굴 몇 명? 핫리드 몇 명?','가장 가능성 높은 리드는?'] },
+  { group:'고객관리', agentId:'care',
+    items:['오늘 연락할 고객 몇 명?','이탈 위험 있어?'] },
+  { group:'마케팅', agentId:'mkt',
+    items:['이번 주 콘텐츠 몇 개? 성과는?','다음 쇼츠 주제?'] },
+  { group:'디자인', agentId:'design',
+    items:['시안 몇 개 만들었어?','포스터 어디까지?'] },
+  { group:'개발', agentId:'dev',
+    items:['지니야빌더 진척률 몇 %?','막힌 문제 있어?'] },
+  { group:'법무보안', agentId:'legal',
+    items:['지금 위험한 거 있어?','출시 전 변호사 볼 것 정리해줘'] },
+  { group:'매출재무', agentId:'finance',
+    items:['이번 달 매출 목표 대비 몇 %?','입금 몇 건?'] },
+  { group:'매일', agentId:'zenya',
+    items:['모닝브리핑','저녁보고','@전체 오늘 한 일 숫자로 보고해'] }
+];
+
 /* ==========================================================
    D-2. 상태 — 지금 무엇이 선택되어 있는지 (단 한 곳에서 관리)
 ========================================================== */
@@ -513,6 +552,45 @@ function renderTools(){
     el.onclick = function(){ clickTool(t); };
     box.appendChild(el);
   });
+  renderFaq(box);   // 도구 맨 아래에 질문 도움말(FAQ) 붙이기
+}
+
+// D-3c-2. 질문 도움말(FAQ) 그리기 + 동작 — 도구 영역 맨 아래 접이식
+function renderFaq(box){
+  var html = '<div class="faq" id="faq">'
+           + '<button class="faq-h" id="faq-h"><i class="ti ti-bulb"></i> 질문 도움말 <i class="ti ti-chevron-down"></i></button>'
+           + '<div class="faq-body">';
+  FAQS.forEach(function(g){
+    html += '<div class="faq-g">' + g.group + '</div>';
+    g.items.forEach(function(q){
+      html += '<button class="faq-q" data-agent="' + (g.agentId || '') + '">' + q + '</button>';
+    });
+  });
+  html += '</div></div>';
+  box.insertAdjacentHTML('beforeend', html);
+
+  document.getElementById('faq-h').onclick = function(){
+    document.getElementById('faq').classList.toggle('open');
+  };
+  box.querySelectorAll('.faq-q').forEach(function(b){
+    b.onclick = function(){ useFaq(b.getAttribute('data-agent'), b.textContent); };
+  });
+}
+
+// 질문 탭 → 그 팀 자동 선택(조용히) + 입력창에 질문 채움 (전송은 대표님이)
+function useFaq(agentId, q){
+  if(agentId){
+    var a = AGENTS.filter(function(x){ return x.id === agentId; })[0];
+    if(a && state.agent.id !== a.id){
+      state.agent = a;
+      renderAgents();
+      renderContext();
+    }
+  }
+  var inp = document.getElementById('inp');
+  inp.value = q;
+  inp.focus();
+  document.getElementById('faq').classList.remove('open');   // 접어서 화면 확보
 }
 
 // D-3d. 맥락 표시줄 갱신 — "지금 어느 프로젝트 × 어느 에이전트"
