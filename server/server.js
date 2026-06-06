@@ -301,6 +301,76 @@ app.post('/meeting/speak', async (req, res) => {
   }
 });
 
+// ── /vapi 창구: 음성 통화의 두뇌 ────────────────────────────
+// Vapi(귀·입)가 대표님 말씀(글로 변환됨)을 OpenAI 형식으로 보내오면,
+// 텍스트와 똑같은 정체성(공통규칙+에이전트 문서+프로젝트 정의)으로
+// 클로드 답을 만들어 실시간 스트리밍으로 돌려준다. Vapi가 그걸 음성으로 읽는다.
+// (경로 3개 등록: Vapi 설정 방식에 따라 어느 쪽으로 와도 받게)
+app.post(['/vapi', '/vapi/chat/completions', '/vapi/chat/completions/chat/completions'], async (req, res) => {
+  try {
+    const body = req.body || {};
+    const inMsgs = Array.isArray(body.messages) ? body.messages : [];
+
+    // Vapi 대시보드 시스템 프롬프트에 심어둔 마커에서 현재 맥락을 읽는다
+    const sysText = inMsgs.filter((m) => m.role === 'system')
+      .map((m) => (typeof m.content === 'string' ? m.content : '')).join('\n');
+    const project = (sysText.match(/\[PROJECT:([^\]]*)\]/) || [])[1] || '일반';
+    let agentId = (sysText.match(/\[AGENT:([^\]]*)\]/) || [])[1] || 'zenya';
+    if (!AGENT_DOCS[agentId]) agentId = 'zenya';
+
+    // 대화 이력 정리: user/assistant만, 클로드 규칙(첫 메시지=user)에 맞게
+    let conv = inMsgs
+      .filter((m) => (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string' && m.content.trim())
+      .map((m) => ({ role: m.role, content: m.content }));
+    while (conv.length && conv[0].role === 'assistant') conv.shift();
+    if (!conv.length) conv = [{ role: 'user', content: '(인사해줘)' }];
+
+    const system = buildSystemPrompt(agentId, project)
+      + '\n\n=== 음성 통화 모드 ===\n'
+      + '지금은 대표님과 음성 통화 중이다. 최종 답만 1~3문장으로 아주 짧게, 귀로 듣기 좋은 구어체로 말하라. '
+      + '마크다운·기호·이모지·목록·괄호 절대 금지. 숫자는 읽기 쉽게.';
+
+    // OpenAI 호환 SSE 스트리밍 응답
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    const chunkId = 'chatcmpl-' + Date.now();
+    const send = (delta, finish) => {
+      res.write('data: ' + JSON.stringify({
+        id: chunkId, object: 'chat.completion.chunk',
+        created: Math.floor(Date.now() / 1000), model: 'zenya',
+        choices: [{ index: 0, delta: delta, finish_reason: finish || null }],
+      }) + '\n\n');
+    };
+
+    const stream = anthropic.messages.stream({
+      model: MODEL,
+      max_tokens: 1000,            // 음성은 짧게 — 속도 우선
+      system: system,
+      messages: conv,
+    });
+    stream.on('text', (t) => send({ content: t }));
+    const finalMsg = await stream.finalMessage();
+    send({}, 'stop');
+    res.write('data: [DONE]\n\n');
+    res.end();
+
+    // 저장: 음성 대화도 대화기록 + 영업일기에 (화면은 표시만, 저장은 여기서)
+    const reply = finalMsg.content.filter((b) => b.type === 'text').map((b) => b.text).join('\n');
+    const lastUser = [...conv].reverse().find((m) => m.role === 'user');
+    const sp = AGENT_DOCS[agentId];
+    const ts = new Date().toISOString();
+    if (lastUser && lastUser.content !== '(인사해줘)') {
+      appendHistory({ ts, who: 'u', text: '🎤 ' + lastUser.content, project });
+    }
+    appendHistory({ ts, who: agentId, text: reply, project });
+    appendDiary({ ts, agentId, agentName: sp.name, project, kind: 'voice', entry: reply });
+  } catch (err) {
+    console.error('[/vapi 오류]', err.message);
+    try { res.status(500).json({ error: err.message }); } catch (e) {}
+  }
+});
+
 // ── 대화기록 창구: 불러오기 + 대표님 말씀 저장 ──────────────
 // GET  /history → 저장된 대화 전체 (화면이 열릴 때 불러간다)
 // POST /history → 말풍선 하나 저장 (화면이 대표님 말씀을 보낼 때 사용)

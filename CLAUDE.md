@@ -53,7 +53,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 4. 여유되면 음성
 5. 교육생용 온보딩·구글 로그인·웹주소 배포는 그 다음 단계
 
-**현재 제니야는 3단계(두뇌 연결)까지 완료: 화면+서버+에이전트 정체성+호명+회의+정기보고+저장. 자세한 진행은 docs/진행기록.md 참고.**
+**현재 제니야는 3단계(두뇌 연결)까지 완료: 화면+서버+에이전트 정체성+호명+회의+정기보고+저장. 배포 완료: https://jenya.onrender.com (Render, 깃허브 genya-builder 저장소 푸시 시 자동 재배포). 자세한 진행은 docs/진행기록.md 참고.**
 
 **그 이후 (기존 계획):**
 

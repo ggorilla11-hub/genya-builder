@@ -151,6 +151,9 @@ body{font-family:'Pretendard',-apple-system,sans-serif;font-weight:500;backgroun
 .inputbar input{flex:1;border:none;background:transparent;font-family:inherit;font-size:13.5px;font-weight:500;outline:none;color:var(--ink)}
 .inputbar .mic{width:36px;height:36px;border-radius:50%;background:var(--agent-soft);color:var(--agent-deep);border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:17px;transition:.2s;flex-shrink:0}
 .inputbar .mic:hover{background:var(--agent);color:#fff}
+.inputbar .mic.live{background:#B3261E;color:#fff;animation:micpulse 1.6s infinite}
+.inputbar .mic.wait{opacity:.55}
+@keyframes micpulse{0%{box-shadow:0 0 0 0 rgba(179,38,30,.45)}70%{box-shadow:0 0 0 10px rgba(179,38,30,0)}100%{box-shadow:0 0 0 0 rgba(179,38,30,0)}}
 .inputbar .send{width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--agent),var(--agent-deep));color:#fff;border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:16px;box-shadow:0 6px 14px rgba(29,158,117,.35);flex-shrink:0}
 .inputbar .hint{font-size:11px;color:var(--muted);text-align:center;margin-top:8px;font-weight:500}
 
@@ -298,6 +301,17 @@ body{font-family:'Pretendard',-apple-system,sans-serif;font-weight:500;backgroun
   </div>
 </div>
 
+<!-- Vapi 음성 SDK — 동적 로딩 (AI머니야에서 검증된 패턴) -->
+<script>
+(async function(){
+  try{
+    var module = await import('https://cdn.jsdelivr.net/npm/@vapi-ai/web@2.5.2/+esm');
+    window.VapiClass = module.default;
+    console.log('[Vapi] SDK 로딩 완료');
+  }catch(e){ console.warn('[Vapi] SDK 로드 실패:', e); }
+})();
+</script>
+
 <!-- [D] JS (동작) -->
 <script>
 (function(){
@@ -350,6 +364,12 @@ var TOOLS = [
 // 배포 주소(https://○○.onrender.com)로 열면 → 같은 서버로 자동 연결.
 // 손댈 필요 없음.
 var SERVER_URL = (location.protocol === 'file:') ? 'http://localhost:3000' : '';
+
+// ── Vapi 음성 설정 ─────────────────────────────────────
+// PUBLIC_KEY는 클라이언트용 공개 키(머니야와 같은 계정이라 동일).
+// ASSISTANT_ID는 Vapi 대시보드에서 "제니야" 어시스턴트를 만든 뒤 여기 넣는다.
+var VAPI_PUBLIC_KEY   = '40b0ac9b-d60d-416d-a552-e22b68a26ad2';
+var VAPI_ASSISTANT_ID = '';   // ← 제니야 어시스턴트 ID 입력 자리
 
 /* ==========================================================
    D-2. 상태 — 지금 무엇이 선택되어 있는지 (단 한 곳에서 관리)
@@ -649,8 +669,74 @@ document.getElementById('send').onclick = sendMessage;
 document.getElementById('inp').addEventListener('keydown', function(e){
   if(e.key === 'Enter') sendMessage();
 });
+// ── Vapi 음성 통화 ──────────────────────────────────────
+// 마이크 버튼 = 통화 시작/종료 토글. Vapi는 귀(음성→글)와 입(글→음성)만 담당하고,
+// 답은 우리 서버(/vapi 창구)가 텍스트와 같은 정체성으로 만든다.
+// 자막은 여기서 말풍선으로 표시하고, 저장은 서버가 담당한다(이중 저장 방지).
+var vapi = null, voiceActive = false, voiceConnecting = false;
+
+function setMicState(){
+  var m = document.getElementById('mic');
+  m.className = 'mic' + (voiceActive ? ' live' : (voiceConnecting ? ' wait' : ''));
+  m.title = voiceActive ? '통화 중 — 누르면 종료' : '음성으로 말하기';
+}
+
+function stopVoice(){
+  try{ if(vapi) vapi.stop(); }catch(e){}
+  voiceActive = false; voiceConnecting = false;
+  setMicState();
+}
+
+async function startVoice(){
+  if(!window.VapiClass){
+    addMessage('음성 엔진을 아직 불러오는 중입니다. 2~3초 뒤 다시 눌러주세요.', 'zenya');
+    return;
+  }
+  voiceConnecting = true;
+  setMicState();
+  try{
+    var V = window.VapiClass.default || window.VapiClass;
+    vapi = new V(VAPI_PUBLIC_KEY);
+
+    vapi.on('call-start', function(){
+      voiceConnecting = false; voiceActive = true; setMicState();
+      addMessage('🎤 음성 연결됨 — 말씀하세요. (마이크 버튼을 다시 누르면 종료)', state.agent.id);
+    });
+
+    // 자막: 대표님 말씀과 에이전트 답을 말풍선으로 (표시만 — 저장은 서버)
+    vapi.on('message', function(msg){
+      if(msg.type === 'transcript' && msg.transcriptType === 'final' && msg.transcript && msg.transcript.trim()){
+        if(msg.role === 'user') addMessage('🎤 ' + escapeHtml(msg.transcript), 'u');
+        else addMessage(escapeHtml(msg.transcript).replace(/\n/g, '<br>'), state.agent.id);
+      }
+    });
+
+    vapi.on('call-end', function(){
+      voiceActive = false; voiceConnecting = false; setMicState();
+      addMessage('📞 음성 통화를 마쳤습니다.', state.agent.id);
+      vapi = null;
+    });
+
+    vapi.on('error', function(e){ console.warn('[Vapi 오류]', e); });
+
+    // 현재 선택된 프로젝트·에이전트 맥락을 음성 두뇌에 전달
+    await vapi.start(VAPI_ASSISTANT_ID, {
+      variableValues: { project: state.project.name, agentId: state.agent.id }
+    });
+  } catch(e){
+    voiceConnecting = false; voiceActive = false; setMicState();
+    addMessage('⚠️ 음성 연결 실패: ' + escapeHtml(e.message || '알 수 없는 오류'), 'zenya');
+  }
+}
+
 document.getElementById('mic').onclick = function(){
-  addMessage('음성 입력은 4단계(음성 확장)에서 켜집니다. 지금은 글로 입력해 주세요.', 'zenya');
+  if(meeting.running){ addMessage('회의가 도는 동안에는 음성을 켤 수 없습니다.', 'zenya'); return; }
+  if(voiceActive || voiceConnecting){ stopVoice(); return; }
+  if(!VAPI_ASSISTANT_ID){
+    addMessage('음성 준비 중입니다 — Vapi 대시보드에서 "제니야" 어시스턴트를 만들어 ID를 넣으면 켜집니다.', 'zenya');
+    return;
+  }
+  startVoice();
 };
 
 // ── 멀티 에이전트 회의 ──────────────────────────────────
