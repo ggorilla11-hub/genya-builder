@@ -533,7 +533,247 @@ app.post('/history', (req, res) => {
   res.json({ ok: true });
 });
 
+// ============================================================
+// 고객관리 손 — 첫 번째 실제 도구 (2026-06-08)
+// 흐름: 구글폼 신청 → 리드 시트 적재(구글 기본 기능)
+//      → /care/new   신규 신청자 선별 (발송상태가 빈 사람)
+//      → /care/draft 감사+강의안내 문자 초안 생성 (고객관리 에이전트)
+//      → /care/approve 대표님 승인 → Solapi 발송 → 시트에 발송완료 기록
+// 원칙: 발송은 반드시 대표님 승인 후(휴먼인더루프).
+//      고객 개인정보는 대표님 구글시트에만 — 서버에는 발송대기 목록만 임시 보관.
+// ============================================================
+const { google } = require('googleapis');
+const { SolapiMessageService } = require('solapi');
+
+// 시트 주소(ID)는 비밀이 아니라서 코드에 기본값으로 둔다 (환경변수로 바꿀 수도 있음)
+const LEAD_SHEET_ID  = process.env.LEAD_SHEET_ID || '1L15eUgHO81MN5rTYj5351a5RbFGptxNSMnTzMQLDRmk';
+const LEAD_SHEET_TAB = process.env.LEAD_SHEET_TAB || '';   // 비우면 "응답" 탭 → 첫 탭 순서로 자동 선택
+const SOLAPI_SENDER  = (process.env.SOLAPI_SENDER || '').replace(/\D/g, '');  // 발신번호 (Solapi에 등록된 번호)
+
+// 구글 열쇠: ① server/google-key.json 파일(로컬) ② GOOGLE_SERVICE_ACCOUNT_JSON 환경변수(Render)
+function googleCreds() {
+  const keyFile = path.join(__dirname, 'google-key.json');
+  try {
+    if (fs.existsSync(keyFile)) return JSON.parse(fs.readFileSync(keyFile, 'utf8'));
+    if (process.env.GOOGLE_SERVICE_ACCOUNT_JSON) return JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+  } catch (e) { console.warn('⚠️ 구글 열쇠를 읽지 못했습니다:', e.message); }
+  return null;
+}
+function sheetsClient() {
+  const creds = googleCreds();
+  if (!creds) return null;
+  const auth = new google.auth.JWT(creds.client_email, null, creds.private_key,
+    ['https://www.googleapis.com/auth/spreadsheets']);
+  return google.sheets({ version: 'v4', auth });
+}
+
+// Solapi(문자/카톡) — 키가 있을 때만 켜진다
+const solapi = (process.env.SOLAPI_API_KEY && process.env.SOLAPI_API_SECRET)
+  ? new SolapiMessageService(process.env.SOLAPI_API_KEY, process.env.SOLAPI_API_SECRET)
+  : null;
+
+// 전화번호 정리: "010-1234-5678" → "01012345678" (한국 휴대폰만 인정)
+function cleanPhone(v) {
+  const p = String(v || '').replace(/\D/g, '');
+  return /^01[016789]\d{7,8}$/.test(p) ? p : null;
+}
+// 열 번호(0부터) → 시트 열 글자 (0→A, 25→Z, 26→AA)
+function colLetter(n) {
+  let s = '';
+  for (n = n + 1; n > 0; n = Math.floor((n - 1) / 26)) s = String.fromCharCode(65 + ((n - 1) % 26)) + s;
+  return s;
+}
+
+// 시트에서 신청자 명단을 읽는다.
+// 머리줄(1행)에서 이름·연락처·발송상태 열을 자동으로 찾고, 발송상태 열이 없으면 만들어 준다.
+async function readApplicants() {
+  const sheets = sheetsClient();
+  if (!sheets) throw new Error('구글 열쇠가 아직 없습니다. (server/google-key.json 또는 GOOGLE_SERVICE_ACCOUNT_JSON)');
+
+  // 탭 고르기: 지정값 → "응답"이 들어간 탭(구글폼 응답) → 첫 탭
+  const meta = await sheets.spreadsheets.get({ spreadsheetId: LEAD_SHEET_ID });
+  const tabs = meta.data.sheets.map((s) => s.properties.title);
+  const tab = LEAD_SHEET_TAB && tabs.includes(LEAD_SHEET_TAB) ? LEAD_SHEET_TAB
+            : tabs.find((t) => t.includes('응답')) || tabs[0];
+  const range = `'${tab.replace(/'/g, "''")}'!A1:ZZ`;
+
+  const got = await sheets.spreadsheets.values.get({ spreadsheetId: LEAD_SHEET_ID, range });
+  const rows = got.data.values || [];
+  if (!rows.length) return { tab, header: [], applicants: [], statusCol: -1, sheets };
+
+  const header = rows[0].map((h) => String(h || '').trim());
+  const findCol = (words) => header.findIndex((h) => words.some((w) => h.includes(w)));
+  const nameCol  = findCol(['이름', '성함', '성명']);
+  const phoneCol = findCol(['연락처', '전화', '휴대폰', '핸드폰']);
+  let statusCol  = findCol(['발송상태']);
+  if (phoneCol < 0) throw new Error(`시트 "${tab}" 1행에서 연락처 열을 못 찾았습니다. (머리줄에 "연락처" 또는 "전화번호"가 필요)`);
+
+  // 발송상태 열이 없으면 머리줄 끝에 만들어 준다
+  if (statusCol < 0) {
+    statusCol = header.length;
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: LEAD_SHEET_ID,
+      range: `'${tab.replace(/'/g, "''")}'!${colLetter(statusCol)}1`,
+      valueInputOption: 'RAW',
+      requestBody: { values: [['발송상태']] },
+    });
+  }
+
+  const applicants = [];
+  for (let i = 1; i < rows.length; i++) {
+    const phone = cleanPhone(rows[i][phoneCol]);
+    if (!phone) continue;                       // 연락처 없는 줄은 건너뜀
+    applicants.push({
+      row: i + 1,                               // 시트의 실제 행 번호
+      name: String((nameCol >= 0 && rows[i][nameCol]) || '').trim() || '고객',
+      phone,
+      status: String(rows[i][statusCol] || '').trim(),
+    });
+  }
+  return { tab, header, applicants, statusCol, sheets };
+}
+
+// 발송 대기 명단 (server/data/발송대기.json) — 승인 전 초안 보관소
+let PENDING = loadJson('발송대기.json');   // [{id, name, phone, text, ts, status}]
+const savePending = () => saveJson('발송대기.json', PENDING);
+
+// ── /care/status: 손 상태 점검 (뭐가 연결됐고 뭐가 빠졌는지) ──
+app.get('/care/status', async (req, res) => {
+  const out = {
+    googleKey: !!googleCreds(),
+    solapi: !!solapi,
+    sender: !!SOLAPI_SENDER,
+    sheet: null, newCount: 0,
+    pendingCount: PENDING.filter((p) => p.status === '대기').length,
+  };
+  if (out.googleKey) {
+    try {
+      const { tab, applicants } = await readApplicants();
+      out.sheet = tab;
+      out.newCount = applicants.filter((a) => !a.status).length;
+    } catch (e) { out.sheetError = e.message; }
+  }
+  res.json(out);
+});
+
+// ── /care/new: 신규 신청자(발송상태가 빈 사람) 명단 ──────────
+app.get('/care/new', async (req, res) => {
+  try {
+    const { tab, applicants } = await readApplicants();
+    const fresh = applicants.filter((a) => !a.status);
+    res.json({ tab, total: applicants.length, fresh });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── /care/draft: 신규 신청자용 안내문 초안 생성 (승인 대기로 적재) ──
+// 받는 것: { project, guide } — guide = 대표님이 안내문에 꼭 넣으라는 내용(강의 일시·링크 등)
+app.post('/care/draft', async (req, res) => {
+  try {
+    const { project, guide } = req.body || {};
+    const { applicants } = await readApplicants();
+    const queued = new Set(PENDING.filter((p) => p.status === '대기').map((p) => p.phone));
+    const fresh = applicants.filter((a) => !a.status && !queued.has(a.phone));
+    if (!fresh.length) return res.json({ template: null, added: 0, pending: PENDING.filter((p) => p.status === '대기') });
+
+    // 고객관리 에이전트가 안내문 틀을 쓴다 ({이름} 자리에 각자 이름이 들어감)
+    const system = buildSystemPrompt('care', project || '머니트레이닝랩');
+    const ask =
+      '강의 신청자에게 보낼 "감사 + 강의 안내" 문자 한 통을 써라.\n'
+      + '- 받는 사람 이름 자리는 반드시 {이름} 으로 표기 (예: "{이름}님, 신청 감사합니다")\n'
+      + '- 이번 강의: 10억 목돈마련 절대법칙 (비대면 강의)\n'
+      + (guide ? `- 대표님이 꼭 넣으라는 내용: ${guide}\n` : '- 일시·접속링크 등 확정 정보가 없으면 "확정되는 대로 다시 안내드립니다"로 처리\n')
+      + '- 문자이므로 마크다운·이모지 없이 일반 글로, 300자 이내, 따뜻하고 신뢰감 있게\n'
+      + '- 발신: 오원트금융연구소 오상열 대표\n'
+      + '- 문자 본문만 출력 (설명·따옴표 없이)';
+    const r = await anthropic.messages.create({
+      model: MODEL, max_tokens: 1000, system,
+      messages: [{ role: 'user', content: ask }],
+    });
+    const template = r.content.filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim();
+
+    const ts = new Date().toISOString();
+    for (const a of fresh) {
+      PENDING.push({
+        id: 'p' + Date.now() + '_' + a.row,
+        name: a.name, phone: a.phone,
+        text: template.replace(/\{이름\}/g, a.name),
+        ts, status: '대기',
+      });
+    }
+    savePending();
+    appendDiary({ ts, agentId: 'care', agentName: '고객관리', project: project || '머니트레이닝랩', kind: 'hand',
+      entry: `[손] 신규 신청자 ${fresh.length}명 선별, 안내문 초안 ${fresh.length}건 생성 — 대표님 승인 대기` });
+
+    res.json({ template, added: fresh.length, pending: PENDING.filter((p) => p.status === '대기') });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── /care/pending: 승인 대기 목록 ────────────────────────────
+app.get('/care/pending', (req, res) => {
+  res.json({ pending: PENDING.filter((p) => p.status === '대기') });
+});
+
+// ── /care/approve: 대표님 승인 → Solapi 발송 → 시트에 기록 ──
+// 받는 것: { ids: ['p123_2', ...] }  (휴먼인더루프 — 이 창구 없이는 절대 발송 안 됨)
+app.post('/care/approve', async (req, res) => {
+  try {
+    const ids = (req.body || {}).ids;
+    if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'ids(승인할 항목)가 필요합니다.' });
+    if (!solapi) return res.status(503).json({ error: 'Solapi 키가 아직 없습니다. (.env의 SOLAPI_API_KEY/SOLAPI_API_SECRET)' });
+    if (!SOLAPI_SENDER) return res.status(503).json({ error: '발신번호가 아직 없습니다. (.env의 SOLAPI_SENDER)' });
+
+    const items = PENDING.filter((p) => ids.includes(p.id) && p.status === '대기');
+    if (!items.length) return res.status(400).json({ error: '승인할 대기 항목이 없습니다.' });
+
+    // 시트를 다시 읽어 행·발송상태 열 위치를 정확히 잡는다 (그 사이 줄이 늘었을 수 있음)
+    const { tab, applicants, statusCol, sheets } = await readApplicants();
+    const stamp = new Date().toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+    const results = [];
+    for (const item of items) {
+      try {
+        await solapi.send({ to: item.phone, from: SOLAPI_SENDER, text: item.text });
+        item.status = '발송완료 ' + stamp;
+        // 시트의 같은 전화번호 행에 발송완료 도장
+        const hit = applicants.find((a) => a.phone === item.phone);
+        if (hit) {
+          await sheets.spreadsheets.values.update({
+            spreadsheetId: LEAD_SHEET_ID,
+            range: `'${tab.replace(/'/g, "''")}'!${colLetter(statusCol)}${hit.row}`,
+            valueInputOption: 'RAW',
+            requestBody: { values: [['발송완료 ' + stamp]] },
+          });
+        }
+        results.push({ id: item.id, name: item.name, ok: true });
+      } catch (e) {
+        item.status = '실패: ' + e.message;
+        results.push({ id: item.id, name: item.name, ok: false, error: e.message });
+      }
+    }
+    savePending();
+
+    const okN = results.filter((r) => r.ok).length;
+    const failN = results.length - okN;
+    appendDiary({
+      ts: new Date().toISOString(), agentId: 'care', agentName: '고객관리', project: '머니트레이닝랩', kind: 'hand',
+      entry: `[손] 대표님 승인으로 강의안내 문자 발송 ${okN}건 완료${failN ? `, 실패 ${failN}건` : ''} — 시트에 발송완료 기록`,
+    });
+    res.json({ results, sent: okN, failed: failN });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── /care/reject: 보류(대기 목록에서 빼기 — 발송 안 함) ──────
+app.post('/care/reject', (req, res) => {
+  const ids = (req.body || {}).ids;
+  if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'ids가 필요합니다.' });
+  let n = 0;
+  for (const p of PENDING) if (ids.includes(p.id) && p.status === '대기') { p.status = '보류'; n++; }
+  savePending();
+  res.json({ rejected: n });
+});
+
 // ── 서버 켜기 ──────────────────────────────────────────────
 app.listen(PORT, () => {
   console.log(`✅ 제니야 중계 서버 가동 — http://localhost:${PORT}`);
+  console.log(`📨 고객관리 손 — 구글열쇠 ${googleCreds() ? 'O' : 'X'} / Solapi ${solapi ? 'O' : 'X'} / 발신번호 ${SOLAPI_SENDER ? 'O' : 'X'}`);
 });
