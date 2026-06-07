@@ -568,7 +568,67 @@ function renderTools(){
     box.appendChild(el);
   });
   renderCareHand(box);   // 고객관리 손 — 강의 신청자 안내 발송 (첫 번째 실제 도구)
+  renderMktHand(box);    // 마케팅 손 — 강의 홍보 콘텐츠 생성 (두 번째 실제 도구)
   renderFaq(box);   // 도구 맨 아래에 질문 도움말(FAQ) 붙이기
+}
+
+// D-3c-1c. 마케팅 손 그리기 — 홍보 콘텐츠 4종을 만들어 복사 버튼으로 건네준다
+function renderMktHand(box){
+  var html = '<div class="hand" id="mkt-hand">'
+           + '<div class="hh" style="color:#E65100"><i class="ti ti-speakerphone"></i> 마케팅 손 · 강의 홍보</div>'
+           + '<button class="hand-btn" id="mkt-make"><i class="ti ti-wand"></i> 홍보 콘텐츠 4종 만들기</button>'
+           + '</div>';
+  box.insertAdjacentHTML('beforeend', html);
+}
+
+// 복사 도우미 — 폰·구형 브라우저에서도 작동하게 두 가지 방식 모두
+function copyText(t, btn){
+  function ok(){ if(btn){ var old = btn.textContent; btn.textContent = '복사됨!'; setTimeout(function(){ btn.textContent = old; }, 1500); } }
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(t).then(ok, function(){ fallback(); });
+  } else { fallback(); }
+  function fallback(){
+    var ta = document.createElement('textarea');
+    ta.value = t; document.body.appendChild(ta); ta.select();
+    try{ document.execCommand('copy'); ok(); }catch(e){}
+    document.body.removeChild(ta);
+  }
+}
+
+var MKT_LAST = [];   // 마지막으로 생성한 콘텐츠들 (복사 버튼이 참조)
+
+// 홍보 콘텐츠 4종 생성 — 유튜브쇼츠 / 인스타블로그 / 카톡채널 / 맞벌이타깃
+function mktMake(){
+  var guide = window.prompt('추가로 강조할 내용이 있으면 적어주세요 (비워두면 기본 강의 정보로 만듭니다).', '');
+  if(guide === null) return;
+  var btn = document.getElementById('mkt-make');
+  var btnHtml = btn ? btn.innerHTML : '';
+  if(btn) btn.innerHTML = '<i class="ti ti-loader-2"></i> 만드는 중…';
+  var restore = function(){ if(btn) btn.innerHTML = btnHtml; };
+  var w = addMessage('<i class="ti ti-loader-2"></i> 마케팅팀장이 홍보 콘텐츠 4종을 만드는 중… (30초쯤 걸립니다)', 'mkt');
+  fetch(SERVER_URL + '/mkt/content', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ project: state.project.name, guide: guide })
+  })
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      restore(); loadDashboard();
+      if(d.error){ updateMessage(w, '⚠️ ' + escapeHtml(d.error)); return; }
+      MKT_LAST = d.parts || [];
+      var html = '홍보 콘텐츠 <b>' + MKT_LAST.length + '종</b>입니다. 각각 [복사] 눌러 플랫폼에 붙여넣어 주세요.';
+      MKT_LAST.forEach(function(p, i){
+        html += '<div style="margin:8px 0 2px;font-weight:800;color:#E65100">' + escapeHtml(p.label)
+              + ' <button class="appr" data-copy="' + i + '" style="border-color:#E65100;color:#E65100">복사</button></div>'
+              + '<div style="padding:9px;background:#FFF8F2;border-radius:8px;font-size:12.5px;line-height:1.6;white-space:pre-wrap">'
+              + escapeHtml(p.text) + '</div>';
+      });
+      updateMessage(w, html);
+      w.querySelectorAll('[data-copy]').forEach(function(b){
+        b.onclick = function(){ copyText(MKT_LAST[Number(b.getAttribute('data-copy'))].text, b); };
+      });
+    })
+    .catch(function(){ restore(); updateMessage(w, '⚠️ 서버에 연결할 수 없습니다.'); });
 }
 
 // D-3c-1b. 고객관리 손 그리기 + 동작 — 시트의 신규 신청자에게 안내문을 보낸다 (발송은 대표님 승인 후)
@@ -591,6 +651,7 @@ document.addEventListener('click', function(e){
   if(t.id === 'hand-new'){ console.log('[고객관리 손] 신규 신청자 확인 클릭'); careNew(); }
   else if(t.id === 'hand-draft'){ console.log('[고객관리 손] 안내문 초안 클릭'); careDraft(); }
   else if(t.id === 'hand-pending'){ console.log('[고객관리 손] 승인 대기 클릭'); carePending(); }
+  else if(t.id === 'mkt-make'){ console.log('[마케팅 손] 콘텐츠 만들기 클릭'); mktMake(); }
 });
 
 // 대기 건수 갱신 + 연결 상태를 버튼 풍선 도움말로

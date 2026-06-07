@@ -773,6 +773,71 @@ app.post('/care/approve', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ============================================================
+// 마케팅 손 — 두 번째 실제 도구 (2026-06-08)
+// 역할: 강의 홍보 콘텐츠 4종을 한 번에 생성 → 화면에서 복사 → 대표님이 각 플랫폼에 게시.
+//      (플랫폼 자동 게시는 다음 단계 — 지금은 생성 자동 + 게시 복붙이 가장 빠르고 정직한 구조)
+// ============================================================
+
+// 신청서 공개 링크 (콘텐츠 CTA에 들어감 — 바뀌면 환경변수로 교체)
+const MKT_APPLY_LINK = process.env.MKT_APPLY_LINK
+  || 'https://docs.google.com/forms/d/e/1FAIpQLSejqqWGxDVeDqPkNHQXM2ATY5e8o06CWcFpbT7sEBpqAKhONg/viewform';
+
+// 이번 강의 기본 정보 (사실만 — 콘텐츠가 지어내지 않게 한 곳에서 관리)
+const LECTURE_FACTS =
+  '강의명: 10억 목돈마련 절대법칙 / 4주 과정, 매주 목요일 저녁 7시~10시(총 4회) / '
+  + '줌(Zoom) 비대면 / 수강료 55만원(카드 결제 가능) / '
+  + '1차 신청마감 6월 12일(금) 저녁 6시, 이후 강의 전날까지 추가 접수 가능 / '
+  + '강사: 오원트금융연구소 오상열 대표(CFP 25년)';
+
+// ── /mkt/content: 홍보 콘텐츠 4종 생성 ───────────────────────
+// 받는 것: { project, guide } — guide = 대표님 추가 지시(선택)
+app.post('/mkt/content', async (req, res) => {
+  console.log('📣 /mkt/content 요청 도착 —', new Date().toLocaleString('ko-KR'));
+  try {
+    const { project, guide } = req.body || {};
+    const system = buildSystemPrompt('mkt', project || '머니트레이닝랩');
+    const ask =
+      '이번 주 목표: "10억 목돈마련 절대법칙" 비대면 강의 100명 모집 (6월 12일 금요일 1차 마감).\n'
+      + '강의 정보(이 사실만 사용, 지어내기 금지): ' + LECTURE_FACTS + '\n'
+      + '신청서 링크: ' + MKT_APPLY_LINK + '\n'
+      + (guide ? '대표님 추가 지시: ' + guide + '\n' : '')
+      + '\n아래 홍보 콘텐츠 4종을 만들어라. 각 콘텐츠는 반드시 그 구분표로 시작한다.\n'
+      + '[[유튜브쇼츠]] 쇼츠용 30~45초 대본 (첫 3초 후킹 문구 3개 제안 + 본 대본)\n'
+      + '[[인스타블로그]] 인스타그램 캡션(해시태그 포함) + 네이버 블로그용 제목·도입부 카피\n'
+      + '[[카톡채널]] 카카오톡 채널 발송용 안내 글 (폰에서 읽기 좋게 짧은 줄·줄바꿈)\n'
+      + '[[맞벌이타깃]] "맞벌이 직장인 부자" 타깃 카피 — 맞벌이 부부의 현실(둘이 버는데 안 모이는 이유) 공감으로 시작해 강의로 연결\n'
+      + '\n규칙:\n'
+      + '- 금융 콘텐츠다. 수익·성과 보장, 과장·허위 표현 절대 금지 ("무조건", "100% 됩니다" 금지)\n'
+      + '- 각 콘텐츠 끝에 신청 유도 CTA 한 줄 (신청서 링크 표기, 유튜브·인스타는 "프로필 링크에서 신청" 문구도 함께)\n'
+      + '- 마크다운 기호(#, *, -) 없이 일반 글로. 콘텐츠 사이 설명·인사말 없이 4종만 출력';
+    const r = await anthropic.messages.create({
+      model: MODEL, max_tokens: 16000, thinking: { type: 'adaptive' },
+      system, messages: [{ role: 'user', content: ask }],
+    });
+    const text = r.content.filter((b) => b.type === 'text').map((b) => b.text).join('\n');
+
+    // [[구분표]] 기준으로 4종을 나눈다 (못 나누면 통째로 한 덩어리)
+    const LABELS = { 유튜브쇼츠: '유튜브/쇼츠 대본', 인스타블로그: '인스타·블로그 카피', 카톡채널: '카톡 채널 안내 글', 맞벌이타깃: '맞벌이 직장인 타깃 카피' };
+    const found = [...text.matchAll(/\[\[(유튜브쇼츠|인스타블로그|카톡채널|맞벌이타깃)\]\]/g)];
+    const parts = found.length
+      ? found.map((m, i) => ({
+          key: m[1], label: LABELS[m[1]],
+          text: text.slice(m.index + m[0].length, i + 1 < found.length ? found[i + 1].index : undefined).trim(),
+        }))
+      : [{ key: '전체', label: '홍보 콘텐츠', text: text.trim() }];
+
+    appendDiary({
+      ts: new Date().toISOString(), agentId: 'mkt', agentName: '마케팅', project: project || '머니트레이닝랩', kind: 'hand',
+      entry: `[손] 강의 홍보 콘텐츠 ${parts.length}종 생성 (${parts.map((p) => p.label).join('/')})${guide ? ` — 지시: ${String(guide).slice(0, 80)}` : ''}`,
+    });
+    res.json({ parts, applyLink: MKT_APPLY_LINK });
+  } catch (e) {
+    console.error('[/mkt/content 오류]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ── /care/reject: 보류(대기 목록에서 빼기 — 발송 안 함) ──────
 app.post('/care/reject', (req, res) => {
   const ids = (req.body || {}).ids;
