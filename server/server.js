@@ -549,6 +549,8 @@ const { SolapiMessageService } = require('solapi');
 const LEAD_SHEET_ID  = process.env.LEAD_SHEET_ID || '1L15eUgHO81MN5rTYj5351a5RbFGptxNSMnTzMQLDRmk';
 const LEAD_SHEET_TAB = process.env.LEAD_SHEET_TAB || '';   // 비우면 "응답" 탭 → 첫 탭 순서로 자동 선택
 const SOLAPI_SENDER  = (process.env.SOLAPI_SENDER || '').replace(/\D/g, '');  // 발신번호 (Solapi에 등록된 번호)
+// 강의 수강료 결제 링크 (페이플) — 안내문의 수강료 다음 줄에 들어간다
+const CARE_PAY_LINK  = process.env.CARE_PAY_LINK || 'https://link.payple.kr/NzcxOjc3NTQwNTcxNzMzMTMy';
 
 // 구글 열쇠: ① server/google-key.json 파일(로컬) ② GOOGLE_SERVICE_ACCOUNT_JSON 환경변수(Render)
 function googleCreds() {
@@ -689,6 +691,7 @@ app.post('/care/draft', async (req, res) => {
       + '- 받는 사람 이름 자리는 반드시 {이름} 으로 표기 (예: "{이름}님, 신청 감사합니다")\n'
       + '- 이번 강의: 10억 목돈마련 절대법칙 (비대면 강의)\n'
       + (guide ? `- 대표님이 꼭 넣으라는 내용: ${guide}\n` : '- 일시·접속링크 등 확정 정보가 없으면 "확정되는 대로 다시 안내드립니다"로 처리\n')
+      + `- 수강료 안내 바로 다음 줄에 결제 안내 한 줄을 넣어라: "결제하기: ${CARE_PAY_LINK}" (링크 주소는 한 글자도 바꾸지 말 것)\n`
       + '- 문자이므로 마크다운·이모지 없이 일반 글로, 300자 이내, 따뜻하고 신뢰감 있게\n'
       + '- 발신: 오원트금융연구소 오상열 대표\n'
       + '- 문자 본문만 출력 (설명·따옴표 없이)';
