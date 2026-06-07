@@ -61,7 +61,40 @@ body{font-family:'Pretendard',-apple-system,sans-serif;font-weight:500;backgroun
 .titlebar .logo{width:46px;height:46px;border-radius:14px;background:linear-gradient(135deg,var(--agent),var(--agent-deep));display:flex;align-items:center;justify-content:center;color:#fff;box-shadow:var(--shadow);font-size:24px}
 .titlebar h1{font-size:19px;font-weight:800;letter-spacing:-.01em}
 .titlebar .sub{font-size:12.5px;color:var(--muted);font-weight:500}
-.mode{margin-left:auto;font-size:12px;font-weight:700;color:#fff;background:linear-gradient(135deg,var(--gold),#9A7300);padding:7px 14px;border-radius:99px;box-shadow:var(--shadow)}
+.mode{margin-left:10px;font-size:12px;font-weight:700;color:#fff;background:linear-gradient(135deg,var(--gold),#9A7300);padding:7px 14px;border-radius:99px;box-shadow:var(--shadow)}
+
+/* ---------- B-1b. 알림 종 + 알림함 ---------- */
+.bell{margin-left:auto;position:relative;width:42px;height:42px;border-radius:13px;border:1px solid var(--line);background:#fff;color:var(--ink);display:flex;align-items:center;justify-content:center;font-size:21px;cursor:pointer;transition:.18s;flex-shrink:0}
+.bell:hover{border-color:var(--gold);color:var(--gold)}
+.bell.has{color:#B3261E;border-color:#F2C7C4;animation:bellwiggle 2.4s ease-in-out infinite}
+@keyframes bellwiggle{0%,90%,100%{transform:rotate(0)}93%{transform:rotate(-13deg)}96%{transform:rotate(11deg)}98%{transform:rotate(-6deg)}}
+.bell .badge{position:absolute;top:-5px;right:-5px;min-width:19px;height:19px;padding:0 5px;border-radius:99px;background:#B3261E;color:#fff;font-size:11px;font-weight:800;display:none;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(179,38,30,.5)}
+.bell.has .badge{display:flex}
+
+.notify{background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);margin-bottom:12px;overflow:hidden}
+.notify.alert{border-color:#F2C7C4;box-shadow:0 0 0 3px rgba(179,38,30,.09),var(--shadow)}
+.nf-head{display:flex;align-items:center;gap:8px;padding:11px 15px;cursor:pointer;user-select:none}
+.nf-title{display:flex;align-items:center;gap:7px;font-size:13.5px;font-weight:800;color:var(--ink)}
+.nf-title i{color:#B3261E;font-size:18px}
+.nf-count{min-width:20px;height:20px;padding:0 6px;border-radius:99px;background:#B3261E;color:#fff;font-size:11px;font-weight:800;display:none;align-items:center;justify-content:center}
+.nf-readall{margin-left:auto;display:flex;align-items:center;gap:4px;border:1px solid var(--line);background:#fff;color:var(--muted);font-family:inherit;font-size:11.5px;font-weight:700;border-radius:8px;padding:5px 11px;cursor:pointer;transition:.15s}
+.nf-readall:hover{border-color:var(--agent);color:var(--agent)}
+.nf-chev{color:var(--muted);font-size:17px;transition:.2s}
+.notify.open .nf-chev{transform:rotate(180deg)}
+.nf-list{display:none;flex-direction:column;border-top:1px solid var(--line);max-height:316px;overflow-y:auto}
+.notify.open .nf-list{display:flex}
+.nf-item{display:flex;gap:11px;align-items:flex-start;padding:11px 15px;border-bottom:1px solid var(--line);cursor:pointer;transition:.15s}
+.nf-item:last-child{border-bottom:none}
+.nf-item:hover{background:var(--bg)}
+.nf-item.unread{background:#FFF6F6}
+.nf-item.unread:hover{background:#FFECEC}
+.nf-ico{width:34px;height:34px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
+.nf-body{min-width:0;flex:1}
+.nf-t{font-size:13px;font-weight:700;color:var(--ink);display:flex;align-items:center;gap:6px;line-height:1.45}
+.nf-dot{width:8px;height:8px;border-radius:50%;background:#B3261E;flex-shrink:0}
+.nf-d{font-size:12px;color:var(--muted);font-weight:500;margin-top:2px;line-height:1.5;overflow-wrap:anywhere}
+.nf-time{font-size:10.5px;color:var(--muted);margin-top:3px;font-weight:500}
+.nf-empty{padding:15px;font-size:12.5px;color:var(--muted);font-weight:500;line-height:1.6}
 
 /* ---------- B-2. 상단 프로젝트 탭 (보라 구역) ---------- */
 .projects{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;background:var(--proj-bg);border:1px solid var(--proj-line);border-radius:16px;padding:9px}
@@ -244,7 +277,17 @@ body{font-family:'Pretendard',-apple-system,sans-serif;font-weight:500;backgroun
   .titlebar .logo{width:36px;height:36px;font-size:18px;border-radius:11px}
   .titlebar h1{font-size:15px}
   .titlebar .sub{font-size:10.5px}
-  .mode{font-size:10px;padding:5px 10px}
+  .mode{font-size:10px;padding:5px 10px;margin-left:7px}
+
+  /* 알림 종·알림함: 폰에서도 큰 카드로 탭하기 쉽게 */
+  .bell{width:38px;height:38px;font-size:19px;border-radius:11px}
+  .notify{margin-bottom:10px;border-radius:14px}
+  .nf-head{padding:10px 12px}
+  .nf-list{max-height:50vh}
+  .nf-item{padding:12px}
+  .nf-ico{width:36px;height:36px;font-size:19px}
+  .nf-t{font-size:13.5px}
+  .nf-d{font-size:12.5px}
 
   /* 상단 프로젝트: 한 줄 가로 스크롤 (스크롤바 숨김) */
   .projects{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;padding:7px;gap:6px;scrollbar-width:none}
@@ -314,7 +357,19 @@ body{font-family:'Pretendard',-apple-system,sans-serif;font-weight:500;backgroun
       <h1>오상열 대표님의 제니야</h1>
       <div class="sub">오원트금융연구소 · 본사 총괄 작업공간</div>
     </div>
+    <!-- 알림 종: 안 읽은 알림이 있으면 빨간 배지(N) + 흔들림. 누르면 알림함 펼침 -->
+    <button class="bell" id="bell" title="알림함 (대표님이 꼭 봐야 할 것)"><i class="ti ti-bell"></i><span class="badge" id="bell-badge">0</span></button>
     <div class="mode"><i class="ti ti-crown" style="font-size:12px;vertical-align:-2px"></i> 총괄 모드 (제니야)</div>
+  </div>
+
+  <!-- C-1b. 알림함 — 대표님이 꼭 봐야 할 것이 한곳에 모인다 (안 읽은 게 있으면 자동으로 펼쳐짐) -->
+  <div class="notify" id="notify">
+    <div class="nf-head" id="nf-head">
+      <div class="nf-title"><i class="ti ti-bell-ringing"></i> 알림함 <span class="nf-count" id="nf-count">0</span></div>
+      <button class="nf-readall" id="nf-readall"><i class="ti ti-checks"></i> 모두 확인</button>
+      <i class="ti ti-chevron-down nf-chev"></i>
+    </div>
+    <div class="nf-list" id="nf-list"></div>
   </div>
 
   <!-- C-2. 상단 프로젝트 탭 (보라 구역 · JS가 채움) -->
@@ -399,7 +454,7 @@ body{font-family:'Pretendard',-apple-system,sans-serif;font-weight:500;backgroun
 
   </div>
 
-  <div class="foot">제니야 — <b>상단 프로젝트 × 좌측 에이전트 × 우측 도구</b> 교차 구조 · v0.6 (날짜별 대화)</div>
+  <div class="foot">제니야 — <b>상단 프로젝트 × 좌측 에이전트 × 우측 도구</b> 교차 구조 · v0.7 (알림함)</div>
 </div>
 
 <!-- C-6. 업로드 모달 (+ 버튼으로 열림 — 실제 업로드는 3단계) -->
@@ -509,6 +564,15 @@ var FAQS = [
   { group:'매일', agentId:'zenya',
     items:['모닝브리핑','저녁보고','@전체 오늘 한 일 숫자로 보고해'] }
 ];
+
+// 알림 종류별 아이콘·색 (서버 알림의 kind와 일치) — 한눈에 어떤 알림인지 구분
+var NOTIFY_KINDS = {
+  apply:  { icon:'ti-user-plus',      color:'#C2185B', label:'신규 신청' },   // 새 강의 신청자
+  pay:    { icon:'ti-cash',           color:'#1D9E75', label:'결제' },        // 입금·결제
+  optout: { icon:'ti-bell-off',       color:'#B3261E', label:'수신거부' },    // 수신거부 (주의)
+  sent:   { icon:'ti-send',           color:'#534AB7', label:'발송 완료' },   // 문자 발송 완료
+  report: { icon:'ti-clipboard-text', color:'#9A7300', label:'중요 보고' }    // 제니야·에이전트 보고
+};
 
 /* ==========================================================
    D-2. 상태 — 지금 무엇이 선택되어 있는지 (단 한 곳에서 관리)
@@ -676,7 +740,7 @@ function promoApprove(batchId, count, cost){
   })
     .then(function(r){ return r.json(); })
     .then(function(d){
-      loadDashboard();
+      loadDashboard(); loadNotify();
       if(d.error){ updateMessage(w, '⚠️ ' + escapeHtml(d.error)); return; }
       updateMessage(w, '발송 완료 — <b>' + d.sent + '명</b> (접수 ' + d.registered + '건, 예상 비용 약 '
         + Number(d.cost).toLocaleString() + '원)<br>시트에 발송완료 도장 ' + d.stamped + '건, 영업일기 기록 완료.');
@@ -794,6 +858,7 @@ function careRefresh(){
       if(!s.sender) missing.push('발신번호');
       var hand = document.getElementById('hand');
       if(hand) hand.title = missing.length ? ('아직 연결 안 됨: ' + missing.join(', ')) : '모두 연결됨';
+      loadNotify();   // 상태 점검 때 시트도 읽으므로 새 신청자 알림이 생겼을 수 있다
     })
     .catch(function(){});
 }
@@ -886,7 +951,7 @@ function careApprove(ids){
   })
     .then(function(r){ return r.json(); })
     .then(function(d){
-      careRefresh(); loadDashboard();
+      careRefresh(); loadDashboard(); loadNotify();
       if(d.error){ updateMessage(w, '⚠️ ' + escapeHtml(d.error)); return; }
       var fails = (d.results || []).filter(function(r){ return !r.ok; });
       updateMessage(w, '발송 완료 <b>' + d.sent + '건</b>' + (d.failed ? ' / 실패 ' + d.failed + '건<br>'
@@ -1086,6 +1151,132 @@ function loadDashboard(){
     })
     .catch(function(){});
 }
+
+// ── 알림함 ─────────────────────────────────────────────────
+// 대표님이 꼭 봐야 할 것(신규 신청·발송 완료·정기보고 등)을 한곳에 모은다.
+// 서버 /notify를 주기적으로 가져와서: 안 읽은 게 늘면 딩동 소리 + 빨간점, 확인하면 사라진다.
+var notifyState = { unread: 0, list: [], inited: false };
+
+// 딩동 소리 — 음원 파일 없이 브라우저가 직접 두 음을 낸다 (폰·PC 공용)
+var audioCtx = null;
+function ensureAudio(){
+  try{
+    if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+  }catch(e){}
+}
+function dingDong(){
+  ensureAudio();
+  if(!audioCtx) return;
+  var t = audioCtx.currentTime;
+  [[880, 0], [660, 0.17]].forEach(function(p){
+    var o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.type = 'sine'; o.frequency.value = p[0];
+    o.connect(g); g.connect(audioCtx.destination);
+    g.gain.setValueAtTime(0.0001, t + p[1]);
+    g.gain.exponentialRampToValueAtTime(0.28, t + p[1] + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + p[1] + 0.35);
+    o.start(t + p[1]); o.stop(t + p[1] + 0.4);
+  });
+}
+// 브라우저는 첫 사용자 동작(클릭·터치) 전에는 소리를 막는다 → 한 번만 깨워둔다
+['click','keydown','touchstart'].forEach(function(ev){
+  document.addEventListener(ev, ensureAudio, { once: true });
+});
+
+// 시각을 "방금 / N분 전 / N시간 전 / 6월 8일(월) 09:12"로
+function notifyTime(ts){
+  var d = new Date(ts), now = new Date(), diff = (now - d) / 1000;
+  if(diff < 60) return '방금';
+  if(diff < 3600) return Math.floor(diff / 60) + '분 전';
+  if(diff < 86400 && d.toDateString() === now.toDateString()) return Math.floor(diff / 3600) + '시간 전';
+  var week = ['일','월','화','수','목','금','토'];
+  var hh = ('0' + d.getHours()).slice(-2), mm = ('0' + d.getMinutes()).slice(-2);
+  return (d.getMonth() + 1) + '월 ' + d.getDate() + '일(' + week[d.getDay()] + ') ' + hh + ':' + mm;
+}
+
+// 알림함 펼치기/접기
+function openNotify(){ document.getElementById('notify').classList.add('open'); }
+function toggleNotify(){ document.getElementById('notify').classList.toggle('open'); }
+
+// 서버에서 알림을 가져와 화면을 갱신. 안 읽은 게 늘었으면 소리 + 자동 펼침
+function loadNotify(){
+  fetch(SERVER_URL + '/notify')
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      var prev = notifyState.unread;
+      notifyState.unread = d.unread || 0;
+      notifyState.list = d.list || [];
+      renderNotify();
+      if(!notifyState.inited){
+        notifyState.inited = true;
+        if(notifyState.unread > 0) openNotify();        // 열자마자 안 읽은 게 있으면 펼친다
+      } else if(notifyState.unread > prev){
+        dingDong(); openNotify();                       // 새 알림 도착 → 딩동 + 펼침
+      }
+    })
+    .catch(function(){});
+}
+
+// 알림함 그리기 — 종 배지·개수·목록
+function renderNotify(){
+  var bell = document.getElementById('bell');
+  document.getElementById('bell-badge').textContent = notifyState.unread > 99 ? '99+' : notifyState.unread;
+  bell.classList.toggle('has', notifyState.unread > 0);
+
+  document.getElementById('notify').classList.toggle('alert', notifyState.unread > 0);
+  var cnt = document.getElementById('nf-count');
+  cnt.textContent = notifyState.unread;
+  cnt.style.display = notifyState.unread ? 'inline-flex' : 'none';
+
+  var list = document.getElementById('nf-list');
+  if(!notifyState.list.length){
+    list.innerHTML = '<div class="nf-empty">아직 알림이 없습니다. 새 신청·발송·보고가 생기면 여기에 모이고 소리로 알려드려요.</div>';
+    return;
+  }
+  list.innerHTML = notifyState.list.map(function(n){
+    var m = NOTIFY_KINDS[n.kind] || NOTIFY_KINDS.report;
+    return '<div class="nf-item' + (n.read ? '' : ' unread') + '" data-id="' + n.id + '" data-agent="' + (n.agentId || '') + '">'
+      + '<div class="nf-ico" style="background:' + m.color + '1A;color:' + m.color + '"><i class="ti ' + m.icon + '"></i></div>'
+      + '<div class="nf-body">'
+      + '<div class="nf-t">' + (n.read ? '' : '<span class="nf-dot"></span>') + escapeHtml(n.title) + '</div>'
+      + (n.body ? '<div class="nf-d">' + escapeHtml(n.body) + '</div>' : '')
+      + '<div class="nf-time">' + notifyTime(n.ts) + '</div>'
+      + '</div></div>';
+  }).join('');
+}
+
+// 한 건 확인 처리 (빨간점 사라짐) + 관련 팀으로 이동
+function notifyClick(id, agentId){
+  fetch(SERVER_URL + '/notify/read', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: id })
+  }).then(function(){ loadNotify(); }).catch(function(){});
+  if(agentId){
+    var a = AGENTS.filter(function(x){ return x.id === agentId; })[0];
+    if(a && state.agent.id !== a.id){ state.agent = a; renderAgents(); renderContext(); }
+  }
+}
+
+// 모두 확인 — 빨간점·배지 전부 사라짐
+function markAllRead(){
+  fetch(SERVER_URL + '/notify/read', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ all: true })
+  }).then(function(){ loadNotify(); }).catch(function(){});
+}
+
+// 알림함 버튼 연결
+document.getElementById('bell').onclick = function(){ ensureAudio(); toggleNotify(); };
+document.getElementById('nf-head').onclick = function(){ toggleNotify(); };
+document.getElementById('nf-readall').onclick = function(e){ e.stopPropagation(); markAllRead(); };
+document.getElementById('nf-list').addEventListener('click', function(e){
+  var t = e.target;
+  while(t && t !== this && !t.classList.contains('nf-item')) t = t.parentNode;
+  if(t && t.classList && t.classList.contains('nf-item')){
+    notifyClick(t.getAttribute('data-id'), t.getAttribute('data-agent'));
+  }
+});
 
 // ── 날짜별 대화 보관 + 날짜 넘겨보기 ───────────────────────
 // 대화는 서버에 날짜별로 저장돼 사라지지 않는다. 화면은 "하루치"만 보여주는 뷰어다.
@@ -1496,6 +1687,8 @@ renderTools();
 renderContext();
 loadHistory();     // 저장된 과거 대화를 불러온다 (없으면 첫 인사)
 loadDashboard();   // 팀별 대시보드 숫자를 채운다
+loadNotify();      // 알림함을 채운다 (안 읽은 게 있으면 자동으로 펼쳐짐)
+setInterval(loadNotify, 20000);   // 20초마다 새 알림 확인 → 도착 시 딩동 + 빨간점
 
 })();
 </script>

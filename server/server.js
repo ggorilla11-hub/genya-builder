@@ -95,6 +95,54 @@ function appendDiary(entry) {
   saveJson('영업일기.json', DIARY);
 }
 
+// ── 알림함 (대표님이 꼭 봐야 할 것 모음) ──────────────────────
+// 한곳에 모이는 것: 신규 신청자·결제·수신거부·발송 완료·중요 보고.
+//   kind: apply(신규신청자) pay(결제) optout(수신거부) sent(발송완료) report(중요보고)
+// 저장: server/data/알림.json — [{id, ts, kind, title, body, agentId, read}]
+let NOTIFY = loadJson('알림.json');
+const saveNotify = () => saveJson('알림.json', NOTIFY);
+// 이미 알림을 띄운 신청자 전화번호 (같은 사람에 두 번 알리지 않기) — 재시작해도 유지
+let NOTIFY_SEEN = loadJson('알림_본신청자.json');
+const saveSeen = () => saveJson('알림_본신청자.json', NOTIFY_SEEN);
+
+// 알림 하나를 알림함에 올린다 (화면이 /notify로 가져가 소리·빨간점으로 알린다)
+function pushNotify(n) {
+  const item = {
+    id: 'n' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+    ts: new Date().toISOString(),
+    kind: n.kind || 'report',
+    title: n.title || '알림',
+    body: n.body || '',
+    agentId: n.agentId || 'zenya',
+    read: false,
+  };
+  NOTIFY.push(item);
+  if (NOTIFY.length > 500) NOTIFY = NOTIFY.slice(-500);   // 너무 쌓이면 오래된 것 정리
+  saveNotify();
+  return item;
+}
+
+// 시트에서 읽은 사람들 중 "처음 보는 신규 신청자"가 있으면 알림 하나로 묶어 띄운다.
+// (앱을 열 때마다 /care/status가 시트를 읽으므로, 새 신청이 들어오면 자동으로 알림이 생긴다)
+function notifyNewApplicants(applicants, label) {
+  const fresh = (applicants || []).filter((a) => !a.status && a.phone);
+  const seen = new Set(NOTIFY_SEEN);
+  const newOnes = fresh.filter((a) => !seen.has(a.phone));
+  if (!newOnes.length) return 0;
+  newOnes.forEach((a) => seen.add(a.phone));
+  NOTIFY_SEEN = [...seen].slice(-5000);                   // 메모리 보호: 최근 5천 명만 기억
+  saveSeen();
+  const names = newOnes.map((a) => a.name).filter(Boolean).slice(0, 5).join(', ');
+  pushNotify({
+    kind: 'apply', agentId: 'care',
+    title: `새 ${label || '강의'} 신청 ${newOnes.length}명`,
+    body: (names || '신규 신청자')
+        + (newOnes.length > 5 ? ` 외 ${newOnes.length - 5}명` : '')
+        + ' — 「고객관리 손」에서 안내문 발송을 준비하세요.',
+  });
+  return newOnes.length;
+}
+
 // 모닝브리핑/저녁보고용 — 해당 시간대의 영업일기를 글로 풀어준다
 function diaryDigest(message) {
   const now = new Date();
@@ -248,6 +296,10 @@ app.post('/chat', async (req, res) => {
     appendHistory({ ts, who: agentId || 'zenya', text: reply, project: project || '일반' });
     if (!isBriefing) {
       appendDiary({ ts, agentId: agentId || 'zenya', agentName: a.name, project: project || '일반', kind: 'chat', entry: reply });
+    } else {
+      // 모닝브리핑/저녁보고 같은 정기보고는 "중요 보고"로 알림함에도 남긴다
+      pushNotify({ kind: 'report', agentId: 'zenya', title: '제니야 정기보고 도착',
+        body: String(reply).replace(/\s+/g, ' ').slice(0, 90) + '…' });
     }
 
     res.json({ reply });
@@ -550,6 +602,31 @@ app.post('/history', (req, res) => {
   res.json({ ok: true });
 });
 
+// ── 알림함 창구 ───────────────────────────────────────────────
+// GET  /notify        → 최근 알림 목록(최신순) + 안 읽은 수 (화면이 주기적으로 가져간다)
+// POST /notify/read   → 확인 처리 ({id} 한 개 또는 {all:true} 전체) → 빨간점이 사라진다
+// POST /notify        → 외부/수동 알림 등록 입구 (결제 웹훅·수신거부 연동이 나중에 여기로 꽂는다)
+app.get('/notify', (req, res) => {
+  const list = NOTIFY.slice(-100).reverse();           // 최신순, 최대 100개
+  const unread = NOTIFY.filter((n) => !n.read).length;
+  res.json({ list, unread });
+});
+
+app.post('/notify/read', (req, res) => {
+  const { id, all } = req.body || {};
+  let n = 0;
+  NOTIFY.forEach((x) => { if (!x.read && (all || x.id === id)) { x.read = true; n++; } });
+  if (n) saveNotify();
+  res.json({ ok: true, marked: n, unread: NOTIFY.filter((x) => !x.read).length });
+});
+
+app.post('/notify', (req, res) => {
+  const { kind, title, body, agentId } = req.body || {};
+  if (!title || typeof title !== 'string') return res.status(400).json({ error: 'title(알림 제목)이 필요합니다.' });
+  const item = pushNotify({ kind, title, body, agentId });
+  res.json({ ok: true, item });
+});
+
 // ============================================================
 // 고객관리 손 — 첫 번째 실제 도구 (2026-06-08)
 // 흐름: 구글폼 신청 → 리드 시트 적재(구글 기본 기능)
@@ -688,6 +765,7 @@ app.get('/care/status', async (req, res) => {
       const { tab, applicants } = await readApplicants();
       out.sheet = tab;
       out.newCount = applicants.filter((a) => !a.status).length;
+      notifyNewApplicants(applicants, '강의');   // 처음 본 신규 신청자가 있으면 알림함에 올린다
     } catch (e) { out.sheetError = e.message; }
   }
   res.json(out);
@@ -699,6 +777,7 @@ app.get('/care/new', async (req, res) => {
   try {
     const { tab, applicants } = await readApplicants();
     console.log(`📨 /care/new 결과 — 탭 "${tab}", 연락처 있는 ${applicants.length}명, 신규 ${applicants.filter((a) => !a.status).length}명`);
+    notifyNewApplicants(applicants, '강의');   // 처음 본 신규 신청자가 있으면 알림함에 올린다
     const fresh = applicants.filter((a) => !a.status);
     res.json({ tab, total: applicants.length, fresh });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -799,6 +878,11 @@ app.post('/care/approve', async (req, res) => {
     appendDiary({
       ts: new Date().toISOString(), agentId: 'care', agentName: '고객관리', project: '머니트레이닝랩', kind: 'hand',
       entry: `[손] 대표님 승인으로 강의안내 문자 발송 ${okN}건 완료${failN ? `, 실패 ${failN}건` : ''} — 시트에 발송완료 기록`,
+    });
+    if (okN || failN) pushNotify({
+      kind: 'sent', agentId: 'care',
+      title: `강의 안내 문자 발송 완료 ${okN}건`,
+      body: failN ? `실패 ${failN}건 — 대화창에서 실패 사유를 확인하세요.` : '신규 신청자에게 감사·안내 문자가 나갔습니다.',
     });
     res.json({ results, sent: okN, failed: failN });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -992,6 +1076,11 @@ app.post('/promo/approve', async (req, res) => {
     appendDiary({
       ts: new Date().toISOString(), agentId: 'care', agentName: '고객관리', project: '머니트레이닝랩', kind: 'hand',
       entry: `[손] 대표님 승인으로 CRM 홍보 문자 ${batch.items.length}명 발송 (접수 ${okN}건, 예상 비용 약 ${cost.toLocaleString()}원) — 시트 도장 ${data.length}건`,
+    });
+    pushNotify({
+      kind: 'sent', agentId: 'care',
+      title: `CRM 홍보 문자 발송 완료 ${batch.items.length}명`,
+      body: `접수 ${okN}건 · 예상 비용 약 ${cost.toLocaleString()}원 · 시트 도장 ${data.length}건`,
     });
     res.json({ sent: batch.items.length, registered: okN, stamped: data.length, cost });
   } catch (e) { res.status(500).json({ error: e.message }); }
