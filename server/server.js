@@ -618,6 +618,14 @@ async function readPeople(sheetId, tabPref) {
   // 발송상태 열이 없으면 머리줄 끝에 만들어 준다
   if (statusCol < 0) {
     statusCol = header.length;
+    // 시트 격자가 꽉 차 있으면(예: 열 10개를 다 쓰는 CRM) 열을 먼저 늘린다
+    const props = meta.data.sheets.find((s) => s.properties.title === tab).properties;
+    if (statusCol >= props.gridProperties.columnCount) {
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId: sheetId,
+        requestBody: { requests: [{ appendDimension: { sheetId: props.sheetId, dimension: 'COLUMNS', length: statusCol - props.gridProperties.columnCount + 1 } }] },
+      });
+    }
     await sheets.spreadsheets.values.update({
       spreadsheetId: sheetId,
       range: `'${tab.replace(/'/g, "''")}'!${colLetter(statusCol)}1`,
@@ -853,7 +861,7 @@ app.post('/promo/draft', async (req, res) => {
     const system = buildSystemPrompt('care', '머니트레이닝랩');
     const ask =
       '기존 고객에게 보낼 강의 홍보 "광고 문자" 한 통을 써라.\n'
-      + '- 받는 사람 이름 자리는 {이름} 으로 표기\n'
+      + '- 호칭은 "고객님"으로 통일 (개인 이름 넣지 않음)\n'
       + '- 톤: 카카오톡 채널 안내글처럼 짧은 줄·줄바꿈으로 폰에서 읽기 좋게, 따뜻하고 담백하게\n'
       + '- 반드시 맨 앞은 "(광고) 오원트금융연구소"로 시작\n'
       + '- 핵심 정보 포함: ' + LECTURE_FACTS + '\n'
@@ -903,10 +911,11 @@ app.post('/promo/approve', async (req, res) => {
       return res.status(403).json({ error: `지금은 한국시간 ${h}시 — 광고 문자는 밤 9시~아침 8시 발송이 법으로 금지돼 있습니다. 아침 8시 이후 승인해 주세요.` });
     }
 
-    // 발송 (이름 끼워서 한 번에 — Solapi는 묶음 발송 지원)
+    // 발송 (한 번에 — Solapi는 묶음 발송 지원)
+    // 호칭은 전원 "고객님" 통일 (2026-06-08 대표님 결정 — CRM 이름 칸에 회사·직함이 섞여 있어 안전하게)
     const messages = batch.items.map((it) => ({
       to: it.phone, from: SOLAPI_SENDER,
-      text: batch.text.replace(/\{이름\}/g, it.name),
+      text: batch.text.replace(/\{이름\}/g, '고객'),
     }));
     const result = await solapi.send(messages);
     const okN = (result.groupInfo && result.groupInfo.count && result.groupInfo.count.registeredSuccess) || messages.length;
