@@ -380,7 +380,7 @@ body{font-family:'Pretendard',-apple-system,sans-serif;font-weight:500;backgroun
 
   </div>
 
-  <div class="foot">제니야 — <b>상단 프로젝트 × 좌측 에이전트 × 우측 도구</b> 교차 구조 · v0.4 (음성·모바일)</div>
+  <div class="foot">제니야 — <b>상단 프로젝트 × 좌측 에이전트 × 우측 도구</b> 교차 구조 · v0.5 (음성·모바일)</div>
 </div>
 
 <!-- C-6. 업로드 모달 (+ 버튼으로 열림 — 실제 업로드는 3단계) -->
@@ -580,11 +580,18 @@ function renderCareHand(box){
            + '<button class="hand-btn" id="hand-pending"><i class="ti ti-send"></i> 승인 대기 <b id="hand-n">0</b>건</button>'
            + '</div>';
   box.insertAdjacentHTML('beforeend', html);
-  document.getElementById('hand-new').onclick = careNew;
-  document.getElementById('hand-draft').onclick = careDraft;
-  document.getElementById('hand-pending').onclick = carePending;
   careRefresh();
 }
+
+// 손 버튼 연결 — 버튼이 다시 그려져도 끊기지 않게 문서 전체에서 클릭을 받는다 (한 번만 설치)
+document.addEventListener('click', function(e){
+  var t = e.target;
+  while(t && t !== document && !t.id) t = t.parentNode;   // 버튼 속 아이콘을 눌러도 버튼으로 인정
+  if(!t || !t.id) return;
+  if(t.id === 'hand-new'){ console.log('[고객관리 손] 신규 신청자 확인 클릭'); careNew(); }
+  else if(t.id === 'hand-draft'){ console.log('[고객관리 손] 안내문 초안 클릭'); careDraft(); }
+  else if(t.id === 'hand-pending'){ console.log('[고객관리 손] 승인 대기 클릭'); carePending(); }
+});
 
 // 대기 건수 갱신 + 연결 상태를 버튼 풍선 도움말로
 function careRefresh(){
@@ -605,10 +612,16 @@ function careRefresh(){
 
 // ① 신규 신청자 확인 — 시트에서 "발송상태"가 빈 사람을 찾는다
 function careNew(){
-  var w = addMessage('<i class="ti ti-loader-2"></i> 신청자 시트를 읽는 중…', 'care');
+  // 클릭이 먹었는지 눈으로 보이게: 버튼 글자가 즉시 바뀌고, 대화창에도 바로 글자가 뜬다
+  var btn = document.getElementById('hand-new');
+  var btnHtml = btn ? btn.innerHTML : '';
+  if(btn) btn.innerHTML = '<i class="ti ti-loader-2"></i> 확인 중…';
+  var restore = function(){ if(btn) btn.innerHTML = btnHtml; };
+  var w = addMessage('<i class="ti ti-loader-2"></i> 신규 신청자 확인 중… (신청자 시트를 읽고 있습니다)', 'care');
   fetch(SERVER_URL + '/care/new')
     .then(function(r){ return r.json(); })
     .then(function(d){
+      restore();
       if(d.error){ updateMessage(w, '⚠️ ' + escapeHtml(d.error)); return; }
       var names = (d.fresh || []).slice(0, 30).map(function(f){ return escapeHtml(f.name); }).join(', ');
       updateMessage(w,
@@ -617,7 +630,7 @@ function careNew(){
         + (names ? '<br>' + names + (d.fresh.length > 30 ? ' 외 ' + (d.fresh.length - 30) + '명' : '') : '')
         + (d.fresh.length ? '<br><br>오른쪽 「안내문 초안 만들기」를 누르면 발송 준비를 합니다.' : ''));
     })
-    .catch(function(){ updateMessage(w, '⚠️ 서버에 연결할 수 없습니다.'); });
+    .catch(function(){ restore(); updateMessage(w, '⚠️ 서버에 연결할 수 없습니다.'); });
 }
 
 // ② 안내문 초안 만들기 — 고객관리 에이전트가 쓰고, 승인 대기에 올린다
