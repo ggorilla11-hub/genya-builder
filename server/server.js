@@ -590,20 +590,21 @@ function colLetter(n) {
   return s;
 }
 
-// 시트에서 신청자 명단을 읽는다.
+// 시트에서 사람 명단(이름·연락처·발송상태)을 읽는다 — 신청자·CRM 공용.
 // 머리줄(1행)에서 이름·연락처·발송상태 열을 자동으로 찾고, 발송상태 열이 없으면 만들어 준다.
-async function readApplicants() {
+async function readPeople(sheetId, tabPref) {
   const sheets = sheetsClient();
   if (!sheets) throw new Error('구글 열쇠가 아직 없습니다. (server/google-key.json 또는 GOOGLE_SERVICE_ACCOUNT_JSON)');
+  if (!sheetId) throw new Error('시트 ID가 아직 없습니다.');
 
   // 탭 고르기: 지정값 → "응답"이 들어간 탭(구글폼 응답) → 첫 탭
-  const meta = await sheets.spreadsheets.get({ spreadsheetId: LEAD_SHEET_ID });
+  const meta = await sheets.spreadsheets.get({ spreadsheetId: sheetId });
   const tabs = meta.data.sheets.map((s) => s.properties.title);
-  const tab = LEAD_SHEET_TAB && tabs.includes(LEAD_SHEET_TAB) ? LEAD_SHEET_TAB
+  const tab = tabPref && tabs.includes(tabPref) ? tabPref
             : tabs.find((t) => t.includes('응답')) || tabs[0];
   const range = `'${tab.replace(/'/g, "''")}'!A1:ZZ`;
 
-  const got = await sheets.spreadsheets.values.get({ spreadsheetId: LEAD_SHEET_ID, range });
+  const got = await sheets.spreadsheets.values.get({ spreadsheetId: sheetId, range });
   const rows = got.data.values || [];
   if (!rows.length) return { tab, header: [], applicants: [], statusCol: -1, sheets };
 
@@ -618,7 +619,7 @@ async function readApplicants() {
   if (statusCol < 0) {
     statusCol = header.length;
     await sheets.spreadsheets.values.update({
-      spreadsheetId: LEAD_SHEET_ID,
+      spreadsheetId: sheetId,
       range: `'${tab.replace(/'/g, "''")}'!${colLetter(statusCol)}1`,
       valueInputOption: 'RAW',
       requestBody: { values: [['발송상태']] },
@@ -638,6 +639,9 @@ async function readApplicants() {
   }
   return { tab, header, applicants, statusCol, sheets };
 }
+
+// 신청자(리드) 시트 읽기 — 기존 고객관리 손이 쓰는 입구
+const readApplicants = () => readPeople(LEAD_SHEET_ID, LEAD_SHEET_TAB);
 
 // 발송 대기 명단 (server/data/발송대기.json) — 승인 전 초안 보관소
 let PENDING = loadJson('발송대기.json');   // [{id, name, phone, text, ts, status}]
@@ -771,6 +775,176 @@ app.post('/care/approve', async (req, res) => {
     });
     res.json({ results, sent: okN, failed: failN });
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ============================================================
+// CRM 홍보 문자 손 — 세 번째 실제 도구 (2026-06-08)
+// 역할: 기존 고객 CRM 시트(4,366명)에게 강의 홍보 문자를 "하루치씩 나눠" 보낸다.
+// 법적 요건(광고성 정보, 정보통신망법): 코드가 강제한다 —
+//   ① 맨 앞 (광고) 표기  ② 맨 끝 무료수신거부 080 안내  ③ 야간(21시~08시) 발송 차단
+// 안전장치: 대표님이 "오늘치 발송 승인"을 누른 분량만 발송. 승인 없이는 절대 안 나감.
+//          이미 보낸 사람(시트 발송상태 도장)은 다시 안 보냄. 같은 번호 중복 제거.
+// ============================================================
+const CRM_SHEET_ID      = process.env.CRM_SHEET_ID || '';        // ★ 엑셀→구글시트 변환 후 새 ID를 넣는다
+const CRM_SHEET_TAB     = process.env.CRM_SHEET_TAB || '';
+const PROMO_DAILY_LIMIT = Number(process.env.PROMO_DAILY_LIMIT || 500);   // 하루치 기본 인원
+const PROMO_UNIT_PRICE  = Number(process.env.PROMO_UNIT_PRICE || 33);     // 건당 예상 단가(원, LMS 기준 — Solapi 요금에 맞게 조정)
+const PROMO_OPTOUT      = '무료수신거부 080-500-4233';                     // Solapi 제공 080 번호
+
+// 한국 시간 기준 시(時) — 야간 광고 발송 금지 판정용 (Render는 UTC라 꼭 변환)
+function koreaHour() {
+  return Number(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul', hour: '2-digit', hour12: false }));
+}
+
+// 법적 요건을 코드로 강제: (광고) 머리말 + 080 수신거부 꼬리말 (에이전트가 빠뜨려도 서버가 붙인다)
+function enforceAdRules(text) {
+  let t = String(text || '').trim();
+  if (!/^\(광고\)/.test(t)) t = '(광고) ' + t;
+  if (!t.includes(PROMO_OPTOUT)) t = t + '\n' + PROMO_OPTOUT;
+  return t;
+}
+
+// 홍보 발송 묶음 보관소 (server/data/홍보대기.json) — [{batchId, ts, text, items, status}]
+let PROMO = loadJson('홍보대기.json');
+const savePromo = () => saveJson('홍보대기.json', PROMO);
+
+// ── /promo/status: CRM 손 상태 + 비용 예상 ───────────────────
+app.get('/promo/status', async (req, res) => {
+  const out = {
+    crmSheet: !!CRM_SHEET_ID, solapi: !!solapi, sender: !!SOLAPI_SENDER,
+    dailyLimit: PROMO_DAILY_LIMIT, unitPrice: PROMO_UNIT_PRICE,
+    pendingBatches: PROMO.filter((b) => b.status === '대기').map((b) => ({
+      batchId: b.batchId, count: b.items.length, cost: b.items.length * PROMO_UNIT_PRICE, ts: b.ts, text: b.text,
+    })),
+  };
+  if (CRM_SHEET_ID && googleCreds()) {
+    try {
+      const { tab, applicants } = await readPeople(CRM_SHEET_ID, CRM_SHEET_TAB);
+      const seen = new Set();
+      const fresh = applicants.filter((a) => !a.status && !seen.has(a.phone) && seen.add(a.phone));
+      out.crmTab = tab; out.total = applicants.length; out.remaining = fresh.length;
+      out.remainingCost = fresh.length * PROMO_UNIT_PRICE;
+    } catch (e) { out.crmError = e.message; }
+  }
+  res.json(out);
+});
+
+// ── /promo/draft: 오늘치 묶음 준비 (발송 아님 — 승인 대기로만) ──
+// 받는 것: { limit, guide } — limit 기본 500 (하루치), guide = 대표님 추가 지시
+app.post('/promo/draft', async (req, res) => {
+  console.log('📨 /promo/draft 요청 도착 —', new Date().toLocaleString('ko-KR'));
+  try {
+    if (!CRM_SHEET_ID) {
+      return res.status(503).json({ error: 'CRM 시트가 아직 연결 안 됐습니다. ① 엑셀 파일을 열어 "파일→Google Sheets로 저장" ② 새 시트를 jenya-server 서비스 계정에 편집자 공유 ③ 새 시트 주소의 ID를 환경변수 CRM_SHEET_ID에 넣고 서버 재시작.' });
+    }
+    const limit = Math.max(1, Math.min(Number((req.body || {}).limit) || PROMO_DAILY_LIMIT, 1000));
+    const guide = (req.body || {}).guide;
+
+    // 보낼 사람 고르기: 발송상태 빈 사람 + 번호 중복 제거 + 이미 대기 묶음에 든 사람 제외
+    const { applicants } = await readPeople(CRM_SHEET_ID, CRM_SHEET_TAB);
+    const queued = new Set(PROMO.filter((b) => b.status === '대기').flatMap((b) => b.items.map((i) => i.phone)));
+    const seen = new Set();
+    const targets = applicants
+      .filter((a) => !a.status && !queued.has(a.phone) && !seen.has(a.phone) && seen.add(a.phone))
+      .slice(0, limit);
+    if (!targets.length) return res.json({ batch: null, message: '보낼 사람이 없습니다. (전원 발송완료 또는 대기 중)' });
+
+    // 홍보 문구: 마케팅 손의 "카톡 채널 안내글" 톤 + 법적 요건은 아래 enforceAdRules가 한 번 더 강제
+    const system = buildSystemPrompt('care', '머니트레이닝랩');
+    const ask =
+      '기존 고객에게 보낼 강의 홍보 "광고 문자" 한 통을 써라.\n'
+      + '- 받는 사람 이름 자리는 {이름} 으로 표기\n'
+      + '- 톤: 카카오톡 채널 안내글처럼 짧은 줄·줄바꿈으로 폰에서 읽기 좋게, 따뜻하고 담백하게\n'
+      + '- 반드시 맨 앞은 "(광고) 오원트금융연구소"로 시작\n'
+      + '- 핵심 정보 포함: ' + LECTURE_FACTS + '\n'
+      + '- 신청서 링크 포함: ' + MKT_APPLY_LINK + '\n'
+      + (guide ? '- 대표님 추가 지시: ' + guide + '\n' : '')
+      + '- 수익·성과 보장, 과장 표현 절대 금지\n'
+      + `- 맨 끝 줄: ${PROMO_OPTOUT}\n`
+      + '- 전체 350자 이내, 마크다운·이모지 없이. 문자 본문만 출력';
+    const r = await anthropic.messages.create({
+      model: MODEL, max_tokens: 1000, system,
+      messages: [{ role: 'user', content: ask }],
+    });
+    const template = enforceAdRules(r.content.filter((b) => b.type === 'text').map((b) => b.text).join('\n'));
+
+    const batch = {
+      batchId: 'b' + Date.now(),
+      ts: new Date().toISOString(),
+      text: template,
+      items: targets.map((t) => ({ name: t.name, phone: t.phone })),
+      status: '대기',
+    };
+    PROMO.push(batch);
+    savePromo();
+    appendDiary({
+      ts: batch.ts, agentId: 'care', agentName: '고객관리', project: '머니트레이닝랩', kind: 'hand',
+      entry: `[손] CRM 홍보 오늘치 ${batch.items.length}명 준비 (예상 비용 약 ${(batch.items.length * PROMO_UNIT_PRICE).toLocaleString()}원) — 대표님 승인 대기`,
+    });
+    res.json({
+      batch: { batchId: batch.batchId, text: template, count: batch.items.length,
+               cost: batch.items.length * PROMO_UNIT_PRICE, unitPrice: PROMO_UNIT_PRICE,
+               sample: batch.items.slice(0, 5) },
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── /promo/approve: 오늘치 발송 승인 → 발송 → 시트 도장 ─────
+// 휴먼인더루프: 이 창구 없이는 절대 발송 안 됨. 야간(21~08시)엔 법 위반 방지로 거부.
+app.post('/promo/approve', async (req, res) => {
+  console.log('📨 /promo/approve 요청 도착 —', new Date().toLocaleString('ko-KR'));
+  try {
+    const { batchId } = req.body || {};
+    const batch = PROMO.find((b) => b.batchId === batchId && b.status === '대기');
+    if (!batch) return res.status(400).json({ error: '승인할 대기 묶음이 없습니다.' });
+    if (!solapi || !SOLAPI_SENDER) return res.status(503).json({ error: 'Solapi 키 또는 발신번호가 없습니다.' });
+    const h = koreaHour();
+    if (h >= 21 || h < 8) {
+      return res.status(403).json({ error: `지금은 한국시간 ${h}시 — 광고 문자는 밤 9시~아침 8시 발송이 법으로 금지돼 있습니다. 아침 8시 이후 승인해 주세요.` });
+    }
+
+    // 발송 (이름 끼워서 한 번에 — Solapi는 묶음 발송 지원)
+    const messages = batch.items.map((it) => ({
+      to: it.phone, from: SOLAPI_SENDER,
+      text: batch.text.replace(/\{이름\}/g, it.name),
+    }));
+    const result = await solapi.send(messages);
+    const okN = (result.groupInfo && result.groupInfo.count && result.groupInfo.count.registeredSuccess) || messages.length;
+
+    // 시트에 발송완료 도장 (한 번에 — batchUpdate)
+    const { tab, applicants, statusCol, sheets } = await readPeople(CRM_SHEET_ID, CRM_SHEET_TAB);
+    const stamp = '발송완료 ' + new Date().toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    const phones = new Set(batch.items.map((i) => i.phone));
+    const data = applicants.filter((a) => phones.has(a.phone) && !a.status).map((a) => ({
+      range: `'${tab.replace(/'/g, "''")}'!${colLetter(statusCol)}${a.row}`,
+      values: [[stamp]],
+    }));
+    if (data.length) {
+      await sheets.spreadsheets.values.batchUpdate({
+        spreadsheetId: CRM_SHEET_ID,
+        requestBody: { valueInputOption: 'RAW', data },
+      });
+    }
+
+    batch.status = '발송완료 ' + stamp;
+    savePromo();
+    const cost = batch.items.length * PROMO_UNIT_PRICE;
+    appendDiary({
+      ts: new Date().toISOString(), agentId: 'care', agentName: '고객관리', project: '머니트레이닝랩', kind: 'hand',
+      entry: `[손] 대표님 승인으로 CRM 홍보 문자 ${batch.items.length}명 발송 (접수 ${okN}건, 예상 비용 약 ${cost.toLocaleString()}원) — 시트 도장 ${data.length}건`,
+    });
+    res.json({ sent: batch.items.length, registered: okN, stamped: data.length, cost });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── /promo/reject: 묶음 보류 ─────────────────────────────────
+app.post('/promo/reject', (req, res) => {
+  const { batchId } = req.body || {};
+  const batch = PROMO.find((b) => b.batchId === batchId && b.status === '대기');
+  if (!batch) return res.status(400).json({ error: '보류할 대기 묶음이 없습니다.' });
+  batch.status = '보류';
+  savePromo();
+  res.json({ rejected: batch.items.length });
 });
 
 // ============================================================

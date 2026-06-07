@@ -569,7 +569,113 @@ function renderTools(){
   });
   renderCareHand(box);   // 고객관리 손 — 강의 신청자 안내 발송 (첫 번째 실제 도구)
   renderMktHand(box);    // 마케팅 손 — 강의 홍보 콘텐츠 생성 (두 번째 실제 도구)
+  renderPromoHand(box);  // CRM 홍보 손 — 기존고객 하루치 홍보 문자 (세 번째 실제 도구)
   renderFaq(box);   // 도구 맨 아래에 질문 도움말(FAQ) 붙이기
+}
+
+// D-3c-1d. CRM 홍보 손 그리기 — 기존고객에게 하루치씩 나눠 홍보 문자 (승인 후에만 발송)
+function renderPromoHand(box){
+  var html = '<div class="hand" id="promo-hand">'
+           + '<div class="hh"><i class="ti ti-users-group"></i> CRM 홍보 손 · 기존고객</div>'
+           + '<button class="hand-btn" id="promo-draft"><i class="ti ti-stack-2"></i> 오늘치 홍보 준비</button>'
+           + '<button class="hand-btn" id="promo-pending"><i class="ti ti-coin"></i> 대기·비용 보기</button>'
+           + '</div>';
+  box.insertAdjacentHTML('beforeend', html);
+}
+
+// 오늘치 준비 — 보낼 사람을 하루치만 골라 문구와 비용을 보여주고 승인 대기에 올린다
+function promoDraft(){
+  var n = window.prompt('오늘치 몇 명에게 보낼까요? (하루 권장 500명 이하)', '500');
+  if(n === null) return;
+  var btn = document.getElementById('promo-draft');
+  var btnHtml = btn ? btn.innerHTML : '';
+  if(btn) btn.innerHTML = '<i class="ti ti-loader-2"></i> 준비 중…';
+  var restore = function(){ if(btn) btn.innerHTML = btnHtml; };
+  var w = addMessage('<i class="ti ti-loader-2"></i> CRM 시트에서 오늘치 명단을 고르고 홍보 문구를 쓰는 중…', 'care');
+  fetch(SERVER_URL + '/promo/draft', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ limit: Number(n) || 500 })
+  })
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      restore(); loadDashboard();
+      if(d.error){ updateMessage(w, '⚠️ ' + escapeHtml(d.error)); return; }
+      if(!d.batch){ updateMessage(w, escapeHtml(d.message || '보낼 사람이 없습니다.')); return; }
+      showPromoBatch(w, d.batch);
+    })
+    .catch(function(){ restore(); updateMessage(w, '⚠️ 서버에 연결할 수 없습니다.'); });
+}
+
+// 묶음 하나를 말풍선에 그린다: 문구 + 인원 + 비용 + 승인/보류 버튼
+function showPromoBatch(w, b){
+  var html = '오늘치 홍보 문자 준비 완료 — <b>' + b.count + '명</b>'
+    + ' × ' + (b.unitPrice || 33) + '원 = <b>약 ' + Number(b.cost).toLocaleString() + '원</b> (예상)'
+    + '<div style="margin:6px 0;padding:9px;background:#FFF6F9;border-radius:8px;font-size:12.5px;line-height:1.6;white-space:pre-wrap">'
+    + escapeHtml(b.text) + '</div>'
+    + (b.sample && b.sample.length ? '<div style="font-size:12px;color:#66736E">받는 사람 표본: '
+      + b.sample.map(function(s){ return escapeHtml(s.name); }).join(', ') + ' …</div>' : '')
+    + '<div style="margin-top:6px"><button class="appr" data-pok="' + b.batchId + '">오늘치 ' + b.count + '명 발송 승인</button>'
+    + '<button class="appr gray" data-pno="' + b.batchId + '">보류</button></div>'
+    + '<div style="font-size:11px;color:#66736E;margin-top:4px">※ 승인 전에는 절대 발송되지 않습니다. 밤 9시~아침 8시는 법으로 발송이 금지돼 자동 차단됩니다.</div>';
+  updateMessage(w, html);
+  w.querySelectorAll('[data-pok]').forEach(function(x){ x.onclick = function(){ promoApprove(x.getAttribute('data-pok'), b.count, b.cost); }; });
+  w.querySelectorAll('[data-pno]').forEach(function(x){ x.onclick = function(){ promoReject(x.getAttribute('data-pno')); }; });
+}
+
+// 대기·비용 보기 — 남은 인원 전체 예상 비용 + 대기 묶음들
+function promoPending(){
+  var w = addMessage('<i class="ti ti-loader-2"></i> 대기 묶음과 비용을 확인하는 중…', 'care');
+  fetch(SERVER_URL + '/promo/status')
+    .then(function(r){ return r.json(); })
+    .then(function(s){
+      if(s.crmError){ updateMessage(w, '⚠️ CRM 시트 읽기 실패: ' + escapeHtml(s.crmError)); return; }
+      var html = '';
+      if(!s.crmSheet){ html += '⚠️ CRM 시트가 아직 연결 안 됐습니다 (엑셀→구글시트 변환 + 공유 + CRM_SHEET_ID 필요)<br>'; }
+      else if(typeof s.remaining === 'number'){
+        html += 'CRM 전체 ' + s.total + '명 중 <b>아직 안 보낸 ' + s.remaining + '명</b>'
+              + ' — 전부 보내면 약 <b>' + Number(s.remainingCost).toLocaleString() + '원</b> (건당 ' + s.unitPrice + '원 기준)<br>';
+      }
+      var pend = s.pendingBatches || [];
+      if(!pend.length){ html += '<br>승인 대기 묶음 없음 — 「오늘치 홍보 준비」를 눌러 만드세요.'; updateMessage(w, html); return; }
+      updateMessage(w, html + '<br>승인 대기 묶음 <b>' + pend.length + '개</b>:');
+      pend.forEach(function(b){
+        var w2 = addMessage('…', 'care');
+        showPromoBatch(w2, { batchId: b.batchId, text: b.text, count: b.count, cost: b.cost, unitPrice: s.unitPrice, sample: [] });
+      });
+    })
+    .catch(function(){ updateMessage(w, '⚠️ 서버에 연결할 수 없습니다.'); });
+}
+
+function promoApprove(batchId, count, cost){
+  if(!window.confirm('오늘치 ' + count + '명에게 실제 발송합니다. 예상 비용 약 ' + Number(cost).toLocaleString() + '원. 진행할까요?')) return;
+  var w = addMessage('<i class="ti ti-loader-2"></i> ' + count + '명에게 발송 중… (잠시 걸립니다)', 'care');
+  fetch(SERVER_URL + '/promo/approve', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ batchId: batchId })
+  })
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      loadDashboard();
+      if(d.error){ updateMessage(w, '⚠️ ' + escapeHtml(d.error)); return; }
+      updateMessage(w, '발송 완료 — <b>' + d.sent + '명</b> (접수 ' + d.registered + '건, 예상 비용 약 '
+        + Number(d.cost).toLocaleString() + '원)<br>시트에 발송완료 도장 ' + d.stamped + '건, 영업일기 기록 완료.');
+    })
+    .catch(function(){ updateMessage(w, '⚠️ 서버에 연결할 수 없습니다.'); });
+}
+
+function promoReject(batchId){
+  fetch(SERVER_URL + '/promo/reject', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ batchId: batchId })
+  })
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      addMessage('네 대표님, ' + (d.rejected || 0) + '명 묶음을 보류했습니다. (발송 안 함)', 'care');
+    })
+    .catch(function(){});
 }
 
 // D-3c-1c. 마케팅 손 그리기 — 홍보 콘텐츠 4종을 만들어 복사 버튼으로 건네준다
@@ -652,6 +758,8 @@ document.addEventListener('click', function(e){
   else if(t.id === 'hand-draft'){ console.log('[고객관리 손] 안내문 초안 클릭'); careDraft(); }
   else if(t.id === 'hand-pending'){ console.log('[고객관리 손] 승인 대기 클릭'); carePending(); }
   else if(t.id === 'mkt-make'){ console.log('[마케팅 손] 콘텐츠 만들기 클릭'); mktMake(); }
+  else if(t.id === 'promo-draft'){ console.log('[CRM 홍보 손] 오늘치 준비 클릭'); promoDraft(); }
+  else if(t.id === 'promo-pending'){ console.log('[CRM 홍보 손] 대기·비용 보기 클릭'); promoPending(); }
 });
 
 // 대기 건수 갱신 + 연결 상태를 버튼 풍선 도움말로
