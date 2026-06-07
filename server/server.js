@@ -562,8 +562,12 @@ function googleCreds() {
 function sheetsClient() {
   const creds = googleCreds();
   if (!creds) return null;
-  const auth = new google.auth.JWT(creds.client_email, null, creds.private_key,
-    ['https://www.googleapis.com/auth/spreadsheets']);
+  // ※ 옛 방식(new google.auth.JWT(이메일, null, 키, …))은 최신 googleapis에서 키가 안 실려
+  //   "unregistered callers" 거부가 난다. 반드시 GoogleAuth 옵션 객체 방식으로.
+  const auth = new google.auth.GoogleAuth({
+    credentials: creds,
+    scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+  });
   return google.sheets({ version: 'v4', auth });
 }
 
@@ -658,8 +662,10 @@ app.get('/care/status', async (req, res) => {
 
 // ── /care/new: 신규 신청자(발송상태가 빈 사람) 명단 ──────────
 app.get('/care/new', async (req, res) => {
+  console.log('📨 /care/new 요청 도착 —', new Date().toLocaleString('ko-KR'));
   try {
     const { tab, applicants } = await readApplicants();
+    console.log(`📨 /care/new 결과 — 탭 "${tab}", 연락처 있는 ${applicants.length}명, 신규 ${applicants.filter((a) => !a.status).length}명`);
     const fresh = applicants.filter((a) => !a.status);
     res.json({ tab, total: applicants.length, fresh });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -668,6 +674,7 @@ app.get('/care/new', async (req, res) => {
 // ── /care/draft: 신규 신청자용 안내문 초안 생성 (승인 대기로 적재) ──
 // 받는 것: { project, guide } — guide = 대표님이 안내문에 꼭 넣으라는 내용(강의 일시·링크 등)
 app.post('/care/draft', async (req, res) => {
+  console.log('📨 /care/draft 요청 도착 —', new Date().toLocaleString('ko-KR'));
   try {
     const { project, guide } = req.body || {};
     const { applicants } = await readApplicants();
@@ -716,6 +723,7 @@ app.get('/care/pending', (req, res) => {
 // ── /care/approve: 대표님 승인 → Solapi 발송 → 시트에 기록 ──
 // 받는 것: { ids: ['p123_2', ...] }  (휴먼인더루프 — 이 창구 없이는 절대 발송 안 됨)
 app.post('/care/approve', async (req, res) => {
+  console.log('📨 /care/approve 요청 도착 —', new Date().toLocaleString('ko-KR'), '/ 항목', ((req.body || {}).ids || []).length, '건');
   try {
     const ids = (req.body || {}).ids;
     if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'ids(승인할 항목)가 필요합니다.' });
