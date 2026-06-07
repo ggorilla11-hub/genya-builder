@@ -334,10 +334,39 @@ app.post('/meeting/speak', async (req, res) => {
 // 통화별로 "지금 누구와 대화 중인지"를 기억한다 (통화가 끝나면 자연 소멸)
 const CALL_AGENTS = new Map();   // callId → { agentId, ts }
 
-// 대표님 말에서 호명을 찾아낸다. 'ALL'=전체 호출, null=호명 없음(현재 에이전트 유지)
+// 원칙(2026-06-08 대표님 지시): 팀장을 "이름으로 직접 부를 때"만 전환한다.
+// 주제만 말하거나("마케팅 어떻게 할까") 3인칭으로 언급하면("마케팅팀장이 한 일") 절대 바뀌지 않는다.
+//
+// 직접 호명으로 인정하는 신호 3가지:
+//   ① 말이 "○○팀장(님)"으로 끝남 — "마케팅팀장!", "개발팀장님?"
+//   ② 이름 바로 뒤에 부르는 말 — "○○팀장 불러줘 / 나와봐 / 바꿔줘 / 연결해 / 대답해"
+//   ③ 문장 첫머리에서 부름 — "마케팅팀장, 쇼츠 어떻게 됐어?"
+// 이름 뒤에 조사(이/가/은/는/한테/에게…)가 붙으면 3인칭 언급 → 호명 아님.
+const CALL_VERB_RE = /^[\s,~!?.]*(좀\s*|한번\s*|잠깐\s*)?(불러|나와|나오|바꿔|바꾸|연결|호출|대답|답해|부탁)/;
+const REF_PARTICLE_RE = /^(이|가|은|는|을|를|의|도|만|와|과|랑|하고|한테|에게|께서|께|보다|처럼|부터|까지|라는|이라)/;
+const LEAD_FILLER_RE = /^(어|음|자|그|그럼|이제|네|좋아|오케이|그래|이번엔|이번에는|다음은|다음)[\s,]+/;
+
+function isDirectCall(text, nameRe) {
+  const re = new RegExp(nameRe.source, 'g');
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    let after = text.slice(m.index + m[0].length);
+    after = after.replace(/^(님|이?요)/, '');               // "팀장님/팀장요" 허용
+    if (REF_PARTICLE_RE.test(after)) continue;              // 조사가 붙음 → 3인칭 언급, 호명 아님
+    if (after.replace(/[\s,~!?."']/g, '') === '') return true;   // ① 이름으로 말이 끝남
+    if (CALL_VERB_RE.test(after)) return true;                    // ② 바로 뒤에 부르는 말
+    const before = text.slice(0, m.index).replace(LEAD_FILLER_RE, '').trim();
+    if (before === '' && /^[\s,!?]/.test(after)) return true;     // ③ 문장 첫머리 호명
+  }
+  return false;
+}
+
+// 대표님 말에서 "직접 호명"만 찾아낸다. 'ALL'=전체 호출, null=호명 없음(현재 에이전트 유지)
 function detectVoiceTarget(text) {
   if (!text) return null;
-  if (/다\s?같이|모든\s?팀|전체\s?(팀장|보고|불러|에게|회의)/.test(text)) return 'ALL';
+  // 전체 릴레이: "다같이/모든 팀/전체"가 부르는 말(보고해·나와·모여·회의…)과 함께일 때만
+  if (/(다\s?같이|모든\s?팀|전체(?!적)|전\s?팀|전원)/.test(text)
+      && /(불러|나와|나오|모여|모이|보고|회의|대답|답해|호출|호명)/.test(text)) return 'ALL';
   const patterns = [
     ['lead',    /발굴\s?팀장/],
     ['care',    /관리\s?팀장/],
@@ -346,9 +375,9 @@ function detectVoiceTarget(text) {
     ['dev',     /개발\s?팀장/],
     ['legal',   /법무\s?팀장|보안\s?팀장/],
     ['finance', /재무\s?팀장|매출\s?팀장/],
-    ['zenya',   /제니야|총괄/],
+    ['zenya',   /제니야|총괄(?!적)/],
   ];
-  for (const [id, re] of patterns) if (re.test(text)) return id;
+  for (const [id, re] of patterns) if (isDirectCall(text, re)) return id;
   return null;
 }
 
@@ -399,7 +428,7 @@ app.post(['/vapi', '/vapi/chat/completions', '/vapi/chat/completions/chat/comple
     while (conv.length && conv[0].role === 'assistant') conv.shift();
     if (!conv.length) conv = [{ role: 'user', content: '(인사해줘)' }];
 
-    // ── 음성 호명 라우팅: "개발팀장", "제니야", "다같이" 등을 알아챈다 ──
+    // ── 음성 호명 라우팅: "○○팀장 불러줘"처럼 직접 부를 때만 전환 (주제 언급으론 안 바뀜) ──
     const callId = (body.call && body.call.id) || 'default';
     if (CALL_AGENTS.size > 200) {   // 오래된 통화 기억 청소
       for (const [k, v] of CALL_AGENTS) if (Date.now() - v.ts > 2 * 3600 * 1000) CALL_AGENTS.delete(k);

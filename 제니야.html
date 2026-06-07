@@ -890,7 +890,7 @@ async function startVoice(){
     vapi.on('error', function(e){ console.warn('[Vapi 오류]', e); });
 
     // ★ 두뇌 강제 덮어쓰기: 답은 무조건 우리 서버(/vapi 창구)가 만든다.
-    //   통화 중 "개발팀장", "제니야", "다같이" 호명도 서버가 알아채고 전환한다.
+    //   통화 중 "○○팀장 불러줘"처럼 직접 부를 때만 서버가 알아채고 전환한다 (주제 언급으론 안 바뀜).
     var startCfg = {
       model: {
         provider: 'custom-llm',
