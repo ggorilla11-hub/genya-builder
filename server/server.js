@@ -612,6 +612,7 @@ async function readPeople(sheetId, tabPref) {
   const findCol = (words) => header.findIndex((h) => words.some((w) => h.includes(w)));
   const nameCol  = findCol(['이름', '성함', '성명']);
   const phoneCol = findCol(['연락처', '전화', '휴대폰', '핸드폰']);
+  const roleCol  = findCol(['역할']);
   let statusCol  = findCol(['발송상태']);
   if (phoneCol < 0) throw new Error(`시트 "${tab}" 1행에서 연락처 열을 못 찾았습니다. (머리줄에 "연락처" 또는 "전화번호"가 필요)`);
 
@@ -642,6 +643,7 @@ async function readPeople(sheetId, tabPref) {
       row: i + 1,                               // 시트의 실제 행 번호
       name: String((nameCol >= 0 && rows[i][nameCol]) || '').trim() || '고객',
       phone,
+      role: String((roleCol >= 0 && rows[i][roleCol]) || '').trim(),
       status: String(rows[i][statusCol] || '').trim(),
     });
   }
@@ -799,16 +801,37 @@ const PROMO_DAILY_LIMIT = Number(process.env.PROMO_DAILY_LIMIT || 500);   // 하
 const PROMO_UNIT_PRICE  = Number(process.env.PROMO_UNIT_PRICE || 33);     // 건당 예상 단가(원, LMS 기준 — Solapi 요금에 맞게 조정)
 const PROMO_OPTOUT      = '무료수신거부 080-500-4233';                     // Solapi 제공 080 번호
 
+// CRM 홍보 대상 상품 (2026-06-08 대표님 결정: CRM은 대부분 보험설계사 → 설계사 전문가 과정으로)
+// ★ PROMO_FACTS가 비어 있으면 홍보 준비가 거부된다 — 사실 정보 없이 지어내서 보내는 것 방지
+const PROMO_PRODUCT = process.env.PROMO_PRODUCT || '금융집짓기 상담전문가 과정 (7월 과정)';
+const PROMO_FACTS   = process.env.PROMO_FACTS ||
+  '강의명: 금융집짓기 상담전문가 과정(7월 과정) / '
+  + '일정: 2026년 7월 4·11·18·25일(4주 과정), 13시~18시 대면 + 수료 후 1년 온라인 프로그램 / '
+  + '수강료: 110만원(카드 결제 가능) / '
+  + '혜택: 금융집짓기 상담전문가 자격증, 우수자 1:1 멘토링 / '
+  + '특징: 보험상품 판매가 아니라 고객 재정안정을 위해 집 짓듯 순서대로 상담하는 특허받은 재무설계법 / '
+  + '강사: 오원트금융연구소 오상열 대표(CFP 25년)';
+// 이 과정 전용 결제 링크 (10억 강의의 CARE_PAY_LINK와 다름)
+const PROMO_PAY_LINK = process.env.PROMO_PAY_LINK || 'https://link.payple.kr/NzcxOjc3NTQwNTc0OTgzOTg0';
+// 발송 제외 역할 (2026-06-08 결정): 기자·경쟁사·일반인에게 설계사 전문가과정 광고는 부적절
+const PROMO_EXCLUDE_ROLES = (process.env.PROMO_EXCLUDE_ROLES || '언론,경쟁자,일반인').split(',').map((s) => s.trim()).filter(Boolean);
+
 // 한국 시간 기준 시(時) — 야간 광고 발송 금지 판정용 (Render는 UTC라 꼭 변환)
 function koreaHour() {
   return Number(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul', hour: '2-digit', hour12: false }));
 }
 
-// 법적 요건을 코드로 강제: (광고) 머리말 + 080 수신거부 꼬리말 (에이전트가 빠뜨려도 서버가 붙인다)
+// 법적 요건을 코드로 강제 + 군더더기 제거:
+//   (광고) 머리말은 맨 앞에, 080 수신거부는 맨 끝에 오게 하고,
+//   그 앞/뒤에 에이전트가 붙인 잡담("대표님, 0자로 맞췄습니다" 등)은 잘라낸다.
 function enforceAdRules(text) {
   let t = String(text || '').trim();
-  if (!/^\(광고\)/.test(t)) t = '(광고) ' + t;
-  if (!t.includes(PROMO_OPTOUT)) t = t + '\n' + PROMO_OPTOUT;
+  const adIdx = t.indexOf('(광고)');
+  if (adIdx > 0) t = t.slice(adIdx).trim();        // (광고) 앞의 군더더기 제거
+  else if (adIdx < 0) t = '(광고) ' + t;            // 아예 없으면 머리말 붙임
+  const opIdx = t.indexOf(PROMO_OPTOUT);
+  if (opIdx >= 0) t = t.slice(0, opIdx + PROMO_OPTOUT.length).trim();   // 수신거부 뒤 군더더기 제거
+  else t = t + '\n' + PROMO_OPTOUT;                 // 없으면 꼬리말 붙임
   return t;
 }
 
@@ -829,7 +852,8 @@ app.get('/promo/status', async (req, res) => {
     try {
       const { tab, applicants } = await readPeople(CRM_SHEET_ID, CRM_SHEET_TAB);
       const seen = new Set();
-      const fresh = applicants.filter((a) => !a.status && !seen.has(a.phone) && seen.add(a.phone));
+      const fresh = applicants.filter((a) => !a.status && !PROMO_EXCLUDE_ROLES.includes(a.role)
+                                          && !seen.has(a.phone) && seen.add(a.phone));
       out.crmTab = tab; out.total = applicants.length; out.remaining = fresh.length;
       out.remainingCost = fresh.length * PROMO_UNIT_PRICE;
     } catch (e) { out.crmError = e.message; }
@@ -848,28 +872,37 @@ app.post('/promo/draft', async (req, res) => {
     const limit = Math.max(1, Math.min(Number((req.body || {}).limit) || PROMO_DAILY_LIMIT, 1000));
     const guide = (req.body || {}).guide;
 
-    // 보낼 사람 고르기: 발송상태 빈 사람 + 번호 중복 제거 + 이미 대기 묶음에 든 사람 제외
+    // 보낼 사람 고르기: 발송상태 빈 사람 + 제외 역할 빼기 + 번호 중복 제거 + 이미 대기 묶음에 든 사람 제외
     const { applicants } = await readPeople(CRM_SHEET_ID, CRM_SHEET_TAB);
     const queued = new Set(PROMO.filter((b) => b.status === '대기').flatMap((b) => b.items.map((i) => i.phone)));
     const seen = new Set();
     const targets = applicants
-      .filter((a) => !a.status && !queued.has(a.phone) && !seen.has(a.phone) && seen.add(a.phone))
+      .filter((a) => !a.status && !PROMO_EXCLUDE_ROLES.includes(a.role)
+                  && !queued.has(a.phone) && !seen.has(a.phone) && seen.add(a.phone))
       .slice(0, limit);
     if (!targets.length) return res.json({ batch: null, message: '보낼 사람이 없습니다. (전원 발송완료 또는 대기 중)' });
+
+    // 사실 정보 없이는 못 보낸다 (정직 원칙 — 일정·가격을 지어내는 사고 방지)
+    if (!PROMO_FACTS) {
+      return res.status(503).json({ error: `홍보 대상 "${PROMO_PRODUCT}"의 확정 정보(일정·기간·수강료·마감)가 아직 등록 안 됐습니다. 대표님이 정보를 주시면 등록 후 바로 준비됩니다.` });
+    }
 
     // 홍보 문구: 마케팅 손의 "카톡 채널 안내글" 톤 + 법적 요건은 아래 enforceAdRules가 한 번 더 강제
     const system = buildSystemPrompt('care', '머니트레이닝랩');
     const ask =
-      '기존 고객에게 보낼 강의 홍보 "광고 문자" 한 통을 써라.\n'
-      + '- 호칭은 "고객님"으로 통일 (개인 이름 넣지 않음)\n'
+      '기존 고객(대부분 보험설계사)에게 보낼 교육과정 홍보 "광고 문자" 한 통을 써라.\n'
+      + `- 홍보 대상: ${PROMO_PRODUCT}\n`
+      + '- 각도(가장 중요): 받는 사람은 보험설계사다. "설계사 본인의 상담 전문성을 높이고, 고객에게 신뢰받는 재무상담 무기를 갖는 과정"이라는 점이 와닿게. 설계사가 "이건 나에게 필요하다"고 느끼게 쓴다. 너무 건조한 정보 나열 금지, 그렇다고 과장도 금지\n'
+      + '- 호칭은 "고객님"으로 통일 ("설계사님" 같은 호칭은 쓰지 말 것 — 어색함 방지, 개인 이름도 넣지 않음)\n'
       + '- 톤: 카카오톡 채널 안내글처럼 짧은 줄·줄바꿈으로 폰에서 읽기 좋게, 따뜻하고 담백하게\n'
       + '- 반드시 맨 앞은 "(광고) 오원트금융연구소"로 시작\n'
-      + '- 핵심 정보 포함: ' + LECTURE_FACTS + '\n'
+      + '- 핵심 정보(이 사실만 사용, 지어내기 금지): ' + PROMO_FACTS + '\n'
       + '- 신청서 링크 포함: ' + MKT_APPLY_LINK + '\n'
+      + `- 수강료 안내 다음 줄에 결제 안내 한 줄: "결제하기: ${PROMO_PAY_LINK}" (링크 한 글자도 바꾸지 말 것)\n`
       + (guide ? '- 대표님 추가 지시: ' + guide + '\n' : '')
       + '- 수익·성과 보장, 과장 표현 절대 금지\n'
       + `- 맨 끝 줄: ${PROMO_OPTOUT}\n`
-      + '- 전체 350자 이내, 마크다운·이모지 없이. 문자 본문만 출력';
+      + '- 전체 400자 이내, 마크다운·이모지 없이. 문자 본문만 출력';
     const r = await anthropic.messages.create({
       model: MODEL, max_tokens: 1000, system,
       messages: [{ role: 'user', content: ask }],
