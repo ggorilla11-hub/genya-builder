@@ -145,11 +145,20 @@ body{font-family:'Pretendard',-apple-system,sans-serif;font-weight:500;backgroun
 .meetbar .m-stop:hover{background:#B3261E;color:#fff}
 .meetbar .m-hint{font-size:11px;color:var(--muted);font-weight:500}
 
-/* 검색창 + 대화 지우기 버튼 (대화 제목줄 오른쪽) */
-.convtitle .srch{margin-left:auto;width:170px;border:1px solid var(--line);background:#fff;border-radius:8px;padding:4px 9px;font-family:inherit;font-size:11.5px;font-weight:500;outline:none;color:var(--ink)}
-.convtitle .srch:focus{border-color:var(--agent)}
-.convtitle .clr{display:flex;align-items:center;gap:4px;border:1px solid var(--line);background:#fff;color:var(--muted);font-family:inherit;font-size:11px;font-weight:600;border-radius:8px;padding:4px 9px;cursor:pointer;transition:.18s}
+/* 날짜 넘겨보기 (이전/오늘/다음) + 대화 지우기 버튼 (대화 제목줄 오른쪽) */
+.convtitle .datenav{margin-left:auto;display:flex;align-items:center;gap:4px}
+.convtitle .dbtn{display:flex;align-items:center;gap:3px;border:1px solid var(--line);background:#fff;color:var(--muted);font-family:inherit;font-size:11.5px;font-weight:600;border-radius:8px;padding:4px 8px;cursor:pointer;transition:.18s}
+.convtitle .dbtn:hover:not(:disabled){border-color:var(--agent);color:var(--agent)}
+.convtitle .dbtn:disabled{opacity:.4;cursor:default}
+.convtitle .dlabel{min-width:104px;text-align:center;font-size:11.5px;font-weight:700;color:var(--ink)}
+.convtitle .dlabel.past{color:#B36A00}
+.convtitle .clr{display:flex;align-items:center;gap:4px;border:1px solid var(--line);background:#fff;color:var(--muted);font-family:inherit;font-size:11px;font-weight:600;border-radius:8px;padding:4px 9px;cursor:pointer;transition:.18s;margin-left:6px}
 .convtitle .clr:hover{color:#B3261E;border-color:#F2C7C4}
+/* 과거 날짜를 볼 때 입력줄 위에 뜨는 안내 띠 */
+.pastbar{display:none;align-items:center;gap:8px;justify-content:center;background:#FFF7EA;border:1px solid #F0D9AE;color:#8A5A00;border-radius:10px;padding:7px 12px;margin:0 0 8px;font-size:12px;font-weight:600}
+.pastbar.show{display:flex}
+.pastbar button{border:1px solid #E0A23C;background:#fff;color:#8A5A00;font-family:inherit;font-size:12px;font-weight:700;border-radius:8px;padding:4px 10px;cursor:pointer}
+.pastbar button:hover{background:#FFEFD2}
 
 /* 날짜 구분선 — 날짜가 바뀌는 지점에 알약 모양으로 표시 */
 .day{align-self:center;font-size:11px;font-weight:600;color:var(--muted);background:var(--bg);border:1px solid var(--line);border-radius:99px;padding:4px 13px;margin:6px 0}
@@ -339,7 +348,12 @@ body{font-family:'Pretendard',-apple-system,sans-serif;font-weight:500;backgroun
       <div class="convrow">
         <div class="convcol">
           <div class="convtitle"><i class="ti ti-messages"></i> 대화
-            <input class="srch" id="search" placeholder="🔍 과거 대화 검색…">
+            <div class="datenav">
+              <button class="dbtn" id="day-prev" title="이전 날 대화"><i class="ti ti-chevron-left"></i> 이전 날</button>
+              <span class="dlabel" id="day-label">오늘</span>
+              <button class="dbtn" id="day-next" title="다음 날 대화">다음 날 <i class="ti ti-chevron-right"></i></button>
+              <button class="dbtn" id="day-today" title="오늘 대화로"><i class="ti ti-calendar-due"></i> 오늘</button>
+            </div>
             <button class="clr" id="clear-chat" title="화면만 비우기 (기록은 보존)"><i class="ti ti-trash"></i> 화면 비우기</button>
           </div>
           <div class="conv" id="conv">
@@ -360,6 +374,11 @@ body{font-family:'Pretendard',-apple-system,sans-serif;font-weight:500;backgroun
 
       <!-- 하단 입력: + 업로드 / 마이크 / 텍스트 / 전송 -->
       <div class="inputbar">
+        <!-- 과거 날짜를 볼 때만 뜨는 안내 띠 -->
+        <div class="pastbar" id="pastbar">
+          <span id="pastbar-txt">📅 지난 날의 대화를 보는 중입니다.</span>
+          <button id="pastbar-today">오늘로 돌아가 대화하기</button>
+        </div>
         <!-- 회의 중단줄: 회의가 도는 동안에만 보인다. 회의 시작은 말로 한다("○○ 회의 열어줘") -->
         <div class="meetbar" id="meetbar">
           <button class="m-stop" id="meet-stop"><i class="ti ti-hand-stop"></i> 회의 중단</button>
@@ -380,7 +399,7 @@ body{font-family:'Pretendard',-apple-system,sans-serif;font-weight:500;backgroun
 
   </div>
 
-  <div class="foot">제니야 — <b>상단 프로젝트 × 좌측 에이전트 × 우측 도구</b> 교차 구조 · v0.5 (음성·모바일)</div>
+  <div class="foot">제니야 — <b>상단 프로젝트 × 좌측 에이전트 × 우측 도구</b> 교차 구조 · v0.6 (날짜별 대화)</div>
 </div>
 
 <!-- C-6. 업로드 모달 (+ 버튼으로 열림 — 실제 업로드는 3단계) -->
@@ -754,12 +773,12 @@ document.addEventListener('click', function(e){
   var t = e.target;
   while(t && t !== document && !t.id) t = t.parentNode;   // 버튼 속 아이콘을 눌러도 버튼으로 인정
   if(!t || !t.id) return;
-  if(t.id === 'hand-new'){ console.log('[고객관리 손] 신규 신청자 확인 클릭'); careNew(); }
-  else if(t.id === 'hand-draft'){ console.log('[고객관리 손] 안내문 초안 클릭'); careDraft(); }
-  else if(t.id === 'hand-pending'){ console.log('[고객관리 손] 승인 대기 클릭'); carePending(); }
-  else if(t.id === 'mkt-make'){ console.log('[마케팅 손] 콘텐츠 만들기 클릭'); mktMake(); }
-  else if(t.id === 'promo-draft'){ console.log('[CRM 홍보 손] 오늘치 준비 클릭'); promoDraft(); }
-  else if(t.id === 'promo-pending'){ console.log('[CRM 홍보 손] 대기·비용 보기 클릭'); promoPending(); }
+  // 손 도구의 결과도 대화처럼 오늘에 쌓이므로, 과거 날짜를 보던 중이면 먼저 오늘로 돌아간다
+  var handFns = {
+    'hand-new': careNew, 'hand-draft': careDraft, 'hand-pending': carePending,
+    'mkt-make': mktMake, 'promo-draft': promoDraft, 'promo-pending': promoPending
+  };
+  if(handFns[t.id]){ console.log('[손] ' + t.id + ' 클릭'); ensureTodayThen(handFns[t.id]); }
 });
 
 // 대기 건수 갱신 + 연결 상태를 버튼 풍선 도움말로
@@ -1068,9 +1087,41 @@ function loadDashboard(){
     .catch(function(){});
 }
 
-// 저장된 과거 대화 불러오기 — 화면이 열릴 때 한 번 (날짜 구분선과 함께 렌더링)
+// ── 날짜별 대화 보관 + 날짜 넘겨보기 ───────────────────────
+// 대화는 서버에 날짜별로 저장돼 사라지지 않는다. 화면은 "하루치"만 보여주는 뷰어다.
+// 날짜가 바뀌면 오늘은 빈 화면으로 시작하고, 어제까지는 그 날짜로 보관돼 넘겨보기로 본다.
+var dayState = { view: '', today: '', days: [] };   // view=보고 있는 날짜, days=대화 있는 날짜 목록
+
+// 날짜 키(YYYY-MM-DD)를 "6월 7일 (토)"처럼 사람이 읽기 좋게
+function prettyDay(key){
+  var p = key.split('-');
+  var d = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
+  var week = ['일','월','화','수','목','금','토'];
+  return (Number(p[1])) + '월 ' + Number(p[2]) + '일 (' + week[d.getDay()] + ')';
+}
+
+// 화면이 열릴 때: 날짜 목록을 받고 오늘 대화를 띄운다
 function loadHistory(){
-  fetch(SERVER_URL + '/history')
+  fetch(SERVER_URL + '/history/days')
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      dayState.today = data.today;
+      dayState.days  = (data.days && data.days.length) ? data.days : [data.today];
+      renderDay(dayState.today);
+    })
+    .catch(function(){
+      document.querySelectorAll('#conv .msg, #conv .day').forEach(function(m){ m.remove(); });
+      addMessage('⚠️ 중계 서버가 꺼져 있어 대화를 못 불러왔습니다. server 폴더에서 <b>npm start</b>로 켜고 새로고침해 주세요.', 'zenya');
+    });
+}
+
+// 특정 날짜의 대화를 화면에 그린다 (cb: 다 그린 뒤 실행할 일 — 오늘로 돌아간 직후 전송 등)
+function renderDay(key, cb){
+  dayState.view = key;
+  document.querySelectorAll('#conv .msg, #conv .day').forEach(function(m){ m.remove(); });
+  lastDayKey = '';   // 날짜 구분선 다시 찍히도록 초기화
+  updateDateNav();
+  fetch(SERVER_URL + '/history?date=' + encodeURIComponent(key))
     .then(function(r){ return r.json(); })
     .then(function(data){
       var msgs = data.messages || [];
@@ -1079,12 +1130,54 @@ function loadHistory(){
         addMessage(t, m.who, m.ts);
       });
       if(!msgs.length){
-        addMessage('대표님, 제니야입니다. 말씀하시면 진짜로 답하고, 대화는 모두 저장됩니다. "○○ 회의 열어줘"=7명 회의 / @호명 / @전체 / "모닝브리핑"도 됩니다.', 'zenya');
+        if(key === dayState.today){
+          addMessage('대표님, 제니야입니다. 말씀하시면 진짜로 답하고, 대화는 날짜별로 모두 저장됩니다. "○○ 회의 열어줘"=7명 회의 / @호명 / @전체 / "모닝브리핑"도 됩니다.', 'zenya');
+        } else {
+          var e = document.createElement('div'); e.className = 'day';
+          e.textContent = prettyDay(key) + ' — 이 날의 대화 기록이 없습니다';
+          document.getElementById('conv').appendChild(e);
+        }
       }
+      if(cb) cb();
     })
-    .catch(function(){
-      addMessage('⚠️ 중계 서버가 꺼져 있어 과거 대화를 못 불러왔습니다. server 폴더에서 <b>npm start</b>로 켜고 새로고침해 주세요.', 'zenya');
-    });
+    .catch(function(){ if(cb) cb(); });
+}
+
+// 날짜 넘기기 버튼·라벨·안내띠 상태를 현재 보는 날짜에 맞춘다
+function updateDateNav(){
+  // 넘겨볼 수 있는 날짜 = 대화 있는 날짜들 ∪ 오늘 (오름차순)
+  var all = dayState.days.slice();
+  if(all.indexOf(dayState.today) < 0) all.push(dayState.today);
+  all.sort();
+  var i = all.indexOf(dayState.view);
+  var isToday = (dayState.view === dayState.today);
+
+  var label = document.getElementById('day-label');
+  label.textContent = isToday ? '오늘' : prettyDay(dayState.view);
+  label.className = 'dlabel' + (isToday ? '' : ' past');
+
+  document.getElementById('day-prev').disabled = (i <= 0);
+  document.getElementById('day-next').disabled = (i < 0 || i >= all.length - 1);
+  document.getElementById('day-today').disabled = isToday;
+  document.getElementById('pastbar').classList.toggle('show', !isToday);
+  if(!isToday){
+    document.getElementById('pastbar-txt').textContent = '📅 ' + prettyDay(dayState.view) + ' 대화를 보는 중입니다.';
+  }
+  dayState._all = all;   // 버튼이 쓰도록 보관
+}
+
+// 이전/다음 날로 이동 (대화 있는 날짜 사이를 건너뛴다)
+function dayStep(delta){
+  var all = dayState._all || dayState.days;
+  var i = all.indexOf(dayState.view);
+  var j = i + delta;
+  if(j >= 0 && j < all.length) renderDay(all[j]);
+}
+
+// 오늘로 돌아가서(필요하면) 일을 실행 — 과거 날짜를 보다가 말/도구를 쓸 때
+function ensureTodayThen(cb){
+  if(dayState.view === dayState.today){ cb(); return; }
+  renderDay(dayState.today, cb);
 }
 
 // 특정 에이전트에게 직접 묻기 — 그 에이전트 본인이 1인칭으로 답한다 (대행 없음)
@@ -1136,6 +1229,8 @@ function sendMessage(){
   var inp = document.getElementById('inp');
   var v = inp.value.trim();
   if(!v || meeting.running) return;       // 회의 중에는 입력 잠금
+  // 과거 날짜를 보던 중이면 먼저 오늘로 돌아간 뒤 보낸다 (대화는 항상 오늘에 쌓인다)
+  if(dayState.view !== dayState.today){ ensureTodayThen(function(){ sendMessage(); }); return; }
   addMessage(escapeHtml(v), 'u');
   saveMsg('u', v);                        // 대표님 말씀을 기록에 저장 (답변은 서버가 저장)
   inp.value = '';
@@ -1259,7 +1354,7 @@ document.getElementById('mic').onclick = function(){
     addMessage('음성 준비 중입니다 — Vapi 대시보드에서 "제니야" 어시스턴트를 만들어 ID를 넣으면 켜집니다.', 'zenya');
     return;
   }
-  startVoice();
+  ensureTodayThen(startVoice);   // 과거 날짜를 보던 중이면 오늘로 돌아간 뒤 통화 시작
 };
 
 // ── 멀티 에이전트 회의 ──────────────────────────────────
@@ -1345,16 +1440,11 @@ document.getElementById('clear-chat').onclick = function(){
   lastDayKey = '';
 };
 
-// 과거 대화 검색 — 입력하면 일치하는 말풍선만 남기고, 지우면 전체 복귀
-document.getElementById('search').addEventListener('input', function(){
-  var q = this.value.trim().toLowerCase();
-  document.querySelectorAll('#conv .msg').forEach(function(m){
-    m.style.display = (!q || m.textContent.toLowerCase().indexOf(q) >= 0) ? '' : 'none';
-  });
-  document.querySelectorAll('#conv .day').forEach(function(d){
-    d.style.display = q ? 'none' : '';
-  });
-});
+// 날짜 넘겨보기 버튼 (검색창 대체)
+document.getElementById('day-prev').onclick  = function(){ dayStep(-1); };
+document.getElementById('day-next').onclick  = function(){ dayStep(1); };
+document.getElementById('day-today').onclick = function(){ renderDay(dayState.today); };
+document.getElementById('pastbar-today').onclick = function(){ renderDay(dayState.today); };
 
 // 회의 중단 버튼 연결
 document.getElementById('meet-stop').onclick = function(){

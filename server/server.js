@@ -520,8 +520,25 @@ app.get('/dashboard', (req, res) => {
 // ── 대화기록 창구: 불러오기 + 대표님 말씀 저장 ──────────────
 // GET  /history → 저장된 대화 전체 (화면이 열릴 때 불러간다)
 // POST /history → 말풍선 하나 저장 (화면이 대표님 말씀을 보낼 때 사용)
+// 날짜 키(YYYY-MM-DD)를 한국시간 기준으로 만든다 (Render는 UTC라 반드시 변환).
+// 이게 "날짜별 보관"의 기준 — 같은 날의 대화는 같은 키로 묶인다.
+function dayKey(ts) {
+  return new Date(ts || Date.now()).toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+}
+
+// GET /history?date=YYYY-MM-DD → 그 날짜의 대화만. date 없으면 오늘 대화만.
+// (날짜가 바뀌면 오늘은 자연히 빈 화면, 어제까지는 그 날짜로 보관되어 그대로 남는다)
 app.get('/history', (req, res) => {
-  res.json({ messages: HISTORY });
+  const date = req.query.date || dayKey();
+  const messages = HISTORY.filter((m) => dayKey(m.ts) === date);
+  res.json({ messages, date, today: dayKey() });
+});
+
+// GET /history/days → 대화가 있는 날짜 목록(오름차순) + 오늘. 날짜 넘겨보기용.
+app.get('/history/days', (req, res) => {
+  const set = new Set(HISTORY.map((m) => dayKey(m.ts)));
+  set.add(dayKey());                                  // 오늘은 비어 있어도 항상 포함
+  res.json({ days: [...set].sort(), today: dayKey() });
 });
 
 app.post('/history', (req, res) => {
