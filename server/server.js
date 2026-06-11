@@ -647,11 +647,18 @@ const SOLAPI_SENDER  = (process.env.SOLAPI_SENDER || '').replace(/\D/g, '');  //
 const CARE_PAY_LINK  = process.env.CARE_PAY_LINK || 'https://link.payple.kr/NzcxOjc3NTQwNTcxNzMzMTMy';
 
 // 구글 열쇠: ① server/google-key.json 파일(로컬) ② GOOGLE_SERVICE_ACCOUNT_JSON 환경변수(Render)
+//   환경변수 값은 ⓐ 그냥 JSON 한 줄 또는 ⓑ Base64(줄바꿈·따옴표가 없어 복붙 중 안 깨짐) 둘 다 받는다.
 function googleCreds() {
   const keyFile = path.join(__dirname, 'google-key.json');
   try {
     if (fs.existsSync(keyFile)) return JSON.parse(fs.readFileSync(keyFile, 'utf8'));
-    if (process.env.GOOGLE_SERVICE_ACCOUNT_JSON) return JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+    const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+    if (raw) {
+      const txt = raw.trim();
+      // '{' 로 시작하면 그냥 JSON, 아니면 Base64로 보고 풀어서 JSON 파싱
+      const json = txt.startsWith('{') ? txt : Buffer.from(txt, 'base64').toString('utf8');
+      return JSON.parse(json);
+    }
   } catch (e) { console.warn('⚠️ 구글 열쇠를 읽지 못했습니다:', e.message); }
   return null;
 }
