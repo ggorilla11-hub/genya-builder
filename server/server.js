@@ -1197,6 +1197,10 @@ app.get('/promo/status', async (req, res) => {
       out.remainingCost = fresh.length * PROMO_UNIT_PRICE;
     } catch (e) { out.crmError = e.message; }
   }
+  // 오늘 발송한 명수 (테스트 제외) — 발송완료 도장 날짜가 오늘인 묶음
+  const todayMD = new Date().toLocaleString('ko-KR', { month: 'numeric', day: 'numeric' });
+  out.sentToday = PROMO.filter((b) => !b.test && String(b.status).startsWith('발송완료') && String(b.status).includes(todayMD))
+                       .reduce((s, b) => s + b.items.length, 0);
   res.json(out);
 });
 
@@ -1668,6 +1672,7 @@ app.get('/campaign/stats', async (req, res) => {
       return { course: w.course, paid: rows.length, revenue: rows.reduce((s, p) => s + p.amount, 0) };
     });
     out.convRate = (out.apply && out.apply > 0) ? Math.round(out.paid / out.apply * 1000) / 10 : null;
+    out.contentCount = DIARY.filter((d) => d.agentId === 'mkt' && /콘텐츠.*생성/.test(d.entry || '')).length;
     res.json(out);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

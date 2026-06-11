@@ -454,7 +454,7 @@ body{font-family:'Pretendard',-apple-system,sans-serif;font-weight:500;backgroun
 
   </div>
 
-  <div class="foot">제니야 — <b>상단 프로젝트 × 좌측 에이전트 × 우측 도구</b> 교차 구조 · v1.0 (강의 모집 캠페인 한 장)</div>
+  <div class="foot">제니야 — <b>상단 프로젝트 × 좌측 에이전트 × 우측 도구</b> 교차 구조 · v1.1 (진행판 현황 살리기)</div>
 </div>
 
 <!-- C-6. 업로드 모달 (+ 버튼으로 열림 — 실제 업로드는 3단계) -->
@@ -668,14 +668,46 @@ function renderCampaignBoard(box){
     + '<div class="hh" style="color:#6C4AB6;font-size:14px"><i class="ti ti-flag-3"></i> 강의 모집 캠페인 · 한 장</div>'
     + '<div id="camp-summary" style="font-size:12px;color:#444;line-height:1.6;margin:2px 0 6px">불러오는 중…</div>'
     + '<button class="hand-btn" id="camp-edit" style="background:#6C4AB6"><i class="ti ti-settings"></i> 캠페인 설정(강의정보)</button>'
-    + '<div style="margin-top:8px;font-size:11px;color:#6C4AB6;font-weight:700">관문 — 단계마다 눌러 진행</div>'
-    + '<button class="hand-btn" id="camp-p1"><i class="ti ti-photo"></i> ① 콘텐츠 만들기</button>'
-    + '<button class="hand-btn" id="camp-p2"><i class="ti ti-send"></i> ② 배포(문자 예약·SNS·쇼츠)</button>'
+    + '<div style="margin-top:8px;font-size:11px;color:#6C4AB6;font-weight:700">관문 — 단계마다 눌러 진행 (현황 자동 표시)</div>'
+    + '<button class="hand-btn" id="camp-p0"><i class="ti ti-search"></i> ⓪ 발굴</button>'
+    + '<div id="camp-s0" style="font-size:11px;color:#7a6fa0;margin:0 0 6px 8px">…</div>'
+    + '<button class="hand-btn" id="camp-p1"><i class="ti ti-edit"></i> ① 입력(설정·콘텐츠)</button>'
+    + '<div id="camp-s1" style="font-size:11px;color:#7a6fa0;margin:0 0 6px 8px">…</div>'
+    + '<button class="hand-btn" id="camp-p2"><i class="ti ti-send"></i> ② 배포</button>'
+    + '<div id="camp-s2" style="font-size:11px;color:#7a6fa0;margin:0 0 6px 8px">…</div>'
     + '<button class="hand-btn" id="camp-p3"><i class="ti ti-user-check"></i> ③ 신청·결제</button>'
-    + '<button class="hand-btn" id="camp-p4"><i class="ti ti-chart-bar"></i> ④ 결과분석</button>'
+    + '<div id="camp-s3" style="font-size:11px;color:#7a6fa0;margin:0 0 6px 8px">…</div>'
+    + '<button class="hand-btn" id="camp-p4"><i class="ti ti-chart-bar"></i> ④ 분석</button>'
+    + '<div id="camp-s4" style="font-size:11px;color:#7a6fa0;margin:0 0 6px 8px">…</div>'
     + '</div>';
   box.insertAdjacentHTML('beforeend', html);
   loadCampaignBoard();
+  loadCampaignStatus();
+  if(!window.CAMP_TIMER){ window.CAMP_TIMER = setInterval(function(){ if(document.getElementById('camp-board')) loadCampaignStatus(); }, 60000); }
+}
+
+// 진행판 현황 — 검증된 손들의 실제 데이터를 5관문에 연결 (한 화면에서 전체 흐름)
+function setCampStat(id, txt){ var el = document.getElementById(id); if(el) el.textContent = txt; }
+function loadCampaignStatus(){
+  Promise.all([
+    fetch(SERVER_URL + '/campaign/stats').then(function(r){return r.json();}).catch(function(){return {};}),
+    fetch(SERVER_URL + '/promo/status').then(function(r){return r.json();}).catch(function(){return {};}),
+    fetch(SERVER_URL + '/pay/status').then(function(r){return r.json();}).catch(function(){return {};})
+  ]).then(function(arr){
+    var s = arr[0], p = arr[1], pp = arr[2], c = CAMPAIGN_CACHE || {};
+    setCampStat('camp-s0', '준비 단계 — 키워드 ' + (c.listenKeywords ? '설정됨' : '미설정') + ' (명단은 대표님이 직접 접촉)');
+    setCampStat('camp-s1', '강의정보 ' + (c.facts ? '입력완료' : '미입력') + ' · 콘텐츠 ' + (s.contentCount||0) + '건');
+    var sched = (p.scheduledBatches||[]).length;
+    var s2 = '오늘 발송 ' + (p.sentToday||0) + '건 · 예약 ' + sched + '건 대기';
+    if(typeof p.remaining === 'number') s2 += ' · 미발송 ' + p.remaining + '명';
+    setCampStat('camp-s2', s2);
+    var apply = (s.apply==null ? '-' : s.apply);
+    var s3 = '신청 ' + apply + ' · 결제 ' + (s.paid||0);
+    if(s.convRate != null) s3 += ' · 전환 ' + s.convRate + '%';
+    s3 += ' · 결제후손 ' + (pp.enabled ? '켜짐' : '꺼짐');
+    setCampStat('camp-s3', s3);
+    setCampStat('camp-s4', '매출 ' + Number(s.revenue||0).toLocaleString() + '원');
+  });
 }
 
 function loadCampaignBoard(){
@@ -691,10 +723,15 @@ function loadCampaignBoard(){
 
 // 관문 패널 — 각 단계의 행동 버튼(기존 손 함수 재사용)을 한곳에 보여준다
 function campaignPhase(n){
-  var w = addMessage('…','zenya'); var html='';
-  if(n===1){
-    html = '<b>① 콘텐츠 만들기</b><br>포스터·쇼츠는 대표님이 올리시고, 글(쇼츠 대본·인스타·카톡·맞벌이 카피)은 제가 만듭니다.'
-      + '<div style="margin-top:6px"><button class="appr" data-act="mkt">홍보 콘텐츠 4종 만들기</button></div>'
+  var w = addMessage('…','zenya'); var html=''; var c = CAMPAIGN_CACHE || {};
+  if(n===0){
+    html = '<b>⓪ 발굴</b><br>소셜리스닝 키워드로 관심자 명단을 만들고, 접촉(댓글·DM)은 대표님이 직접 합니다. (자동 발송 아님 — 반자동, 다음 단계에서 고도화)'
+      + '<div style="margin-top:6px"><button class="appr" style="background:#6C4AB6" data-act="campedit">소셜리스닝 키워드 설정</button></div>'
+      + (c.listenKeywords ? '<div style="font-size:11px;color:#66736E;margin-top:4px">현재 키워드: '+escapeHtml(c.listenKeywords)+'</div>' : '');
+  } else if(n===1){
+    html = '<b>① 입력 — 설정·콘텐츠</b><br>강의정보를 한 곳에서 입력하면 모든 손이 공유합니다. 홍보 콘텐츠(쇼츠 대본·인스타·카톡·맞벌이 카피)도 여기서.'
+      + '<div style="margin-top:6px"><button class="appr" style="background:#6C4AB6" data-act="campedit">캠페인 설정(강의정보)</button>'
+      + '<button class="appr" data-act="mkt">홍보 콘텐츠 4종 만들기</button></div>'
       + '<div style="font-size:11px;color:#66736E;margin-top:4px">모든 발송물에 "카카오 채널 친구 추가" 문구를 함께 넣습니다.</div>';
   } else if(n===2){
     html = '<b>② 배포</b><br>문자는 예약발송(아침 자동), 카톡·SNS·쇼츠표지는 만들어 드리면 대표님이 게시합니다.'
@@ -706,20 +743,20 @@ function campaignPhase(n){
       + '<button class="appr" data-act="paysetup">결제후 손 설정·켜기</button>'
       + '<button class="appr" style="background:#3B6FB0" data-act="paypreview">결제문자 미리보기</button></div>';
   } else {
-    html = '<b>④ 결과분석</b><br>발굴→신청→결제→매출 한눈에.'
+    html = '<b>④ 분석</b><br>발굴→신청→결제→매출 한눈에.'
       + '<div style="margin-top:6px"><button class="appr" data-act="stats">모집현황 보기</button></div>';
   }
   updateMessage(w, html);
   w.querySelectorAll('[data-act]').forEach(function(x){
     x.onclick = function(){
       var a = x.getAttribute('data-act');
-      if(a==='mkt') mktMake(); else if(a==='promo') promoDraft(); else if(a==='promotest') promoTestDraft();
-      else if(a==='carenew') careNew(); else if(a==='paysetup') paySetup(); else if(a==='paypreview') payPreview();
-      else if(a==='stats') payStats();
+      if(a==='campedit') campaignForm(); else if(a==='mkt') mktMake(); else if(a==='promo') promoDraft();
+      else if(a==='promotest') promoTestDraft(); else if(a==='carenew') careNew(); else if(a==='paysetup') paySetup();
+      else if(a==='paypreview') payPreview(); else if(a==='stats') payStats();
     };
   });
 }
-function campP1(){ campaignPhase(1); } function campP2(){ campaignPhase(2); }
+function campP0(){ campaignPhase(0); } function campP1(){ campaignPhase(1); } function campP2(){ campaignPhase(2); }
 function campP3(){ campaignPhase(3); } function campP4(){ campaignPhase(4); }
 
 // 캠페인 설정 폼 — 매달 바꾸는 강의정보를 한 곳에서 입력
@@ -745,7 +782,7 @@ function campaignForm(){
     fetch(SERVER_URL + '/campaign/config', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
       .then(function(r){return r.json();}).then(function(d){
         if(d.error){ addMessage('⚠️ '+escapeHtml(d.error),'zenya'); return; }
-        loadCampaignBoard();
+        loadCampaignBoard(); loadCampaignStatus();
         addMessage('네 대표님, 캠페인 설정을 저장했습니다. 이제 홍보·콘텐츠·결제후 안내가 모두 이 강의정보로 나갑니다.','zenya');
       }).catch(function(){ addMessage('⚠️ 저장에 실패했습니다.','zenya'); });
   };
@@ -1155,7 +1192,7 @@ document.addEventListener('click', function(e){
     'promo-test': promoTestDraft,
     'pay-setup': paySetup, 'pay-stats': payStats,
     'pay-preview': payPreview, 'pay-testsend': payTestSend,
-    'camp-edit': campaignForm, 'camp-p1': campP1, 'camp-p2': campP2, 'camp-p3': campP3, 'camp-p4': campP4
+    'camp-edit': campaignForm, 'camp-p0': campP0, 'camp-p1': campP1, 'camp-p2': campP2, 'camp-p3': campP3, 'camp-p4': campP4
   };
   if(handFns[t.id]){ console.log('[손] ' + t.id + ' 클릭'); ensureTodayThen(handFns[t.id]); }
 });
