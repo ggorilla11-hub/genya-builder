@@ -945,10 +945,91 @@ function enforceAdRules(text) {
   return t;
 }
 
-// 홍보 발송 묶음 보관소 (server/data/홍보대기.json) — [{batchId, ts, text, items, status, sendAt?}]
-//   status: '대기'(승인 전) · '예약'(예약 발송 등록됨, sendAt에 시각) · '발송완료 …' · '보류' · '예약실패'
+// 홍보 발송 묶음 보관소 — [{batchId, ts, text, items, status, sendAt?}]
+//   status: '대기' · '예약' · '발송중'(보내는 중) · '발송완료 …' · '보류' · '예약실패'
+//   ★ 영구 저장: 로컬 JSON(빠른 캐시) + 구글시트 '제니야_예약저장' 탭(재시작에도 안 날아감).
+//     Render 무료 플랜은 재시작 시 디스크가 초기화되므로, 시트가 진짜 원본이다.
+const RESV_SHEET_ID = process.env.RESV_SHEET_ID || CRM_SHEET_ID;   // 기본: CRM 시트(쓰기 권한 있음)
+const RESV_TAB      = process.env.RESV_TAB || '제니야_예약저장';
+
 let PROMO = loadJson('홍보대기.json');
-const savePromo = () => saveJson('홍보대기.json', PROMO);
+
+async function ensureResvTab(sheets) {
+  const meta = await sheets.spreadsheets.get({ spreadsheetId: RESV_SHEET_ID, fields: 'sheets.properties.title' });
+  if (!meta.data.sheets.some((s) => s.properties.title === RESV_TAB)) {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: RESV_SHEET_ID,
+      requestBody: { requests: [{ addSheet: { properties: { title: RESV_TAB } } }] },
+    });
+  }
+}
+// 시트에 PROMO 전체를 덮어쓴다 (묶음 수가 적어 통째로 기록)
+async function savePromoToSheet() {
+  const sheets = sheetsClient();
+  if (!sheets || !RESV_SHEET_ID) return false;
+  await ensureResvTab(sheets);
+  const header = ['batchId', 'status', 'sendAt', 'ts', 'scheduledTs', 'tries', 'test', 'text', 'items(phone\\tname)'];
+  const rows = PROMO.map((b) => [
+    b.batchId, b.status || '', b.sendAt || '', b.ts || '', b.scheduledTs || '', String(b.tries || 0),
+    b.test ? '1' : '', b.text || '',
+    (b.items || []).map((i) => (i.phone || '') + '\t' + (i.name || '')).join('\n'),
+  ]);
+  await sheets.spreadsheets.values.clear({ spreadsheetId: RESV_SHEET_ID, range: `'${RESV_TAB}'!A2:Z` });
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: RESV_SHEET_ID, range: `'${RESV_TAB}'!A1`,
+    valueInputOption: 'RAW', requestBody: { values: [header, ...rows] },
+  });
+  return true;
+}
+// 시트에서 PROMO를 복원한다 (서버 시작 시) — 탭이 없으면 null
+async function loadPromoFromSheet() {
+  const sheets = sheetsClient();
+  if (!sheets || !RESV_SHEET_ID) return null;
+  let got;
+  try { got = await sheets.spreadsheets.values.get({ spreadsheetId: RESV_SHEET_ID, range: `'${RESV_TAB}'!A1:Z` }); }
+  catch (e) { return null; }
+  const rows = got.data.values || [];
+  if (rows.length < 1) return [];
+  const out = [];
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r[0]) continue;
+    const items = String(r[8] || '').split('\n').filter(Boolean).map((line) => {
+      const t = line.split('\t'); return { phone: t[0], name: t[1] || '고객' };
+    });
+    out.push({
+      batchId: r[0], status: r[1] || '', sendAt: r[2] || undefined, ts: r[3] || '',
+      scheduledTs: r[4] || undefined, tries: Number(r[5] || 0), test: r[6] === '1', text: r[7] || '', items,
+    });
+  }
+  return out;
+}
+// 시트 저장 직렬화 — 쓰기를 줄로 세워 충돌 방지. ★중요: 반환 promise는 "이 호출의 기록이 끝난 뒤" 풀린다
+//   (그래야 await savePromo()가 시트 기록 완료까지 진짜로 기다림 → 끄기 전에 확실히 저장됨)
+let resvChain = Promise.resolve();
+function savePromoToSheetSafe() {
+  const next = resvChain.catch(() => {}).then(() => savePromoToSheet());
+  resvChain = next.catch((e) => console.warn('⚠️ 예약 시트 저장 실패:', e.message));
+  return resvChain;
+}
+// 저장: 로컬 JSON(즉시) + 구글시트(영구). 중요한 곳에선 await로 시트 기록까지 보장.
+const savePromo = () => { saveJson('홍보대기.json', PROMO); return savePromoToSheetSafe(); };
+
+// 서버 시작 시: 구글시트에서 예약 복원 (재시작으로 로컬 JSON이 비었어도 시트가 살린다)
+(async () => {
+  const fromSheet = await loadPromoFromSheet().catch(() => null);
+  if (fromSheet) {
+    PROMO = fromSheet;
+    saveJson('홍보대기.json', PROMO);
+    const sched = PROMO.filter((b) => b.status === '예약').length;
+    console.log(`📅 예약 시트에서 복원: 총 ${PROMO.length}건 (예약 대기 ${sched}건)`);
+    const stuck = PROMO.filter((b) => b.status === '발송중');
+    if (stuck.length) {
+      pushNotify({ kind: 'sent', agentId: 'care', title: '⚠️ 발송 중 중단된 묶음 확인 필요',
+        body: `${stuck.length}건이 '발송중' 상태로 남아 있습니다(재시작 중 끊김). 중복발송 방지를 위해 자동 재발송하지 않습니다 — 확인 바랍니다.` });
+    }
+  }
+})();
 
 // 한국시간 부품 분해 (예약 야간보정용 — Render는 UTC라 꼭 변환)
 function koreaParts(d) {
@@ -974,6 +1055,8 @@ function snapToAllowed(target) {
 // 한 묶음을 실제로 발송하고 시트 도장·영업일기·알림까지 처리한다. (수동 승인·예약 자동발송 공통)
 //   ※ 호칭은 전원 "고객님" 통일 (2026-06-08 결정 — CRM 이름 칸에 회사·직함이 섞여 있어 안전하게)
 async function sendPromoBatch(batch) {
+  batch.status = '발송중';       // 보내기 직전 영구표시 → 재시작 중 끊겨도 중복발송 안 됨
+  await savePromo();
   const messages = batch.items.map((it) => ({
     to: it.phone, from: SOLAPI_SENDER,
     text: batch.text.replace(/\{이름\}/g, '고객'),
@@ -1002,7 +1085,7 @@ async function sendPromoBatch(batch) {
 
   batch.status = (batch.test ? '발송완료(테스트) ' : '발송완료 ') + stamp;
   delete batch.sendAt;
-  savePromo();
+  await savePromo();      // 발송완료를 시트에 확정 기록 → 중복발송 방지
   const cost = batch.items.length * PROMO_UNIT_PRICE;
   appendDiary({
     ts: new Date().toISOString(), agentId: 'care', agentName: '고객관리', project: '머니트레이닝랩', kind: 'hand',
@@ -1169,7 +1252,7 @@ app.post('/promo/schedule', async (req, res) => {
     batch.scheduledTs = new Date().toISOString();
     batch.tries = 0;
     delete batch.sendError;
-    savePromo();
+    await savePromo();      // 예약을 시트에 확정 저장 후 응답 → 재시작에도 안 날아감
 
     const cost = batch.items.length * PROMO_UNIT_PRICE;
     const when = eff.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -1267,10 +1350,57 @@ function normPhone(v) {
 
 let PAYCFG = loadJson('결제후설정.json');
 if (Array.isArray(PAYCFG)) PAYCFG = {};         // 기본은 객체 {enabled, place, schedule, prepare, notice, baselineDone}
-const savePayCfg  = () => saveJson('결제후설정.json', PAYCFG);
 let PAYSEEN = loadJson('결제처리.json');         // 처리(또는 기준선)된 주문번호 목록 (중복방지)
-const savePaySeen = () => saveJson('결제처리.json', PAYSEEN);
 const PAYFAIL = {};                              // 주문번호 → 실패횟수 (메모리, 3회면 포기+알림)
+
+// 결제후 손 상태 영구저장 — 같은 시트의 '제니야_결제상태' 탭 (재시작에도 enabled·기준선·중복방지 유지)
+const PAYSTATE_TAB = process.env.PAYSTATE_TAB || '제니야_결제상태';
+async function savePayStateToSheet() {
+  const sheets = sheetsClient();
+  if (!sheets || !RESV_SHEET_ID) return;
+  const meta = await sheets.spreadsheets.get({ spreadsheetId: RESV_SHEET_ID, fields: 'sheets.properties.title' });
+  if (!meta.data.sheets.some((s) => s.properties.title === PAYSTATE_TAB)) {
+    await sheets.spreadsheets.batchUpdate({ spreadsheetId: RESV_SHEET_ID, requestBody: { requests: [{ addSheet: { properties: { title: PAYSTATE_TAB } } }] } });
+  }
+  const rows = [['config', JSON.stringify(PAYCFG)]];
+  PAYSEEN.forEach((oid) => rows.push(['seen', oid]));
+  await sheets.spreadsheets.values.clear({ spreadsheetId: RESV_SHEET_ID, range: `'${PAYSTATE_TAB}'!A1:Z` });
+  await sheets.spreadsheets.values.update({ spreadsheetId: RESV_SHEET_ID, range: `'${PAYSTATE_TAB}'!A1`, valueInputOption: 'RAW', requestBody: { values: rows } });
+}
+let payChain = Promise.resolve();
+function savePayStateSafe() {
+  const next = payChain.catch(() => {}).then(() => savePayStateToSheet());
+  payChain = next.catch((e) => console.warn('⚠️ 결제상태 시트 저장 실패:', e.message));
+  return payChain;
+}
+async function loadPayStateFromSheet() {
+  const sheets = sheetsClient();
+  if (!sheets || !RESV_SHEET_ID) return false;
+  let got;
+  try { got = await sheets.spreadsheets.values.get({ spreadsheetId: RESV_SHEET_ID, range: `'${PAYSTATE_TAB}'!A1:B` }); }
+  catch (e) { return false; }
+  const rows = got.data.values || [];
+  if (!rows.length) return false;
+  const seen = []; let cfg = null;
+  rows.forEach((r) => {
+    if (r[0] === 'config') { try { cfg = JSON.parse(r[1] || '{}'); } catch (e) {} }
+    else if (r[0] === 'seen' && r[1]) seen.push(r[1]);
+  });
+  if (cfg) PAYCFG = cfg;
+  PAYSEEN = seen;
+  return true;
+}
+const savePayCfg  = () => { saveJson('결제후설정.json', PAYCFG); return savePayStateSafe(); };
+const savePaySeen = () => { saveJson('결제처리.json', PAYSEEN); return savePayStateSafe(); };
+
+// 서버 시작 시: 결제후 손 상태 복원 (enabled·기준선·중복방지 목록이 재시작에도 유지)
+(async () => {
+  const ok = await loadPayStateFromSheet().catch(() => false);
+  if (ok) {
+    saveJson('결제후설정.json', PAYCFG); saveJson('결제처리.json', PAYSEEN);
+    console.log(`💳 결제 상태 시트 복원: enabled=${!!PAYCFG.enabled}, 처리됨 ${PAYSEEN.length}건`);
+  }
+})();
 
 // 결제시트의 강의 탭들에서 "결제완료 + 주문번호 있는" 진짜 결제 줄만 뽑는다
 async function readPaidRows() {
@@ -1366,12 +1496,12 @@ async function runDuePayments() {
       if (seen.has(p.oid)) continue;
       try {
         await processOnePayment(p);
-        PAYSEEN.push(p.oid); seen.add(p.oid); savePaySeen();
+        PAYSEEN.push(p.oid); seen.add(p.oid); await savePaySeen();
         sent++;
       } catch (e) {
         PAYFAIL[p.oid] = (PAYFAIL[p.oid] || 0) + 1;
         if (PAYFAIL[p.oid] >= 3) {               // 3회 실패하면 포기(무한반복 방지) + 대표 알림
-          PAYSEEN.push(p.oid); seen.add(p.oid); savePaySeen();
+          PAYSEEN.push(p.oid); seen.add(p.oid); await savePaySeen();
           pushNotify({ kind: 'pay', agentId: 'care', title: '결제후 처리 실패 — 확인 필요',
             body: `${p.name}님 ${p.course} 처리가 3회 실패(${e.message}). 수동 확인 바랍니다.` });
         }
@@ -1389,7 +1519,7 @@ async function seedPayBaseline() {
   const seen = new Set(PAYSEEN);
   let added = 0;
   paid.forEach((p) => { if (!seen.has(p.oid)) { PAYSEEN.push(p.oid); seen.add(p.oid); added++; } });
-  savePaySeen();
+  await savePaySeen();
   return added;
 }
 
@@ -1429,7 +1559,7 @@ app.post('/pay/config', async (req, res) => {
     } else if (b.enable === false) {
       PAYCFG.enabled = false;
     }
-    savePayCfg();
+    await savePayCfg();
     res.json({ ok: true, enabled: !!PAYCFG.enabled, baselined, config: PAYCFG });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
