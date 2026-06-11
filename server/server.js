@@ -1186,9 +1186,9 @@ async function saveContentsToSheet() {
   if (!meta.data.sheets.some((s) => s.properties.title === CONTENT_TAB)) {
     await sheets.spreadsheets.batchUpdate({ spreadsheetId: RESV_SHEET_ID, requestBody: { requests: [{ addSheet: { properties: { title: CONTENT_TAB } } }] } });
   }
-  const rows = CONTENTS.map((c) => [c.id, c.type || '', c.name || '', c.link || '', c.note || '', c.ts || '']);
+  const rows = CONTENTS.map((c) => [c.id, c.type || '', c.name || '', c.link || '', c.note || '', c.body || '', c.ts || '']);
   await sheets.spreadsheets.values.clear({ spreadsheetId: RESV_SHEET_ID, range: `'${CONTENT_TAB}'!A1:Z` });
-  await sheets.spreadsheets.values.update({ spreadsheetId: RESV_SHEET_ID, range: `'${CONTENT_TAB}'!A1`, valueInputOption: 'RAW', requestBody: { values: [['id', 'type', 'name', 'link', 'note', 'ts'], ...rows] } });
+  await sheets.spreadsheets.values.update({ spreadsheetId: RESV_SHEET_ID, range: `'${CONTENT_TAB}'!A1`, valueInputOption: 'RAW', requestBody: { values: [['id', 'type', 'name', 'link', 'note', 'body', 'ts'], ...rows] } });
 }
 let contentChain = Promise.resolve();
 function saveContents() {
@@ -1201,9 +1201,9 @@ async function loadContentsFromSheet() {
   const sheets = sheetsClient();
   if (!sheets || !RESV_SHEET_ID) return null;
   let got;
-  try { got = await sheets.spreadsheets.values.get({ spreadsheetId: RESV_SHEET_ID, range: `'${CONTENT_TAB}'!A2:F` }); }
+  try { got = await sheets.spreadsheets.values.get({ spreadsheetId: RESV_SHEET_ID, range: `'${CONTENT_TAB}'!A2:G` }); }
   catch (e) { return null; }
-  return (got.data.values || []).filter((r) => r[0]).map((r) => ({ id: r[0], type: r[1] || '', name: r[2] || '', link: r[3] || '', note: r[4] || '', ts: r[5] || '' }));
+  return (got.data.values || []).filter((r) => r[0]).map((r) => ({ id: r[0], type: r[1] || '', name: r[2] || '', link: r[3] || '', note: r[4] || '', body: r[5] || '', ts: r[6] || '' }));
 }
 (async () => { const fromSheet = await loadContentsFromSheet().catch(() => null); if (fromSheet) { CONTENTS = fromSheet; saveJson('콘텐츠.json', CONTENTS); } })();
 
@@ -1211,8 +1211,8 @@ app.get('/campaign/contents', (req, res) => res.json({ contents: CONTENTS }));
 app.post('/campaign/contents', async (req, res) => {
   try {
     const b = req.body || {};
-    if (!b.link && !b.name) return res.status(400).json({ error: '이름이나 링크 중 하나는 필요합니다.' });
-    const item = { id: 'c' + Date.now(), type: String(b.type || '기타'), name: String(b.name || ''), link: String(b.link || ''), note: String(b.note || ''), ts: new Date().toISOString() };
+    if (!b.link && !b.name && !b.body) return res.status(400).json({ error: '이름·링크·내용 중 하나는 필요합니다.' });
+    const item = { id: 'c' + Date.now() + Math.floor(Math.random() * 1000), type: String(b.type || '기타'), name: String(b.name || ''), link: String(b.link || ''), note: String(b.note || ''), body: String(b.body || ''), ts: new Date().toISOString() };
     CONTENTS.push(item);
     await saveContents();
     res.json({ ok: true, item });
@@ -1812,11 +1812,10 @@ app.post('/mkt/content', async (req, res) => {
       + `카카오 채널명: ${cKakao}\n`
       + (guide ? '대표님 추가 지시: ' + guide + '\n' : '')
       + '\n★ 가장 중요 — 받는 사람과 오상열 대표의 "관계 온도"에 따라 톤을 완전히 다르게 써라:\n'
-      + '  🔥 거래한 설계사(문자): 친근·특별대우. "늘 신뢰해주신 설계사님께 먼저 안내드립니다" 같은 특별함. 바로 신청 안내해도 됨.\n'
       + '  🌤 카톡 채널친구(관심있어 추가): 관심유도. 부담 적게, 호기심·혜택 중심으로 "이런 과정이 열립니다".\n'
       + '  ❄️ SNS 처음 본 사람: 가치증명·신뢰구축. 먼저 오대표가 왜 믿을 만한지(경력·철학)와 가치를 보여주고, 결제는 천천히. 첫 줄부터 팔지 말 것. CTA는 "채널 추가"로 부드럽게.\n'
-      + '\n아래 6종을 각각 그 구분표로 시작해 만들어라:\n'
-      + '[[문자LMS]] 🔥 거래 설계사용 문자(LMS) — 특별대우 톤, 신청·결제 안내 포함\n'
+      + '  (※ 🔥 거래한 설계사용 문자(LMS)는 여기서 만들지 마라 — 그건 CRM 홍보 손이 따로 만들어 실제 발송한다. 여기선 게시용 콘텐츠만.)\n'
+      + '\n아래 5종을 각각 그 구분표로 시작해 만들어라:\n'
       + '[[카톡채널]] 🌤 카톡 채널친구용 짧은 안내 — 관심유도, 폰에서 읽기 좋게 짧은 줄·줄바꿈\n'
       + '[[유튜브쇼츠]] ❄️ 유튜브 쇼츠 30~45초 대본 (첫 3초 후킹 문구 3개 제안 + 본 대본) — 가치증명\n'
       + '[[인스타]] ❄️ 인스타 — 카드뉴스 슬라이드 문구(슬라이드 1~6 형태) + 릴스 캡션(해시태그 포함) — 가치증명\n'
@@ -1825,8 +1824,8 @@ app.post('/mkt/content', async (req, res) => {
       + '\n규칙:\n'
       + '- 금융 콘텐츠다. 수익·성과 보장, 과장·허위 표현 절대 금지 ("무조건", "100% 됩니다" 금지).\n'
       + `- 모든 콘텐츠 맨 끝에 반드시 이 한 줄 포함: "${ctaLine}"\n`
-      + '- ❄️(SNS 3종)는 신청링크보다 "채널 추가"를 앞세운다. 🔥🌤은 신청링크도 함께 넣는다.\n'
-      + '- 마크다운 기호(#, *, -) 없이 일반 글로. 콘텐츠 사이 설명·인사말 없이 6종만 출력.';
+      + '- ❄️(SNS 4종)는 신청링크보다 "채널 추가"를 앞세운다. 🌤 카톡은 신청링크도 함께 넣는다.\n'
+      + '- 마크다운 기호(#, *, -) 없이 일반 글로. 콘텐츠 사이 설명·인사말 없이 5종만 출력.';
     const r = await anthropic.messages.create({
       model: MODEL, max_tokens: 20000, thinking: { type: 'adaptive' },
       system, messages: [{ role: 'user', content: ask }],
@@ -1834,14 +1833,13 @@ app.post('/mkt/content', async (req, res) => {
     let text = r.content.filter((b) => b.type === 'text').map((b) => b.text).join('\n');
 
     const LABELS = {
-      문자LMS:   '🔥 문자(LMS) · 거래 설계사 · 특별대우',
       카톡채널:   '🌤 카톡 채널 · 관심친구 · 관심유도',
       유튜브쇼츠: '❄️ 유튜브 쇼츠 대본 · 가치증명',
       인스타:     '❄️ 인스타 카드뉴스/릴스 · 가치증명',
       페북:       '❄️ 페이스북 텍스트+링크 · 가치증명',
       블로그:     '❄️ 블로그 긴 정보글 · 가치증명',
     };
-    const found = [...text.matchAll(/\[\[(문자LMS|카톡채널|유튜브쇼츠|인스타|페북|블로그)\]\]/g)];
+    const found = [...text.matchAll(/\[\[(카톡채널|유튜브쇼츠|인스타|페북|블로그)\]\]/g)];
     let parts = found.length
       ? found.map((m, i) => ({
           key: m[1], label: LABELS[m[1]],

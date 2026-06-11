@@ -454,7 +454,7 @@ body{font-family:'Pretendard',-apple-system,sans-serif;font-weight:500;backgroun
 
   </div>
 
-  <div class="foot">제니야 — <b>상단 프로젝트 × 좌측 에이전트 × 우측 도구</b> 교차 구조 · v1.3 (콘텐츠 보관함·업로드 연결)</div>
+  <div class="foot">제니야 — <b>상단 프로젝트 × 좌측 에이전트 × 우측 도구</b> 교차 구조 · v1.4 (문자 역할 정리·콘텐츠 저장)</div>
 </div>
 
 <!-- C-6. 업로드 모달 (+ 버튼으로 열림 — 실제 업로드는 3단계) -->
@@ -736,8 +736,8 @@ function campaignPhase(n){
       + '<button class="appr" data-act="contents">콘텐츠 보관함(포스터·쇼츠)</button></div>'
       + '<div style="font-size:11px;color:#66736E;margin-top:4px">모든 발송물에 "카카오 채널 친구 추가" 문구를 함께 넣습니다.</div>';
   } else if(n===2){
-    html = '<b>② 배포</b><br>문자는 예약발송(아침 자동), 카톡·SNS·쇼츠표지는 만들어 드리면 대표님이 게시합니다. 올려둔 포스터·쇼츠는 「배포용 콘텐츠」에서 링크로 꺼내 씁니다.'
-      + '<div style="margin-top:6px"><button class="appr" data-act="promo">CRM 홍보 문자 준비</button>'
+    html = '<b>② 배포</b><br>🔥 <b>거래 설계사 문자(LMS)는 여기서 만들어 실제 발송</b>(예약발송=아침 자동)합니다. ①에서 만든 카톡·SNS 콘텐츠는 대표님이 각 채널에 게시. 올려둔 포스터·쇼츠는 「배포용 콘텐츠」에서 링크로 꺼내 씁니다.'
+      + '<div style="margin-top:6px"><button class="appr" data-act="promo">🔥 CRM 홍보 문자(실제 발송)</button>'
       + '<button class="appr" style="background:#3B6FB0" data-act="promotest">내 번호 예약 테스트</button>'
       + '<button class="appr" data-act="contents">배포용 콘텐츠 보기</button></div>';
   } else if(n===3){
@@ -767,19 +767,23 @@ function contentsPanel(){
   var w = addMessage('<i class="ti ti-loader-2"></i> 콘텐츠 보관함 여는 중…','zenya');
   fetch(SERVER_URL + '/campaign/contents').then(function(r){return r.json();}).then(function(d){
     var list = d.contents || [];
-    var html = '<b>콘텐츠 보관함</b> — 포스터·쇼츠·카드뉴스는 <b>구글 드라이브/유튜브에 올린 뒤 공유 링크</b>를 여기에 보관하세요. (무료서버라 파일은 안 올리고 링크만 — 영구·대용량)'
+    var byId = {}; list.forEach(function(c){ byId[c.id] = c; });
+    var html = '<b>콘텐츠 보관함</b> — 포스터·쇼츠는 <b>드라이브/유튜브 링크</b>로, 생성한 글은 「① 채널별 콘텐츠 만들기 → 보관함에 저장」으로 모입니다.'
       + '<div style="margin-top:6px"><button class="appr" style="background:#6C4AB6" data-add="1"><i class="ti ti-plus"></i> 콘텐츠 추가(링크)</button></div>';
     if(!list.length){ html += '<div style="font-size:11px;color:#66736E;margin-top:6px">아직 보관된 콘텐츠가 없습니다.</div>'; }
     list.forEach(function(c){
       html += '<div style="margin:6px 0;padding:8px;background:#FAF8FF;border-radius:8px;font-size:12px;line-height:1.5">'
         + '<b>[' + escapeHtml(c.type) + ']</b> ' + escapeHtml(c.name || '(이름없음)')
         + (c.link ? (' — <a href="' + escapeAttr(c.link) + '" target="_blank" style="color:#3B6FB0">열기</a>') : '')
+        + ' <button class="appr gray" data-del="' + c.id + '" style="padding:1px 7px">삭제</button>'
+        + (c.body ? ('<div style="margin-top:5px;padding:7px;background:#fff;border-radius:6px;white-space:pre-wrap;max-height:120px;overflow:auto">' + escapeHtml(c.body) + '</div><button class="appr" data-copyc="' + c.id + '" style="margin-top:3px">복사</button>') : '')
         + (c.note ? ('<br><span style="color:#66736E">' + escapeHtml(c.note) + '</span>') : '')
-        + ' <button class="appr gray" data-del="' + c.id + '" style="padding:1px 7px">삭제</button></div>';
+        + '</div>';
     });
     updateMessage(w, html);
     w.querySelectorAll('[data-add]').forEach(function(x){ x.onclick = contentAdd; });
     w.querySelectorAll('[data-del]').forEach(function(x){ x.onclick = function(){ contentDelete(x.getAttribute('data-del')); }; });
+    w.querySelectorAll('[data-copyc]').forEach(function(x){ x.onclick = function(){ var c = byId[x.getAttribute('data-copyc')]; if(c) copyText(c.body, x); }; });
   }).catch(function(){ updateMessage(w, '⚠️ 서버에 연결할 수 없습니다.'); });
 }
 function contentAdd(){
@@ -1193,7 +1197,9 @@ function mktMake(){
       restore(); loadDashboard();
       if(d.error){ updateMessage(w, '⚠️ ' + escapeHtml(d.error)); return; }
       MKT_LAST = d.parts || [];
-      var html = '채널별 홍보 콘텐츠 <b>' + MKT_LAST.length + '종</b> (🔥거래설계사 → 🌤채널친구 → ❄️처음 본 사람 순). 각각 [복사] 눌러 그 채널에 붙여넣으세요.';
+      var html = '채널별 게시용 콘텐츠 <b>' + MKT_LAST.length + '종</b> (🌤채널친구 → ❄️처음 본 사람). 각각 [복사] 눌러 그 채널에 올리세요.'
+        + '<div style="font-size:11px;color:#66736E;margin:4px 0">🔥 거래 설계사 문자(LMS)는 ②배포 「CRM 홍보 문자」에서 만들어 실제 발송합니다(여긴 게시용 콘텐츠).</div>'
+        + '<div style="margin:4px 0"><button class="appr" style="background:#6C4AB6" data-vault="1"><i class="ti ti-download"></i> 이 콘텐츠 보관함에 저장</button></div>';
       MKT_LAST.forEach(function(p, i){
         html += '<div style="margin:8px 0 2px;font-weight:800;color:#E65100">' + escapeHtml(p.label)
               + ' <button class="appr" data-copy="' + i + '" style="border-color:#E65100;color:#E65100">복사</button></div>'
@@ -1204,8 +1210,23 @@ function mktMake(){
       w.querySelectorAll('[data-copy]').forEach(function(b){
         b.onclick = function(){ copyText(MKT_LAST[Number(b.getAttribute('data-copy'))].text, b); };
       });
+      w.querySelectorAll('[data-vault]').forEach(function(b){ b.onclick = function(){ mktSaveToVault(b); }; });
     })
     .catch(function(){ restore(); updateMessage(w, '⚠️ 서버에 연결할 수 없습니다.'); });
+}
+
+// 생성한 채널 콘텐츠를 보관함에 저장 (재사용 — 다시 안 만들어도 됨)
+function mktSaveToVault(btn){
+  if(!MKT_LAST.length) return;
+  if(btn){ btn.textContent = '저장 중…'; btn.disabled = true; }
+  var total = MKT_LAST.length, done = 0;
+  MKT_LAST.forEach(function(p){
+    fetch(SERVER_URL + '/campaign/contents', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ type:'콘텐츠글', name:p.label, body:p.text }) })
+      .then(function(r){ return r.json(); }).then(function(){
+        done++; if(done === total){ if(btn){ btn.textContent = '보관함 저장 완료 ✓'; } loadCampaignStatus();
+          addMessage('생성한 콘텐츠 ' + total + '종을 보관함에 저장했습니다. ①입력 「콘텐츠 보관함」에서 다시 꺼내 쓸 수 있어요.', 'zenya'); }
+      }).catch(function(){ done++; });
+  });
 }
 
 // D-3c-1b. 고객관리 손 그리기 + 동작 — 시트의 신규 신청자에게 안내문을 보낸다 (발송은 대표님 승인 후)
