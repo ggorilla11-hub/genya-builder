@@ -1175,6 +1175,57 @@ app.post('/campaign/config', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── 콘텐츠 보관함 — 대표가 만든 포스터·쇼츠 등은 드라이브/유튜브에 두고 링크를 보관 ──
+//    (Render 무료서버는 재시작 시 파일 소실 → 파일 자체가 아니라 링크+설명을 영구저장)
+let CONTENTS = loadJson('콘텐츠.json'); if (!Array.isArray(CONTENTS)) CONTENTS = [];
+const CONTENT_TAB = process.env.CONTENT_TAB || '제니야_콘텐츠';
+async function saveContentsToSheet() {
+  const sheets = sheetsClient();
+  if (!sheets || !RESV_SHEET_ID) return;
+  const meta = await sheets.spreadsheets.get({ spreadsheetId: RESV_SHEET_ID, fields: 'sheets.properties.title' });
+  if (!meta.data.sheets.some((s) => s.properties.title === CONTENT_TAB)) {
+    await sheets.spreadsheets.batchUpdate({ spreadsheetId: RESV_SHEET_ID, requestBody: { requests: [{ addSheet: { properties: { title: CONTENT_TAB } } }] } });
+  }
+  const rows = CONTENTS.map((c) => [c.id, c.type || '', c.name || '', c.link || '', c.note || '', c.ts || '']);
+  await sheets.spreadsheets.values.clear({ spreadsheetId: RESV_SHEET_ID, range: `'${CONTENT_TAB}'!A1:Z` });
+  await sheets.spreadsheets.values.update({ spreadsheetId: RESV_SHEET_ID, range: `'${CONTENT_TAB}'!A1`, valueInputOption: 'RAW', requestBody: { values: [['id', 'type', 'name', 'link', 'note', 'ts'], ...rows] } });
+}
+let contentChain = Promise.resolve();
+function saveContents() {
+  saveJson('콘텐츠.json', CONTENTS);
+  const next = contentChain.catch(() => {}).then(() => saveContentsToSheet());
+  contentChain = next.catch((e) => console.warn('⚠️ 콘텐츠 시트 저장 실패:', e.message));
+  return contentChain;
+}
+async function loadContentsFromSheet() {
+  const sheets = sheetsClient();
+  if (!sheets || !RESV_SHEET_ID) return null;
+  let got;
+  try { got = await sheets.spreadsheets.values.get({ spreadsheetId: RESV_SHEET_ID, range: `'${CONTENT_TAB}'!A2:F` }); }
+  catch (e) { return null; }
+  return (got.data.values || []).filter((r) => r[0]).map((r) => ({ id: r[0], type: r[1] || '', name: r[2] || '', link: r[3] || '', note: r[4] || '', ts: r[5] || '' }));
+}
+(async () => { const fromSheet = await loadContentsFromSheet().catch(() => null); if (fromSheet) { CONTENTS = fromSheet; saveJson('콘텐츠.json', CONTENTS); } })();
+
+app.get('/campaign/contents', (req, res) => res.json({ contents: CONTENTS }));
+app.post('/campaign/contents', async (req, res) => {
+  try {
+    const b = req.body || {};
+    if (!b.link && !b.name) return res.status(400).json({ error: '이름이나 링크 중 하나는 필요합니다.' });
+    const item = { id: 'c' + Date.now(), type: String(b.type || '기타'), name: String(b.name || ''), link: String(b.link || ''), note: String(b.note || ''), ts: new Date().toISOString() };
+    CONTENTS.push(item);
+    await saveContents();
+    res.json({ ok: true, item });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/campaign/contents/delete', async (req, res) => {
+  const id = (req.body || {}).id;
+  const before = CONTENTS.length;
+  CONTENTS = CONTENTS.filter((c) => c.id !== id);
+  if (CONTENTS.length !== before) await saveContents();
+  res.json({ ok: true, removed: before - CONTENTS.length });
+});
+
 // ── /promo/status: CRM 손 상태 + 비용 예상 ───────────────────
 app.get('/promo/status', async (req, res) => {
   runDuePromo().catch(() => {});   // 앱을 열어 서버가 깨면 밀린 예약부터 확인
@@ -1674,6 +1725,12 @@ app.get('/campaign/stats', async (req, res) => {
     });
     out.convRate = (out.apply && out.apply > 0) ? Math.round(out.paid / out.apply * 1000) / 10 : null;
     out.contentCount = DIARY.filter((d) => d.agentId === 'mkt' && /콘텐츠.*생성/.test(d.entry || '')).length;
+    out.uploads = {
+      total: CONTENTS.length,
+      poster: CONTENTS.filter((c) => c.type === '포스터').length,
+      shorts: CONTENTS.filter((c) => c.type === '쇼츠').length,
+      cardnews: CONTENTS.filter((c) => c.type === '카드뉴스').length,
+    };
     res.json(out);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

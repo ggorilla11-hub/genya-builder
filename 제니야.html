@@ -454,7 +454,7 @@ body{font-family:'Pretendard',-apple-system,sans-serif;font-weight:500;backgroun
 
   </div>
 
-  <div class="foot">제니야 — <b>상단 프로젝트 × 좌측 에이전트 × 우측 도구</b> 교차 구조 · v1.2 (채널별·관계온도별 콘텐츠)</div>
+  <div class="foot">제니야 — <b>상단 프로젝트 × 좌측 에이전트 × 우측 도구</b> 교차 구조 · v1.3 (콘텐츠 보관함·업로드 연결)</div>
 </div>
 
 <!-- C-6. 업로드 모달 (+ 버튼으로 열림 — 실제 업로드는 3단계) -->
@@ -696,7 +696,8 @@ function loadCampaignStatus(){
   ]).then(function(arr){
     var s = arr[0], p = arr[1], pp = arr[2], c = CAMPAIGN_CACHE || {};
     setCampStat('camp-s0', '준비 단계 — 키워드 ' + (c.listenKeywords ? '설정됨' : '미설정') + ' (명단은 대표님이 직접 접촉)');
-    setCampStat('camp-s1', '강의정보 ' + (c.facts ? '입력완료' : '미입력') + ' · 콘텐츠 ' + (s.contentCount||0) + '건');
+    var up = s.uploads || {};
+    setCampStat('camp-s1', '강의정보 ' + (c.facts ? '입력완료' : '미입력') + ' · 생성글 ' + (s.contentCount||0) + ' · 포스터 ' + (up.poster||0) + ' · 쇼츠 ' + (up.shorts||0) + ' · 카드뉴스 ' + (up.cardnews||0));
     var sched = (p.scheduledBatches||[]).length;
     var s2 = '오늘 발송 ' + (p.sentToday||0) + '건 · 예약 ' + sched + '건 대기';
     if(typeof p.remaining === 'number') s2 += ' · 미발송 ' + p.remaining + '명';
@@ -731,12 +732,14 @@ function campaignPhase(n){
   } else if(n===1){
     html = '<b>① 입력 — 설정·콘텐츠</b><br>강의정보를 한 곳에서 입력하면 모든 손이 공유합니다. 홍보 콘텐츠(쇼츠 대본·인스타·카톡·맞벌이 카피)도 여기서.'
       + '<div style="margin-top:6px"><button class="appr" style="background:#6C4AB6" data-act="campedit">캠페인 설정(강의정보)</button>'
-      + '<button class="appr" data-act="mkt">채널별 홍보 콘텐츠 만들기</button></div>'
+      + '<button class="appr" data-act="mkt">채널별 홍보 콘텐츠 만들기</button>'
+      + '<button class="appr" data-act="contents">콘텐츠 보관함(포스터·쇼츠)</button></div>'
       + '<div style="font-size:11px;color:#66736E;margin-top:4px">모든 발송물에 "카카오 채널 친구 추가" 문구를 함께 넣습니다.</div>';
   } else if(n===2){
-    html = '<b>② 배포</b><br>문자는 예약발송(아침 자동), 카톡·SNS·쇼츠표지는 만들어 드리면 대표님이 게시합니다.'
+    html = '<b>② 배포</b><br>문자는 예약발송(아침 자동), 카톡·SNS·쇼츠표지는 만들어 드리면 대표님이 게시합니다. 올려둔 포스터·쇼츠는 「배포용 콘텐츠」에서 링크로 꺼내 씁니다.'
       + '<div style="margin-top:6px"><button class="appr" data-act="promo">CRM 홍보 문자 준비</button>'
-      + '<button class="appr" style="background:#3B6FB0" data-act="promotest">내 번호 예약 테스트</button></div>';
+      + '<button class="appr" style="background:#3B6FB0" data-act="promotest">내 번호 예약 테스트</button>'
+      + '<button class="appr" data-act="contents">배포용 콘텐츠 보기</button></div>';
   } else if(n===3){
     html = '<b>③ 신청·결제</b><br>신청자에게 감사+결제링크, 결제되면 자동으로 결제감사+대면안내.'
       + '<div style="margin-top:6px"><button class="appr" data-act="carenew">신규 신청자 안내</button>'
@@ -752,12 +755,48 @@ function campaignPhase(n){
       var a = x.getAttribute('data-act');
       if(a==='campedit') campaignForm(); else if(a==='mkt') mktMake(); else if(a==='promo') promoDraft();
       else if(a==='promotest') promoTestDraft(); else if(a==='carenew') careNew(); else if(a==='paysetup') paySetup();
-      else if(a==='paypreview') payPreview(); else if(a==='stats') payStats();
+      else if(a==='paypreview') payPreview(); else if(a==='stats') payStats(); else if(a==='contents') contentsPanel();
     };
   });
 }
 function campP0(){ campaignPhase(0); } function campP1(){ campaignPhase(1); } function campP2(){ campaignPhase(2); }
 function campP3(){ campaignPhase(3); } function campP4(){ campaignPhase(4); }
+
+// 콘텐츠 보관함 — 대표가 만든 포스터·쇼츠·카드뉴스는 드라이브/유튜브에 올리고 링크를 보관
+function contentsPanel(){
+  var w = addMessage('<i class="ti ti-loader-2"></i> 콘텐츠 보관함 여는 중…','zenya');
+  fetch(SERVER_URL + '/campaign/contents').then(function(r){return r.json();}).then(function(d){
+    var list = d.contents || [];
+    var html = '<b>콘텐츠 보관함</b> — 포스터·쇼츠·카드뉴스는 <b>구글 드라이브/유튜브에 올린 뒤 공유 링크</b>를 여기에 보관하세요. (무료서버라 파일은 안 올리고 링크만 — 영구·대용량)'
+      + '<div style="margin-top:6px"><button class="appr" style="background:#6C4AB6" data-add="1"><i class="ti ti-plus"></i> 콘텐츠 추가(링크)</button></div>';
+    if(!list.length){ html += '<div style="font-size:11px;color:#66736E;margin-top:6px">아직 보관된 콘텐츠가 없습니다.</div>'; }
+    list.forEach(function(c){
+      html += '<div style="margin:6px 0;padding:8px;background:#FAF8FF;border-radius:8px;font-size:12px;line-height:1.5">'
+        + '<b>[' + escapeHtml(c.type) + ']</b> ' + escapeHtml(c.name || '(이름없음)')
+        + (c.link ? (' — <a href="' + escapeAttr(c.link) + '" target="_blank" style="color:#3B6FB0">열기</a>') : '')
+        + (c.note ? ('<br><span style="color:#66736E">' + escapeHtml(c.note) + '</span>') : '')
+        + ' <button class="appr gray" data-del="' + c.id + '" style="padding:1px 7px">삭제</button></div>';
+    });
+    updateMessage(w, html);
+    w.querySelectorAll('[data-add]').forEach(function(x){ x.onclick = contentAdd; });
+    w.querySelectorAll('[data-del]').forEach(function(x){ x.onclick = function(){ contentDelete(x.getAttribute('data-del')); }; });
+  }).catch(function(){ updateMessage(w, '⚠️ 서버에 연결할 수 없습니다.'); });
+}
+function contentAdd(){
+  var type = window.prompt('콘텐츠 종류? (포스터 / 쇼츠 / 카드뉴스 / 홍보글 / 기타)','포스터'); if(type===null) return;
+  var name = window.prompt('이름·설명 (예: 7월 전문가과정 포스터 A)',''); if(name===null) return;
+  var link = window.prompt('링크 — 파일을 구글 드라이브/유튜브에 올린 뒤 공유 링크를 붙여넣으세요.',''); if(link===null) return;
+  fetch(SERVER_URL + '/campaign/contents', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:type,name:name,link:link})})
+    .then(function(r){return r.json();}).then(function(d){
+      if(d.error){ addMessage('⚠️ '+escapeHtml(d.error),'zenya'); return; }
+      loadCampaignStatus(); contentsPanel();
+    }).catch(function(){ addMessage('⚠️ 추가 실패','zenya'); });
+}
+function contentDelete(id){
+  if(!window.confirm('이 콘텐츠를 보관함에서 지울까요? (드라이브 원본은 안 지워집니다)')) return;
+  fetch(SERVER_URL + '/campaign/contents/delete', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id})})
+    .then(function(r){return r.json();}).then(function(){ loadCampaignStatus(); contentsPanel(); }).catch(function(){});
+}
 
 // 캠페인 설정 폼 — 매달 바꾸는 강의정보를 한 곳에서 입력
 function campaignForm(){
