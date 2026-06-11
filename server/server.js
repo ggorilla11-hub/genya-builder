@@ -981,35 +981,39 @@ async function sendPromoBatch(batch) {
   const result = await solapi.send(messages);
   const okN = (result.groupInfo && result.groupInfo.count && result.groupInfo.count.registeredSuccess) || messages.length;
 
-  // 시트에 발송완료 도장 (한 번에 — batchUpdate)
-  const { tab, applicants, statusCol, sheets } = await readPeople(CRM_SHEET_ID, CRM_SHEET_TAB);
   const stamp = '발송완료 ' + new Date().toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-  const phones = new Set(batch.items.map((i) => i.phone));
-  const data = applicants.filter((a) => phones.has(a.phone) && !a.status).map((a) => ({
-    range: `'${tab.replace(/'/g, "''")}'!${colLetter(statusCol)}${a.row}`,
-    values: [[stamp]],
-  }));
-  if (data.length) {
-    await sheets.spreadsheets.values.batchUpdate({
-      spreadsheetId: CRM_SHEET_ID,
-      requestBody: { valueInputOption: 'RAW', data },
-    });
+  // 시트에 발송완료 도장 (테스트 묶음은 CRM 시트를 전혀 안 건드린다)
+  let stampedCount = 0;
+  if (!batch.test) {
+    const { tab, applicants, statusCol, sheets } = await readPeople(CRM_SHEET_ID, CRM_SHEET_TAB);
+    const phones = new Set(batch.items.map((i) => i.phone));
+    const data = applicants.filter((a) => phones.has(a.phone) && !a.status).map((a) => ({
+      range: `'${tab.replace(/'/g, "''")}'!${colLetter(statusCol)}${a.row}`,
+      values: [[stamp]],
+    }));
+    if (data.length) {
+      await sheets.spreadsheets.values.batchUpdate({
+        spreadsheetId: CRM_SHEET_ID,
+        requestBody: { valueInputOption: 'RAW', data },
+      });
+    }
+    stampedCount = data.length;
   }
 
-  batch.status = '발송완료 ' + stamp;
+  batch.status = (batch.test ? '발송완료(테스트) ' : '발송완료 ') + stamp;
   delete batch.sendAt;
   savePromo();
   const cost = batch.items.length * PROMO_UNIT_PRICE;
   appendDiary({
     ts: new Date().toISOString(), agentId: 'care', agentName: '고객관리', project: '머니트레이닝랩', kind: 'hand',
-    entry: `[손] CRM 홍보 문자 ${batch.items.length}명 발송 (접수 ${okN}건, 예상 비용 약 ${cost.toLocaleString()}원) — 시트 도장 ${data.length}건`,
+    entry: `[손] ${batch.test ? '예약 테스트 ' : 'CRM 홍보 '}문자 ${batch.items.length}명 발송 (접수 ${okN}건, 예상 비용 약 ${cost.toLocaleString()}원) — 시트 도장 ${stampedCount}건`,
   });
   pushNotify({
     kind: 'sent', agentId: 'care',
-    title: `CRM 홍보 문자 발송 완료 ${batch.items.length}명`,
-    body: `접수 ${okN}건 · 예상 비용 약 ${cost.toLocaleString()}원 · 시트 도장 ${data.length}건`,
+    title: `${batch.test ? '🧪 예약 테스트 발송 완료' : 'CRM 홍보 문자 발송 완료'} ${batch.items.length}명`,
+    body: `접수 ${okN}건 · 예상 비용 약 ${cost.toLocaleString()}원${batch.test ? ' (테스트 — 시트 안 건드림)' : ` · 시트 도장 ${stampedCount}건`}`,
   });
-  return { sent: batch.items.length, registered: okN, stamped: data.length, cost };
+  return { sent: batch.items.length, registered: okN, stamped: stampedCount, cost };
 }
 
 // ── /promo/status: CRM 손 상태 + 비용 예상 ───────────────────
@@ -1108,6 +1112,24 @@ app.post('/promo/draft', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── /promo/test-draft: 예약 테스트 묶음 (대표님 본인 번호 1건만) ──
+// CRM 명단을 전혀 안 읽는다. 받는 사람은 발신번호(대표님 본인) 1명 고정 → 진짜 설계사에겐 절대 안 감.
+app.post('/promo/test-draft', (req, res) => {
+  if (!solapi || !SOLAPI_SENDER) return res.status(503).json({ error: 'Solapi 키 또는 발신번호가 없어 테스트를 못 합니다.' });
+  const text = enforceAdRules('(광고) [예약 발송 테스트] 제니야 예약 발송 기능 점검용 문자입니다. 실제 홍보가 아닙니다.');
+  const batch = {
+    batchId: 'btest' + Date.now(),
+    ts: new Date().toISOString(),
+    text,
+    items: [{ name: '대표님(테스트)', phone: SOLAPI_SENDER }],   // 본인 번호 1건 고정
+    status: '대기',
+    test: true,
+  };
+  PROMO.push(batch);
+  savePromo();
+  res.json({ batch: { batchId: batch.batchId, text, count: 1, cost: PROMO_UNIT_PRICE, unitPrice: PROMO_UNIT_PRICE, sample: [{ name: '대표님(테스트)' }], test: true } });
+});
+
 // ── /promo/approve: 오늘치 발송 승인 → 발송 → 시트 도장 ─────
 // 휴먼인더루프: 이 창구 없이는 절대 발송 안 됨. 야간(21~08시)엔 법 위반 방지로 거부.
 app.post('/promo/approve', async (req, res) => {
@@ -1118,7 +1140,7 @@ app.post('/promo/approve', async (req, res) => {
     if (!batch) return res.status(400).json({ error: '승인할 대기 묶음이 없습니다.' });
     if (!solapi || !SOLAPI_SENDER) return res.status(503).json({ error: 'Solapi 키 또는 발신번호가 없습니다.' });
     const h = koreaHour();
-    if (h >= 21 || h < 8) {
+    if (!batch.test && (h >= 21 || h < 8)) {     // 테스트(본인 번호)는 광고규제 무관 → 야간차단 면제
       return res.status(403).json({ error: `지금은 한국시간 ${h}시 — 광고 문자는 밤 9시~아침 8시 발송이 법으로 금지돼 있습니다. 아침 8시 이후 발송하거나, "예약 발송"으로 아침 시간에 걸어 두세요.` });
     }
     const out = await sendPromoBatch(batch);
@@ -1139,8 +1161,9 @@ app.post('/promo/schedule', async (req, res) => {
     const want = new Date(sendAt);
     if (isNaN(want.getTime())) return res.status(400).json({ error: '예약 시간을 알아듣지 못했습니다.' });
 
-    const eff = snapToAllowed(want);
-    const snapped = eff.getTime() !== want.getTime();
+    // 테스트(본인 번호)는 광고규제 무관 → 야간 보정 없이 입력 시각 그대로
+    const eff = batch.test ? want : snapToAllowed(want);
+    const snapped = !batch.test && eff.getTime() !== want.getTime();
     batch.status = '예약';
     batch.sendAt = eff.toISOString();
     batch.scheduledTs = new Date().toISOString();
@@ -1184,7 +1207,7 @@ async function runDuePromo() {
     const due = PROMO.filter((b) => b.status === '예약' && b.sendAt && new Date(b.sendAt).getTime() <= now);
     for (const batch of due) {
       const h = koreaHour();
-      if (h >= 21 || h < 8) continue;   // 안전장치: 혹시 야간이면 보류, 다음 허용시간에 다시 시도
+      if (!batch.test && (h >= 21 || h < 8)) continue;   // 안전장치: 혹시 야간이면 보류(테스트는 면제)
       try {
         await sendPromoBatch(batch);    // 성공 시 status가 '발송완료…'로 바뀌고 sendAt 제거됨
         sent++;
