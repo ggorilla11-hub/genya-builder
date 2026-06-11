@@ -454,7 +454,7 @@ body{font-family:'Pretendard',-apple-system,sans-serif;font-weight:500;backgroun
 
   </div>
 
-  <div class="foot">제니야 — <b>상단 프로젝트 × 좌측 에이전트 × 우측 도구</b> 교차 구조 · v0.7 (알림함)</div>
+  <div class="foot">제니야 — <b>상단 프로젝트 × 좌측 에이전트 × 우측 도구</b> 교차 구조 · v0.8 (CRM 예약 발송)</div>
 </div>
 
 <!-- C-6. 업로드 모달 (+ 버튼으로 열림 — 실제 업로드는 3단계) -->
@@ -699,11 +699,42 @@ function showPromoBatch(w, b){
     + (b.sample && b.sample.length ? '<div style="font-size:12px;color:#66736E">받는 사람 표본: '
       + b.sample.map(function(s){ return escapeHtml(s.name); }).join(', ') + ' …</div>' : '')
     + '<div style="margin-top:6px"><button class="appr" data-pok="' + b.batchId + '">오늘치 ' + b.count + '명 발송 승인</button>'
+    + '<button class="appr" style="background:#3B6FB0" data-psch="' + b.batchId + '"><i class="ti ti-clock"></i> 예약 발송</button>'
     + '<button class="appr gray" data-pno="' + b.batchId + '">보류</button></div>'
-    + '<div style="font-size:11px;color:#66736E;margin-top:4px">※ 승인 전에는 절대 발송되지 않습니다. 밤 9시~아침 8시는 법으로 발송이 금지돼 자동 차단됩니다.</div>';
+    + '<div style="font-size:11px;color:#66736E;margin-top:4px">※ 승인 전에는 절대 발송되지 않습니다. 밤 9시~아침 8시는 법으로 발송이 금지돼 자동 차단됩니다. 지금 밤이면 「예약 발송」으로 아침에 걸어 두세요.</div>';
   updateMessage(w, html);
   w.querySelectorAll('[data-pok]').forEach(function(x){ x.onclick = function(){ promoApprove(x.getAttribute('data-pok'), b.count, b.cost); }; });
+  w.querySelectorAll('[data-psch]').forEach(function(x){ x.onclick = function(){ promoSchedule(x.getAttribute('data-psch'), b.count, b.cost); }; });
   w.querySelectorAll('[data-pno]').forEach(function(x){ x.onclick = function(){ promoReject(x.getAttribute('data-pno')); }; });
+}
+
+// 예약된 묶음 하나를 그린다 (대기·비용 보기에서) — 시각 + 예약 취소 버튼
+function showScheduledBatch(w, b){
+  var when = b.sendAt ? new Date(b.sendAt).toLocaleString('ko-KR', {month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '';
+  var html = '⏰ 예약 발송 — <b>' + b.count + '명</b>, <b>' + escapeHtml(when) + '</b> 발송 예정'
+    + ' (예상 약 ' + Number(b.cost).toLocaleString() + '원)'
+    + '<div style="margin:6px 0;padding:9px;background:#EEF4FB;border-radius:8px;font-size:12.5px;line-height:1.6;white-space:pre-wrap">'
+    + escapeHtml(b.text) + '</div>'
+    + '<div style="margin-top:6px"><button class="appr gray" data-pcancel="' + b.batchId + '">예약 취소</button></div>';
+  updateMessage(w, html);
+  w.querySelectorAll('[data-pcancel]').forEach(function(x){ x.onclick = function(){ promoScheduleCancel(x.getAttribute('data-pcancel')); }; });
+}
+
+// "09:00" / "6/13 09:00" 같은 입력을 Date로 — 휴대폰·PC는 한국시간이라 그대로 해석
+function parsePromoWhen(s){
+  s = (s || '').trim();
+  var now = new Date(), m, d;
+  if(m = s.match(/^(\d{1,2}):(\d{2})$/)){                       // HH:MM → 다음 그 시각
+    d = new Date(now); d.setHours(+m[1], +m[2], 0, 0);
+    if(d <= now) d.setDate(d.getDate() + 1);
+    return d;
+  }
+  if(m = s.match(/^(\d{1,2})\/(\d{1,2})\s+(\d{1,2})(?::(\d{2}))?$/)){   // M/D HH 또는 M/D HH:MM
+    d = new Date(now); d.setMonth(+m[1] - 1, +m[2]); d.setHours(+m[3], +(m[4] || 0), 0, 0);
+    if(d <= now) d.setFullYear(d.getFullYear() + 1);
+    return d;
+  }
+  return null;
 }
 
 // 대기·비용 보기 — 남은 인원 전체 예상 비용 + 대기 묶음들
@@ -720,11 +751,18 @@ function promoPending(){
               + ' — 전부 보내면 약 <b>' + Number(s.remainingCost).toLocaleString() + '원</b> (건당 ' + s.unitPrice + '원 기준)<br>';
       }
       var pend = s.pendingBatches || [];
-      if(!pend.length){ html += '<br>승인 대기 묶음 없음 — 「오늘치 홍보 준비」를 눌러 만드세요.'; updateMessage(w, html); return; }
-      updateMessage(w, html + '<br>승인 대기 묶음 <b>' + pend.length + '개</b>:');
+      var sched = s.scheduledBatches || [];
+      if(!pend.length && !sched.length){ html += '<br>승인 대기·예약 묶음 없음 — 「오늘치 홍보 준비」를 눌러 만드세요.'; updateMessage(w, html); return; }
+      updateMessage(w, html
+        + (pend.length ? '<br>승인 대기 묶음 <b>' + pend.length + '개</b>:' : '')
+        + (sched.length ? '<br>⏰ 예약된 발송 <b>' + sched.length + '개</b> (아래)' : ''));
       pend.forEach(function(b){
         var w2 = addMessage('…', 'care');
         showPromoBatch(w2, { batchId: b.batchId, text: b.text, count: b.count, cost: b.cost, unitPrice: s.unitPrice, sample: [] });
+      });
+      sched.forEach(function(b){
+        var sw = addMessage('…', 'care');
+        showScheduledBatch(sw, b);
       });
     })
     .catch(function(){ updateMessage(w, '⚠️ 서버에 연결할 수 없습니다.'); });
@@ -757,6 +795,55 @@ function promoReject(batchId){
     .then(function(r){ return r.json(); })
     .then(function(d){
       addMessage('네 대표님, ' + (d.rejected || 0) + '명 묶음을 보류했습니다. (발송 안 함)', 'care');
+    })
+    .catch(function(){});
+}
+
+// 예약 발송 — 시간 지정. 대표님이 직접 누른 묶음만 예약된다(자동 생성·발송 없음).
+function promoSchedule(batchId, count, cost){
+  var s = window.prompt(
+    '예약 발송 시각을 입력하세요.\n' +
+    '· "09:00"      → 다음 오전 9시 (오늘 지났으면 내일)\n' +
+    '· "6/13 09:00" → 그 날짜·시각\n' +
+    '밤 9시~아침 8시로 적으면 자동으로 아침 8시로 조정됩니다.',
+    '09:00');
+  if(s === null) return;
+  var when = parsePromoWhen(s);
+  if(!when){ addMessage('시각을 알아듣지 못했습니다. "09:00" 또는 "6/13 09:00" 형식으로 적어 주세요.', 'care'); return; }
+  if(!window.confirm(count + '명에게 ' + when.toLocaleString('ko-KR') + ' 에 예약 발송합니다.\n예상 비용 약 ' + Number(cost).toLocaleString() + '원. 진행할까요?')) return;
+  var w = addMessage('<i class="ti ti-loader-2"></i> 예약을 등록하는 중…', 'care');
+  fetch(SERVER_URL + '/promo/schedule', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ batchId: batchId, sendAt: when.toISOString() })
+  })
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      loadDashboard();
+      if(d.error){ updateMessage(w, '⚠️ ' + escapeHtml(d.error)); return; }
+      var msg = '예약 완료 — <b>' + d.count + '명</b>, <b>' + escapeHtml(d.when) + '</b> 발송 예정'
+        + (d.snapped ? '<br><span style="color:#C0392B">밤 시간이라 아침 8시로 자동 조정했습니다.</span>' : '')
+        + '<br>예상 비용 약 ' + Number(d.cost).toLocaleString() + '원.'
+        + '<div style="margin-top:6px"><button class="appr gray" data-pcancel="' + d.batchId + '">예약 취소</button></div>'
+        + '<div style="font-size:11px;color:#66736E;margin-top:4px">※ 예약 시각에 서버가 깨어 있어야 발송됩니다. 아침에 앱을 한 번 열어 주시면 확실합니다.</div>';
+      updateMessage(w, msg);
+      w.querySelectorAll('[data-pcancel]').forEach(function(x){ x.onclick = function(){ promoScheduleCancel(x.getAttribute('data-pcancel')); }; });
+    })
+    .catch(function(){ updateMessage(w, '⚠️ 서버에 연결할 수 없습니다.'); });
+}
+
+function promoScheduleCancel(batchId){
+  if(!window.confirm('이 예약을 취소할까요? (다시 승인 대기로 돌아갑니다)')) return;
+  fetch(SERVER_URL + '/promo/schedule/cancel', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ batchId: batchId })
+  })
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      loadDashboard();
+      if(d.error){ addMessage('⚠️ ' + escapeHtml(d.error), 'care'); return; }
+      addMessage('네 대표님, 예약을 취소했습니다. (' + (d.count || 0) + '명 묶음을 다시 승인 대기로 돌렸습니다)', 'care');
     })
     .catch(function(){});
 }

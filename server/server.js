@@ -607,6 +607,7 @@ app.post('/history', (req, res) => {
 // POST /notify/read   → 확인 처리 ({id} 한 개 또는 {all:true} 전체) → 빨간점이 사라진다
 // POST /notify        → 외부/수동 알림 등록 입구 (결제 웹훅·수신거부 연동이 나중에 여기로 꽂는다)
 app.get('/notify', (req, res) => {
+  if (typeof runDuePromo === 'function') runDuePromo().catch(() => {});   // 앱 폴링이 서버를 깨우면 밀린 예약도 확인
   const list = NOTIFY.slice(-100).reverse();           // 최신순, 최대 100개
   const unread = NOTIFY.filter((n) => !n.read).length;
   res.json({ list, unread });
@@ -943,17 +944,84 @@ function enforceAdRules(text) {
   return t;
 }
 
-// 홍보 발송 묶음 보관소 (server/data/홍보대기.json) — [{batchId, ts, text, items, status}]
+// 홍보 발송 묶음 보관소 (server/data/홍보대기.json) — [{batchId, ts, text, items, status, sendAt?}]
+//   status: '대기'(승인 전) · '예약'(예약 발송 등록됨, sendAt에 시각) · '발송완료 …' · '보류' · '예약실패'
 let PROMO = loadJson('홍보대기.json');
 const savePromo = () => saveJson('홍보대기.json', PROMO);
 
+// 한국시간 부품 분해 (예약 야간보정용 — Render는 UTC라 꼭 변환)
+function koreaParts(d) {
+  const f = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Seoul', hour12: false,
+    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+  const p = {}; f.formatToParts(d).forEach((x) => { if (x.type !== 'literal') p[x.type] = x.value; });
+  let h = Number(p.hour); if (h === 24) h = 0;
+  return { y: +p.year, mo: +p.month, da: +p.day, h, mi: +p.minute };
+}
+// 야간차단(밤 21시~아침 8시)에 걸린 예약 시각을 다음 허용시각(아침 8시 정각 KST)으로 당긴다.
+function snapToAllowed(target) {
+  const p = koreaParts(target);
+  if (p.h >= 8 && p.h < 21) return target;          // 이미 허용 시간대 → 그대로
+  let Y = p.y, M = p.mo, D = p.da;
+  if (p.h >= 21) {                                   // 밤 → 다음날 아침 8시
+    const t = new Date(Date.UTC(Y, M - 1, D + 1));   // 월말·연말 넘김 자동 처리
+    Y = t.getUTCFullYear(); M = t.getUTCMonth() + 1; D = t.getUTCDate();
+  }
+  // 새벽(8시 전)이면 같은 날 아침 8시. 08:00 KST = 그날 08:00 UTC − 9시간.
+  return new Date(Date.UTC(Y, M - 1, D, 8, 0, 0) - 9 * 3600 * 1000);
+}
+
+// 한 묶음을 실제로 발송하고 시트 도장·영업일기·알림까지 처리한다. (수동 승인·예약 자동발송 공통)
+//   ※ 호칭은 전원 "고객님" 통일 (2026-06-08 결정 — CRM 이름 칸에 회사·직함이 섞여 있어 안전하게)
+async function sendPromoBatch(batch) {
+  const messages = batch.items.map((it) => ({
+    to: it.phone, from: SOLAPI_SENDER,
+    text: batch.text.replace(/\{이름\}/g, '고객'),
+  }));
+  const result = await solapi.send(messages);
+  const okN = (result.groupInfo && result.groupInfo.count && result.groupInfo.count.registeredSuccess) || messages.length;
+
+  // 시트에 발송완료 도장 (한 번에 — batchUpdate)
+  const { tab, applicants, statusCol, sheets } = await readPeople(CRM_SHEET_ID, CRM_SHEET_TAB);
+  const stamp = '발송완료 ' + new Date().toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const phones = new Set(batch.items.map((i) => i.phone));
+  const data = applicants.filter((a) => phones.has(a.phone) && !a.status).map((a) => ({
+    range: `'${tab.replace(/'/g, "''")}'!${colLetter(statusCol)}${a.row}`,
+    values: [[stamp]],
+  }));
+  if (data.length) {
+    await sheets.spreadsheets.values.batchUpdate({
+      spreadsheetId: CRM_SHEET_ID,
+      requestBody: { valueInputOption: 'RAW', data },
+    });
+  }
+
+  batch.status = '발송완료 ' + stamp;
+  delete batch.sendAt;
+  savePromo();
+  const cost = batch.items.length * PROMO_UNIT_PRICE;
+  appendDiary({
+    ts: new Date().toISOString(), agentId: 'care', agentName: '고객관리', project: '머니트레이닝랩', kind: 'hand',
+    entry: `[손] CRM 홍보 문자 ${batch.items.length}명 발송 (접수 ${okN}건, 예상 비용 약 ${cost.toLocaleString()}원) — 시트 도장 ${data.length}건`,
+  });
+  pushNotify({
+    kind: 'sent', agentId: 'care',
+    title: `CRM 홍보 문자 발송 완료 ${batch.items.length}명`,
+    body: `접수 ${okN}건 · 예상 비용 약 ${cost.toLocaleString()}원 · 시트 도장 ${data.length}건`,
+  });
+  return { sent: batch.items.length, registered: okN, stamped: data.length, cost };
+}
+
 // ── /promo/status: CRM 손 상태 + 비용 예상 ───────────────────
 app.get('/promo/status', async (req, res) => {
+  runDuePromo().catch(() => {});   // 앱을 열어 서버가 깨면 밀린 예약부터 확인
   const out = {
     crmSheet: !!CRM_SHEET_ID, solapi: !!solapi, sender: !!SOLAPI_SENDER,
     dailyLimit: PROMO_DAILY_LIMIT, unitPrice: PROMO_UNIT_PRICE,
     pendingBatches: PROMO.filter((b) => b.status === '대기').map((b) => ({
       batchId: b.batchId, count: b.items.length, cost: b.items.length * PROMO_UNIT_PRICE, ts: b.ts, text: b.text,
+    })),
+    scheduledBatches: PROMO.filter((b) => b.status === '예약').map((b) => ({
+      batchId: b.batchId, count: b.items.length, cost: b.items.length * PROMO_UNIT_PRICE, text: b.text, sendAt: b.sendAt,
     })),
   };
   if (CRM_SHEET_ID && googleCreds()) {
@@ -1050,48 +1118,96 @@ app.post('/promo/approve', async (req, res) => {
     if (!solapi || !SOLAPI_SENDER) return res.status(503).json({ error: 'Solapi 키 또는 발신번호가 없습니다.' });
     const h = koreaHour();
     if (h >= 21 || h < 8) {
-      return res.status(403).json({ error: `지금은 한국시간 ${h}시 — 광고 문자는 밤 9시~아침 8시 발송이 법으로 금지돼 있습니다. 아침 8시 이후 승인해 주세요.` });
+      return res.status(403).json({ error: `지금은 한국시간 ${h}시 — 광고 문자는 밤 9시~아침 8시 발송이 법으로 금지돼 있습니다. 아침 8시 이후 발송하거나, "예약 발송"으로 아침 시간에 걸어 두세요.` });
     }
-
-    // 발송 (한 번에 — Solapi는 묶음 발송 지원)
-    // 호칭은 전원 "고객님" 통일 (2026-06-08 대표님 결정 — CRM 이름 칸에 회사·직함이 섞여 있어 안전하게)
-    const messages = batch.items.map((it) => ({
-      to: it.phone, from: SOLAPI_SENDER,
-      text: batch.text.replace(/\{이름\}/g, '고객'),
-    }));
-    const result = await solapi.send(messages);
-    const okN = (result.groupInfo && result.groupInfo.count && result.groupInfo.count.registeredSuccess) || messages.length;
-
-    // 시트에 발송완료 도장 (한 번에 — batchUpdate)
-    const { tab, applicants, statusCol, sheets } = await readPeople(CRM_SHEET_ID, CRM_SHEET_TAB);
-    const stamp = '발송완료 ' + new Date().toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-    const phones = new Set(batch.items.map((i) => i.phone));
-    const data = applicants.filter((a) => phones.has(a.phone) && !a.status).map((a) => ({
-      range: `'${tab.replace(/'/g, "''")}'!${colLetter(statusCol)}${a.row}`,
-      values: [[stamp]],
-    }));
-    if (data.length) {
-      await sheets.spreadsheets.values.batchUpdate({
-        spreadsheetId: CRM_SHEET_ID,
-        requestBody: { valueInputOption: 'RAW', data },
-      });
-    }
-
-    batch.status = '발송완료 ' + stamp;
-    savePromo();
-    const cost = batch.items.length * PROMO_UNIT_PRICE;
-    appendDiary({
-      ts: new Date().toISOString(), agentId: 'care', agentName: '고객관리', project: '머니트레이닝랩', kind: 'hand',
-      entry: `[손] 대표님 승인으로 CRM 홍보 문자 ${batch.items.length}명 발송 (접수 ${okN}건, 예상 비용 약 ${cost.toLocaleString()}원) — 시트 도장 ${data.length}건`,
-    });
-    pushNotify({
-      kind: 'sent', agentId: 'care',
-      title: `CRM 홍보 문자 발송 완료 ${batch.items.length}명`,
-      body: `접수 ${okN}건 · 예상 비용 약 ${cost.toLocaleString()}원 · 시트 도장 ${data.length}건`,
-    });
-    res.json({ sent: batch.items.length, registered: okN, stamped: data.length, cost });
+    const out = await sendPromoBatch(batch);
+    res.json(out);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
+
+// ── /promo/schedule: 예약 발송 등록 (= 대표님 승인 + 발송 시각 지정) ──
+// 휴먼인더루프: '대기' 묶음(대표님이 직접 만든 것)만 예약 가능. 자동 생성·발송은 절대 없음.
+// 야간차단 시간대를 고르면 자동으로 다음 허용시각(아침 8시)으로 당긴다.
+app.post('/promo/schedule', async (req, res) => {
+  console.log('📨 /promo/schedule 요청 도착 —', new Date().toLocaleString('ko-KR'));
+  try {
+    const { batchId, sendAt } = req.body || {};
+    const batch = PROMO.find((b) => b.batchId === batchId && b.status === '대기');
+    if (!batch) return res.status(400).json({ error: '예약할 대기 묶음이 없습니다. (이미 발송·예약·보류됐을 수 있어요)' });
+    if (!solapi || !SOLAPI_SENDER) return res.status(503).json({ error: 'Solapi 키 또는 발신번호가 없습니다.' });
+    const want = new Date(sendAt);
+    if (isNaN(want.getTime())) return res.status(400).json({ error: '예약 시간을 알아듣지 못했습니다.' });
+
+    const eff = snapToAllowed(want);
+    const snapped = eff.getTime() !== want.getTime();
+    batch.status = '예약';
+    batch.sendAt = eff.toISOString();
+    batch.scheduledTs = new Date().toISOString();
+    batch.tries = 0;
+    delete batch.sendError;
+    savePromo();
+
+    const cost = batch.items.length * PROMO_UNIT_PRICE;
+    const when = eff.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    appendDiary({
+      ts: new Date().toISOString(), agentId: 'care', agentName: '고객관리', project: '머니트레이닝랩', kind: 'hand',
+      entry: `[손] CRM 홍보 ${batch.items.length}명 예약 발송 등록 — ${when} 발송 예정 (대표님 승인 완료)`,
+    });
+    res.json({ batchId, count: batch.items.length, cost, sendAt: batch.sendAt, when, snapped });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── /promo/schedule/cancel: 예약 취소 → 다시 승인 대기로 ──────
+app.post('/promo/schedule/cancel', (req, res) => {
+  const { batchId } = req.body || {};
+  const batch = PROMO.find((b) => b.batchId === batchId && b.status === '예약');
+  if (!batch) return res.status(400).json({ error: '취소할 예약이 없습니다. (이미 발송됐거나 취소됨)' });
+  batch.status = '대기';
+  delete batch.sendAt; delete batch.scheduledTs; delete batch.tries; delete batch.sendError;
+  savePromo();
+  res.json({ ok: true, count: batch.items.length });
+});
+
+// ── 예약 발송 자동 처리기 ────────────────────────────────────
+// 대표님이 "예약 발송"으로 승인해 둔 묶음만 자동 발송한다. (승인 없는 자동 생성·발송 절대 없음)
+// ※ Render 무료 플랜은 15분 무접속 시 잠들어 1분 타이머가 멈춘다 → 앱을 열거나(/notify·/promo/status 폴링)
+//   외부 크론이 /promo/tick 을 치면, 서버가 깨는 즉시 밀린 예약을 확인해 보낸다.
+let promoTickRunning = false;
+async function runDuePromo() {
+  if (promoTickRunning) return { ran: false };
+  if (!solapi || !SOLAPI_SENDER) return { ran: false };
+  promoTickRunning = true;
+  let sent = 0;
+  try {
+    const now = Date.now();
+    const due = PROMO.filter((b) => b.status === '예약' && b.sendAt && new Date(b.sendAt).getTime() <= now);
+    for (const batch of due) {
+      const h = koreaHour();
+      if (h >= 21 || h < 8) continue;   // 안전장치: 혹시 야간이면 보류, 다음 허용시간에 다시 시도
+      try {
+        await sendPromoBatch(batch);    // 성공 시 status가 '발송완료…'로 바뀌고 sendAt 제거됨
+        sent++;
+      } catch (e) {
+        batch.tries = (batch.tries || 0) + 1;
+        batch.sendError = e.message;
+        if (batch.tries >= 3) {
+          batch.status = '예약실패';
+          delete batch.sendAt;
+          pushNotify({ kind: 'sent', agentId: 'care',
+            title: 'CRM 예약 발송 실패 — 확인 필요',
+            body: `${batch.items.length}명 묶음 발송이 3회 실패했습니다. (${e.message}) 「대기·비용 보기」에서 다시 시도해 주세요.` });
+        } else {
+          batch.sendAt = new Date(now + 10 * 60 * 1000).toISOString();   // 10분 뒤 재시도
+        }
+        savePromo();
+      }
+    }
+  } finally { promoTickRunning = false; }
+  return { ran: true, sent };
+}
+setInterval(() => { runDuePromo().catch(() => {}); }, 60 * 1000);
+// 외부 크론(cron-job.org 등)이 아침에 깨우며 호출할 수 있는 입구 — 호출만으로 밀린 예약 발송
+app.get('/promo/tick', async (req, res) => { res.json(await runDuePromo()); });
 
 // ── /promo/reject: 묶음 보류 ─────────────────────────────────
 app.post('/promo/reject', (req, res) => {
