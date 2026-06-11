@@ -1270,9 +1270,9 @@ async function readPaidRows() {
   return out;
 }
 
-// 결제감사+대면안내 문자 본문 (거래성 안내)
-function buildPayThanksText(p) {
-  const c = PAYCFG;
+// 결제감사+대면안내 문자 본문 (거래성 안내) — cfg를 주면 그 설정으로(미리보기용), 없으면 저장된 설정
+function buildPayThanksText(p, cfg) {
+  const c = cfg || PAYCFG;
   let t = `[오원트금융연구소] ${p.name}님, ${p.course} 결제가 완료되었습니다(${p.amount.toLocaleString()}원). 감사합니다.`;
   if (c.schedule) t += `\n· 일정: ${c.schedule}`;
   if (c.place)    t += `\n· 장소: ${c.place}`;
@@ -1423,6 +1423,35 @@ app.get('/campaign/stats', async (req, res) => {
     });
     out.convRate = (out.apply && out.apply > 0) ? Math.round(out.paid / out.apply * 1000) / 10 : null;
     res.json(out);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── /pay/test: 발송 테스트 (돈 안 쓰고 검증, 완전 분리 경로) ──
+//   dryRun=true  → 문자 본문만 반환 (0원, 발송 안 함)
+//   dryRun=false → 대표님 본인 번호(발신번호)로만 1통 발송 (~33원, 110만 결제 아님)
+//   ※ AI머니야 시트·리드시트·중복방지(PAYSEEN) 전부 안 건드림. 받는 번호는 서버가 고정(임의 번호 차단).
+app.post('/pay/test', async (req, res) => {
+  console.log('📨 /pay/test 요청 도착 —', new Date().toLocaleString('ko-KR'));
+  try {
+    const b = req.body || {};
+    // 미리보기 시 입력값을 바로 반영할 수 있게(저장 없이), 없으면 저장된 설정 사용
+    const cfg = {
+      schedule: b.schedule !== undefined ? String(b.schedule) : PAYCFG.schedule,
+      place:    b.place    !== undefined ? String(b.place)    : PAYCFG.place,
+      prepare:  b.prepare  !== undefined ? String(b.prepare)  : PAYCFG.prepare,
+      notice:   PAYCFG.notice,
+    };
+    const sample = {
+      name: (b.name && String(b.name).trim()) || '홍길동(테스트)',
+      course: '전문가 대면과정',
+      amount: 1100000,
+    };
+    const text = buildPayThanksText(sample, cfg);
+    if (b.dryRun) return res.json({ dryRun: true, text });
+    if (!solapi || !SOLAPI_SENDER) return res.status(503).json({ error: 'Solapi 키 또는 발신번호가 없어 테스트 발송을 못 합니다.' });
+    // 받는 번호 = 발신번호(대표님 본인). 파라미터로 받는 번호를 못 바꾼다 → 악용·오발송 차단.
+    await solapi.send([{ to: SOLAPI_SENDER, from: SOLAPI_SENDER, text }]);
+    res.json({ sent: true, to: SOLAPI_SENDER, text });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

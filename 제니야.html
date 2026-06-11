@@ -454,7 +454,7 @@ body{font-family:'Pretendard',-apple-system,sans-serif;font-weight:500;backgroun
 
   </div>
 
-  <div class="foot">제니야 — <b>상단 프로젝트 × 좌측 에이전트 × 우측 도구</b> 교차 구조 · v0.9 (결제후 손)</div>
+  <div class="foot">제니야 — <b>상단 프로젝트 × 좌측 에이전트 × 우측 도구</b> 교차 구조 · v0.9.1 (결제후 손·발송테스트)</div>
 </div>
 
 <!-- C-6. 업로드 모달 (+ 버튼으로 열림 — 실제 업로드는 3단계) -->
@@ -855,6 +855,8 @@ function renderPayHand(box){
            + '<div class="hh" style="color:#1B7A3D"><i class="ti ti-cash-register"></i> 결제후 손 · 강의 결제</div>'
            + '<div id="pay-state" style="font-size:11px;color:#66736E;margin:2px 0 6px">상태 확인 중…</div>'
            + '<button class="hand-btn" id="pay-setup"><i class="ti ti-map-pin"></i> 대면안내 설정·켜기</button>'
+           + '<button class="hand-btn" id="pay-preview"><i class="ti ti-eye"></i> 문자 미리보기</button>'
+           + '<button class="hand-btn" id="pay-testsend"><i class="ti ti-message-2"></i> 내 번호로 테스트 발송</button>'
            + '<button class="hand-btn" id="pay-stats"><i class="ti ti-chart-bar"></i> 모집현황 보기</button>'
            + '</div>';
   box.insertAdjacentHTML('beforeend', html);
@@ -897,6 +899,42 @@ function paySetup(){
       updateMessage(w, '결제후 손을 <b>켰습니다</b>. 이후 새 결제가 감지되면 결제감사+대면안내 문자가 자동 발송됩니다.'
         + (d.baselined ? '<br>기존 결제 <b>' + d.baselined + '건</b>은 기준선으로 표시(문자 안 감).' : '')
         + '<div style="font-size:11px;color:#66736E;margin-top:4px">※ 결제 즉시가 아니라 서버가 깰 때(앱 열거나 아침 cron) 확인합니다.</div>');
+    })
+    .catch(function(){ updateMessage(w, '⚠️ 서버에 연결할 수 없습니다.'); });
+}
+
+// 문자 미리보기 — 실제 나갈 본문을 화면에만 보여줌 (0원, 발송 안 함)
+function payPreview(){
+  var w = addMessage('<i class="ti ti-loader-2"></i> 미리보기 만드는 중…', 'care');
+  fetch(SERVER_URL + '/pay/test', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ dryRun: true })
+  })
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      if(d.error){ updateMessage(w, '⚠️ ' + escapeHtml(d.error)); return; }
+      updateMessage(w, '<b>문자 미리보기</b> (실제로 보내지 않습니다)'
+        + '<div style="margin:6px 0;padding:9px;background:#EAF6EE;border-radius:8px;font-size:12.5px;line-height:1.6;white-space:pre-wrap">'
+        + escapeHtml(d.text) + '</div>'
+        + '<div style="font-size:11px;color:#66736E">대면안내(일정·장소·준비물)를 바꾸려면 「대면안내 설정·켜기」에서 수정하세요.</div>');
+    })
+    .catch(function(){ updateMessage(w, '⚠️ 서버에 연결할 수 없습니다.'); });
+}
+
+// 내 번호로 테스트 발송 — 대표님 본인 번호로만 1통 (110만 결제 없이, 문자값 ~33원)
+function payTestSend(){
+  if(!window.confirm('대표님 본인 번호로 테스트 문자 1통을 보냅니다.\n(문자값 약 33원 · 110만 결제 아님 · 시트는 안 건드립니다)\n진행할까요?')) return;
+  var w = addMessage('<i class="ti ti-loader-2"></i> 테스트 문자 보내는 중…', 'care');
+  fetch(SERVER_URL + '/pay/test', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ dryRun: false })
+  })
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      if(d.error){ updateMessage(w, '⚠️ ' + escapeHtml(d.error)); return; }
+      updateMessage(w, '테스트 문자를 <b>' + escapeHtml(d.to) + '</b> 로 보냈습니다. 폰을 확인해 주세요.'
+        + '<div style="margin:6px 0;padding:9px;background:#EAF6EE;border-radius:8px;font-size:12.5px;line-height:1.6;white-space:pre-wrap">'
+        + escapeHtml(d.text) + '</div>');
     })
     .catch(function(){ updateMessage(w, '⚠️ 서버에 연결할 수 없습니다.'); });
 }
@@ -1004,7 +1042,8 @@ document.addEventListener('click', function(e){
   var handFns = {
     'hand-new': careNew, 'hand-draft': careDraft, 'hand-pending': carePending,
     'mkt-make': mktMake, 'promo-draft': promoDraft, 'promo-pending': promoPending,
-    'pay-setup': paySetup, 'pay-stats': payStats
+    'pay-setup': paySetup, 'pay-stats': payStats,
+    'pay-preview': payPreview, 'pay-testsend': payTestSend
   };
   if(handFns[t.id]){ console.log('[손] ' + t.id + ' 클릭'); ensureTodayThen(handFns[t.id]); }
 });
