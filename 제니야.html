@@ -682,7 +682,8 @@ function loadCampaignBoard(){
   fetch(SERVER_URL + '/campaign/config').then(function(r){return r.json();}).then(function(c){
     CAMPAIGN_CACHE = c || {};
     var el = document.getElementById('camp-summary'); if(!el) return;
-    el.innerHTML = '<b>' + escapeHtml(c.name||'(강의명 미정)') + '</b>'
+    el.innerHTML = '<b style="color:#6C4AB6">📌 ' + escapeHtml(c.title||'(캠페인 제목 미정)') + '</b>'
+      + '<br>' + escapeHtml(c.name||'(강의명 미정)')
       + '<br>일정: ' + escapeHtml(c.date||'-')
       + '<br>수강료 ' + (Number(c.price)||0).toLocaleString() + '원 · 장소 ' + escapeHtml(c.place||'(미정)') + ' · 정원 ' + escapeHtml(c.capacity||'(미정)');
   }).catch(function(){});
@@ -728,6 +729,7 @@ function campaignForm(){
   function row(label,key,val,ph){ return '<div style="margin:4px 0"><div style="font-size:11px;color:#6C4AB6">'+label+'</div>'
     + '<input data-ck="'+key+'" value="'+escapeAttr(val)+'" placeholder="'+(ph||'')+'" style="width:100%;padding:5px;border:1px solid #ccc;border-radius:5px;font-size:12px;box-sizing:border-box"></div>'; }
   var html = '<b>캠페인 설정 — 매달 여기만 바꾸면 모든 손이 이 값을 씁니다</b>'
+    + row('캠페인 제목 (구분용)','title',c.title,'예: 전문가 대면과정 7월 / 일반인 비대면 8월')
     + row('강의명','name',c.name) + row('일정','date',c.date) + row('수강료(원)','price',c.price)
     + row('장소','place',c.place,'예: 강남 오원트 5층 세미나실') + row('정원','capacity',c.capacity,'예: 20명')
     + '<div style="margin:4px 0"><div style="font-size:11px;color:#6C4AB6">홍보 사실(한 줄 — 홍보·콘텐츠가 그대로 사용)</div>'

@@ -1104,6 +1104,7 @@ async function sendPromoBatch(batch) {
 // 저장: 로컬 JSON + 구글시트 '제니야_캠페인' 탭 (재시작에도 유지)
 // ============================================================
 const CAMPAIGN_DEFAULT = {
+  title: '전문가 대면과정 7월',        // 캠페인 구분용 제목 (월·과정별 — 나중에 여러 캠페인 구분·관리)
   name: '전문가 대면과정 (금융집짓기 상담전문가)',
   date: '2026년 7월 4·11·18·25일 매주 토요일 13~18시 (4주 대면) + 수료 후 1년 온라인',
   price: 1100000,
@@ -1166,7 +1167,7 @@ app.post('/campaign/config', async (req, res) => {
   console.log('📋 /campaign/config 저장 —', new Date().toLocaleString('ko-KR'));
   try {
     const b = req.body || {};
-    const allow = ['name', 'date', 'price', 'place', 'capacity', 'applyLink', 'payLink', 'facts', 'prepare', 'notice', 'listenTarget', 'listenKeywords', 'contentNote'];
+    const allow = ['title', 'name', 'date', 'price', 'place', 'capacity', 'applyLink', 'payLink', 'facts', 'prepare', 'notice', 'listenTarget', 'listenKeywords', 'contentNote'];
     allow.forEach((k) => { if (b[k] !== undefined) CAMPAIGN[k] = (k === 'price') ? (Number(String(b[k]).replace(/\D/g, '')) || 0) : String(b[k]); });
     await saveCampaign();
     res.json({ ok: true, campaign: CAMPAIGN });
