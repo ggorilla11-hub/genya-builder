@@ -607,7 +607,8 @@ app.post('/history', (req, res) => {
 // POST /notify/read   → 확인 처리 ({id} 한 개 또는 {all:true} 전체) → 빨간점이 사라진다
 // POST /notify        → 외부/수동 알림 등록 입구 (결제 웹훅·수신거부 연동이 나중에 여기로 꽂는다)
 app.get('/notify', (req, res) => {
-  if (typeof runDuePromo === 'function') runDuePromo().catch(() => {});   // 앱 폴링이 서버를 깨우면 밀린 예약도 확인
+  if (typeof runDuePromo === 'function') runDuePromo().catch(() => {});       // 앱 폴링이 서버를 깨우면 밀린 예약도 확인
+  if (typeof runDuePayments === 'function') runDuePayments().catch(() => {}); // 밀린 결제 처리도 확인
   const list = NOTIFY.slice(-100).reverse();           // 최신순, 최대 100개
   const unread = NOTIFY.filter((n) => !n.read).length;
   res.json({ list, unread });
@@ -1205,9 +1206,225 @@ async function runDuePromo() {
   } finally { promoTickRunning = false; }
   return { ran: true, sent };
 }
-setInterval(() => { runDuePromo().catch(() => {}); }, 60 * 1000);
+setInterval(() => { runDuePromo().catch(() => {}); runDuePayments().catch(() => {}); }, 60 * 1000);
 // 외부 크론(cron-job.org 등)이 아침에 깨우며 호출할 수 있는 입구 — 호출만으로 밀린 예약 발송
 app.get('/promo/tick', async (req, res) => { res.json(await runDuePromo()); });
+
+// ============================================================
+// 결제후 손 — 네 번째 실제 도구 (2026-06-12)
+// 역할: AI머니야_마케팅DB(전문가강의DB/일반인강의DB)에 쌓이는 "결제완료" 줄을 읽어
+//       → 우리 신청자(리드) 시트에 "결제완료" 도장 → 결제감사+대면안내 문자 자동발송
+//       → 알림함 기록 → 모집현황 집계.
+// 안전 원칙:
+//   · 기존 페이플 웹훅(ohwant-webhook)·AI머니야 시트는 절대 안 건드린다(읽기 전용).
+//   · 처음 켤 때 이미 있던 결제는 "기준선"으로 표시만 하고 문자 안 보냄(과거 결제자 오발송 방지).
+//   · 대면안내(일정·장소)를 입력해 "켜기" 전에는 자동발송 안 함.
+//   · 주문번호로 중복방지(같은 결제 두 번 처리 안 함). 거래성 안내라 야간차단·승인 없이 즉시 발송(광고 아님).
+// ============================================================
+const PAY_RESULT_SHEET_ID = process.env.PAY_RESULT_SHEET_ID || '19hcUDUn85JW86eAwvV1ZEUMprMNvtWzRlLxhzMxjoU0';
+const PAY_WATCH = [
+  { tab: '전문가강의DB', course: '전문가 대면과정', expected: 1100000 },
+  { tab: '일반인강의DB', course: '일반인 강의',     expected: 550000  },
+];
+
+// 결제시트 전화번호는 앞 0이 빠져 있을 때가 있다 ("1047813996" → "01047813996")
+function normPhone(v) {
+  let p = String(v || '').replace(/\D/g, '');
+  if ((p.length === 9 || p.length === 10) && /^1[0-9]/.test(p)) p = '0' + p;
+  return /^01[016789]\d{7,8}$/.test(p) ? p : null;
+}
+
+let PAYCFG = loadJson('결제후설정.json');
+if (Array.isArray(PAYCFG)) PAYCFG = {};         // 기본은 객체 {enabled, place, schedule, prepare, notice, baselineDone}
+const savePayCfg  = () => saveJson('결제후설정.json', PAYCFG);
+let PAYSEEN = loadJson('결제처리.json');         // 처리(또는 기준선)된 주문번호 목록 (중복방지)
+const savePaySeen = () => saveJson('결제처리.json', PAYSEEN);
+const PAYFAIL = {};                              // 주문번호 → 실패횟수 (메모리, 3회면 포기+알림)
+
+// 결제시트의 강의 탭들에서 "결제완료 + 주문번호 있는" 진짜 결제 줄만 뽑는다
+async function readPaidRows() {
+  const sheets = sheetsClient();
+  if (!sheets) throw new Error('구글 열쇠가 없습니다.');
+  const out = [];
+  for (const w of PAY_WATCH) {
+    let got;
+    try {
+      got = await sheets.spreadsheets.values.get({ spreadsheetId: PAY_RESULT_SHEET_ID, range: `'${w.tab}'!A2:I` });
+    } catch (e) { continue; }                    // 탭이 없으면 건너뜀
+    (got.data.values || []).forEach((r) => {
+      const status = String(r[6] || '').trim();
+      const oid    = String(r[7] || '').trim();
+      if (!status.includes('결제완료') || !oid) return;   // 진짜 결제만 (테스트 "신청" 줄 제외)
+      out.push({
+        tab: w.tab, course: w.course, expected: w.expected,
+        when: String(r[0] || '').trim(),
+        name: String(r[1] || '').trim() || '고객',
+        phone: normPhone(r[2]),
+        email: String(r[3] || '').trim(),
+        goods: String(r[4] || '').trim(),
+        amount: Number(String(r[5] || '0').replace(/\D/g, '')) || 0,
+        oid,
+      });
+    });
+  }
+  return out;
+}
+
+// 결제감사+대면안내 문자 본문 (거래성 안내)
+function buildPayThanksText(p) {
+  const c = PAYCFG;
+  let t = `[오원트금융연구소] ${p.name}님, ${p.course} 결제가 완료되었습니다(${p.amount.toLocaleString()}원). 감사합니다.`;
+  if (c.schedule) t += `\n· 일정: ${c.schedule}`;
+  if (c.place)    t += `\n· 장소: ${c.place}`;
+  if (c.prepare)  t += `\n· 준비물: ${c.prepare}`;
+  if (c.notice)   t += `\n${c.notice}`;
+  t += `\n문의 010-5424-5332`;
+  return t;
+}
+
+// 결제 한 건 처리: 문자 발송 → 리드시트 도장 → 알림 → 일기
+async function processOnePayment(p) {
+  // ① 결제감사+대면안내 문자 (거래성 — 야간차단·승인 없이 즉시)
+  if (solapi && SOLAPI_SENDER && p.phone) {
+    await solapi.send([{ to: p.phone, from: SOLAPI_SENDER, text: buildPayThanksText(p) }]);
+  }
+  // ② 우리 신청자(리드) 시트에 결제완료 도장 (전화번호 매칭, 기존 값 뒤에 덧붙임)
+  let stamped = false, matched = false;
+  try {
+    const { tab, applicants, statusCol, sheets } = await readPeople(LEAD_SHEET_ID, LEAD_SHEET_TAB);
+    const hit = applicants.find((a) => a.phone === p.phone);
+    if (hit) {
+      matched = true;
+      const when = new Date().toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+      const stamp = (hit.status ? hit.status + ' / ' : '') + `결제완료 ${p.amount.toLocaleString()}원 ${when}`;
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: LEAD_SHEET_ID,
+        range: `'${tab.replace(/'/g, "''")}'!${colLetter(statusCol)}${hit.row}`,
+        valueInputOption: 'RAW', requestBody: { values: [[stamp]] },
+      });
+      stamped = true;
+    }
+  } catch (e) { /* 도장 실패는 치명적 아님 — 문자는 이미 나갔다 */ }
+
+  // ③ 알림함 + 영업일기
+  const amt = p.amount.toLocaleString();
+  const mismatch = p.amount !== p.expected;
+  pushNotify({
+    kind: 'pay', agentId: 'care',
+    title: `💰 ${p.name}님 결제완료 — ${p.course} ${amt}원`,
+    body: (matched ? '신청 명단에서 확인됨. ' : '⚠️ 신청 명단에 없던 분입니다. ')
+        + '결제감사·대면안내 문자 발송함.' + (mismatch ? ` ⚠️ 금액 불일치(기대 ${p.expected.toLocaleString()}원).` : ''),
+  });
+  appendDiary({
+    ts: new Date().toISOString(), agentId: 'care', agentName: '고객관리', project: '머니트레이닝랩', kind: 'hand',
+    entry: `[손] 결제후: ${p.name}님 ${p.course} ${amt}원 결제완료 — 대면안내 문자 발송, 리드시트 도장 ${stamped ? 'O' : 'X'}${matched ? '' : '(명단 외)'}`,
+  });
+}
+
+// 새 결제완료 줄만 자동 처리 (기준선 이후, 켜져 있을 때만)
+let payTickRunning = false;
+async function runDuePayments() {
+  if (payTickRunning) return { ran: false };
+  if (!PAYCFG.enabled) return { ran: false, reason: 'off' };
+  payTickRunning = true;
+  let sent = 0;
+  try {
+    const paid = await readPaidRows();
+    const seen = new Set(PAYSEEN);
+    for (const p of paid) {
+      if (seen.has(p.oid)) continue;
+      try {
+        await processOnePayment(p);
+        PAYSEEN.push(p.oid); seen.add(p.oid); savePaySeen();
+        sent++;
+      } catch (e) {
+        PAYFAIL[p.oid] = (PAYFAIL[p.oid] || 0) + 1;
+        if (PAYFAIL[p.oid] >= 3) {               // 3회 실패하면 포기(무한반복 방지) + 대표 알림
+          PAYSEEN.push(p.oid); seen.add(p.oid); savePaySeen();
+          pushNotify({ kind: 'pay', agentId: 'care', title: '결제후 처리 실패 — 확인 필요',
+            body: `${p.name}님 ${p.course} 처리가 3회 실패(${e.message}). 수동 확인 바랍니다.` });
+        }
+      }
+    }
+    return { ran: true, sent };
+  } catch (e) {
+    return { ran: true, sent, error: e.message };
+  } finally { payTickRunning = false; }
+}
+
+// 기준선 잡기: 지금까지의 결제완료를 "처리됨"으로만 표시(문자 안 보냄)
+async function seedPayBaseline() {
+  const paid = await readPaidRows();
+  const seen = new Set(PAYSEEN);
+  let added = 0;
+  paid.forEach((p) => { if (!seen.has(p.oid)) { PAYSEEN.push(p.oid); seen.add(p.oid); added++; } });
+  savePaySeen();
+  return added;
+}
+
+// ── /pay/status: 결제후 손 상태 ──
+app.get('/pay/status', async (req, res) => {
+  runDuePayments().catch(() => {});              // 앱을 열어 서버가 깨면 밀린 결제부터 확인
+  const out = {
+    enabled: !!PAYCFG.enabled, baselineDone: !!PAYCFG.baselineDone, processed: PAYSEEN.length,
+    config: { place: PAYCFG.place || '', schedule: PAYCFG.schedule || '', prepare: PAYCFG.prepare || '', notice: PAYCFG.notice || '' },
+    googleKey: !!googleCreds(), solapi: !!solapi,
+  };
+  try {
+    const paid = await readPaidRows();
+    const seen = new Set(PAYSEEN);
+    out.totalPaid = paid.length;
+    out.unprocessed = paid.filter((p) => !seen.has(p.oid)).length;
+  } catch (e) { out.error = e.message; }
+  res.json(out);
+});
+
+// ── /pay/config: 대면안내 입력 + 켜기/끄기 (처음 켤 때 기준선 자동) ──
+app.post('/pay/config', async (req, res) => {
+  console.log('📨 /pay/config 요청 도착 —', new Date().toLocaleString('ko-KR'));
+  try {
+    const b = req.body || {};
+    if (b.place    !== undefined) PAYCFG.place    = String(b.place);
+    if (b.schedule !== undefined) PAYCFG.schedule = String(b.schedule);
+    if (b.prepare  !== undefined) PAYCFG.prepare  = String(b.prepare);
+    if (b.notice   !== undefined) PAYCFG.notice   = String(b.notice);
+    let baselined = 0;
+    if (b.enable === true) {
+      if (!PAYCFG.schedule && !PAYCFG.place) {
+        return res.status(400).json({ error: '대면안내(일정·장소)를 먼저 입력해 주세요. 빈 안내로는 켤 수 없습니다.' });
+      }
+      if (!PAYCFG.baselineDone) { baselined = await seedPayBaseline(); PAYCFG.baselineDone = true; }
+      PAYCFG.enabled = true;
+    } else if (b.enable === false) {
+      PAYCFG.enabled = false;
+    }
+    savePayCfg();
+    res.json({ ok: true, enabled: !!PAYCFG.enabled, baselined, config: PAYCFG });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── /pay/tick: 외부 크론·수동용 (호출만으로 밀린 결제 처리) ──
+app.get('/pay/tick', async (req, res) => { res.json(await runDuePayments()); });
+
+// ── /campaign/stats: 모집현황 (신청 N · 결제 N · 매출 N · 전환율) ──
+app.get('/campaign/stats', async (req, res) => {
+  try {
+    const out = {};
+    try {
+      const { applicants } = await readPeople(LEAD_SHEET_ID, LEAD_SHEET_TAB);
+      out.apply = applicants.length;
+    } catch (e) { out.apply = null; out.applyError = e.message; }
+    const paid = await readPaidRows();
+    out.paid = paid.length;
+    out.revenue = paid.reduce((s, p) => s + p.amount, 0);
+    out.byCourse = PAY_WATCH.map((w) => {
+      const rows = paid.filter((p) => p.tab === w.tab);
+      return { course: w.course, paid: rows.length, revenue: rows.reduce((s, p) => s + p.amount, 0) };
+    });
+    out.convRate = (out.apply && out.apply > 0) ? Math.round(out.paid / out.apply * 1000) / 10 : null;
+    res.json(out);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 
 // ── /promo/reject: 묶음 보류 ─────────────────────────────────
 app.post('/promo/reject', (req, res) => {

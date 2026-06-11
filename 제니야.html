@@ -454,7 +454,7 @@ body{font-family:'Pretendard',-apple-system,sans-serif;font-weight:500;backgroun
 
   </div>
 
-  <div class="foot">제니야 — <b>상단 프로젝트 × 좌측 에이전트 × 우측 도구</b> 교차 구조 · v0.8 (CRM 예약 발송)</div>
+  <div class="foot">제니야 — <b>상단 프로젝트 × 좌측 에이전트 × 우측 도구</b> 교차 구조 · v0.9 (결제후 손)</div>
 </div>
 
 <!-- C-6. 업로드 모달 (+ 버튼으로 열림 — 실제 업로드는 3단계) -->
@@ -653,6 +653,7 @@ function renderTools(){
   renderCareHand(box);   // 고객관리 손 — 강의 신청자 안내 발송 (첫 번째 실제 도구)
   renderMktHand(box);    // 마케팅 손 — 강의 홍보 콘텐츠 생성 (두 번째 실제 도구)
   renderPromoHand(box);  // CRM 홍보 손 — 기존고객 하루치 홍보 문자 (세 번째 실제 도구)
+  renderPayHand(box);    // 결제후 손 — 결제 감지→대면안내 문자 (네 번째 실제 도구)
   renderFaq(box);   // 도구 맨 아래에 질문 도움말(FAQ) 붙이기
 }
 
@@ -848,6 +849,81 @@ function promoScheduleCancel(batchId){
     .catch(function(){});
 }
 
+// D-3c-1e. 결제후 손 그리기 — 결제 감지→대면안내 문자 자동 (네 번째 실제 도구)
+function renderPayHand(box){
+  var html = '<div class="hand" id="pay-hand">'
+           + '<div class="hh" style="color:#1B7A3D"><i class="ti ti-cash-register"></i> 결제후 손 · 강의 결제</div>'
+           + '<div id="pay-state" style="font-size:11px;color:#66736E;margin:2px 0 6px">상태 확인 중…</div>'
+           + '<button class="hand-btn" id="pay-setup"><i class="ti ti-map-pin"></i> 대면안내 설정·켜기</button>'
+           + '<button class="hand-btn" id="pay-stats"><i class="ti ti-chart-bar"></i> 모집현황 보기</button>'
+           + '</div>';
+  box.insertAdjacentHTML('beforeend', html);
+  payRefresh();
+}
+
+// 상태 줄 갱신 (켜짐/꺼짐 · 미처리 결제 수)
+function payRefresh(){
+  fetch(SERVER_URL + '/pay/status')
+    .then(function(r){ return r.json(); })
+    .then(function(s){
+      var el = document.getElementById('pay-state'); if(!el) return;
+      if(s.error){ el.innerHTML = '⚠️ 결제시트 읽기 실패: ' + escapeHtml(s.error); return; }
+      var on = s.enabled ? '<b style="color:#1B7A3D">켜짐</b>' : '<b style="color:#C0392B">꺼짐</b>';
+      el.innerHTML = on + ' · 결제완료 ' + (s.totalPaid||0) + '건 (미처리 ' + (s.unprocessed||0) + ')'
+        + (s.enabled ? '' : ' — 「대면안내 설정·켜기」를 눌러 시작하세요');
+    })
+    .catch(function(){});
+}
+
+// 대면안내 입력 + 켜기 (처음 켤 때 기존 결제는 기준선 처리 = 문자 안 감)
+function paySetup(){
+  var schedule = window.prompt('대면안내 — 일정을 입력하세요.', '7/4·11·18·25 매주 토요일 13~18시');
+  if(schedule === null) return;
+  var place = window.prompt('대면안내 — 장소를 입력하세요. (미정이면 비워두세요)', '');
+  if(place === null) return;
+  var prepare = window.prompt('대면안내 — 준비물을 입력하세요. (없으면 비워두세요)', '');
+  if(prepare === null) return;
+  if(!window.confirm('이 내용으로 결제후 손을 켭니다.\n· 일정: ' + schedule + '\n· 장소: ' + (place||'(미정)') + '\n· 준비물: ' + (prepare||'(없음)')
+    + '\n\n지금까지 결제하신 분들께는 문자가 가지 않고(기준선), 이후 새 결제부터 자동 안내됩니다. 진행할까요?')) return;
+  var w = addMessage('<i class="ti ti-loader-2"></i> 결제후 손을 켜는 중…', 'care');
+  fetch(SERVER_URL + '/pay/config', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ schedule: schedule, place: place, prepare: prepare, enable: true })
+  })
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      payRefresh();
+      if(d.error){ updateMessage(w, '⚠️ ' + escapeHtml(d.error)); return; }
+      updateMessage(w, '결제후 손을 <b>켰습니다</b>. 이후 새 결제가 감지되면 결제감사+대면안내 문자가 자동 발송됩니다.'
+        + (d.baselined ? '<br>기존 결제 <b>' + d.baselined + '건</b>은 기준선으로 표시(문자 안 감).' : '')
+        + '<div style="font-size:11px;color:#66736E;margin-top:4px">※ 결제 즉시가 아니라 서버가 깰 때(앱 열거나 아침 cron) 확인합니다.</div>');
+    })
+    .catch(function(){ updateMessage(w, '⚠️ 서버에 연결할 수 없습니다.'); });
+}
+
+// 모집현황 — 신청 N · 결제 N · 전환율 · 매출 N
+function payStats(){
+  var w = addMessage('<i class="ti ti-loader-2"></i> 모집현황을 집계하는 중…', 'care');
+  fetch(SERVER_URL + '/campaign/stats')
+    .then(function(r){ return r.json(); })
+    .then(function(s){
+      if(s.error){ updateMessage(w, '⚠️ ' + escapeHtml(s.error)); return; }
+      var html = '<b>강의 모집 현황</b>'
+        + '<div style="margin:6px 0;padding:10px;background:#EAF6EE;border-radius:8px;font-size:13px;line-height:1.8">'
+        + '· 신청: <b>' + (s.apply==null ? '—' : s.apply + '명') + '</b>'
+        + (s.applyError ? ' <span style="color:#C0392B;font-size:11px">(신청시트 읽기 실패)</span>' : '')
+        + '<br>· 결제: <b>' + (s.paid||0) + '명</b>'
+        + (s.convRate!=null ? ' (전환율 ' + s.convRate + '%)' : '')
+        + '<br>· 매출: <b>' + Number(s.revenue||0).toLocaleString() + '원</b>';
+      (s.byCourse||[]).forEach(function(c){
+        if(c.paid) html += '<br>　- ' + escapeHtml(c.course) + ': ' + c.paid + '명 · ' + Number(c.revenue).toLocaleString() + '원';
+      });
+      html += '</div>';
+      updateMessage(w, html);
+    })
+    .catch(function(){ updateMessage(w, '⚠️ 서버에 연결할 수 없습니다.'); });
+}
+
 // D-3c-1c. 마케팅 손 그리기 — 홍보 콘텐츠 4종을 만들어 복사 버튼으로 건네준다
 function renderMktHand(box){
   var html = '<div class="hand" id="mkt-hand">'
@@ -927,7 +1003,8 @@ document.addEventListener('click', function(e){
   // 손 도구의 결과도 대화처럼 오늘에 쌓이므로, 과거 날짜를 보던 중이면 먼저 오늘로 돌아간다
   var handFns = {
     'hand-new': careNew, 'hand-draft': careDraft, 'hand-pending': carePending,
-    'mkt-make': mktMake, 'promo-draft': promoDraft, 'promo-pending': promoPending
+    'mkt-make': mktMake, 'promo-draft': promoDraft, 'promo-pending': promoPending,
+    'pay-setup': paySetup, 'pay-stats': payStats
   };
   if(handFns[t.id]){ console.log('[손] ' + t.id + ' 클릭'); ensureTodayThen(handFns[t.id]); }
 });
