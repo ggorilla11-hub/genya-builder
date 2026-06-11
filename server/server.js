@@ -1233,6 +1233,14 @@ setInterval(() => { runDuePromo().catch(() => {}); runDuePayments().catch(() => 
 // 외부 크론(cron-job.org 등)이 아침에 깨우며 호출할 수 있는 입구 — 호출만으로 밀린 예약 발송
 app.get('/promo/tick', async (req, res) => { res.json(await runDuePromo()); });
 
+// ── /tick: 외부 크론용 "통합" 입구 (이거 하나면 CRM 홍보 예약 + 결제후 손 둘 다 처리) ──
+// cron-job.org는 이 주소 하나만 주기적으로 부르면 된다.
+app.get('/tick', async (req, res) => {
+  const promo = await runDuePromo().catch((e) => ({ error: e.message }));
+  const pay   = await runDuePayments().catch((e) => ({ error: e.message }));
+  res.json({ ok: true, ts: new Date().toISOString(), promo, pay });
+});
+
 // ============================================================
 // 결제후 손 — 네 번째 실제 도구 (2026-06-12)
 // 역할: AI머니야_마케팅DB(전문가강의DB/일반인강의DB)에 쌓이는 "결제완료" 줄을 읽어
