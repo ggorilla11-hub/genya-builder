@@ -454,7 +454,7 @@ body{font-family:'Pretendard',-apple-system,sans-serif;font-weight:500;backgroun
 
   </div>
 
-  <div class="foot">제니야 — <b>상단 프로젝트 × 좌측 에이전트 × 우측 도구</b> 교차 구조 · v0.9.3 (예약 영구저장)</div>
+  <div class="foot">제니야 — <b>상단 프로젝트 × 좌측 에이전트 × 우측 도구</b> 교차 구조 · v1.0 (강의 모집 캠페인 한 장)</div>
 </div>
 
 <!-- C-6. 업로드 모달 (+ 버튼으로 열림 — 실제 업로드는 3단계) -->
@@ -650,11 +650,103 @@ function renderTools(){
     el.onclick = function(){ clickTool(t); };
     box.appendChild(el);
   });
+  renderCampaignBoard(box); // ★ 강의 모집 캠페인 한 장 (본체) — 손들을 묶는 진행판
   renderCareHand(box);   // 고객관리 손 — 강의 신청자 안내 발송 (첫 번째 실제 도구)
   renderMktHand(box);    // 마케팅 손 — 강의 홍보 콘텐츠 생성 (두 번째 실제 도구)
   renderPromoHand(box);  // CRM 홍보 손 — 기존고객 하루치 홍보 문자 (세 번째 실제 도구)
   renderPayHand(box);    // 결제후 손 — 결제 감지→대면안내 문자 (네 번째 실제 도구)
   renderFaq(box);   // 도구 맨 아래에 질문 도움말(FAQ) 붙이기
+}
+
+// ===== 강의 모집 캠페인 — "한 장" 진행판 (본체) =====
+// 흩어진 손(콘텐츠·배포·신청결제·분석)을 하나로 묶고, 강의정보는 한 곳에서 관리한다.
+var CAMPAIGN_CACHE = {};
+function escapeAttr(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
+
+function renderCampaignBoard(box){
+  var html = '<div class="hand" id="camp-board" style="border:2px solid #6C4AB6;background:#FAF8FF">'
+    + '<div class="hh" style="color:#6C4AB6;font-size:14px"><i class="ti ti-flag-3"></i> 강의 모집 캠페인 · 한 장</div>'
+    + '<div id="camp-summary" style="font-size:12px;color:#444;line-height:1.6;margin:2px 0 6px">불러오는 중…</div>'
+    + '<button class="hand-btn" id="camp-edit" style="background:#6C4AB6"><i class="ti ti-settings"></i> 캠페인 설정(강의정보)</button>'
+    + '<div style="margin-top:8px;font-size:11px;color:#6C4AB6;font-weight:700">관문 — 단계마다 눌러 진행</div>'
+    + '<button class="hand-btn" id="camp-p1"><i class="ti ti-photo"></i> ① 콘텐츠 만들기</button>'
+    + '<button class="hand-btn" id="camp-p2"><i class="ti ti-send"></i> ② 배포(문자 예약·SNS·쇼츠)</button>'
+    + '<button class="hand-btn" id="camp-p3"><i class="ti ti-user-check"></i> ③ 신청·결제</button>'
+    + '<button class="hand-btn" id="camp-p4"><i class="ti ti-chart-bar"></i> ④ 결과분석</button>'
+    + '</div>';
+  box.insertAdjacentHTML('beforeend', html);
+  loadCampaignBoard();
+}
+
+function loadCampaignBoard(){
+  fetch(SERVER_URL + '/campaign/config').then(function(r){return r.json();}).then(function(c){
+    CAMPAIGN_CACHE = c || {};
+    var el = document.getElementById('camp-summary'); if(!el) return;
+    el.innerHTML = '<b>' + escapeHtml(c.name||'(강의명 미정)') + '</b>'
+      + '<br>일정: ' + escapeHtml(c.date||'-')
+      + '<br>수강료 ' + (Number(c.price)||0).toLocaleString() + '원 · 장소 ' + escapeHtml(c.place||'(미정)') + ' · 정원 ' + escapeHtml(c.capacity||'(미정)');
+  }).catch(function(){});
+}
+
+// 관문 패널 — 각 단계의 행동 버튼(기존 손 함수 재사용)을 한곳에 보여준다
+function campaignPhase(n){
+  var w = addMessage('…','zenya'); var html='';
+  if(n===1){
+    html = '<b>① 콘텐츠 만들기</b><br>포스터·쇼츠는 대표님이 올리시고, 글(쇼츠 대본·인스타·카톡·맞벌이 카피)은 제가 만듭니다.'
+      + '<div style="margin-top:6px"><button class="appr" data-act="mkt">홍보 콘텐츠 4종 만들기</button></div>'
+      + '<div style="font-size:11px;color:#66736E;margin-top:4px">모든 발송물에 "카카오 채널 친구 추가" 문구를 함께 넣습니다.</div>';
+  } else if(n===2){
+    html = '<b>② 배포</b><br>문자는 예약발송(아침 자동), 카톡·SNS·쇼츠표지는 만들어 드리면 대표님이 게시합니다.'
+      + '<div style="margin-top:6px"><button class="appr" data-act="promo">CRM 홍보 문자 준비</button>'
+      + '<button class="appr" style="background:#3B6FB0" data-act="promotest">내 번호 예약 테스트</button></div>';
+  } else if(n===3){
+    html = '<b>③ 신청·결제</b><br>신청자에게 감사+결제링크, 결제되면 자동으로 결제감사+대면안내.'
+      + '<div style="margin-top:6px"><button class="appr" data-act="carenew">신규 신청자 안내</button>'
+      + '<button class="appr" data-act="paysetup">결제후 손 설정·켜기</button>'
+      + '<button class="appr" style="background:#3B6FB0" data-act="paypreview">결제문자 미리보기</button></div>';
+  } else {
+    html = '<b>④ 결과분석</b><br>발굴→신청→결제→매출 한눈에.'
+      + '<div style="margin-top:6px"><button class="appr" data-act="stats">모집현황 보기</button></div>';
+  }
+  updateMessage(w, html);
+  w.querySelectorAll('[data-act]').forEach(function(x){
+    x.onclick = function(){
+      var a = x.getAttribute('data-act');
+      if(a==='mkt') mktMake(); else if(a==='promo') promoDraft(); else if(a==='promotest') promoTestDraft();
+      else if(a==='carenew') careNew(); else if(a==='paysetup') paySetup(); else if(a==='paypreview') payPreview();
+      else if(a==='stats') payStats();
+    };
+  });
+}
+function campP1(){ campaignPhase(1); } function campP2(){ campaignPhase(2); }
+function campP3(){ campaignPhase(3); } function campP4(){ campaignPhase(4); }
+
+// 캠페인 설정 폼 — 매달 바꾸는 강의정보를 한 곳에서 입력
+function campaignForm(){
+  var c = CAMPAIGN_CACHE || {};
+  var w = addMessage('…','zenya');
+  function row(label,key,val,ph){ return '<div style="margin:4px 0"><div style="font-size:11px;color:#6C4AB6">'+label+'</div>'
+    + '<input data-ck="'+key+'" value="'+escapeAttr(val)+'" placeholder="'+(ph||'')+'" style="width:100%;padding:5px;border:1px solid #ccc;border-radius:5px;font-size:12px;box-sizing:border-box"></div>'; }
+  var html = '<b>캠페인 설정 — 매달 여기만 바꾸면 모든 손이 이 값을 씁니다</b>'
+    + row('강의명','name',c.name) + row('일정','date',c.date) + row('수강료(원)','price',c.price)
+    + row('장소','place',c.place,'예: 강남 오원트 5층 세미나실') + row('정원','capacity',c.capacity,'예: 20명')
+    + '<div style="margin:4px 0"><div style="font-size:11px;color:#6C4AB6">홍보 사실(한 줄 — 홍보·콘텐츠가 그대로 사용)</div>'
+    + '<textarea data-ck="facts" style="width:100%;height:56px;padding:5px;border:1px solid #ccc;border-radius:5px;font-size:12px;box-sizing:border-box">'+escapeHtml(c.facts||'')+'</textarea></div>'
+    + row('신청 링크','applyLink',c.applyLink) + row('결제 링크','payLink',c.payLink)
+    + row('소셜리스닝 대상(어떤 고민)','listenTarget',c.listenTarget,'예: 노후·자녀교육비 걱정')
+    + row('소셜리스닝 키워드','listenKeywords',c.listenKeywords,'예: 재무설계, 보험리모델링')
+    + '<div style="margin-top:8px"><button class="appr" style="background:#6C4AB6" data-save="1">저장</button></div>';
+  updateMessage(w, html);
+  w.querySelector('[data-save]').onclick = function(){
+    var body = {};
+    w.querySelectorAll('[data-ck]').forEach(function(el){ body[el.getAttribute('data-ck')] = el.value; });
+    fetch(SERVER_URL + '/campaign/config', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
+      .then(function(r){return r.json();}).then(function(d){
+        if(d.error){ addMessage('⚠️ '+escapeHtml(d.error),'zenya'); return; }
+        loadCampaignBoard();
+        addMessage('네 대표님, 캠페인 설정을 저장했습니다. 이제 홍보·콘텐츠·결제후 안내가 모두 이 강의정보로 나갑니다.','zenya');
+      }).catch(function(){ addMessage('⚠️ 저장에 실패했습니다.','zenya'); });
+  };
 }
 
 // D-3c-1d. CRM 홍보 손 그리기 — 기존고객에게 하루치씩 나눠 홍보 문자 (승인 후에만 발송)
@@ -1060,7 +1152,8 @@ document.addEventListener('click', function(e){
     'mkt-make': mktMake, 'promo-draft': promoDraft, 'promo-pending': promoPending,
     'promo-test': promoTestDraft,
     'pay-setup': paySetup, 'pay-stats': payStats,
-    'pay-preview': payPreview, 'pay-testsend': payTestSend
+    'pay-preview': payPreview, 'pay-testsend': payTestSend,
+    'camp-edit': campaignForm, 'camp-p1': campP1, 'camp-p2': campP2, 'camp-p3': campP3, 'camp-p4': campP4
   };
   if(handFns[t.id]){ console.log('[손] ' + t.id + ' 클릭'); ensureTodayThen(handFns[t.id]); }
 });

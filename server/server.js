@@ -1099,6 +1099,80 @@ async function sendPromoBatch(batch) {
   return { sent: batch.items.length, registered: okN, stamped: stampedCount, cost };
 }
 
+// ============================================================
+// 강의 모집 캠페인 — "한 장"의 중앙 강의정보 (매달 여기만 바꾸면 모든 손이 이 값을 쓴다)
+// 저장: 로컬 JSON + 구글시트 '제니야_캠페인' 탭 (재시작에도 유지)
+// ============================================================
+const CAMPAIGN_DEFAULT = {
+  name: '전문가 대면과정 (금융집짓기 상담전문가)',
+  date: '2026년 7월 4·11·18·25일 매주 토요일 13~18시 (4주 대면) + 수료 후 1년 온라인',
+  price: 1100000,
+  place: '',               // 대면 장소 (확정 시 입력)
+  capacity: '',            // 정원
+  applyLink: 'https://docs.google.com/forms/d/e/1FAIpQLSejqqWGxDVeDqPkNHQXM2ATY5e8o06CWcFpbT7sEBpqAKhONg/viewform',
+  payLink: PROMO_PAY_LINK,
+  facts: PROMO_FACTS,      // 홍보·콘텐츠가 쓰는 사실 한 줄
+  prepare: '',             // 대면 준비물
+  notice: '',              // 추가 안내
+  listenTarget: '',        // 소셜리스닝: 어떤 고민하는 사람
+  listenKeywords: '',      // 소셜리스닝: 키워드
+  contentNote: '',         // 업로드한 포스터·쇼츠·홍보글 위치/메모
+};
+let CAMPAIGN = loadJson('캠페인.json');
+if (Array.isArray(CAMPAIGN)) CAMPAIGN = {};
+CAMPAIGN = Object.assign({}, CAMPAIGN_DEFAULT, CAMPAIGN);
+const CAMPAIGN_TAB = process.env.CAMPAIGN_TAB || '제니야_캠페인';
+
+async function saveCampaignToSheet() {
+  const sheets = sheetsClient();
+  if (!sheets || !RESV_SHEET_ID) return;
+  const meta = await sheets.spreadsheets.get({ spreadsheetId: RESV_SHEET_ID, fields: 'sheets.properties.title' });
+  if (!meta.data.sheets.some((s) => s.properties.title === CAMPAIGN_TAB)) {
+    await sheets.spreadsheets.batchUpdate({ spreadsheetId: RESV_SHEET_ID, requestBody: { requests: [{ addSheet: { properties: { title: CAMPAIGN_TAB } } }] } });
+  }
+  const rows = Object.keys(CAMPAIGN).map((k) => [k, String(CAMPAIGN[k] == null ? '' : CAMPAIGN[k])]);
+  await sheets.spreadsheets.values.clear({ spreadsheetId: RESV_SHEET_ID, range: `'${CAMPAIGN_TAB}'!A1:Z` });
+  await sheets.spreadsheets.values.update({ spreadsheetId: RESV_SHEET_ID, range: `'${CAMPAIGN_TAB}'!A1`, valueInputOption: 'RAW', requestBody: { values: rows } });
+}
+let campChain = Promise.resolve();
+function saveCampaign() {
+  saveJson('캠페인.json', CAMPAIGN);
+  const next = campChain.catch(() => {}).then(() => saveCampaignToSheet());
+  campChain = next.catch((e) => console.warn('⚠️ 캠페인 시트 저장 실패:', e.message));
+  return campChain;
+}
+async function loadCampaignFromSheet() {
+  const sheets = sheetsClient();
+  if (!sheets || !RESV_SHEET_ID) return false;
+  let got;
+  try { got = await sheets.spreadsheets.values.get({ spreadsheetId: RESV_SHEET_ID, range: `'${CAMPAIGN_TAB}'!A1:B` }); }
+  catch (e) { return false; }
+  const rows = got.data.values || [];
+  if (!rows.length) return false;
+  const obj = {};
+  rows.forEach((r) => { if (r[0]) obj[r[0]] = r[1] || ''; });
+  if (obj.price) obj.price = Number(String(obj.price).replace(/\D/g, '')) || CAMPAIGN_DEFAULT.price;
+  CAMPAIGN = Object.assign({}, CAMPAIGN_DEFAULT, obj);
+  return true;
+}
+(async () => {
+  const ok = await loadCampaignFromSheet().catch(() => false);
+  if (ok) { saveJson('캠페인.json', CAMPAIGN); console.log(`📋 캠페인 복원: ${CAMPAIGN.name}`); }
+})();
+
+// ── /campaign/config: 캠페인 강의정보 읽기 / 저장 ──
+app.get('/campaign/config', (req, res) => res.json(CAMPAIGN));
+app.post('/campaign/config', async (req, res) => {
+  console.log('📋 /campaign/config 저장 —', new Date().toLocaleString('ko-KR'));
+  try {
+    const b = req.body || {};
+    const allow = ['name', 'date', 'price', 'place', 'capacity', 'applyLink', 'payLink', 'facts', 'prepare', 'notice', 'listenTarget', 'listenKeywords', 'contentNote'];
+    allow.forEach((k) => { if (b[k] !== undefined) CAMPAIGN[k] = (k === 'price') ? (Number(String(b[k]).replace(/\D/g, '')) || 0) : String(b[k]); });
+    await saveCampaign();
+    res.json({ ok: true, campaign: CAMPAIGN });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── /promo/status: CRM 손 상태 + 비용 예상 ───────────────────
 app.get('/promo/status', async (req, res) => {
   runDuePromo().catch(() => {});   // 앱을 열어 서버가 깨면 밀린 예약부터 확인
@@ -1135,6 +1209,11 @@ app.post('/promo/draft', async (req, res) => {
     }
     const limit = Math.max(1, Math.min(Number((req.body || {}).limit) || PROMO_DAILY_LIMIT, 1000));
     const guide = (req.body || {}).guide;
+    // 캠페인 중앙설정을 우선 사용 (없으면 기존 환경변수 기본값) — 매달 한 곳만 바꾸면 됨
+    const cName  = CAMPAIGN.name      || PROMO_PRODUCT;
+    const cFacts = CAMPAIGN.facts     || PROMO_FACTS;
+    const cApply = CAMPAIGN.applyLink || MKT_APPLY_LINK;
+    const cPay   = CAMPAIGN.payLink   || PROMO_PAY_LINK;
 
     // 보낼 사람 고르기: 발송상태 빈 사람 + 제외 역할 빼기 + 번호 중복 제거 + 이미 대기 묶음에 든 사람 제외
     const { applicants } = await readPeople(CRM_SHEET_ID, CRM_SHEET_TAB);
@@ -1147,23 +1226,23 @@ app.post('/promo/draft', async (req, res) => {
     if (!targets.length) return res.json({ batch: null, message: '보낼 사람이 없습니다. (전원 발송완료 또는 대기 중)' });
 
     // 사실 정보 없이는 못 보낸다 (정직 원칙 — 일정·가격을 지어내는 사고 방지)
-    if (!PROMO_FACTS) {
-      return res.status(503).json({ error: `홍보 대상 "${PROMO_PRODUCT}"의 확정 정보(일정·기간·수강료·마감)가 아직 등록 안 됐습니다. 대표님이 정보를 주시면 등록 후 바로 준비됩니다.` });
+    if (!cFacts) {
+      return res.status(503).json({ error: `홍보 대상 "${cName}"의 확정 정보(일정·기간·수강료·마감)가 캠페인 설정에 아직 없습니다. 「캠페인 설정」에서 강의 사실을 입력해 주세요.` });
     }
 
     // 홍보 문구: 마케팅 손의 "카톡 채널 안내글" 톤 + 법적 요건은 아래 enforceAdRules가 한 번 더 강제
     const system = buildSystemPrompt('care', '머니트레이닝랩');
     const ask =
       '기존 고객(대부분 보험설계사)에게 보낼 교육과정 홍보 "광고 문자" 한 통을 써라.\n'
-      + `- 홍보 대상: ${PROMO_PRODUCT}\n`
+      + `- 홍보 대상: ${cName}\n`
       + '- 각도(가장 중요): 받는 사람은 보험설계사다. "설계사 본인의 상담 전문성을 높이고, 고객에게 신뢰받는 재무상담 무기를 갖는 과정"이라는 점이 와닿게. 설계사가 "이건 나에게 필요하다"고 느끼게 쓴다. 너무 건조한 정보 나열 금지, 그렇다고 과장도 금지\n'
       + '- 호칭은 "고객님"으로 통일 ("설계사님" 같은 호칭은 쓰지 말 것 — 어색함 방지, 개인 이름도 넣지 않음)\n'
       + '- 톤: 카카오톡 채널 안내글처럼 짧은 줄·줄바꿈으로 폰에서 읽기 좋게, 따뜻하고 담백하게\n'
       + '- 반드시 맨 앞은 "(광고) 오원트금융연구소"로 시작\n'
-      + '- 핵심 정보(이 사실만 사용, 지어내기 금지): ' + PROMO_FACTS + '\n'
+      + '- 핵심 정보(이 사실만 사용, 지어내기 금지): ' + cFacts + '\n'
       + '- 일정 줄에는 반드시 "매주 토요일"을 함께 표기 (예: "7/4·11·18·25 매주 토요일, 4주")\n'
-      + '- 신청서 링크 포함: ' + MKT_APPLY_LINK + '\n'
-      + `- 수강료 안내 다음 줄에 결제 안내 한 줄: "결제하기: ${PROMO_PAY_LINK}" (링크 한 글자도 바꾸지 말 것)\n`
+      + '- 신청서 링크 포함: ' + cApply + '\n'
+      + `- 수강료 안내 다음 줄에 결제 안내 한 줄: "결제하기: ${cPay}" (링크 한 글자도 바꾸지 말 것)\n`
       + (guide ? '- 대표님 추가 지시: ' + guide + '\n' : '')
       + '- 수익·성과 보장, 과장 표현 절대 금지\n'
       + `- 맨 끝 줄: ${PROMO_OPTOUT}\n`
@@ -1432,13 +1511,18 @@ async function readPaidRows() {
 }
 
 // 결제감사+대면안내 문자 본문 (거래성 안내) — cfg를 주면 그 설정으로(미리보기용), 없으면 저장된 설정
+//   대면안내(일정·장소·준비물)는 캠페인 중앙설정을 기본으로, 결제후 설정값이 있으면 그게 우선
 function buildPayThanksText(p, cfg) {
   const c = cfg || PAYCFG;
+  const schedule = c.schedule || CAMPAIGN.date;
+  const place    = c.place    || CAMPAIGN.place;
+  const prepare  = c.prepare  || CAMPAIGN.prepare;
+  const notice   = c.notice   || CAMPAIGN.notice;
   let t = `[오원트금융연구소] ${p.name}님, ${p.course} 결제가 완료되었습니다(${p.amount.toLocaleString()}원). 감사합니다.`;
-  if (c.schedule) t += `\n· 일정: ${c.schedule}`;
-  if (c.place)    t += `\n· 장소: ${c.place}`;
-  if (c.prepare)  t += `\n· 준비물: ${c.prepare}`;
-  if (c.notice)   t += `\n${c.notice}`;
+  if (schedule) t += `\n· 일정: ${schedule}`;
+  if (place)    t += `\n· 장소: ${place}`;
+  if (prepare)  t += `\n· 준비물: ${prepare}`;
+  if (notice)   t += `\n${notice}`;
   t += `\n문의 010-5424-5332`;
   return t;
 }
@@ -1551,8 +1635,8 @@ app.post('/pay/config', async (req, res) => {
     if (b.notice   !== undefined) PAYCFG.notice   = String(b.notice);
     let baselined = 0;
     if (b.enable === true) {
-      if (!PAYCFG.schedule && !PAYCFG.place) {
-        return res.status(400).json({ error: '대면안내(일정·장소)를 먼저 입력해 주세요. 빈 안내로는 켤 수 없습니다.' });
+      if (!PAYCFG.schedule && !PAYCFG.place && !CAMPAIGN.date && !CAMPAIGN.place) {
+        return res.status(400).json({ error: '대면안내(일정·장소)가 없습니다. 「캠페인 설정」에서 일정·장소를 입력한 뒤 켜 주세요.' });
       }
       if (!PAYCFG.baselineDone) { baselined = await seedPayBaseline(); PAYCFG.baselineDone = true; }
       PAYCFG.enabled = true;
@@ -1649,11 +1733,14 @@ app.post('/mkt/content', async (req, res) => {
   console.log('📣 /mkt/content 요청 도착 —', new Date().toLocaleString('ko-KR'));
   try {
     const { project, guide } = req.body || {};
+    const cName  = CAMPAIGN.name      || '강의';
+    const cFacts = CAMPAIGN.facts     || LECTURE_FACTS;
+    const cApply = CAMPAIGN.applyLink || MKT_APPLY_LINK;
     const system = buildSystemPrompt('mkt', project || '머니트레이닝랩');
     const ask =
-      '이번 주 목표: "10억 목돈마련 절대법칙" 비대면 강의 100명 모집 (6월 12일 금요일 1차 마감).\n'
-      + '강의 정보(이 사실만 사용, 지어내기 금지): ' + LECTURE_FACTS + '\n'
-      + '신청서 링크: ' + MKT_APPLY_LINK + '\n'
+      `이번 캠페인 목표: "${cName}" 모집.\n`
+      + '강의 정보(이 사실만 사용, 지어내기 금지): ' + cFacts + '\n'
+      + '신청서 링크: ' + cApply + '\n'
       + (guide ? '대표님 추가 지시: ' + guide + '\n' : '')
       + '\n아래 홍보 콘텐츠 4종을 만들어라. 각 콘텐츠는 반드시 그 구분표로 시작한다.\n'
       + '[[유튜브쇼츠]] 쇼츠용 30~45초 대본 (첫 3초 후킹 문구 3개 제안 + 본 대본)\n'
@@ -1684,7 +1771,7 @@ app.post('/mkt/content', async (req, res) => {
       ts: new Date().toISOString(), agentId: 'mkt', agentName: '마케팅', project: project || '머니트레이닝랩', kind: 'hand',
       entry: `[손] 강의 홍보 콘텐츠 ${parts.length}종 생성 (${parts.map((p) => p.label).join('/')})${guide ? ` — 지시: ${String(guide).slice(0, 80)}` : ''}`,
     });
-    res.json({ parts, applyLink: MKT_APPLY_LINK });
+    res.json({ parts, applyLink: cApply });
   } catch (e) {
     console.error('[/mkt/content 오류]', e.message);
     res.status(500).json({ error: e.message });
