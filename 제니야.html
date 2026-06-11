@@ -454,7 +454,7 @@ body{font-family:'Pretendard',-apple-system,sans-serif;font-weight:500;backgroun
 
   </div>
 
-  <div class="foot">제니야 — <b>상단 프로젝트 × 좌측 에이전트 × 우측 도구</b> 교차 구조 · v1.1 (진행판 현황 살리기)</div>
+  <div class="foot">제니야 — <b>상단 프로젝트 × 좌측 에이전트 × 우측 도구</b> 교차 구조 · v1.2 (채널별·관계온도별 콘텐츠)</div>
 </div>
 
 <!-- C-6. 업로드 모달 (+ 버튼으로 열림 — 실제 업로드는 3단계) -->
@@ -731,7 +731,7 @@ function campaignPhase(n){
   } else if(n===1){
     html = '<b>① 입력 — 설정·콘텐츠</b><br>강의정보를 한 곳에서 입력하면 모든 손이 공유합니다. 홍보 콘텐츠(쇼츠 대본·인스타·카톡·맞벌이 카피)도 여기서.'
       + '<div style="margin-top:6px"><button class="appr" style="background:#6C4AB6" data-act="campedit">캠페인 설정(강의정보)</button>'
-      + '<button class="appr" data-act="mkt">홍보 콘텐츠 4종 만들기</button></div>'
+      + '<button class="appr" data-act="mkt">채널별 홍보 콘텐츠 만들기</button></div>'
       + '<div style="font-size:11px;color:#66736E;margin-top:4px">모든 발송물에 "카카오 채널 친구 추가" 문구를 함께 넣습니다.</div>';
   } else if(n===2){
     html = '<b>② 배포</b><br>문자는 예약발송(아침 자동), 카톡·SNS·쇼츠표지는 만들어 드리면 대표님이 게시합니다.'
@@ -772,6 +772,7 @@ function campaignForm(){
     + '<div style="margin:4px 0"><div style="font-size:11px;color:#6C4AB6">홍보 사실(한 줄 — 홍보·콘텐츠가 그대로 사용)</div>'
     + '<textarea data-ck="facts" style="width:100%;height:56px;padding:5px;border:1px solid #ccc;border-radius:5px;font-size:12px;box-sizing:border-box">'+escapeHtml(c.facts||'')+'</textarea></div>'
     + row('신청 링크','applyLink',c.applyLink) + row('결제 링크','payLink',c.payLink)
+    + row('카카오 채널명 (콘텐츠에 "검색→채널추가" 문구로)','kakaoChannel',c.kakaoChannel,'예: 금융집짓기')
     + row('소셜리스닝 대상(어떤 고민)','listenTarget',c.listenTarget,'예: 노후·자녀교육비 걱정')
     + row('소셜리스닝 키워드','listenKeywords',c.listenKeywords,'예: 재무설계, 보험리모델링')
     + '<div style="margin-top:8px"><button class="appr" style="background:#6C4AB6" data-save="1">저장</button></div>';
@@ -1113,7 +1114,7 @@ function payStats(){
 function renderMktHand(box){
   var html = '<div class="hand" id="mkt-hand">'
            + '<div class="hh" style="color:#E65100"><i class="ti ti-speakerphone"></i> 마케팅 손 · 강의 홍보</div>'
-           + '<button class="hand-btn" id="mkt-make"><i class="ti ti-wand"></i> 홍보 콘텐츠 4종 만들기</button>'
+           + '<button class="hand-btn" id="mkt-make"><i class="ti ti-wand"></i> 채널별 홍보 콘텐츠 만들기</button>'
            + '</div>';
   box.insertAdjacentHTML('beforeend', html);
 }
@@ -1142,7 +1143,7 @@ function mktMake(){
   var btnHtml = btn ? btn.innerHTML : '';
   if(btn) btn.innerHTML = '<i class="ti ti-loader-2"></i> 만드는 중…';
   var restore = function(){ if(btn) btn.innerHTML = btnHtml; };
-  var w = addMessage('<i class="ti ti-loader-2"></i> 마케팅팀장이 홍보 콘텐츠 4종을 만드는 중… (30초쯤 걸립니다)', 'mkt');
+  var w = addMessage('<i class="ti ti-loader-2"></i> 마케팅팀장이 채널별·관계온도별 콘텐츠를 만드는 중… (40초쯤 걸립니다)', 'mkt');
   fetch(SERVER_URL + '/mkt/content', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -1153,7 +1154,7 @@ function mktMake(){
       restore(); loadDashboard();
       if(d.error){ updateMessage(w, '⚠️ ' + escapeHtml(d.error)); return; }
       MKT_LAST = d.parts || [];
-      var html = '홍보 콘텐츠 <b>' + MKT_LAST.length + '종</b>입니다. 각각 [복사] 눌러 플랫폼에 붙여넣어 주세요.';
+      var html = '채널별 홍보 콘텐츠 <b>' + MKT_LAST.length + '종</b> (🔥거래설계사 → 🌤채널친구 → ❄️처음 본 사람 순). 각각 [복사] 눌러 그 채널에 붙여넣으세요.';
       MKT_LAST.forEach(function(p, i){
         html += '<div style="margin:8px 0 2px;font-weight:800;color:#E65100">' + escapeHtml(p.label)
               + ' <button class="appr" data-copy="' + i + '" style="border-color:#E65100;color:#E65100">복사</button></div>'

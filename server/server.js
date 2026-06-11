@@ -1118,6 +1118,7 @@ const CAMPAIGN_DEFAULT = {
   listenTarget: '',        // 소셜리스닝: 어떤 고민하는 사람
   listenKeywords: '',      // 소셜리스닝: 키워드
   contentNote: '',         // 업로드한 포스터·쇼츠·홍보글 위치/메모
+  kakaoChannel: '금융집짓기', // 카카오 채널명 (모든 콘텐츠 끝 "검색→채널추가" 문구에 들어감)
 };
 let CAMPAIGN = loadJson('캠페인.json');
 if (Array.isArray(CAMPAIGN)) CAMPAIGN = {};
@@ -1167,7 +1168,7 @@ app.post('/campaign/config', async (req, res) => {
   console.log('📋 /campaign/config 저장 —', new Date().toLocaleString('ko-KR'));
   try {
     const b = req.body || {};
-    const allow = ['title', 'name', 'date', 'price', 'place', 'capacity', 'applyLink', 'payLink', 'facts', 'prepare', 'notice', 'listenTarget', 'listenKeywords', 'contentNote'];
+    const allow = ['title', 'name', 'date', 'price', 'place', 'capacity', 'applyLink', 'payLink', 'facts', 'prepare', 'notice', 'listenTarget', 'listenKeywords', 'contentNote', 'kakaoChannel'];
     allow.forEach((k) => { if (b[k] !== undefined) CAMPAIGN[k] = (k === 'price') ? (Number(String(b[k]).replace(/\D/g, '')) || 0) : String(b[k]); });
     await saveCampaign();
     res.json({ ok: true, campaign: CAMPAIGN });
@@ -1733,8 +1734,10 @@ const LECTURE_FACTS =
   + '1차 신청마감 6월 12일(금) 저녁 6시, 이후 강의 전날까지 추가 접수 가능 / '
   + '강사: 오원트금융연구소 오상열 대표(CFP 25년)';
 
-// ── /mkt/content: 홍보 콘텐츠 4종 생성 ───────────────────────
-// 받는 것: { project, guide } — guide = 대표님 추가 지시(선택)
+// ── /mkt/content: 채널별 × 관계온도별 홍보 콘텐츠 생성 ─────────
+// 핵심: 받는 사람과 오대표의 "관계 온도"(🔥거래설계사/🌤채널친구/❄️처음본 사람)에 따라 톤이 다르고,
+//       채널마다 형식이 다르다(쇼츠 대본/카드뉴스/페북글/짧은안내/LMS/블로그긴글).
+//       강의정보(facts) 기반 생성 + 모든 콘텐츠에 "카카오톡 '○○' 검색→채널추가" 문구 자동.
 app.post('/mkt/content', async (req, res) => {
   console.log('📣 /mkt/content 요청 도착 —', new Date().toLocaleString('ko-KR'));
   try {
@@ -1742,42 +1745,60 @@ app.post('/mkt/content', async (req, res) => {
     const cName  = CAMPAIGN.name      || '강의';
     const cFacts = CAMPAIGN.facts     || LECTURE_FACTS;
     const cApply = CAMPAIGN.applyLink || MKT_APPLY_LINK;
+    const cKakao = CAMPAIGN.kakaoChannel || '금융집짓기';
+    const ctaLine = `카카오톡에서 '${cKakao}' 검색 → 채널 추가`;
     const system = buildSystemPrompt('mkt', project || '머니트레이닝랩');
     const ask =
       `이번 캠페인 목표: "${cName}" 모집.\n`
       + '강의 정보(이 사실만 사용, 지어내기 금지): ' + cFacts + '\n'
       + '신청서 링크: ' + cApply + '\n'
+      + `카카오 채널명: ${cKakao}\n`
       + (guide ? '대표님 추가 지시: ' + guide + '\n' : '')
-      + '\n아래 홍보 콘텐츠 4종을 만들어라. 각 콘텐츠는 반드시 그 구분표로 시작한다.\n'
-      + '[[유튜브쇼츠]] 쇼츠용 30~45초 대본 (첫 3초 후킹 문구 3개 제안 + 본 대본)\n'
-      + '[[인스타블로그]] 인스타그램 캡션(해시태그 포함) + 네이버 블로그용 제목·도입부 카피\n'
-      + '[[카톡채널]] 카카오톡 채널 발송용 안내 글 (폰에서 읽기 좋게 짧은 줄·줄바꿈)\n'
-      + '[[맞벌이타깃]] "맞벌이 직장인 부자" 타깃 카피 — 맞벌이 부부의 현실(둘이 버는데 안 모이는 이유) 공감으로 시작해 강의로 연결\n'
+      + '\n★ 가장 중요 — 받는 사람과 오상열 대표의 "관계 온도"에 따라 톤을 완전히 다르게 써라:\n'
+      + '  🔥 거래한 설계사(문자): 친근·특별대우. "늘 신뢰해주신 설계사님께 먼저 안내드립니다" 같은 특별함. 바로 신청 안내해도 됨.\n'
+      + '  🌤 카톡 채널친구(관심있어 추가): 관심유도. 부담 적게, 호기심·혜택 중심으로 "이런 과정이 열립니다".\n'
+      + '  ❄️ SNS 처음 본 사람: 가치증명·신뢰구축. 먼저 오대표가 왜 믿을 만한지(경력·철학)와 가치를 보여주고, 결제는 천천히. 첫 줄부터 팔지 말 것. CTA는 "채널 추가"로 부드럽게.\n'
+      + '\n아래 6종을 각각 그 구분표로 시작해 만들어라:\n'
+      + '[[문자LMS]] 🔥 거래 설계사용 문자(LMS) — 특별대우 톤, 신청·결제 안내 포함\n'
+      + '[[카톡채널]] 🌤 카톡 채널친구용 짧은 안내 — 관심유도, 폰에서 읽기 좋게 짧은 줄·줄바꿈\n'
+      + '[[유튜브쇼츠]] ❄️ 유튜브 쇼츠 30~45초 대본 (첫 3초 후킹 문구 3개 제안 + 본 대본) — 가치증명\n'
+      + '[[인스타]] ❄️ 인스타 — 카드뉴스 슬라이드 문구(슬라이드 1~6 형태) + 릴스 캡션(해시태그 포함) — 가치증명\n'
+      + '[[페북]] ❄️ 페이스북 텍스트+링크글 — 공감 스토리로 시작해 가치증명, 끝에 링크\n'
+      + '[[블로그]] ❄️ 네이버 블로그 긴 정보글 (제목 + 본문 600자 이상) — 정보·가치 중심\n'
       + '\n규칙:\n'
-      + '- 금융 콘텐츠다. 수익·성과 보장, 과장·허위 표현 절대 금지 ("무조건", "100% 됩니다" 금지)\n'
-      + '- 각 콘텐츠 끝에 신청 유도 CTA 한 줄 (신청서 링크 표기, 유튜브·인스타는 "프로필 링크에서 신청" 문구도 함께)\n'
-      + '- 마크다운 기호(#, *, -) 없이 일반 글로. 콘텐츠 사이 설명·인사말 없이 4종만 출력';
+      + '- 금융 콘텐츠다. 수익·성과 보장, 과장·허위 표현 절대 금지 ("무조건", "100% 됩니다" 금지).\n'
+      + `- 모든 콘텐츠 맨 끝에 반드시 이 한 줄 포함: "${ctaLine}"\n`
+      + '- ❄️(SNS 3종)는 신청링크보다 "채널 추가"를 앞세운다. 🔥🌤은 신청링크도 함께 넣는다.\n'
+      + '- 마크다운 기호(#, *, -) 없이 일반 글로. 콘텐츠 사이 설명·인사말 없이 6종만 출력.';
     const r = await anthropic.messages.create({
-      model: MODEL, max_tokens: 16000, thinking: { type: 'adaptive' },
+      model: MODEL, max_tokens: 20000, thinking: { type: 'adaptive' },
       system, messages: [{ role: 'user', content: ask }],
     });
-    const text = r.content.filter((b) => b.type === 'text').map((b) => b.text).join('\n');
+    let text = r.content.filter((b) => b.type === 'text').map((b) => b.text).join('\n');
 
-    // [[구분표]] 기준으로 4종을 나눈다 (못 나누면 통째로 한 덩어리)
-    const LABELS = { 유튜브쇼츠: '유튜브/쇼츠 대본', 인스타블로그: '인스타·블로그 카피', 카톡채널: '카톡 채널 안내 글', 맞벌이타깃: '맞벌이 직장인 타깃 카피' };
-    const found = [...text.matchAll(/\[\[(유튜브쇼츠|인스타블로그|카톡채널|맞벌이타깃)\]\]/g)];
-    const parts = found.length
+    const LABELS = {
+      문자LMS:   '🔥 문자(LMS) · 거래 설계사 · 특별대우',
+      카톡채널:   '🌤 카톡 채널 · 관심친구 · 관심유도',
+      유튜브쇼츠: '❄️ 유튜브 쇼츠 대본 · 가치증명',
+      인스타:     '❄️ 인스타 카드뉴스/릴스 · 가치증명',
+      페북:       '❄️ 페이스북 텍스트+링크 · 가치증명',
+      블로그:     '❄️ 블로그 긴 정보글 · 가치증명',
+    };
+    const found = [...text.matchAll(/\[\[(문자LMS|카톡채널|유튜브쇼츠|인스타|페북|블로그)\]\]/g)];
+    let parts = found.length
       ? found.map((m, i) => ({
           key: m[1], label: LABELS[m[1]],
           text: text.slice(m.index + m[0].length, i + 1 < found.length ? found[i + 1].index : undefined).trim(),
         }))
       : [{ key: '전체', label: '홍보 콘텐츠', text: text.trim() }];
+    // 카카오 채널추가 문구가 빠진 콘텐츠는 코드가 한 번 더 보강 (요구사항: 모든 발송물에 필수)
+    parts = parts.map((p) => p.text.includes(cKakao) ? p : { ...p, text: p.text + '\n' + ctaLine });
 
     appendDiary({
       ts: new Date().toISOString(), agentId: 'mkt', agentName: '마케팅', project: project || '머니트레이닝랩', kind: 'hand',
-      entry: `[손] 강의 홍보 콘텐츠 ${parts.length}종 생성 (${parts.map((p) => p.label).join('/')})${guide ? ` — 지시: ${String(guide).slice(0, 80)}` : ''}`,
+      entry: `[손] 채널별 홍보 콘텐츠 ${parts.length}종 생성 (관계온도별 톤)${guide ? ` — 지시: ${String(guide).slice(0, 80)}` : ''}`,
     });
-    res.json({ parts, applyLink: cApply });
+    res.json({ parts, applyLink: cApply, kakaoChannel: cKakao });
   } catch (e) {
     console.error('[/mkt/content 오류]', e.message);
     res.status(500).json({ error: e.message });
