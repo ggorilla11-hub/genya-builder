@@ -454,7 +454,7 @@ body{font-family:'Pretendard',-apple-system,sans-serif;font-weight:500;backgroun
 
   </div>
 
-  <div class="foot">제니야 — <b>상단 프로젝트 × 좌측 에이전트 × 우측 도구</b> 교차 구조 · v1.5 (다중 캠페인 전환·복제 + 대면/비대면)</div>
+  <div class="foot">제니야 — <b>상단 프로젝트 × 좌측 에이전트 × 우측 도구</b> 교차 구조 · v1.6 (캠페인별 데이터 분리: 결제DB·신청시트·CRM대상 + 줌 안내)</div>
 </div>
 
 <!-- C-6. 업로드 모달 (+ 버튼으로 열림 — 실제 업로드는 3단계) -->
@@ -761,8 +761,13 @@ function loadCampaignStatus(){
     var up = s.uploads || {};
     setCampStat('camp-s1', '강의정보 ' + (c.facts ? '입력완료' : '미입력') + ' · 생성글 ' + (s.contentCount||0) + ' · 포스터 ' + (up.poster||0) + ' · 쇼츠 ' + (up.shorts||0) + ' · 카드뉴스 ' + (up.cardnews||0));
     var sched = (p.scheduledBatches||[]).length;
-    var s2 = '오늘 발송 ' + (p.sentToday||0) + '건 · 예약 ' + sched + '건 대기';
-    if(typeof p.remaining === 'number') s2 += ' · 미발송 ' + p.remaining + '명';
+    var s2;
+    if(p.crmPromo === false){
+      s2 = 'SNS·콘텐츠 매스 홍보 (CRM 설계사 문자 대상 아님) · 오늘 발송 ' + (p.sentToday||0) + '건';
+    } else {
+      s2 = '오늘 발송 ' + (p.sentToday||0) + '건 · 예약 ' + sched + '건 대기';
+      if(typeof p.remaining === 'number') s2 += ' · 미발송 ' + p.remaining + '명';
+    }
     setCampStat('camp-s2', s2);
     var apply = (s.apply==null ? '-' : s.apply);
     var s3 = '신청 ' + apply + ' · 결제 ' + (s.paid||0);
@@ -803,10 +808,17 @@ function campaignPhase(n){
       + '<button class="appr" data-act="contents">콘텐츠 보관함(포스터·쇼츠)</button></div>'
       + '<div style="font-size:11px;color:#66736E;margin-top:4px">모든 발송물에 "카카오 채널 친구 추가" 문구를 함께 넣습니다.</div>';
   } else if(n===2){
-    html = '<b>② 배포</b><br>🔥 <b>거래 설계사 문자(LMS)는 여기서 만들어 실제 발송</b>(예약발송=아침 자동)합니다. ①에서 만든 카톡·SNS 콘텐츠는 대표님이 각 채널에 게시. 올려둔 포스터·쇼츠는 「배포용 콘텐츠」에서 링크로 꺼내 씁니다.'
-      + '<div style="margin-top:6px"><button class="appr" data-act="promo">🔥 CRM 홍보 문자(실제 발송)</button>'
-      + '<button class="appr" style="background:#3B6FB0" data-act="promotest">내 번호 예약 테스트</button>'
-      + '<button class="appr" data-act="contents">배포용 콘텐츠 보기</button></div>';
+    var isCrm = (c.crmPromo !== false);
+    if(isCrm){
+      html = '<b>② 배포</b><br>🔥 <b>거래 설계사 문자(LMS)는 여기서 만들어 실제 발송</b>(예약발송=아침 자동)합니다. ①에서 만든 카톡·SNS 콘텐츠는 대표님이 각 채널에 게시. 올려둔 포스터·쇼츠는 「배포용 콘텐츠」에서 링크로 꺼내 씁니다.'
+        + '<div style="margin-top:6px"><button class="appr" data-act="promo">🔥 CRM 홍보 문자(실제 발송)</button>'
+        + '<button class="appr" style="background:#3B6FB0" data-act="promotest">내 번호 예약 테스트</button>'
+        + '<button class="appr" data-act="contents">배포용 콘텐츠 보기</button></div>';
+    } else {
+      html = '<b>② 배포</b><br>이 캠페인은 <b>일반인 대상(SNS·콘텐츠 매스 홍보)</b>입니다. CRM 설계사 문자는 쓰지 않습니다. ①에서 만든 카톡·유튜브·인스타·블로그 콘텐츠를 대표님이 각 채널에 게시하고, 포스터·쇼츠는 「배포용 콘텐츠」에서 링크로 꺼내 씁니다.'
+        + '<div style="margin-top:6px"><button class="appr" data-act="contents">배포용 콘텐츠 보기</button></div>'
+        + '<div style="font-size:11px;color:#66736E;margin-top:4px">설계사 대상으로 바꾸려면 「캠페인 설정 → CRM 설계사 문자 대상?」을 "예"로.</div>';
+    }
   } else if(n===3){
     html = '<b>③ 신청·결제</b><br>신청자에게 감사+결제링크, 결제되면 자동으로 결제감사+대면안내.'
       + '<div style="margin-top:6px"><button class="appr" data-act="carenew">신규 신청자 안내</button>'
@@ -875,9 +887,12 @@ function campaignForm(){
   var w = addMessage('…','zenya');
   function row(label,key,val,ph){ return '<div style="margin:4px 0"><div style="font-size:11px;color:#6C4AB6">'+label+'</div>'
     + '<input data-ck="'+key+'" value="'+escapeAttr(val)+'" placeholder="'+(ph||'')+'" style="width:100%;padding:5px;border:1px solid #ccc;border-radius:5px;font-size:12px;box-sizing:border-box"></div>'; }
+  function payTabOpt(v,cur){ return '<option value="'+escapeAttr(v)+'"'+(cur===v?' selected':'')+'>'+escapeHtml(v)+'</option>'; }
   var html = '<b>캠페인 설정 — 매달 여기만 바꾸면 모든 손이 이 값을 씁니다</b>'
     + row('캠페인 제목 (구분용)','title',c.title,'예: 전문가 대면과정 7월 / 일반인 비대면 8월')
-    + row('강의명','name',c.name) + row('일정','date',c.date) + row('수강료(원)','price',c.price)
+    + row('강의명','name',c.name)
+    + row('일정','date',c.date,'예: 2026년 6월 18·25일, 7월 2·9일 (매주 목요일 4주) 19~22시')
+    + row('수강료(원)','price',c.price)
     + '<div style="margin:4px 0"><div style="font-size:11px;color:#6C4AB6">진행 형식</div>'
     +   '<select data-ck="mode" style="width:100%;padding:5px;border:1px solid #ccc;border-radius:5px;font-size:12px;box-sizing:border-box">'
     +     '<option value="대면"' + (c.mode!=='비대면'?' selected':'') + '>🏫 대면 (장소에서 모임)</option>'
@@ -892,6 +907,19 @@ function campaignForm(){
     + row('카카오 채널명 (콘텐츠에 "검색→채널추가" 문구로)','kakaoChannel',c.kakaoChannel,'예: 금융집짓기')
     + row('소셜리스닝 대상(어떤 고민)','listenTarget',c.listenTarget,'예: 노후·자녀교육비 걱정')
     + row('소셜리스닝 키워드','listenKeywords',c.listenKeywords,'예: 재무설계, 보험리모델링')
+    + '<div style="margin-top:10px;padding-top:8px;border-top:1px dashed #d6c9f0;font-size:11px;color:#6C4AB6;font-weight:700">데이터 출처 (캠페인별 — 어느 결제·신청을 읽고, 설계사 문자 대상인지)</div>'
+    + '<div style="margin:4px 0"><div style="font-size:11px;color:#6C4AB6">결제DB 탭 (이 캠페인 결제내역을 읽을 곳)</div>'
+    +   '<select data-ck="payTab" style="width:100%;padding:5px;border:1px solid #ccc;border-radius:5px;font-size:12px;box-sizing:border-box">'
+    +     payTabOpt('전문가강의DB', c.payTab) + payTabOpt('일반인강의DB', c.payTab)
+    +     ((c.payTab && c.payTab!=='전문가강의DB' && c.payTab!=='일반인강의DB') ? payTabOpt(c.payTab, c.payTab) : '')
+    +   '</select></div>'
+    + '<div style="margin:4px 0"><div style="font-size:11px;color:#6C4AB6">CRM 설계사 문자 대상?</div>'
+    +   '<select data-ck="crmPromo" style="width:100%;padding:5px;border:1px solid #ccc;border-radius:5px;font-size:12px;box-sizing:border-box">'
+    +     '<option value="Y"' + (c.crmPromo!==false?' selected':'') + '>예 — 설계사 명단에 홍보 문자 (전문가 과정)</option>'
+    +     '<option value="N"' + (c.crmPromo===false?' selected':'') + '>아니오 — SNS·콘텐츠로 모음 (일반인 과정)</option>'
+    +   '</select></div>'
+    + row('신청자 시트 ID (비우면 기본 신청시트)','leadSheetId',c.leadSheetId,'구글폼 응답 시트 주소의 /d/ 뒤 ID')
+    + row('신청자 탭 (비우면 기본)','leadSheetTab',c.leadSheetTab,'예: 설문지 응답 시트1')
     + '<div style="margin-top:8px"><button class="appr" style="background:#6C4AB6" data-save="1">저장</button></div>';
   updateMessage(w, html);
   w.querySelector('[data-save]').onclick = function(){
@@ -1135,33 +1163,44 @@ function payRefresh(){
     .then(function(s){
       var el = document.getElementById('pay-state'); if(!el) return;
       if(s.error){ el.innerHTML = '⚠️ 결제시트 읽기 실패: ' + escapeHtml(s.error); return; }
+      var online = (s.mode === '비대면');
+      var setupLabel = online ? '줌 안내 설정·켜기' : '대면안내 설정·켜기';
+      var sb = document.getElementById('pay-setup');
+      if(sb) sb.innerHTML = '<i class="ti ti-map-pin"></i> ' + setupLabel;
       var on = s.enabled ? '<b style="color:#1B7A3D">켜짐</b>' : '<b style="color:#C0392B">꺼짐</b>';
       el.innerHTML = on + ' · 결제완료 ' + (s.totalPaid||0) + '건 (미처리 ' + (s.unprocessed||0) + ')'
-        + (s.enabled ? '' : ' — 「대면안내 설정·켜기」를 눌러 시작하세요');
+        + (s.enabled ? '' : ' — 「' + setupLabel + '」을 눌러 시작하세요');
     })
     .catch(function(){});
 }
 
-// 대면안내 입력 + 켜기 (처음 켤 때 기존 결제는 기준선 처리 = 문자 안 감)
+// 결제후 안내 켜기 — 일정·장소(또는 줌)는 「캠페인 설정」이 단일 출처. 여기선 준비물·추가안내만 보태고 켠다.
+//   (처음 켤 때 그 캠페인 결제DB의 기존 결제는 기준선 처리 = 문자 안 감)
 function paySetup(){
-  var schedule = window.prompt('대면안내 — 일정을 입력하세요.', '7/4·11·18·25 매주 토요일 13~18시');
-  if(schedule === null) return;
-  var place = window.prompt('대면안내 — 장소를 입력하세요. (미정이면 비워두세요)', '');
-  if(place === null) return;
-  var prepare = window.prompt('대면안내 — 준비물을 입력하세요. (없으면 비워두세요)', '');
+  var c = CAMPAIGN_CACHE || {};
+  var online = (c.mode === '비대면');
+  var whereLabel = online ? '줌 링크' : '장소';
+  var whereVal = online ? (c.onlineLink||'(미정)') : (c.place||'(미정)');
+  if(!c.date && (online ? !c.onlineLink : !c.place)){
+    addMessage('먼저 「캠페인 설정」에서 일정과 ' + whereLabel + '을(를) 입력해 주세요. 결제후 안내는 캠페인 강의정보를 그대로 씁니다.','care');
+    return;
+  }
+  var prepare = window.prompt('결제후 안내에 넣을 준비물 (없으면 비워두세요)', c.prepare||'');
   if(prepare === null) return;
-  if(!window.confirm('이 내용으로 결제후 손을 켭니다.\n· 일정: ' + schedule + '\n· 장소: ' + (place||'(미정)') + '\n· 준비물: ' + (prepare||'(없음)')
-    + '\n\n지금까지 결제하신 분들께는 문자가 가지 않고(기준선), 이후 새 결제부터 자동 안내됩니다. 진행할까요?')) return;
+  var notice = window.prompt('추가 안내 한 줄 (없으면 비워두세요)', c.notice||'');
+  if(notice === null) return;
+  if(!window.confirm('결제후 손을 켭니다. 새 결제자에게 아래가 자동 안내됩니다:\n· 강의: ' + (c.name||'') + ' (' + (Number(c.price)||0).toLocaleString() + '원)\n· 일정: ' + (c.date||'(미정)') + '\n· ' + whereLabel + ': ' + whereVal + '\n· 준비물: ' + (prepare||'(없음)')
+    + '\n\n지금까지 결제하신 분들께는 가지 않고(기준선), 이후 새 결제부터 자동 안내됩니다. 진행할까요?')) return;
   var w = addMessage('<i class="ti ti-loader-2"></i> 결제후 손을 켜는 중…', 'care');
   fetch(SERVER_URL + '/pay/config', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ schedule: schedule, place: place, prepare: prepare, enable: true })
+    body: JSON.stringify({ prepare: prepare, notice: notice, enable: true })
   })
     .then(function(r){ return r.json(); })
     .then(function(d){
-      payRefresh();
+      payRefresh(); loadCampaignBoard();
       if(d.error){ updateMessage(w, '⚠️ ' + escapeHtml(d.error)); return; }
-      updateMessage(w, '결제후 손을 <b>켰습니다</b>. 이후 새 결제가 감지되면 결제감사+대면안내 문자가 자동 발송됩니다.'
+      updateMessage(w, '결제후 손을 <b>켰습니다</b>. 이후 새 결제가 감지되면 결제감사+' + (online?'줌 접속':'대면') + ' 안내 문자가 자동 발송됩니다.'
         + (d.baselined ? '<br>기존 결제 <b>' + d.baselined + '건</b>은 기준선으로 표시(문자 안 감).' : '')
         + '<div style="font-size:11px;color:#66736E;margin-top:4px">※ 결제 즉시가 아니라 서버가 깰 때(앱 열거나 아침 cron) 확인합니다.</div>');
     })

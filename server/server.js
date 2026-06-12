@@ -1116,20 +1116,27 @@ const CAMPAIGN_DEFAULT = {
   applyLink: 'https://docs.google.com/forms/d/e/1FAIpQLSejqqWGxDVeDqPkNHQXM2ATY5e8o06CWcFpbT7sEBpqAKhONg/viewform',
   payLink: PROMO_PAY_LINK,
   facts: PROMO_FACTS,      // 홍보·콘텐츠가 쓰는 사실 한 줄
-  prepare: '',             // 대면 준비물
-  notice: '',              // 추가 안내
+  prepare: '',             // 준비물 (결제후 안내에 들어감)
+  notice: '',              // 추가 안내 (결제후 안내에 들어감)
   listenTarget: '',        // 소셜리스닝: 어떤 고민하는 사람
   listenKeywords: '',      // 소셜리스닝: 키워드
   contentNote: '',         // 업로드한 포스터·쇼츠·홍보글 위치/메모
   kakaoChannel: '금융집짓기', // 카카오 채널명 (모든 콘텐츠 끝 "검색→채널추가" 문구에 들어감)
+  // ── 캠페인별 데이터 출처 분리 (어느 결제DB·신청시트를 읽고, CRM 설계사 대상인지) ──
+  payTab: '전문가강의DB',   // 이 캠페인 결제내역을 읽을 AI머니야_마케팅DB 탭 (예: 전문가강의DB / 일반인강의DB)
+  leadSheetId: '',         // 이 캠페인 신청자 시트 ID (비우면 기본 신청자 시트 사용)
+  leadSheetTab: '',        // 신청자 탭 (비우면 기본)
+  crmPromo: true,          // CRM 설계사 홍보 문자 대상인가 (false면 SNS 매스 — 미발송 인원 안 띄움)
 };
-const CAMP_FIELDS = ['title', 'name', 'date', 'price', 'mode', 'place', 'onlineLink', 'capacity', 'applyLink', 'payLink', 'facts', 'prepare', 'notice', 'listenTarget', 'listenKeywords', 'contentNote', 'kakaoChannel'];
+const CAMP_FIELDS = ['title', 'name', 'date', 'price', 'mode', 'place', 'onlineLink', 'capacity', 'applyLink', 'payLink', 'facts', 'prepare', 'notice', 'listenTarget', 'listenKeywords', 'contentNote', 'kakaoChannel', 'payTab', 'leadSheetId', 'leadSheetTab', 'crmPromo'];
 function newCampaignId() { return 'cmp' + Date.now() + Math.floor(Math.random() * 1000); }
+function toBool(v) { return !(v === false || v === 'false' || v === 'N' || v === 'n' || v === '아니오' || v === 0 || v === '0' || v === ''); }
 function normalizeCampaign(obj) {
   const c = Object.assign({}, CAMPAIGN_DEFAULT, obj || {});
   if (!c.id) c.id = newCampaignId();
   c.price = Number(String(c.price).replace(/\D/g, '')) || 0;
   c.mode = (c.mode === '비대면') ? '비대면' : '대면';
+  c.crmPromo = (obj && obj.crmPromo !== undefined) ? toBool(obj.crmPromo) : true;
   return c;
 }
 
@@ -1229,6 +1236,7 @@ app.post('/campaign/config', async (req, res) => {
       if (b[k] === undefined) return;
       if (k === 'price') CAMPAIGN[k] = Number(String(b[k]).replace(/\D/g, '')) || 0;
       else if (k === 'mode') CAMPAIGN[k] = (b[k] === '비대면') ? '비대면' : '대면';
+      else if (k === 'crmPromo') CAMPAIGN[k] = toBool(b[k]);
       else CAMPAIGN[k] = String(b[k]);
     });
     await saveCampaign();
@@ -1332,6 +1340,7 @@ app.get('/promo/status', async (req, res) => {
   runDuePromo().catch(() => {});   // 앱을 열어 서버가 깨면 밀린 예약부터 확인
   const out = {
     crmSheet: !!CRM_SHEET_ID, solapi: !!solapi, sender: !!SOLAPI_SENDER,
+    crmPromo: !!CAMPAIGN.crmPromo,   // 이 캠페인이 CRM 설계사 문자 대상인지 (false면 SNS 매스)
     dailyLimit: PROMO_DAILY_LIMIT, unitPrice: PROMO_UNIT_PRICE,
     pendingBatches: PROMO.filter((b) => b.status === '대기').map((b) => ({
       batchId: b.batchId, count: b.items.length, cost: b.items.length * PROMO_UNIT_PRICE, ts: b.ts, text: b.text,
@@ -1340,7 +1349,8 @@ app.get('/promo/status', async (req, res) => {
       batchId: b.batchId, count: b.items.length, cost: b.items.length * PROMO_UNIT_PRICE, text: b.text, sendAt: b.sendAt,
     })),
   };
-  if (CRM_SHEET_ID && googleCreds()) {
+  // CRM 설계사 대상 캠페인일 때만 미발송 인원 계산 (일반인 등 비대상은 미발송 안 띄움)
+  if (CAMPAIGN.crmPromo && CRM_SHEET_ID && googleCreds()) {
     try {
       const { tab, applicants } = await readPeople(CRM_SHEET_ID, CRM_SHEET_TAB);
       const seen = new Set();
@@ -1362,6 +1372,9 @@ app.get('/promo/status', async (req, res) => {
 app.post('/promo/draft', async (req, res) => {
   console.log('📨 /promo/draft 요청 도착 —', new Date().toLocaleString('ko-KR'));
   try {
+    if (!CAMPAIGN.crmPromo) {
+      return res.status(400).json({ error: `이 캠페인("${CAMPAIGN.title || CAMPAIGN.name}")은 CRM 설계사 문자 대상이 아닙니다. CRM 홍보 문자는 설계사 과정 캠페인에서만 쓰고, 일반인 과정은 SNS·콘텐츠로 모읍니다. (캠페인 설정에서 "CRM 설계사 대상"을 켜면 사용 가능)` });
+    }
     if (!CRM_SHEET_ID) {
       return res.status(503).json({ error: 'CRM 시트가 아직 연결 안 됐습니다. ① 엑셀 파일을 열어 "파일→Google Sheets로 저장" ② 새 시트를 jenya-server 서비스 계정에 편집자 공유 ③ 새 시트 주소의 ID를 환경변수 CRM_SHEET_ID에 넣고 서버 재시작.' });
     }
@@ -1398,7 +1411,7 @@ app.post('/promo/draft', async (req, res) => {
       + '- 톤: 카카오톡 채널 안내글처럼 짧은 줄·줄바꿈으로 폰에서 읽기 좋게, 따뜻하고 담백하게\n'
       + '- 반드시 맨 앞은 "(광고) 오원트금융연구소"로 시작\n'
       + '- 핵심 정보(이 사실만 사용, 지어내기 금지): ' + cFacts + '\n'
-      + '- 일정 줄에는 반드시 "매주 토요일"을 함께 표기 (예: "7/4·11·18·25 매주 토요일, 4주")\n'
+      + '- 일정 줄은 핵심 정보의 날짜·요일·기간을 그대로 정확히 표기 (요일을 지어내거나 바꾸지 말 것)\n'
       + '- 신청서 링크 포함: ' + cApply + '\n'
       + `- 수강료 안내 다음 줄에 결제 안내 한 줄: "결제하기: ${cPay}" (링크 한 글자도 바꾸지 말 것)\n`
       + (guide ? '- 대표님 추가 지시: ' + guide + '\n' : '')
@@ -1639,12 +1652,19 @@ const savePaySeen = () => { saveJson('결제처리.json', PAYSEEN); return saveP
   }
 })();
 
-// 결제시트의 강의 탭들에서 "결제완료 + 주문번호 있는" 진짜 결제 줄만 뽑는다
+// 활성 캠페인의 결제DB 한 곳만 본다 (전문가 캠페인=전문가강의DB, 일반인 캠페인=일반인강의DB)
+//   course=강의명, expected=수강료를 캠페인에서 가져와 결제문자·검증이 그 캠페인 것으로 나간다
+function activeWatch() {
+  if (!CAMPAIGN.payTab) return [];
+  return [{ tab: CAMPAIGN.payTab, course: CAMPAIGN.name || '강의', expected: Number(CAMPAIGN.price) || 0 }];
+}
+
+// 결제시트의 (활성 캠페인) 강의 탭에서 "결제완료 + 주문번호 있는" 진짜 결제 줄만 뽑는다
 async function readPaidRows() {
   const sheets = sheetsClient();
   if (!sheets) throw new Error('구글 열쇠가 없습니다.');
   const out = [];
-  for (const w of PAY_WATCH) {
+  for (const w of activeWatch()) {
     let got;
     try {
       got = await sheets.spreadsheets.values.get({ spreadsheetId: PAY_RESULT_SHEET_ID, range: `'${w.tab}'!A2:I` });
@@ -1668,16 +1688,15 @@ async function readPaidRows() {
   return out;
 }
 
-// 결제감사+대면안내 문자 본문 (거래성 안내) — cfg를 주면 그 설정으로(미리보기용), 없으면 저장된 설정
-//   대면안내(일정·장소·준비물)는 캠페인 중앙설정을 기본으로, 결제후 설정값이 있으면 그게 우선
-function buildPayThanksText(p, cfg) {
-  const c = cfg || PAYCFG;
-  const online = CAMPAIGN.mode === '비대면';   // 비대면이면 장소 대신 줌 링크 안내
-  const schedule = c.schedule || CAMPAIGN.date;
-  const place    = c.place    || CAMPAIGN.place;
+// 결제감사+안내 문자 본문 (거래성 안내) — 전부 "활성 캠페인" 강의정보에서 가져온다(단일 진실 원천)
+//   대면이면 "· 장소", 비대면이면 "· 접속(줌)"으로 갈린다.
+function buildPayThanksText(p) {
+  const online = CAMPAIGN.mode === '비대면';
+  const schedule = CAMPAIGN.date;
+  const place = CAMPAIGN.place;
   const onlineLink = CAMPAIGN.onlineLink;
-  const prepare  = c.prepare  || CAMPAIGN.prepare;
-  const notice   = c.notice   || CAMPAIGN.notice;
+  const prepare = CAMPAIGN.prepare;
+  const notice = CAMPAIGN.notice;
   let t = `[오원트금융연구소] ${p.name}님, ${p.course} 결제가 완료되었습니다(${p.amount.toLocaleString()}원). 감사합니다.`;
   if (schedule) t += `\n· 일정: ${schedule}`;
   if (online) { if (onlineLink) t += `\n· 접속(줌): ${onlineLink}`; }
@@ -1732,9 +1751,17 @@ let payTickRunning = false;
 async function runDuePayments() {
   if (payTickRunning) return { ran: false };
   if (!PAYCFG.enabled) return { ran: false, reason: 'off' };
+  if (!CAMPAIGN.payTab) return { ran: false, reason: 'no-paytab' };
   payTickRunning = true;
   let sent = 0;
   try {
+    // 안전장치: 활성 캠페인의 결제DB가 아직 기준선이 안 잡혔으면, 먼저 기준선만 잡고(발송 0) 끝낸다.
+    //          (다른 캠페인으로 전환했는데 그 DB에 과거 결제가 있을 때 무더기 발송 방지)
+    if (!(PAYCFG.baselinedTabs || []).includes(CAMPAIGN.payTab)) {
+      const baselined = await seedPayBaseline();
+      payTickRunning = false;
+      return { ran: true, sent: 0, baselinedTab: CAMPAIGN.payTab, baselined };
+    }
     const paid = await readPaidRows();
     const seen = new Set(PAYSEEN);
     for (const p of paid) {
@@ -1758,13 +1785,18 @@ async function runDuePayments() {
   } finally { payTickRunning = false; }
 }
 
-// 기준선 잡기: 지금까지의 결제완료를 "처리됨"으로만 표시(문자 안 보냄)
+// 기준선 잡기: (활성 캠페인 결제DB의) 지금까지 결제완료를 "처리됨"으로만 표시(문자 안 보냄)
+//   캠페인 전환 시 새 결제DB의 과거 결제가 무더기 발송되는 걸 막는다 (탭별 1회).
 async function seedPayBaseline() {
   const paid = await readPaidRows();
   const seen = new Set(PAYSEEN);
   let added = 0;
   paid.forEach((p) => { if (!seen.has(p.oid)) { PAYSEEN.push(p.oid); seen.add(p.oid); added++; } });
-  await savePaySeen();
+  if (CAMPAIGN.payTab) {
+    PAYCFG.baselinedTabs = PAYCFG.baselinedTabs || [];
+    if (!PAYCFG.baselinedTabs.includes(CAMPAIGN.payTab)) PAYCFG.baselinedTabs.push(CAMPAIGN.payTab);
+  }
+  await savePaySeen(); await savePayCfg();
   return added;
 }
 
@@ -1773,7 +1805,8 @@ app.get('/pay/status', async (req, res) => {
   runDuePayments().catch(() => {});              // 앱을 열어 서버가 깨면 밀린 결제부터 확인
   const out = {
     enabled: !!PAYCFG.enabled, baselineDone: !!PAYCFG.baselineDone, processed: PAYSEEN.length,
-    config: { place: PAYCFG.place || '', schedule: PAYCFG.schedule || '', prepare: PAYCFG.prepare || '', notice: PAYCFG.notice || '' },
+    mode: CAMPAIGN.mode, payTab: CAMPAIGN.payTab || '',
+    config: { place: CAMPAIGN.place || '', schedule: CAMPAIGN.date || '', onlineLink: CAMPAIGN.onlineLink || '', prepare: CAMPAIGN.prepare || '', notice: CAMPAIGN.notice || '' },
     googleKey: !!googleCreds(), solapi: !!solapi,
   };
   try {
@@ -1790,24 +1823,29 @@ app.post('/pay/config', async (req, res) => {
   console.log('📨 /pay/config 요청 도착 —', new Date().toLocaleString('ko-KR'));
   try {
     const b = req.body || {};
-    if (b.place    !== undefined) PAYCFG.place    = String(b.place);
-    if (b.schedule !== undefined) PAYCFG.schedule = String(b.schedule);
-    if (b.prepare  !== undefined) PAYCFG.prepare  = String(b.prepare);
-    if (b.notice   !== undefined) PAYCFG.notice   = String(b.notice);
+    // 준비물·추가안내는 활성 캠페인에 저장 (일정·장소·줌은 「캠페인 설정」이 단일 출처)
+    let campChanged = false;
+    if (b.prepare !== undefined) { CAMPAIGN.prepare = String(b.prepare); campChanged = true; }
+    if (b.notice  !== undefined) { CAMPAIGN.notice  = String(b.notice);  campChanged = true; }
+    if (campChanged) await saveCampaign();
     let baselined = 0;
     if (b.enable === true) {
-      const hasWhere = PAYCFG.place || CAMPAIGN.place || CAMPAIGN.onlineLink;
-      if (!PAYCFG.schedule && !CAMPAIGN.date && !hasWhere) {
+      if (!CAMPAIGN.payTab) {
+        return res.status(400).json({ error: '이 캠페인의 결제DB 탭이 설정되지 않았습니다. 「캠페인 설정」에서 결제DB를 골라 주세요.' });
+      }
+      const hasWhere = CAMPAIGN.mode === '비대면' ? CAMPAIGN.onlineLink : CAMPAIGN.place;
+      if (!CAMPAIGN.date && !hasWhere) {
         const what = CAMPAIGN.mode === '비대면' ? '일정·줌 링크' : '일정·장소';
         return res.status(400).json({ error: `안내 정보(${what})가 없습니다. 「캠페인 설정」에서 입력한 뒤 켜 주세요.` });
       }
-      if (!PAYCFG.baselineDone) { baselined = await seedPayBaseline(); PAYCFG.baselineDone = true; }
+      if (!(PAYCFG.baselinedTabs || []).includes(CAMPAIGN.payTab)) { baselined = await seedPayBaseline(); }
+      PAYCFG.baselineDone = true;
       PAYCFG.enabled = true;
     } else if (b.enable === false) {
       PAYCFG.enabled = false;
     }
     await savePayCfg();
-    res.json({ ok: true, enabled: !!PAYCFG.enabled, baselined, config: PAYCFG });
+    res.json({ ok: true, enabled: !!PAYCFG.enabled, baselined, campaign: CAMPAIGN });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -1818,17 +1856,16 @@ app.get('/pay/tick', async (req, res) => { res.json(await runDuePayments()); });
 app.get('/campaign/stats', async (req, res) => {
   try {
     const out = {};
+    const leadId  = CAMPAIGN.leadSheetId  || LEAD_SHEET_ID;
+    const leadTab = CAMPAIGN.leadSheetTab || LEAD_SHEET_TAB;
     try {
-      const { applicants } = await readPeople(LEAD_SHEET_ID, LEAD_SHEET_TAB);
+      const { applicants } = await readPeople(leadId, leadTab);
       out.apply = applicants.length;
     } catch (e) { out.apply = null; out.applyError = e.message; }
-    const paid = await readPaidRows();
+    const paid = await readPaidRows();   // 활성 캠페인의 결제DB만
     out.paid = paid.length;
     out.revenue = paid.reduce((s, p) => s + p.amount, 0);
-    out.byCourse = PAY_WATCH.map((w) => {
-      const rows = paid.filter((p) => p.tab === w.tab);
-      return { course: w.course, paid: rows.length, revenue: rows.reduce((s, p) => s + p.amount, 0) };
-    });
+    out.byCourse = CAMPAIGN.payTab ? [{ course: CAMPAIGN.name || '강의', paid: out.paid, revenue: out.revenue }] : [];
     out.convRate = (out.apply && out.apply > 0) ? Math.round(out.paid / out.apply * 1000) / 10 : null;
     out.contentCount = DIARY.filter((d) => d.agentId === 'mkt' && /콘텐츠.*생성/.test(d.entry || '')).length;
     const mine = myContents();
@@ -1850,19 +1887,13 @@ app.post('/pay/test', async (req, res) => {
   console.log('📨 /pay/test 요청 도착 —', new Date().toLocaleString('ko-KR'));
   try {
     const b = req.body || {};
-    // 미리보기 시 입력값을 바로 반영할 수 있게(저장 없이), 없으면 저장된 설정 사용
-    const cfg = {
-      schedule: b.schedule !== undefined ? String(b.schedule) : PAYCFG.schedule,
-      place:    b.place    !== undefined ? String(b.place)    : PAYCFG.place,
-      prepare:  b.prepare  !== undefined ? String(b.prepare)  : PAYCFG.prepare,
-      notice:   PAYCFG.notice,
-    };
+    // 미리보기·테스트 샘플도 "활성 캠페인"의 강의명·수강료로 (전문가/일반인 자동 반영)
     const sample = {
       name: (b.name && String(b.name).trim()) || '홍길동(테스트)',
-      course: '전문가 대면과정',
-      amount: 1100000,
+      course: CAMPAIGN.name || '강의',
+      amount: Number(CAMPAIGN.price) || 0,
     };
-    const text = buildPayThanksText(sample, cfg);
+    const text = buildPayThanksText(sample);
     if (b.dryRun) return res.json({ dryRun: true, text });
     if (!solapi || !SOLAPI_SENDER) return res.status(503).json({ error: 'Solapi 키 또는 발신번호가 없어 테스트 발송을 못 합니다.' });
     // 받는 번호 = 발신번호(대표님 본인). 파라미터로 받는 번호를 못 바꾼다 → 악용·오발송 차단.
