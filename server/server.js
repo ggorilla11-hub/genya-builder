@@ -1104,11 +1104,14 @@ async function sendPromoBatch(batch) {
 // 저장: 로컬 JSON + 구글시트 '제니야_캠페인' 탭 (재시작에도 유지)
 // ============================================================
 const CAMPAIGN_DEFAULT = {
-  title: '전문가 대면과정 7월',        // 캠페인 구분용 제목 (월·과정별 — 나중에 여러 캠페인 구분·관리)
+  id: '',                  // 캠페인 고유 번호 (자동) — 콘텐츠·현황을 캠페인별로 분리
+  title: '전문가 대면과정 7월',        // 캠페인 구분용 제목 (월·과정별 — 드롭다운에 표시)
   name: '전문가 대면과정 (금융집짓기 상담전문가)',
   date: '2026년 7월 4·11·18·25일 매주 토요일 13~18시 (4주 대면) + 수료 후 1년 온라인',
   price: 1100000,
+  mode: '대면',            // 대면 / 비대면 (안내 문자가 대면=장소, 비대면=줌 링크로 갈림)
   place: '',               // 대면 장소 (확정 시 입력)
+  onlineLink: '',          // 비대면 줌(Zoom) 접속 링크
   capacity: '',            // 정원
   applyLink: 'https://docs.google.com/forms/d/e/1FAIpQLSejqqWGxDVeDqPkNHQXM2ATY5e8o06CWcFpbT7sEBpqAKhONg/viewform',
   payLink: PROMO_PAY_LINK,
@@ -1120,9 +1123,42 @@ const CAMPAIGN_DEFAULT = {
   contentNote: '',         // 업로드한 포스터·쇼츠·홍보글 위치/메모
   kakaoChannel: '금융집짓기', // 카카오 채널명 (모든 콘텐츠 끝 "검색→채널추가" 문구에 들어감)
 };
-let CAMPAIGN = loadJson('캠페인.json');
-if (Array.isArray(CAMPAIGN)) CAMPAIGN = {};
-CAMPAIGN = Object.assign({}, CAMPAIGN_DEFAULT, CAMPAIGN);
+const CAMP_FIELDS = ['title', 'name', 'date', 'price', 'mode', 'place', 'onlineLink', 'capacity', 'applyLink', 'payLink', 'facts', 'prepare', 'notice', 'listenTarget', 'listenKeywords', 'contentNote', 'kakaoChannel'];
+function newCampaignId() { return 'cmp' + Date.now() + Math.floor(Math.random() * 1000); }
+function normalizeCampaign(obj) {
+  const c = Object.assign({}, CAMPAIGN_DEFAULT, obj || {});
+  if (!c.id) c.id = newCampaignId();
+  c.price = Number(String(c.price).replace(/\D/g, '')) || 0;
+  c.mode = (c.mode === '비대면') ? '비대면' : '대면';
+  return c;
+}
+
+// ── 다중 캠페인: CAMPAIGNS 배열 + 활성 1개 ──────────────────────
+//   한 번에 한 캠페인만 "활성". CAMPAIGN은 항상 활성 캠페인을 가리키므로
+//   기존 손들(콘텐츠·홍보·결제후)은 코드 변경 없이 그대로 활성 캠페인 정보를 쓴다.
+let CAMPAIGNS = [];
+let ACTIVE_ID = '';
+let CAMPAIGN = normalizeCampaign({});   // 활성 캠페인 (아래 init에서 실제 값으로 교체)
+function setActiveCampaign(id) {
+  const found = CAMPAIGNS.find((c) => c.id === id);
+  if (found) { ACTIVE_ID = found.id; CAMPAIGN = found; }
+  return found;
+}
+function ensureCampaigns() {
+  if (!CAMPAIGNS.length) { CAMPAIGNS = [normalizeCampaign({})]; }
+  const act = CAMPAIGNS.find((c) => c.id === ACTIVE_ID) || CAMPAIGNS[0];
+  ACTIVE_ID = act.id; CAMPAIGN = act;
+}
+(function initCampaignsFromLocal() {
+  const raw = loadJson('캠페인.json');
+  if (raw && Array.isArray(raw.campaigns) && raw.campaigns.length) {
+    CAMPAIGNS = raw.campaigns.map(normalizeCampaign);
+    ACTIVE_ID = raw.activeId || '';
+  } else if (raw && !Array.isArray(raw) && (raw.name || raw.title)) {
+    CAMPAIGNS = [normalizeCampaign(raw)];   // 옛 단일 캠페인 → 배열로 승격
+  }
+  ensureCampaigns();
+})();
 const CAMPAIGN_TAB = process.env.CAMPAIGN_TAB || '제니야_캠페인';
 
 async function saveCampaignToSheet() {
@@ -1132,13 +1168,13 @@ async function saveCampaignToSheet() {
   if (!meta.data.sheets.some((s) => s.properties.title === CAMPAIGN_TAB)) {
     await sheets.spreadsheets.batchUpdate({ spreadsheetId: RESV_SHEET_ID, requestBody: { requests: [{ addSheet: { properties: { title: CAMPAIGN_TAB } } }] } });
   }
-  const rows = Object.keys(CAMPAIGN).map((k) => [k, String(CAMPAIGN[k] == null ? '' : CAMPAIGN[k])]);
+  const rows = [['activeId', ACTIVE_ID], ['campaigns', JSON.stringify(CAMPAIGNS)]];
   await sheets.spreadsheets.values.clear({ spreadsheetId: RESV_SHEET_ID, range: `'${CAMPAIGN_TAB}'!A1:Z` });
   await sheets.spreadsheets.values.update({ spreadsheetId: RESV_SHEET_ID, range: `'${CAMPAIGN_TAB}'!A1`, valueInputOption: 'RAW', requestBody: { values: rows } });
 }
 let campChain = Promise.resolve();
 function saveCampaign() {
-  saveJson('캠페인.json', CAMPAIGN);
+  saveJson('캠페인.json', { campaigns: CAMPAIGNS, activeId: ACTIVE_ID });
   const next = campChain.catch(() => {}).then(() => saveCampaignToSheet());
   campChain = next.catch((e) => console.warn('⚠️ 캠페인 시트 저장 실패:', e.message));
   return campChain;
@@ -1151,27 +1187,90 @@ async function loadCampaignFromSheet() {
   catch (e) { return false; }
   const rows = got.data.values || [];
   if (!rows.length) return false;
-  const obj = {};
-  rows.forEach((r) => { if (r[0]) obj[r[0]] = r[1] || ''; });
-  if (obj.price) obj.price = Number(String(obj.price).replace(/\D/g, '')) || CAMPAIGN_DEFAULT.price;
-  CAMPAIGN = Object.assign({}, CAMPAIGN_DEFAULT, obj);
-  return true;
+  const map = {};
+  rows.forEach((r) => { if (r[0]) map[r[0]] = r[1] || ''; });
+  if (map.campaigns) {                 // 새 형식 (JSON 묶음)
+    let arr; try { arr = JSON.parse(map.campaigns); } catch (e) { arr = null; }
+    if (Array.isArray(arr) && arr.length) {
+      CAMPAIGNS = arr.map(normalizeCampaign);
+      ACTIVE_ID = map.activeId || '';
+      ensureCampaigns();
+      return true;
+    }
+  }
+  const hasOld = Object.keys(map).some((k) => CAMPAIGN_DEFAULT.hasOwnProperty(k));
+  if (hasOld) {                        // 옛 형식 (키-값 단일 캠페인) → 승격
+    const obj = {};
+    Object.keys(map).forEach((k) => { if (CAMPAIGN_DEFAULT.hasOwnProperty(k)) obj[k] = map[k]; });
+    CAMPAIGNS = [normalizeCampaign(obj)];
+    ACTIVE_ID = '';
+    ensureCampaigns();
+    return true;
+  }
+  return false;
 }
 (async () => {
   const ok = await loadCampaignFromSheet().catch(() => false);
-  if (ok) { saveJson('캠페인.json', CAMPAIGN); console.log(`📋 캠페인 복원: ${CAMPAIGN.name}`); }
+  if (ok) { saveJson('캠페인.json', { campaigns: CAMPAIGNS, activeId: ACTIVE_ID }); console.log(`📋 캠페인 복원: ${CAMPAIGNS.length}개, 활성=${CAMPAIGN.name}`); }
 })();
 
-// ── /campaign/config: 캠페인 강의정보 읽기 / 저장 ──
+// ── /campaign/config: 활성 캠페인 강의정보 읽기 / 저장 ──
 app.get('/campaign/config', (req, res) => res.json(CAMPAIGN));
+// ── /campaign/list: 드롭다운용 캠페인 목록 + 활성 id ──
+app.get('/campaign/list', (req, res) => res.json({
+  campaigns: CAMPAIGNS.map((c) => ({ id: c.id, title: c.title, name: c.name, mode: c.mode })),
+  activeId: ACTIVE_ID,
+}));
 app.post('/campaign/config', async (req, res) => {
   console.log('📋 /campaign/config 저장 —', new Date().toLocaleString('ko-KR'));
   try {
     const b = req.body || {};
-    const allow = ['title', 'name', 'date', 'price', 'place', 'capacity', 'applyLink', 'payLink', 'facts', 'prepare', 'notice', 'listenTarget', 'listenKeywords', 'contentNote', 'kakaoChannel'];
-    allow.forEach((k) => { if (b[k] !== undefined) CAMPAIGN[k] = (k === 'price') ? (Number(String(b[k]).replace(/\D/g, '')) || 0) : String(b[k]); });
+    CAMP_FIELDS.forEach((k) => {
+      if (b[k] === undefined) return;
+      if (k === 'price') CAMPAIGN[k] = Number(String(b[k]).replace(/\D/g, '')) || 0;
+      else if (k === 'mode') CAMPAIGN[k] = (b[k] === '비대면') ? '비대면' : '대면';
+      else CAMPAIGN[k] = String(b[k]);
+    });
     await saveCampaign();
     res.json({ ok: true, campaign: CAMPAIGN });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// ── /campaign/activate: 다른 캠페인으로 전환 (화면 전체가 그 캠페인으로 바뀜) ──
+app.post('/campaign/activate', async (req, res) => {
+  const id = (req.body || {}).id;
+  const found = setActiveCampaign(id);
+  if (!found) return res.status(404).json({ error: '캠페인을 찾을 수 없습니다.' });
+  await saveCampaign();
+  res.json({ ok: true, activeId: ACTIVE_ID, campaign: CAMPAIGN });
+});
+// ── /campaign/new: 현재 캠페인을 통째 복제 → 새 캠페인 (콘텐츠는 안 따라옴, 강의정보만 새로) ──
+app.post('/campaign/new', async (req, res) => {
+  try {
+    const b = req.body || {};
+    const src = CAMPAIGN || CAMPAIGN_DEFAULT;
+    const copy = normalizeCampaign(Object.assign({}, src, { id: '' }));   // 강의정보 복제 + 새 id
+    if (b.title !== undefined && String(b.title).trim()) copy.title = String(b.title).trim();
+    if (b.mode !== undefined) copy.mode = (b.mode === '비대면') ? '비대면' : '대면';
+    CAMPAIGNS.push(copy);
+    setActiveCampaign(copy.id);          // 만들면 바로 활성
+    await saveCampaign();
+    res.json({ ok: true, activeId: ACTIVE_ID, campaign: CAMPAIGN, count: CAMPAIGNS.length });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// ── /campaign/delete: 캠페인 삭제 (마지막 1개는 못 지움) + 그 캠페인 콘텐츠도 정리 ──
+app.post('/campaign/delete', async (req, res) => {
+  try {
+    const id = (req.body || {}).id;
+    if (CAMPAIGNS.length <= 1) return res.status(400).json({ error: '마지막 캠페인은 지울 수 없습니다.' });
+    const before = CAMPAIGNS.length;
+    CAMPAIGNS = CAMPAIGNS.filter((c) => c.id !== id);
+    if (CAMPAIGNS.length === before) return res.status(404).json({ error: '캠페인을 찾을 수 없습니다.' });
+    const cBefore = CONTENTS.length;
+    CONTENTS = CONTENTS.filter((c) => c.campaignId !== id);
+    ensureCampaigns();
+    await saveCampaign();
+    if (CONTENTS.length !== cBefore) await saveContents();
+    res.json({ ok: true, activeId: ACTIVE_ID, campaign: CAMPAIGN });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -1186,9 +1285,9 @@ async function saveContentsToSheet() {
   if (!meta.data.sheets.some((s) => s.properties.title === CONTENT_TAB)) {
     await sheets.spreadsheets.batchUpdate({ spreadsheetId: RESV_SHEET_ID, requestBody: { requests: [{ addSheet: { properties: { title: CONTENT_TAB } } }] } });
   }
-  const rows = CONTENTS.map((c) => [c.id, c.type || '', c.name || '', c.link || '', c.note || '', c.body || '', c.ts || '']);
+  const rows = CONTENTS.map((c) => [c.id, c.type || '', c.name || '', c.link || '', c.note || '', c.body || '', c.ts || '', c.campaignId || '']);
   await sheets.spreadsheets.values.clear({ spreadsheetId: RESV_SHEET_ID, range: `'${CONTENT_TAB}'!A1:Z` });
-  await sheets.spreadsheets.values.update({ spreadsheetId: RESV_SHEET_ID, range: `'${CONTENT_TAB}'!A1`, valueInputOption: 'RAW', requestBody: { values: [['id', 'type', 'name', 'link', 'note', 'body', 'ts'], ...rows] } });
+  await sheets.spreadsheets.values.update({ spreadsheetId: RESV_SHEET_ID, range: `'${CONTENT_TAB}'!A1`, valueInputOption: 'RAW', requestBody: { values: [['id', 'type', 'name', 'link', 'note', 'body', 'ts', 'campaignId'], ...rows] } });
 }
 let contentChain = Promise.resolve();
 function saveContents() {
@@ -1201,18 +1300,20 @@ async function loadContentsFromSheet() {
   const sheets = sheetsClient();
   if (!sheets || !RESV_SHEET_ID) return null;
   let got;
-  try { got = await sheets.spreadsheets.values.get({ spreadsheetId: RESV_SHEET_ID, range: `'${CONTENT_TAB}'!A2:G` }); }
+  try { got = await sheets.spreadsheets.values.get({ spreadsheetId: RESV_SHEET_ID, range: `'${CONTENT_TAB}'!A2:H` }); }
   catch (e) { return null; }
-  return (got.data.values || []).filter((r) => r[0]).map((r) => ({ id: r[0], type: r[1] || '', name: r[2] || '', link: r[3] || '', note: r[4] || '', body: r[5] || '', ts: r[6] || '' }));
+  return (got.data.values || []).filter((r) => r[0]).map((r) => ({ id: r[0], type: r[1] || '', name: r[2] || '', link: r[3] || '', note: r[4] || '', body: r[5] || '', ts: r[6] || '', campaignId: r[7] || '' }));
 }
 (async () => { const fromSheet = await loadContentsFromSheet().catch(() => null); if (fromSheet) { CONTENTS = fromSheet; saveJson('콘텐츠.json', CONTENTS); } })();
 
-app.get('/campaign/contents', (req, res) => res.json({ contents: CONTENTS }));
+// 활성 캠페인의 콘텐츠만 (campaignId 없는 옛 콘텐츠는 활성 캠페인 것으로 본다)
+function myContents() { return CONTENTS.filter((c) => !c.campaignId || c.campaignId === ACTIVE_ID); }
+app.get('/campaign/contents', (req, res) => res.json({ contents: myContents() }));
 app.post('/campaign/contents', async (req, res) => {
   try {
     const b = req.body || {};
     if (!b.link && !b.name && !b.body) return res.status(400).json({ error: '이름·링크·내용 중 하나는 필요합니다.' });
-    const item = { id: 'c' + Date.now() + Math.floor(Math.random() * 1000), type: String(b.type || '기타'), name: String(b.name || ''), link: String(b.link || ''), note: String(b.note || ''), body: String(b.body || ''), ts: new Date().toISOString() };
+    const item = { id: 'c' + Date.now() + Math.floor(Math.random() * 1000), type: String(b.type || '기타'), name: String(b.name || ''), link: String(b.link || ''), note: String(b.note || ''), body: String(b.body || ''), ts: new Date().toISOString(), campaignId: ACTIVE_ID };
     CONTENTS.push(item);
     await saveContents();
     res.json({ ok: true, item });
@@ -1571,13 +1672,16 @@ async function readPaidRows() {
 //   대면안내(일정·장소·준비물)는 캠페인 중앙설정을 기본으로, 결제후 설정값이 있으면 그게 우선
 function buildPayThanksText(p, cfg) {
   const c = cfg || PAYCFG;
+  const online = CAMPAIGN.mode === '비대면';   // 비대면이면 장소 대신 줌 링크 안내
   const schedule = c.schedule || CAMPAIGN.date;
   const place    = c.place    || CAMPAIGN.place;
+  const onlineLink = CAMPAIGN.onlineLink;
   const prepare  = c.prepare  || CAMPAIGN.prepare;
   const notice   = c.notice   || CAMPAIGN.notice;
   let t = `[오원트금융연구소] ${p.name}님, ${p.course} 결제가 완료되었습니다(${p.amount.toLocaleString()}원). 감사합니다.`;
   if (schedule) t += `\n· 일정: ${schedule}`;
-  if (place)    t += `\n· 장소: ${place}`;
+  if (online) { if (onlineLink) t += `\n· 접속(줌): ${onlineLink}`; }
+  else        { if (place)      t += `\n· 장소: ${place}`; }
   if (prepare)  t += `\n· 준비물: ${prepare}`;
   if (notice)   t += `\n${notice}`;
   t += `\n문의 010-5424-5332`;
@@ -1692,8 +1796,10 @@ app.post('/pay/config', async (req, res) => {
     if (b.notice   !== undefined) PAYCFG.notice   = String(b.notice);
     let baselined = 0;
     if (b.enable === true) {
-      if (!PAYCFG.schedule && !PAYCFG.place && !CAMPAIGN.date && !CAMPAIGN.place) {
-        return res.status(400).json({ error: '대면안내(일정·장소)가 없습니다. 「캠페인 설정」에서 일정·장소를 입력한 뒤 켜 주세요.' });
+      const hasWhere = PAYCFG.place || CAMPAIGN.place || CAMPAIGN.onlineLink;
+      if (!PAYCFG.schedule && !CAMPAIGN.date && !hasWhere) {
+        const what = CAMPAIGN.mode === '비대면' ? '일정·줌 링크' : '일정·장소';
+        return res.status(400).json({ error: `안내 정보(${what})가 없습니다. 「캠페인 설정」에서 입력한 뒤 켜 주세요.` });
       }
       if (!PAYCFG.baselineDone) { baselined = await seedPayBaseline(); PAYCFG.baselineDone = true; }
       PAYCFG.enabled = true;
@@ -1725,11 +1831,12 @@ app.get('/campaign/stats', async (req, res) => {
     });
     out.convRate = (out.apply && out.apply > 0) ? Math.round(out.paid / out.apply * 1000) / 10 : null;
     out.contentCount = DIARY.filter((d) => d.agentId === 'mkt' && /콘텐츠.*생성/.test(d.entry || '')).length;
+    const mine = myContents();
     out.uploads = {
-      total: CONTENTS.length,
-      poster: CONTENTS.filter((c) => c.type === '포스터').length,
-      shorts: CONTENTS.filter((c) => c.type === '쇼츠').length,
-      cardnews: CONTENTS.filter((c) => c.type === '카드뉴스').length,
+      total: mine.length,
+      poster: mine.filter((c) => c.type === '포스터').length,
+      shorts: mine.filter((c) => c.type === '쇼츠').length,
+      cardnews: mine.filter((c) => c.type === '카드뉴스').length,
     };
     res.json(out);
   } catch (e) { res.status(500).json({ error: e.message }); }

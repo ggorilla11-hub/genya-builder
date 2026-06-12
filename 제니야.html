@@ -454,7 +454,7 @@ body{font-family:'Pretendard',-apple-system,sans-serif;font-weight:500;backgroun
 
   </div>
 
-  <div class="foot">제니야 — <b>상단 프로젝트 × 좌측 에이전트 × 우측 도구</b> 교차 구조 · v1.4 (문자 역할 정리·콘텐츠 저장)</div>
+  <div class="foot">제니야 — <b>상단 프로젝트 × 좌측 에이전트 × 우측 도구</b> 교차 구조 · v1.5 (다중 캠페인 전환·복제 + 대면/비대면)</div>
 </div>
 
 <!-- C-6. 업로드 모달 (+ 버튼으로 열림 — 실제 업로드는 3단계) -->
@@ -666,6 +666,11 @@ function escapeAttr(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replac
 function renderCampaignBoard(box){
   var html = '<div class="hand" id="camp-board" style="border:2px solid #6C4AB6;background:#FAF8FF">'
     + '<div class="hh" style="color:#6C4AB6;font-size:14px"><i class="ti ti-flag-3"></i> 강의 모집 캠페인 · 한 장</div>'
+    + '<div style="display:flex;gap:5px;align-items:center;margin:2px 0 6px">'
+    +   '<select id="camp-select" style="flex:1;min-width:0;padding:5px;border:1px solid #b9a8e0;border-radius:6px;font-size:12px;background:#fff;color:#333"><option>불러오는 중…</option></select>'
+    +   '<button id="camp-new" title="현재 캠페인을 복제해 새로 만들기" style="white-space:nowrap;padding:5px 8px;border:0;border-radius:6px;background:#6C4AB6;color:#fff;font-size:12px;cursor:pointer">+ 새 캠페인</button>'
+    +   '<button id="camp-del" title="이 캠페인 삭제" style="padding:5px 7px;border:1px solid #ccc;border-radius:6px;background:#fff;color:#999;font-size:12px;cursor:pointer"><i class="ti ti-trash"></i></button>'
+    + '</div>'
     + '<div id="camp-summary" style="font-size:12px;color:#444;line-height:1.6;margin:2px 0 6px">불러오는 중…</div>'
     + '<button class="hand-btn" id="camp-edit" style="background:#6C4AB6"><i class="ti ti-settings"></i> 캠페인 설정(강의정보)</button>'
     + '<div style="margin-top:8px;font-size:11px;color:#6C4AB6;font-weight:700">관문 — 단계마다 눌러 진행 (현황 자동 표시)</div>'
@@ -681,9 +686,66 @@ function renderCampaignBoard(box){
     + '<div id="camp-s4" style="font-size:11px;color:#7a6fa0;margin:0 0 6px 8px">…</div>'
     + '</div>';
   box.insertAdjacentHTML('beforeend', html);
+  var sel = document.getElementById('camp-select');
+  if(sel) sel.onchange = function(){ switchCampaign(sel.value); };
+  var nb = document.getElementById('camp-new'); if(nb) nb.onclick = newCampaign;
+  var db = document.getElementById('camp-del'); if(db) db.onclick = deleteCampaign;
   loadCampaignBoard();
   loadCampaignStatus();
   if(!window.CAMP_TIMER){ window.CAMP_TIMER = setInterval(function(){ if(document.getElementById('camp-board')) loadCampaignStatus(); }, 60000); }
+}
+
+// 캠페인 목록을 드롭다운에 채우고 활성 캠페인을 표시
+function loadCampaignList(){
+  var sel = document.getElementById('camp-select'); if(!sel) return;
+  fetch(SERVER_URL + '/campaign/list').then(function(r){return r.json();}).then(function(d){
+    var list = d.campaigns || [];
+    sel.innerHTML = list.map(function(c){
+      var tag = (c.mode === '비대면') ? '💻' : '🏫';
+      var label = tag + ' ' + (c.title || c.name || '(제목 없음)');
+      return '<option value="' + escapeAttr(c.id) + '"' + (c.id === d.activeId ? ' selected' : '') + '>' + escapeHtml(label) + '</option>';
+    }).join('');
+    var db = document.getElementById('camp-del'); if(db) db.style.display = (list.length > 1) ? '' : 'none';
+  }).catch(function(){});
+}
+
+// 다른 캠페인으로 전환 → 화면 전체(강의정보·콘텐츠·현황)가 그 캠페인으로 바뀜
+function switchCampaign(id){
+  if(!id) return;
+  fetch(SERVER_URL + '/campaign/activate', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id})})
+    .then(function(r){return r.json();}).then(function(d){
+      if(d.error){ addMessage('⚠️ '+escapeHtml(d.error),'zenya'); return; }
+      loadCampaignBoard(); loadCampaignStatus();
+      addMessage('「' + escapeHtml((d.campaign&&d.campaign.title)||'') + '」 캠페인으로 전환했습니다. 강의정보·콘텐츠·현황이 모두 이 캠페인 것으로 바뀌었어요.','zenya');
+    }).catch(function(){ addMessage('⚠️ 전환에 실패했습니다.','zenya'); });
+}
+
+// + 새 캠페인 = 현재 캠페인 통째 복제 → 강의정보만 새로 입력 (콘텐츠는 안 따라옴)
+function newCampaign(){
+  var title = window.prompt('새 캠페인 제목 (구분용)\n예: 일반인 비대면과정 8월 / 부트캠프 1기','');
+  if(title===null) return;
+  fetch(SERVER_URL + '/campaign/new', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:title})})
+    .then(function(r){return r.json();}).then(function(d){
+      if(d.error){ addMessage('⚠️ '+escapeHtml(d.error),'zenya'); return; }
+      loadCampaignBoard(); loadCampaignStatus();
+      addMessage('새 캠페인을 만들었습니다(현재 캠페인 복제, 콘텐츠는 비움). 이제 「캠페인 설정」에서 강의정보만 바꿔 주세요.','zenya');
+      campaignForm();
+    }).catch(function(){ addMessage('⚠️ 생성에 실패했습니다.','zenya'); });
+}
+
+// 캠페인 삭제 (마지막 1개는 못 지움, 그 캠페인 콘텐츠도 함께 정리)
+function deleteCampaign(){
+  var sel = document.getElementById('camp-select');
+  var id = sel ? sel.value : '';
+  var label = (sel && sel.options[sel.selectedIndex]) ? sel.options[sel.selectedIndex].text : '';
+  if(!id) return;
+  if(!window.confirm('「' + label + '」 캠페인을 지울까요?\n이 캠페인에 보관된 콘텐츠도 함께 정리됩니다. (드라이브 원본·신청/결제 기록은 안 지워집니다)')) return;
+  fetch(SERVER_URL + '/campaign/delete', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id})})
+    .then(function(r){return r.json();}).then(function(d){
+      if(d.error){ addMessage('⚠️ '+escapeHtml(d.error),'zenya'); return; }
+      loadCampaignBoard(); loadCampaignStatus();
+      addMessage('캠페인을 삭제했습니다.','zenya');
+    }).catch(function(){ addMessage('⚠️ 삭제에 실패했습니다.','zenya'); });
 }
 
 // 진행판 현황 — 검증된 손들의 실제 데이터를 5관문에 연결 (한 화면에서 전체 흐름)
@@ -712,13 +774,18 @@ function loadCampaignStatus(){
 }
 
 function loadCampaignBoard(){
+  loadCampaignList();
   fetch(SERVER_URL + '/campaign/config').then(function(r){return r.json();}).then(function(c){
     CAMPAIGN_CACHE = c || {};
     var el = document.getElementById('camp-summary'); if(!el) return;
+    var online = (c.mode === '비대면');
+    var whereLabel = online ? '줌 링크' : '장소';
+    var whereVal = online ? (c.onlineLink||'(미정)') : (c.place||'(미정)');
     el.innerHTML = '<b style="color:#6C4AB6">📌 ' + escapeHtml(c.title||'(캠페인 제목 미정)') + '</b>'
+      + ' <span style="font-size:11px;background:' + (online?'#3B6FB0':'#6C4AB6') + ';color:#fff;padding:1px 6px;border-radius:8px">' + (online?'💻 비대면':'🏫 대면') + '</span>'
       + '<br>' + escapeHtml(c.name||'(강의명 미정)')
       + '<br>일정: ' + escapeHtml(c.date||'-')
-      + '<br>수강료 ' + (Number(c.price)||0).toLocaleString() + '원 · 장소 ' + escapeHtml(c.place||'(미정)') + ' · 정원 ' + escapeHtml(c.capacity||'(미정)');
+      + '<br>수강료 ' + (Number(c.price)||0).toLocaleString() + '원 · ' + whereLabel + ' ' + escapeHtml(whereVal) + ' · 정원 ' + escapeHtml(c.capacity||'(미정)');
   }).catch(function(){});
 }
 
@@ -811,7 +878,14 @@ function campaignForm(){
   var html = '<b>캠페인 설정 — 매달 여기만 바꾸면 모든 손이 이 값을 씁니다</b>'
     + row('캠페인 제목 (구분용)','title',c.title,'예: 전문가 대면과정 7월 / 일반인 비대면 8월')
     + row('강의명','name',c.name) + row('일정','date',c.date) + row('수강료(원)','price',c.price)
-    + row('장소','place',c.place,'예: 강남 오원트 5층 세미나실') + row('정원','capacity',c.capacity,'예: 20명')
+    + '<div style="margin:4px 0"><div style="font-size:11px;color:#6C4AB6">진행 형식</div>'
+    +   '<select data-ck="mode" style="width:100%;padding:5px;border:1px solid #ccc;border-radius:5px;font-size:12px;box-sizing:border-box">'
+    +     '<option value="대면"' + (c.mode!=='비대면'?' selected':'') + '>🏫 대면 (장소에서 모임)</option>'
+    +     '<option value="비대면"' + (c.mode==='비대면'?' selected':'') + '>💻 비대면 (줌 등 온라인)</option>'
+    +   '</select></div>'
+    + row('장소 (대면일 때)','place',c.place,'예: 강남 오원트 5층 세미나실')
+    + row('줌 링크 (비대면일 때)','onlineLink',c.onlineLink,'예: https://zoom.us/j/...')
+    + row('정원','capacity',c.capacity,'예: 20명')
     + '<div style="margin:4px 0"><div style="font-size:11px;color:#6C4AB6">홍보 사실(한 줄 — 홍보·콘텐츠가 그대로 사용)</div>'
     + '<textarea data-ck="facts" style="width:100%;height:56px;padding:5px;border:1px solid #ccc;border-radius:5px;font-size:12px;box-sizing:border-box">'+escapeHtml(c.facts||'')+'</textarea></div>'
     + row('신청 링크','applyLink',c.applyLink) + row('결제 링크','payLink',c.payLink)
