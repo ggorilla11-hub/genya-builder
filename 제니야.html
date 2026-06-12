@@ -454,7 +454,7 @@ body{font-family:'Pretendard',-apple-system,sans-serif;font-weight:500;backgroun
 
   </div>
 
-  <div class="foot">제니야 — <b>상단 프로젝트 × 좌측 에이전트 × 우측 도구</b> 교차 구조 · v1.7 (캠페인별 신청시트·결제 도장·안내문 분리 + 결제탭 이름 교정)</div>
+  <div class="foot">제니야 — <b>상단 프로젝트 × 좌측 에이전트 × 우측 도구</b> 교차 구조 · v1.8 (비대면 줌 링크는 강의 1시간 전 카톡 안내 — 결제후 문자 분기)</div>
 </div>
 
 <!-- C-6. 업로드 모달 (+ 버튼으로 열림 — 실제 업로드는 3단계) -->
@@ -784,8 +784,8 @@ function loadCampaignBoard(){
     CAMPAIGN_CACHE = c || {};
     var el = document.getElementById('camp-summary'); if(!el) return;
     var online = (c.mode === '비대면');
-    var whereLabel = online ? '줌 링크' : '장소';
-    var whereVal = online ? (c.onlineLink||'(미정)') : (c.place||'(미정)');
+    var whereLabel = online ? '줌' : '장소';
+    var whereVal = online ? (c.onlineLink || '강의 1시간 전 카톡 안내') : (c.place||'(미정)');
     el.innerHTML = '<b style="color:#6C4AB6">📌 ' + escapeHtml(c.title||'(캠페인 제목 미정)') + '</b>'
       + ' <span style="font-size:11px;background:' + (online?'#3B6FB0':'#6C4AB6') + ';color:#fff;padding:1px 6px;border-radius:8px">' + (online?'💻 비대면':'🏫 대면') + '</span>'
       + '<br>' + escapeHtml(c.name||'(강의명 미정)')
@@ -1179,10 +1179,10 @@ function payRefresh(){
 function paySetup(){
   var c = CAMPAIGN_CACHE || {};
   var online = (c.mode === '비대면');
-  var whereLabel = online ? '줌 링크' : '장소';
-  var whereVal = online ? (c.onlineLink||'(미정)') : (c.place||'(미정)');
-  if(!c.date && (online ? !c.onlineLink : !c.place)){
-    addMessage('먼저 「캠페인 설정」에서 일정과 ' + whereLabel + '을(를) 입력해 주세요. 결제후 안내는 캠페인 강의정보를 그대로 씁니다.','care');
+  var whereLabel = online ? '줌' : '장소';
+  var whereVal = online ? (c.onlineLink || '강의 1시간 전 카톡 안내') : (c.place||'(미정)');
+  if(!c.date && !online && !c.place){
+    addMessage('먼저 「캠페인 설정」에서 일정과 장소를 입력해 주세요. 결제후 안내는 캠페인 강의정보를 그대로 씁니다.','care');
     return;
   }
   var prepare = window.prompt('결제후 안내에 넣을 준비물 (없으면 비워두세요)', c.prepare||'');

@@ -1711,8 +1711,13 @@ function buildPayThanksText(p) {
   const notice = CAMPAIGN.notice;
   let t = `[오원트금융연구소] ${p.name}님, ${p.course} 결제가 완료되었습니다(${p.amount.toLocaleString()}원). 감사합니다.`;
   if (schedule) t += `\n· 일정: ${schedule}`;
-  if (online) { if (onlineLink) t += `\n· 접속(줌): ${onlineLink}`; }
-  else        { if (place)      t += `\n· 장소: ${place}`; }
+  if (online) {
+    // 비대면: 줌 링크가 입력돼 있으면 바로 안내, 비어 있으면 "강의 1시간 전 카톡 안내"로 (링크를 결제 시점에 안 주는 운영)
+    if (onlineLink) t += `\n· 접속(줌): ${onlineLink}`;
+    else            t += `\n· 줌 접속 링크는 강의 시작 1시간 전 카카오톡으로 안내드립니다.`;
+  } else {
+    if (place) t += `\n· 장소: ${place}`;
+  }
   if (prepare)  t += `\n· 준비물: ${prepare}`;
   if (notice)   t += `\n${notice}`;
   t += `\n문의 010-5424-5332`;
