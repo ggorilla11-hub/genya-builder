@@ -753,8 +753,13 @@ async function readPeople(sheetId, tabPref) {
   return { tab, header, applicants, statusCol, sheets };
 }
 
-// 신청자(리드) 시트 읽기 — 기존 고객관리 손이 쓰는 입구
-const readApplicants = () => readPeople(LEAD_SHEET_ID, LEAD_SHEET_TAB);
+// 신청자(리드) 시트 읽기 — "활성 캠페인"의 신청시트를 읽는다 (없으면 기본 리드시트)
+//   전문가/일반인 등 캠페인마다 신청 폼·시트가 달라도 그 캠페인 것만 읽고 도장 찍는다
+function activeLeadSheet() {
+  const c = (typeof CAMPAIGN !== 'undefined' && CAMPAIGN) ? CAMPAIGN : {};
+  return { id: c.leadSheetId || LEAD_SHEET_ID, tab: c.leadSheetTab || LEAD_SHEET_TAB };
+}
+const readApplicants = () => { const L = activeLeadSheet(); return readPeople(L.id, L.tab); };
 
 // 발송 대기 명단 (server/data/발송대기.json) — 승인 전 초안 보관소
 let PENDING = loadJson('발송대기.json');   // [{id, name, phone, text, ts, status}]
@@ -805,12 +810,16 @@ app.post('/care/draft', async (req, res) => {
 
     // 고객관리 에이전트가 안내문 틀을 쓴다 ({이름} 자리에 각자 이름이 들어감)
     const system = buildSystemPrompt('care', project || '머니트레이닝랩');
+    const cName = CAMPAIGN.name || '강의';
+    const cOnline = CAMPAIGN.mode === '비대면';
+    const cPay  = CAMPAIGN.payLink || CARE_PAY_LINK;
     const ask =
       '강의 신청자에게 보낼 "감사 + 강의 안내" 문자 한 통을 써라.\n'
       + '- 받는 사람 이름 자리는 반드시 {이름} 으로 표기 (예: "{이름}님, 신청 감사합니다")\n'
-      + '- 이번 강의: 10억 목돈마련 절대법칙 (비대면 강의)\n'
+      + `- 이번 강의: ${cName} (${cOnline ? '비대면 — 줌(Zoom)' : '대면'})\n`
+      + (CAMPAIGN.facts ? `- 강의 사실(이 정보만 사용, 지어내기 금지): ${CAMPAIGN.facts}\n` : '')
       + (guide ? `- 대표님이 꼭 넣으라는 내용: ${guide}\n` : '- 일시·접속링크 등 확정 정보가 없으면 "확정되는 대로 다시 안내드립니다"로 처리\n')
-      + `- 수강료 안내 바로 다음 줄에 결제 안내 한 줄을 넣어라: "결제하기: ${CARE_PAY_LINK}" (링크 주소는 한 글자도 바꾸지 말 것)\n`
+      + `- 수강료 안내 바로 다음 줄에 결제 안내 한 줄을 넣어라: "결제하기: ${cPay}" (링크 주소는 한 글자도 바꾸지 말 것)\n`
       + '- 문자이므로 마크다운·이모지 없이 일반 글로, 300자 이내, 따뜻하고 신뢰감 있게\n'
       + '- 발신: 오원트금융연구소 오상열 대표\n'
       + '- 문자 본문만 출력 (설명·따옴표 없이)';
@@ -868,7 +877,7 @@ app.post('/care/approve', async (req, res) => {
         const hit = applicants.find((a) => a.phone === item.phone);
         if (hit) {
           await sheets.spreadsheets.values.update({
-            spreadsheetId: LEAD_SHEET_ID,
+            spreadsheetId: activeLeadSheet().id,
             range: `'${tab.replace(/'/g, "''")}'!${colLetter(statusCol)}${hit.row}`,
             valueInputOption: 'RAW',
             requestBody: { values: [['발송완료 ' + stamp]] },
@@ -1123,7 +1132,7 @@ const CAMPAIGN_DEFAULT = {
   contentNote: '',         // 업로드한 포스터·쇼츠·홍보글 위치/메모
   kakaoChannel: '금융집짓기', // 카카오 채널명 (모든 콘텐츠 끝 "검색→채널추가" 문구에 들어감)
   // ── 캠페인별 데이터 출처 분리 (어느 결제DB·신청시트를 읽고, CRM 설계사 대상인지) ──
-  payTab: '전문가강의DB',   // 이 캠페인 결제내역을 읽을 AI머니야_마케팅DB 탭 (예: 전문가강의DB / 일반인강의DB)
+  payTab: '전문가강의결제DB',   // 이 캠페인 결제내역을 읽을 AI머니야_마케팅DB 탭 (실제 탭: 전문가강의결제DB / 일반인강의결제DB)
   leadSheetId: '',         // 이 캠페인 신청자 시트 ID (비우면 기본 신청자 시트 사용)
   leadSheetTab: '',        // 신청자 탭 (비우면 기본)
   crmPromo: true,          // CRM 설계사 홍보 문자 대상인가 (false면 SNS 매스 — 미발송 인원 안 띄움)
@@ -1131,11 +1140,14 @@ const CAMPAIGN_DEFAULT = {
 const CAMP_FIELDS = ['title', 'name', 'date', 'price', 'mode', 'place', 'onlineLink', 'capacity', 'applyLink', 'payLink', 'facts', 'prepare', 'notice', 'listenTarget', 'listenKeywords', 'contentNote', 'kakaoChannel', 'payTab', 'leadSheetId', 'leadSheetTab', 'crmPromo'];
 function newCampaignId() { return 'cmp' + Date.now() + Math.floor(Math.random() * 1000); }
 function toBool(v) { return !(v === false || v === 'false' || v === 'N' || v === 'n' || v === '아니오' || v === 0 || v === '0' || v === ''); }
+// 옛 탭 이름 자동 교정 (실제 AI머니야 탭은 "…결제DB") — 저장된 캠페인도 로드 시 바로잡힌다
+const PAYTAB_FIX = { '전문가강의DB': '전문가강의결제DB', '일반인강의DB': '일반인강의결제DB' };
 function normalizeCampaign(obj) {
   const c = Object.assign({}, CAMPAIGN_DEFAULT, obj || {});
   if (!c.id) c.id = newCampaignId();
   c.price = Number(String(c.price).replace(/\D/g, '')) || 0;
   c.mode = (c.mode === '비대면') ? '비대면' : '대면';
+  if (PAYTAB_FIX[c.payTab]) c.payTab = PAYTAB_FIX[c.payTab];
   c.crmPromo = (obj && obj.crmPromo !== undefined) ? toBool(obj.crmPromo) : true;
   return c;
 }
@@ -1716,14 +1728,15 @@ async function processOnePayment(p) {
   // ② 우리 신청자(리드) 시트에 결제완료 도장 (전화번호 매칭, 기존 값 뒤에 덧붙임)
   let stamped = false, matched = false;
   try {
-    const { tab, applicants, statusCol, sheets } = await readPeople(LEAD_SHEET_ID, LEAD_SHEET_TAB);
+    const L = activeLeadSheet();   // 활성 캠페인의 신청시트에 도장
+    const { tab, applicants, statusCol, sheets } = await readPeople(L.id, L.tab);
     const hit = applicants.find((a) => a.phone === p.phone);
     if (hit) {
       matched = true;
       const when = new Date().toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
       const stamp = (hit.status ? hit.status + ' / ' : '') + `결제완료 ${p.amount.toLocaleString()}원 ${when}`;
       await sheets.spreadsheets.values.update({
-        spreadsheetId: LEAD_SHEET_ID,
+        spreadsheetId: L.id,
         range: `'${tab.replace(/'/g, "''")}'!${colLetter(statusCol)}${hit.row}`,
         valueInputOption: 'RAW', requestBody: { values: [[stamp]] },
       });
