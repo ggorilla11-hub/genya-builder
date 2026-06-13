@@ -1358,7 +1358,7 @@ app.post('/campaign/contents/delete', async (req, res) => {
 // ============================================================
 const STORAGE_BUCKET = process.env.FIREBASE_STORAGE_BUCKET || 'moneya-72fe6.firebasestorage.app';
 const MAX_UPLOAD_MB = Number(process.env.MAX_UPLOAD_MB || 300);
-const UPLOAD_KINDS = { '쇼츠': 1, '오디오': 1 };   // 큰 파일 업로드 대상 (작은 글은 시트 직접 저장)
+const UPLOAD_KINDS = { '쇼츠': 1, '오디오': 1, '카드뉴스': 1 };   // 큰/이미지 파일 업로드 대상 (작은 글은 시트 직접 저장)
 let _bucket = null;
 function storageBucket() {
   if (_bucket) return _bucket;
@@ -2004,7 +2004,7 @@ app.get('/campaign/today', (req, res) => {
   const c = CAMPAIGN || {};
   const mine = myContents();
   const cnt = (t) => mine.filter((x) => x.type === t).length;
-  const counts = { 쇼츠: cnt('쇼츠'), 과정정보: cnt('과정정보'), 텍스트: cnt('텍스트'), 키워드: cnt('키워드'), 오디오: cnt('오디오') };
+  const counts = { 쇼츠: cnt('쇼츠'), 과정정보: cnt('과정정보'), 텍스트: cnt('텍스트'), 키워드: cnt('키워드'), 오디오: cnt('오디오'), 카드뉴스: cnt('카드뉴스') };
   const open = ymdToDate(c.startDate) || parseOpenDate(c.date);   // 개강일 (시작일 우선)
   const end = ymdToDate(c.endDate);                               // 종료일 (선택)
   const today = kstMidnight();

@@ -382,18 +382,18 @@ body{font-family:'Pretendard',-apple-system,sans-serif;font-weight:500;backgroun
 .frow-add:hover{background:#5a3aa0}
 .frow-use{font-size:11.5px;color:#a23a3a;margin-top:5px}
 .frow-next{font-size:11px;color:#555;margin-top:5px;line-height:1.45}
-.flow-badge{display:inline-block;font-size:10px;font-weight:700;padding:1px 6px;border-radius:6px;margin-right:4px;vertical-align:middle}
-.flow-approve{background:#fff3da;color:#9a6700}
-.flow-wait{background:#e3effa;color:#2b5f8f}
-.flow-manual{background:#e6f6ec;color:#2f7d52}
+.flow-badge{display:inline-block;font-size:11px;font-weight:800;padding:3px 9px;border-radius:20px;margin-right:5px;vertical-align:middle;color:#fff;box-shadow:0 1px 2px rgba(0,0,0,.12)}
+.flow-approve{background:#f0a500}
+.flow-wait{background:#2b7fd0}
+.flow-manual{background:#2f9e6b}
 .frow-items{margin-top:6px}
 .fitem{font-size:12px;color:#333;padding:5px 0;border-top:1px dashed #eee;line-height:1.5}
 .fitem a{color:#3B6FB0;margin:0 4px}
 .fdel{background:#f3f1f8;border:1px solid #ddd;color:#888;font-size:11px;border-radius:6px;padding:1px 7px;cursor:pointer}
-.fbody{margin-top:4px;padding:6px;background:#FAF8FF;border-radius:6px;white-space:pre-wrap;font-size:11.5px;color:#555}
+.fbody{margin-top:4px;padding:6px;background:#FAF8FF;border-radius:6px;white-space:pre-wrap;font-size:11.5px;color:#555;max-height:160px;overflow:auto}
 .frow-form{margin-top:8px;padding:9px;background:#FAF8FF;border-radius:8px}
 .frow-form input,.frow-form textarea{width:100%;padding:6px;border:1px solid #ccc;border-radius:5px;font-size:12px;box-sizing:border-box;margin-bottom:5px;font-family:inherit}
-.frow-form textarea{height:80px}
+.frow-form textarea{height:160px;resize:vertical;line-height:1.5}
 .ff-note{font-size:11px;color:#66736E;margin:-2px 0 6px}
 .ff-file{display:inline-block;background:#fff;border:1px solid #b9a8e0;color:#6C4AB6;font-size:12px;font-weight:600;padding:5px 9px;border-radius:7px;cursor:pointer;margin-bottom:6px}
 .ff-actions{display:flex;gap:6px}
@@ -521,7 +521,7 @@ body{font-family:'Pretendard',-apple-system,sans-serif;font-weight:500;backgroun
 
   </div>
 
-  <div class="foot">제니야 — <b>상단 프로젝트 × 좌측 에이전트 × 우측 도구</b> 교차 구조 · v2.2 (과정 추가 버튼 + 부트캠프 + 칸별 "다음 단계(승인/기다림)" 안내)</div>
+  <div class="foot">제니야 — <b>상단 프로젝트 × 좌측 에이전트 × 우측 도구</b> 교차 구조 · v2.3 (긴글·강의정보설정 버그수정 + 카드뉴스 칸 + 과정정보↔강의정보 연결 + 배지 색)</div>
 </div>
 
 <!-- C-6. 업로드 모달 (+ 버튼으로 열림 — 실제 업로드는 3단계) -->
@@ -970,8 +970,9 @@ function loadTodayTodo(){
       + step(2, '쇼츠', '쇼츠', 'ti-movie', (cn['쇼츠']||0) + '/' + (t.shortsGoal||20))
       + step(3, '오디오', '오디오', 'ti-microphone', cn['오디오']||0)
       + step(4, '텍스트', '텍스트', 'ti-file-text', cn['텍스트']||0)
-      + step(5, '과정정보', '과정정보', 'ti-info-circle', cn['과정정보']||0)
-      + step(6, '키워드', '키워드', 'ti-search', cn['키워드']||0);
+      + step(5, '과정정보', '과정정보', 'ti-info-circle', null)
+      + step(6, '키워드', '키워드', 'ti-search', cn['키워드']||0)
+      + step(7, '카드뉴스', '카드뉴스', 'ti-photo', cn['카드뉴스']||0);
     el.innerHTML = '<div class="todo-top"><span class="todo-coach"><i class="ti ti-sparkles"></i> 제니야 코치 · 대표님, 오늘 하실 일</span>'
       + (dday ? ('<span class="todo-dday">' + escapeHtml(dday) + (t.openLabel?(' · '+escapeHtml(t.openLabel)+' 개강'):'') + '</span>') : '') + '</div>'
       + '<div class="todo-head">' + escapeHtml(t.headline||'') + '</div>'
@@ -986,16 +987,18 @@ function loadTodayTodo(){
 // ===== 콘텐츠 폴더 — 현재 과정의 ①입력 5칸 (한 화면, 말풍선 아님) =====
 // 5칸: 쇼츠·오디오·텍스트·과정정보·키워드. 큰 미디어=드라이브/유튜브 링크(1차), 작은 글=직접 저장(.txt 파일선택 가능).
 var FOLDER_KINDS = [
-  {key:'쇼츠',   icon:'ti-movie',       media:true,  use:'숏폼 영상 — 인스타·페북·유튜브·틱톡 자동 배포의 재료입니다.',
+  {key:'쇼츠',   icon:'ti-movie',       media:true,  accept:'video/*', use:'숏폼 영상 — 인스타·페북·유튜브·틱톡 자동 배포의 재료입니다.',
    flow:'approve', next:'Buffer로 인스타·틱톡·페북·유튜브에 일자별 예약배포합니다. 배포 전 대표님 승인이 필요합니다.'},
-  {key:'오디오', icon:'ti-microphone',  media:true,  use:'녹음·오디오 — 팟캐스트·스포티파이 배포의 재료입니다.',
+  {key:'오디오', icon:'ti-microphone',  media:true,  accept:'audio/*', use:'녹음·오디오 — 팟캐스트·스포티파이 배포의 재료입니다.',
    flow:'wait', next:'팟캐스트(스포티파이)에 자동 등록하고 결과를 보고합니다. (승인 없이 자동, 결과만 확인)'},
   {key:'텍스트', icon:'ti-file-text',   media:false, use:'영상 원본 스크립트·강의 텍스트 — 블로그·브런치·카페 글의 재료입니다.',
    flow:'approve', next:'블로그 글로 재구성해 티스토리·브런치에 RSS로 배포합니다(네이버는 반자동). 배포 전 승인 필요.'},
-  {key:'과정정보',icon:'ti-info-circle', media:false, use:'과정 핵심·혜택·대상 — 홍보글(카톡·이메일·문자)의 재료입니다.',
-   flow:'approve', next:'제니야가 채널별 홍보글을 작성해 카톡·문자·이메일로 보냅니다. 발송 전 승인이 필요합니다.'},
+  {key:'과정정보',icon:'ti-info-circle', media:false, settings:true, use:'과정 핵심·혜택·대상 — 홍보글(카톡·이메일·문자)의 재료입니다.',
+   flow:'approve', next:'여기서 입력한 일정·가격·혜택이 ②배포의 카톡·문자·이메일 홍보글에 자동 반영됩니다. 발송 전 승인.'},
   {key:'키워드', icon:'ti-search',       media:false, use:'관심자를 찾을 키워드(쉼표로) — 소셜리스닝의 재료입니다.',
-   flow:'manual', next:'관심자 명단을 매일 자동 생성합니다. 접촉(댓글·DM)은 대표님이 직접 하십니다.'}
+   flow:'manual', next:'관심자 명단을 매일 자동 생성합니다. 접촉(댓글·DM)은 대표님이 직접 하십니다.'},
+  {key:'카드뉴스',icon:'ti-photo',       media:true,  accept:'image/*', use:'SNS 발행용 이미지(카드뉴스) — 인스타·페북 발행의 재료입니다.',
+   flow:'approve', next:'승인 후 인스타·페북에 발행합니다. 발행 전 대표님 승인이 필요합니다.'}
 ];
 
 // 폴더 화면 그리기 — 항상 "지금 들어와 있는 과정"의 5칸을 같은 자리에 다시 그림(절대 안 쌓임)
@@ -1004,29 +1007,50 @@ function renderFolder(opts){
   var box = document.getElementById('folder-view'); if(!box) return;
   Promise.all([
     fetch(SERVER_URL+'/campaign/list').then(function(r){return r.json();}).catch(function(){return {campaigns:[],activeId:''};}),
-    fetch(SERVER_URL+'/campaign/contents').then(function(r){return r.json();}).catch(function(){return {contents:[]};})
+    fetch(SERVER_URL+'/campaign/contents').then(function(r){return r.json();}).catch(function(){return {contents:[]};}),
+    fetch(SERVER_URL+'/campaign/config').then(function(r){return r.json();}).catch(function(){return null;})
   ]).then(function(arr){
     var camps = arr[0].campaigns||[], activeId = arr[0].activeId||'';
     var contents = arr[1].contents||[];
     var byKind = {}; FOLDER_KINDS.forEach(function(k){ byKind[k.key]=[]; });
     contents.forEach(function(c){ if(byKind[c.type]) byKind[c.type].push(c); });
-    var filled = FOLDER_KINDS.filter(function(k){ return byKind[k.key].length>0; }).length;
+    var cc = arr[2] || CAMPAIGN_CACHE || {};
+    var infoSet = !!(cc.name && cc.facts);   // 과정정보=강의정보 설정 여부
+    var filled = FOLDER_KINDS.filter(function(k){ return k.settings ? infoSet : (byKind[k.key].length>0); }).length;
     var html = '<div class="folder-card">'
       + '<div class="folder-head"><span class="folder-title"><i class="ti ti-folder"></i> 콘텐츠 폴더</span>'
       + '<select id="folder-camp">' + camps.map(function(c){ var tag=(c.mode==='비대면')?'💻':'🏫'; return '<option value="'+escapeAttr(c.id)+'"'+(c.id===activeId?' selected':'')+'>'+escapeHtml(tag+' '+(c.title||c.name||'(제목없음)'))+'</option>'; }).join('') + '</select>'
-      + '<span class="folder-prog">올린 콘텐츠 '+filled+'/5</span></div>'
+      + '<span class="folder-prog">올린 콘텐츠 '+filled+'/'+FOLDER_KINDS.length+'</span></div>'
       + '<div class="folder-tools"><button class="folder-link" data-fnew="1" style="background:#6C4AB6;color:#fff;border-color:#6C4AB6"><i class="ti ti-plus"></i> 새 과정/프로젝트 추가</button>'
       + '<button class="folder-link" data-fset="1"><i class="ti ti-settings"></i> 강의정보 설정</button>'
       + '<button class="folder-link" data-fmkt="1"><i class="ti ti-pencil"></i> 채널 콘텐츠 생성</button></div>';
+    function badgeOf(k){ var t=(k.flow==='approve')?'승인 후 진행':(k.flow==='wait')?'자동 → 보고':'명단 자동·접촉은 직접';
+      return '<div class="frow-next"><span class="flow-badge flow-'+k.flow+'">'+t+'</span> '+escapeHtml(k.next||'')+'</div>'; }
     FOLDER_KINDS.forEach(function(k){
+      // 과정정보 = 업로드가 아니라 "강의정보 설정" 입구
+      if(k.settings){
+        html += '<div class="folder-row '+(infoSet?'filled':'empty')+'" id="frow-'+escapeAttr(k.key)+'">'
+          + '<div class="frow-top"><span class="frow-name"><i class="ti '+k.icon+'"></i> '+escapeHtml(k.key)+'</span>'
+          + (infoSet ? '<span class="frow-ok"><i class="ti ti-circle-check-filled"></i> 설정됨</span>' : '<span class="frow-empty"><i class="ti ti-alert-circle"></i> 미설정</span>')
+          + '<button class="frow-add" data-settings="1"><i class="ti ti-settings"></i> 강의정보 입력/수정</button></div>'
+          + badgeOf(k);
+        if(infoSet){
+          html += '<div class="frow-items"><div class="fitem"><i class="ti ti-school"></i> '+escapeHtml(cc.name||'')
+            + (cc.date?(' · '+escapeHtml(cc.date)):'') + (cc.price?(' · '+(Number(cc.price)||0).toLocaleString()+'원'):'') + '</div>'
+            + (cc.facts?('<div class="fbody">'+escapeHtml(cc.facts)+'</div>'):'') + '</div>';
+        } else {
+          html += '<div class="frow-use">강의명·일정·가격·혜택을 한 번 입력하면, ②배포의 홍보글이 자동으로 이 과정 정보로 만들어집니다.</div>';
+        }
+        html += '</div>';
+        return;
+      }
       var items = byKind[k.key]; var has = items.length>0;
       html += '<div class="folder-row '+(has?'filled':'empty')+'" id="frow-'+escapeAttr(k.key)+'">'
         + '<div class="frow-top"><span class="frow-name"><i class="ti '+k.icon+'"></i> '+escapeHtml(k.key)+'</span>'
         + (has ? ('<span class="frow-ok"><i class="ti ti-circle-check-filled"></i> '+items.length+'개</span>')
                : '<span class="frow-empty"><i class="ti ti-alert-circle"></i> 비어 있음</span>')
-        + '<button class="frow-add" data-add="'+escapeAttr(k.key)+'"><i class="ti ti-plus"></i> 올리기</button></div>';
-      var badge = (k.flow==='approve')?'승인 후 진행':(k.flow==='wait')?'자동 → 보고':'명단 자동·접촉은 직접';
-      html += '<div class="frow-next"><span class="flow-badge flow-'+k.flow+'">'+badge+'</span> '+escapeHtml(k.next||'')+'</div>';
+        + '<button class="frow-add" data-add="'+escapeAttr(k.key)+'"><i class="ti ti-plus"></i> 올리기</button></div>'
+        + badgeOf(k);
       if(!has){ html += '<div class="frow-use">'+escapeHtml(k.use)+'</div>'; }
       else {
         html += '<div class="frow-items">';
@@ -1034,7 +1058,7 @@ function renderFolder(opts){
           html += '<div class="fitem">'+(c.link?'<i class="ti ti-link"></i> ':'<i class="ti ti-file-text"></i> ')+escapeHtml(c.name||'(이름없음)')
             + (c.link?(' <a href="'+escapeAttr(c.link)+'" target="_blank">열기</a>'):'')
             + ' <button class="fdel" data-del="'+c.id+'">삭제</button>'
-            + (c.body?('<div class="fbody">'+escapeHtml(c.body.slice(0,160))+(c.body.length>160?'…':'')+'</div>'):'')
+            + (c.body?('<div class="fbody">'+escapeHtml(c.body)+'</div>'):'')
             + '</div>';
         });
         html += '</div>';
@@ -1048,6 +1072,7 @@ function renderFolder(opts){
     var fnw = box.querySelector('[data-fnew]'); if(fnw) fnw.onclick = newCampaign;
     var fs = box.querySelector('[data-fset]'); if(fs) fs.onclick = campaignForm;
     var fm = box.querySelector('[data-fmkt]'); if(fm) fm.onclick = mktMake;
+    var dsb = box.querySelector('[data-settings]'); if(dsb) dsb.onclick = campaignForm;
     box.querySelectorAll('[data-add]').forEach(function(x){ x.onclick=function(){ toggleFolderForm(x.getAttribute('data-add')); }; });
     box.querySelectorAll('[data-del]').forEach(function(x){ x.onclick=function(){ folderDelete(x.getAttribute('data-del')); }; });
     if(opts.openKind){ toggleFolderForm(opts.openKind, true); var r=document.getElementById('frow-'+opts.openKind); if(r) r.scrollIntoView({behavior:'smooth',block:'center'}); }
@@ -1064,7 +1089,7 @@ function toggleFolderForm(kind, forceOpen){
     host.innerHTML = '<input class="ff-name" placeholder="이름·설명 (선택 — 비우면 파일명)">'
       + '<div class="ff-drop" tabindex="0"><i class="ti ti-cloud-upload"></i> 파일을 끌어다 놓거나 눌러서 선택'
       +   '<div class="ff-dsub">' + escapeHtml(kind) + ' 파일 — 올리면 자동으로 드라이브에 저장되고 링크는 제니야가 보관합니다</div>'
-      +   '<input type="file" class="ff-fileinput" accept="' + (kind==='오디오'?'audio/*':'video/*') + '" style="display:none"></div>'
+      +   '<input type="file" class="ff-fileinput" accept="' + (k.accept||'*/*') + '" style="display:none"></div>'
       + '<div class="ff-prog" style="display:none"><div class="ff-bar"></div></div>'
       + '<div class="ff-status"></div>'
       + '<div class="ff-actions"><button class="ff-cancel">닫기</button></div>';
@@ -1132,9 +1157,13 @@ function folderDelete(id){
   fetch(SERVER_URL+'/campaign/contents/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id})})
     .then(function(r){return r.json();}).then(function(){ loadCampaignStatus(); loadTodayTodo(); renderFolder(); }).catch(function(){});
 }
-// 배너 [1]과정 클릭 → 폴더로, [2~6] → 그 칸 열기
+// 배너 [1]과정 클릭 → 폴더로, [2~] → 그 칸 열기 (과정정보는 강의정보 설정으로)
 function openFolder(){ var b=document.getElementById('folder-view'); if(b) b.scrollIntoView({behavior:'smooth',block:'start'}); renderFolder(); }
-function openFolderKind(kind){ var b=document.getElementById('folder-view'); if(b) b.scrollIntoView({behavior:'smooth',block:'start'}); renderFolder({openKind:kind}); }
+function openFolderKind(kind){
+  var k=null; FOLDER_KINDS.forEach(function(x){ if(x.key===kind) k=x; });
+  if(k && k.settings){ campaignForm(); return; }
+  var b=document.getElementById('folder-view'); if(b) b.scrollIntoView({behavior:'smooth',block:'start'}); renderFolder({openKind:kind});
+}
 
 // 캠페인 설정 폼 — 매달 바꾸는 강의정보를 한 곳에서 입력
 function campaignForm(){
@@ -1184,6 +1213,7 @@ function campaignForm(){
     + row('신청자 탭 (비우면 기본)','leadSheetTab',c.leadSheetTab,'예: 설문지 응답 시트1')
     + '<div style="margin-top:8px"><button class="appr" style="background:#6C4AB6" data-save="1">저장</button></div>';
   updateMessage(w, html);
+  w.scrollIntoView({behavior:'smooth', block:'start'});   // 폴더에서 열어도 화면에 바로 보이게 (안 보여서 "안 됨"처럼 느껴지던 문제)
   w.querySelector('[data-save]').onclick = function(){
     var body = {};
     w.querySelectorAll('[data-ck]').forEach(function(el){ body[el.getAttribute('data-ck')] = el.value; });
