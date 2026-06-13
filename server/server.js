@@ -640,6 +640,8 @@ app.post('/notify', (req, res) => {
 // ============================================================
 const { google } = require('googleapis');
 const { SolapiMessageService } = require('solapi');
+const crypto = require('crypto');
+const { Storage } = require('@google-cloud/storage');
 
 // 시트 주소(ID)는 비밀이 아니라서 코드에 기본값으로 둔다 (환경변수로 바꿀 수도 있음)
 const LEAD_SHEET_ID  = process.env.LEAD_SHEET_ID || '1L15eUgHO81MN5rTYj5351a5RbFGptxNSMnTzMQLDRmk';
@@ -1347,6 +1349,81 @@ app.post('/campaign/contents/delete', async (req, res) => {
   CONTENTS = CONTENTS.filter((c) => c.id !== id);
   if (CONTENTS.length !== before) await saveContents();
   res.json({ ok: true, removed: before - CONTENTS.length });
+});
+
+// ============================================================
+// 파이어베이스 스토리지 — 큰 파일(쇼츠·오디오) 브라우저 직접 업로드
+//   같은 프로젝트(moneya-72fe6) 서비스계정으로 서명 URL 발급 → 브라우저가 버킷에 직접 PUT
+//   → 공개 다운로드 토큰 부여 → 링크 자동 보관. (무료서버는 파일 바이트를 안 거침)
+// ============================================================
+const STORAGE_BUCKET = process.env.FIREBASE_STORAGE_BUCKET || 'moneya-72fe6.firebasestorage.app';
+const MAX_UPLOAD_MB = Number(process.env.MAX_UPLOAD_MB || 300);
+const UPLOAD_KINDS = { '쇼츠': 1, '오디오': 1 };   // 큰 파일 업로드 대상 (작은 글은 시트 직접 저장)
+let _bucket = null;
+function storageBucket() {
+  if (_bucket) return _bucket;
+  const creds = googleCreds();
+  if (!creds) return null;
+  const storage = new Storage({ projectId: creds.project_id, credentials: creds });
+  _bucket = storage.bucket(STORAGE_BUCKET);
+  return _bucket;
+}
+function safeName(s) { return String(s || 'file').replace(/[^\w.\-가-힣]/g, '_').slice(-80) || 'file'; }
+
+// ① 업로드 허가증(서명 URL) 발급 — 브라우저가 이 URL로 버킷에 직접 PUT
+app.post('/content/upload-url', async (req, res) => {
+  try {
+    const b = req.body || {};
+    if (!UPLOAD_KINDS[b.kind]) return res.status(400).json({ error: '업로드 대상이 아닌 종류입니다.' });
+    const bucket = storageBucket();
+    if (!bucket) return res.status(503).json({ error: '스토리지가 아직 설정되지 않았습니다.' });
+    const size = Number(b.size || 0);
+    if (size > MAX_UPLOAD_MB * 1024 * 1024) return res.status(400).json({ error: `파일이 너무 큽니다(최대 ${MAX_UPLOAD_MB}MB).` });
+    const contentType = String(b.contentType || 'application/octet-stream');
+    const objectPath = `genya-content/${ACTIVE_ID || 'none'}/${b.kind}/${Date.now()}_${safeName(b.filename)}`;
+    const [url] = await bucket.file(objectPath).getSignedUrl({
+      version: 'v4', action: 'write', expires: Date.now() + 15 * 60 * 1000, contentType,
+    });
+    res.json({ ok: true, uploadUrl: url, objectPath, contentType });
+  } catch (e) { console.warn('upload-url 오류:', e.message); res.status(500).json({ error: e.message }); }
+});
+
+// ② 업로드 완료 통보 — 공개 다운로드 토큰 부여 후 콘텐츠로 보관(링크 자동, 대표는 링크 안 만짐)
+app.post('/content/uploaded', async (req, res) => {
+  try {
+    const b = req.body || {};
+    if (!UPLOAD_KINDS[b.kind]) return res.status(400).json({ error: '종류 오류' });
+    const bucket = storageBucket();
+    if (!bucket) return res.status(503).json({ error: '스토리지 미설정' });
+    const objectPath = String(b.objectPath || '');
+    if (!objectPath) return res.status(400).json({ error: '파일 경로 누락' });
+    const token = crypto.randomUUID();
+    await bucket.file(objectPath).setMetadata({ metadata: { firebaseStorageDownloadTokens: token } });
+    const link = `https://firebasestorage.googleapis.com/v0/b/${STORAGE_BUCKET}/o/${encodeURIComponent(objectPath)}?alt=media&token=${token}`;
+    const item = { id: 'c' + Date.now() + Math.floor(Math.random() * 1000), type: String(b.kind), name: String(b.name || objectPath.split('/').pop()), link, note: '', body: '', ts: new Date().toISOString(), campaignId: ACTIVE_ID };
+    CONTENTS.push(item);
+    await saveContents();
+    res.json({ ok: true, item });
+  } catch (e) { console.warn('uploaded 오류:', e.message); res.status(500).json({ error: e.message }); }
+});
+
+// 스토리지 상태(설정됨?) — 화면이 업로드/링크 모드 결정에 사용
+app.get('/storage/status', (req, res) => res.json({ configured: !!storageBucket(), bucket: STORAGE_BUCKET, maxMb: MAX_UPLOAD_MB }));
+// CORS 초기화(브라우저 직접 업로드 허용) — 권한 부여 후 한 번 호출(멱등).
+//   ※ 기존 CORS(AI머니야 등)를 덮어쓰지 않도록 읽어서 우리 규칙만 추가(병합).
+app.get('/storage/init', async (req, res) => {
+  try {
+    const bucket = storageBucket();
+    if (!bucket) return res.status(503).json({ error: '스토리지 자격 없음(서비스계정 키 확인)' });
+    const [md] = await bucket.getMetadata();
+    const existing = Array.isArray(md.cors) ? md.cors : [];
+    const origins = (process.env.UPLOAD_ORIGINS || 'https://jenya.onrender.com,http://localhost:3000').split(',').map((s) => s.trim());
+    const hasOurs = existing.some((r) => (r.origin || []).some((o) => origins.indexOf(o) >= 0));
+    const ours = { origin: origins, method: ['PUT', 'GET', 'HEAD', 'OPTIONS'], responseHeader: ['Content-Type', 'x-goog-resumable'], maxAgeSeconds: 3600 };
+    const merged = hasOurs ? existing : existing.concat([ours]);
+    if (!hasOurs) await bucket.setCorsConfiguration(merged);
+    res.json({ ok: true, alreadySet: hasOurs, rules: merged.length, preservedExisting: existing.length, origins });
+  } catch (e) { res.status(500).json({ error: e.message, hint: 'jenya-server 서비스계정에 Storage 관리자(roles/storage.admin) 권한이 필요합니다(버킷 권한에서 부여).' }); }
 });
 
 // ── /promo/status: CRM 손 상태 + 비용 예상 ───────────────────

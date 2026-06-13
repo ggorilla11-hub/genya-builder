@@ -394,6 +394,12 @@ body{font-family:'Pretendard',-apple-system,sans-serif;font-weight:500;backgroun
 .ff-actions{display:flex;gap:6px}
 .ff-save{background:#6C4AB6;color:#fff;border:0;border-radius:7px;font-size:12px;font-weight:600;padding:6px 12px;cursor:pointer}
 .ff-cancel{background:#fff;border:1px solid #ccc;color:#777;border-radius:7px;font-size:12px;padding:6px 12px;cursor:pointer}
+.ff-drop{border:2px dashed #b9a8e0;border-radius:10px;padding:18px 12px;text-align:center;color:#6C4AB6;font-size:13px;font-weight:600;cursor:pointer;background:#fff}
+.ff-drop:hover,.ff-drop.dragover{background:#f0eaff;border-color:#6C4AB6}
+.ff-drop .ff-dsub{font-size:11px;color:#66736E;font-weight:400;margin-top:5px}
+.ff-prog{height:10px;background:#eee;border-radius:6px;overflow:hidden;margin:8px 0 4px}
+.ff-bar{height:100%;width:0;background:#6C4AB6;transition:width .2s}
+.ff-status{font-size:12px;color:#444;margin-bottom:6px;min-height:14px}
 </style>
 </head>
 <body>
@@ -510,7 +516,7 @@ body{font-family:'Pretendard',-apple-system,sans-serif;font-weight:500;backgroun
 
   </div>
 
-  <div class="foot">제니야 — <b>상단 프로젝트 × 좌측 에이전트 × 우측 도구</b> 교차 구조 · v2.0 (콘텐츠 자동화 공장 Day2 — 콘텐츠 폴더 한 화면 5칸 + 중복 전환 버그 수정)</div>
+  <div class="foot">제니야 — <b>상단 프로젝트 × 좌측 에이전트 × 우측 도구</b> 교차 구조 · v2.1 (콘텐츠 폴더 — 쇼츠·오디오 파일선택/드래그 → 파이어베이스 직접 업로드)</div>
 </div>
 
 <!-- C-6. 업로드 모달 (+ 버튼으로 열림 — 실제 업로드는 3단계) -->
@@ -1035,20 +1041,36 @@ function renderFolder(opts){
 }
 
 // 칸 [+ 올리기] → 그 칸 안에 입력폼을 펼침/접음 (말풍선 아님)
+//   미디어(쇼츠·오디오) = 파일 선택/드래그 → 파이어베이스 직접 업로드(링크 자동). 글 = 직접 입력 + .txt 파일.
 function toggleFolderForm(kind, forceOpen){
   var host = document.getElementById('fform-'+kind); if(!host) return;
   if(host.style.display!=='none' && !forceOpen){ host.style.display='none'; host.innerHTML=''; return; }
   var k = null; FOLDER_KINDS.forEach(function(x){ if(x.key===kind) k=x; }); if(!k) return;
-  var html = '<input class="ff-name" placeholder="이름·설명 (예: '+escapeAttr(kind)+' 1)">';
   if(k.media){
-    html += '<input class="ff-link" placeholder="유튜브/드라이브 공유 링크 붙여넣기">'
-      + '<div class="ff-note">큰 영상·오디오는 드라이브/유튜브에 올린 뒤 링크를 붙여넣으세요. (파일 자동 업로드는 다음 단계)</div>';
-  } else {
-    html += '<textarea class="ff-body" placeholder="내용을 직접 입력하거나, 아래에서 .txt 파일을 불러오세요"></textarea>'
-      + '<label class="ff-file"><i class="ti ti-upload"></i> 파일 선택(.txt)<input type="file" accept=".txt,.md,text/plain" style="display:none"></label>';
+    host.innerHTML = '<input class="ff-name" placeholder="이름·설명 (선택 — 비우면 파일명)">'
+      + '<div class="ff-drop" tabindex="0"><i class="ti ti-cloud-upload"></i> 파일을 끌어다 놓거나 눌러서 선택'
+      +   '<div class="ff-dsub">' + escapeHtml(kind) + ' 파일 — 올리면 자동으로 드라이브에 저장되고 링크는 제니야가 보관합니다</div>'
+      +   '<input type="file" class="ff-fileinput" accept="' + (kind==='오디오'?'audio/*':'video/*') + '" style="display:none"></div>'
+      + '<div class="ff-prog" style="display:none"><div class="ff-bar"></div></div>'
+      + '<div class="ff-status"></div>'
+      + '<div class="ff-actions"><button class="ff-cancel">닫기</button></div>';
+    host.style.display='';
+    var drop = host.querySelector('.ff-drop'), fi = host.querySelector('.ff-fileinput');
+    drop.onclick = function(){ fi.click(); };
+    drop.onkeydown = function(e){ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); fi.click(); } };
+    fi.onchange = function(){ if(fi.files[0]) doMediaUpload(kind, fi.files[0], host); };
+    drop.ondragover = function(e){ e.preventDefault(); drop.classList.add('dragover'); };
+    drop.ondragleave = function(){ drop.classList.remove('dragover'); };
+    drop.ondrop = function(e){ e.preventDefault(); drop.classList.remove('dragover'); var f=e.dataTransfer.files[0]; if(f) doMediaUpload(kind, f, host); };
+    host.querySelector('.ff-cancel').onclick = function(){ host.style.display='none'; host.innerHTML=''; };
+    return;
   }
-  html += '<div class="ff-actions"><button class="ff-save"><i class="ti ti-device-floppy"></i> 저장</button><button class="ff-cancel">취소</button></div>';
-  host.innerHTML = html; host.style.display='';
+  // 글 칸(텍스트·과정정보·키워드): 직접 입력 + .txt 파일 선택 → 시트 직접 저장
+  host.innerHTML = '<input class="ff-name" placeholder="이름·설명 (예: '+escapeAttr(kind)+' 1)">'
+    + '<textarea class="ff-body" placeholder="내용을 직접 입력하거나, 아래에서 .txt 파일을 불러오세요"></textarea>'
+    + '<label class="ff-file"><i class="ti ti-upload"></i> 파일 선택(.txt)<input type="file" accept=".txt,.md,text/plain" style="display:none"></label>'
+    + '<div class="ff-actions"><button class="ff-save"><i class="ti ti-device-floppy"></i> 저장</button><button class="ff-cancel">취소</button></div>';
+  host.style.display='';
   var fileInput = host.querySelector('.ff-file input');
   if(fileInput) fileInput.onchange = function(){
     var f = fileInput.files[0]; if(!f) return;
@@ -1059,15 +1081,37 @@ function toggleFolderForm(kind, forceOpen){
   host.querySelector('.ff-cancel').onclick = function(){ host.style.display='none'; host.innerHTML=''; };
   host.querySelector('.ff-save').onclick = function(){
     var v = function(s){ var e=host.querySelector(s); return e?e.value.trim():''; };
-    var name=v('.ff-name'), link=v('.ff-link'), body=v('.ff-body');
-    if(!name && !link && !body){ alert('이름·내용·링크 중 하나는 넣어 주세요.'); return; }
+    var name=v('.ff-name'), body=v('.ff-body');
+    if(!name && !body){ alert('이름 또는 내용을 넣어 주세요.'); return; }
     var btn=host.querySelector('.ff-save'); btn.disabled=true; btn.textContent='저장 중…';
-    fetch(SERVER_URL+'/campaign/contents',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:kind,name:name,link:link,body:body})})
+    fetch(SERVER_URL+'/campaign/contents',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:kind,name:name,body:body})})
       .then(function(r){return r.json();}).then(function(res){
         if(res.error){ alert(res.error); btn.disabled=false; btn.textContent='저장'; return; }
         loadCampaignStatus(); loadTodayTodo(); renderFolder();
       }).catch(function(){ alert('저장 실패'); btn.disabled=false; btn.textContent='저장'; });
   };
+}
+// 미디어 직접 업로드: 서버에서 서명 URL 받기 → 브라우저가 파이어베이스로 직접 PUT(진행바) → 완료 통보(링크 자동 보관)
+function doMediaUpload(kind, file, host){
+  var nmEl=host.querySelector('.ff-name'); var name=(nmEl&&nmEl.value.trim())||file.name;
+  var drop=host.querySelector('.ff-drop'), prog=host.querySelector('.ff-prog'), bar=host.querySelector('.ff-bar'), st=host.querySelector('.ff-status');
+  if(drop) drop.style.display='none'; if(prog) prog.style.display=''; if(st) st.textContent='업로드 준비 중…';
+  fetch(SERVER_URL+'/content/upload-url',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind:kind,filename:file.name,contentType:file.type||'application/octet-stream',size:file.size})})
+    .then(function(r){return r.json();}).then(function(d){
+      if(d.error||!d.uploadUrl){ if(st) st.textContent='⚠️ '+(d.error||'업로드 준비 실패'); return; }
+      var xhr=new XMLHttpRequest(); xhr.open('PUT', d.uploadUrl, true); xhr.setRequestHeader('Content-Type', d.contentType);
+      xhr.upload.onprogress=function(e){ if(e.lengthComputable){ var p=Math.round(e.loaded/e.total*100); if(bar) bar.style.width=p+'%'; if(st) st.textContent='업로드 중… '+p+'%'; } };
+      xhr.onload=function(){
+        if(xhr.status>=200&&xhr.status<300){
+          if(st) st.textContent='저장 중…';
+          fetch(SERVER_URL+'/content/uploaded',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind:kind,name:name,objectPath:d.objectPath})})
+            .then(function(r){return r.json();}).then(function(res){ if(res.error){ if(st) st.textContent='⚠️ '+res.error; return; } loadCampaignStatus(); loadTodayTodo(); renderFolder(); })
+            .catch(function(){ if(st) st.textContent='⚠️ 저장 실패'; });
+        } else { if(st) st.textContent='⚠️ 업로드 실패('+xhr.status+') — 권한/CORS 설정을 확인하세요.'; }
+      };
+      xhr.onerror=function(){ if(st) st.textContent='⚠️ 업로드 오류 — CORS 미설정일 수 있습니다.'; };
+      xhr.send(file);
+    }).catch(function(){ if(st) st.textContent='⚠️ 서버 연결 실패'; });
 }
 function folderDelete(id){
   if(!confirm('이 항목을 지울까요? (드라이브 원본은 안 지워집니다)')) return;
