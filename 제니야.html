@@ -533,7 +533,7 @@ body{font-family:'Pretendard',-apple-system,sans-serif;font-weight:500;backgroun
 
   </div>
 
-  <div class="foot">제니야 — <b>상단 프로젝트 × 좌측 에이전트 × 우측 도구</b> 교차 구조 · v2.4 (배포 계획 보기·승인 자리 UI + 텍스트 칸 .txt·docx·pdf 파일첨부)</div>
+  <div class="foot">제니야 — <b>상단 프로젝트 × 좌측 에이전트 × 우측 도구</b> 교차 구조 · v2.5 (Phase2 길A: 쇼츠 승인 1번 → Make.com 웹훅 → Buffer 자동 예약)</div>
 </div>
 
 <!-- C-6. 업로드 모달 (+ 버튼으로 열림 — 실제 업로드는 3단계) -->
@@ -1213,6 +1213,7 @@ function planPreview(k, course){
 function togglePlan(kind){
   var host=document.getElementById('fplan-'+kind); if(!host) return;
   if(host.style.display!=='none'){ host.style.display='none'; host.innerHTML=''; return; }
+  if(kind==='쇼츠'){ realPlan(host); return; }   // Phase2 길A: 쇼츠는 실제 Make→Buffer 연동
   var k=null; FOLDER_KINDS.forEach(function(x){ if(x.key===kind) k=x; }); if(!k) return;
   var cc=CAMPAIGN_CACHE||{}; var course=cc.name||cc.title||'이 과정';
   var rows=planPreview(k, course);
@@ -1230,6 +1231,33 @@ function togglePlan(kind){
   var ap=host.querySelector('[data-papprove]');
   if(ap) ap.onclick=function(){ host.innerHTML='<div class="plan-box plan-done"><i class="ti ti-circle-check-filled"></i> 예약 완료 — 승인됨 <span class="plan-note">(Phase 2에서 실제 발송 예정)</span></div>'; };
   host.querySelector('.plan-cancel').onclick=function(){ host.style.display='none'; host.innerHTML=''; };
+}
+// 쇼츠 실제 배포 계획 — 서버에서 날짜·채널·문구 받아 보여주고, 승인 시 Make 웹훅 호출(→Buffer 예약)
+function realPlan(host){
+  host.style.display=''; host.innerHTML='<div class="plan-box"><div class="plan-title"><i class="ti ti-loader-2"></i> 배포 계획 불러오는 중…</div></div>';
+  function closeBtn(){ var c=host.querySelector('.plan-cancel'); if(c) c.onclick=function(){ host.style.display='none'; host.innerHTML=''; }; }
+  fetch(SERVER_URL+'/content/plan?kind=쇼츠').then(function(r){return r.json();}).then(function(d){
+    if(d.approved){ host.innerHTML='<div class="plan-box plan-done"><i class="ti ti-circle-check-filled"></i> 예약 완료 — '+d.approved.count+'건 Buffer에 예약됨</div>'; return; }
+    if(!d.webhookConfigured){
+      host.innerHTML='<div class="plan-box"><div class="plan-title">⚠️ Make.com 웹훅 미연결</div>'
+        + '<div class="plan-note">Render 환경변수 <b>MAKE_WEBHOOK_URL</b>에 Make 웹훅 주소를 넣으면 승인 한 번으로 Buffer 자동 예약됩니다. (설정 안내 참고)</div>'
+        + '<div class="plan-actions"><button class="plan-cancel">닫기</button></div></div>'; closeBtn(); return;
+    }
+    if(!d.count){ host.innerHTML='<div class="plan-box"><div class="plan-note">예약할 쇼츠가 없습니다. 먼저 쇼츠를 올려주세요.</div><div class="plan-actions"><button class="plan-cancel">닫기</button></div></div>'; closeBtn(); return; }
+    var html='<div class="plan-box"><div class="plan-title"><i class="ti ti-route"></i> 쇼츠 배포 계획 '+d.count+'건 — 승인하면 Buffer로 자동 예약</div>';
+    d.posts.forEach(function(p){ var dt=(p.scheduledAt||'').slice(0,10);
+      html+='<div class="plan-row"><span class="plan-k">'+dt+'</span> '+escapeHtml(p.name||'(이름없음)')+' → 인스타·페북·유튜브·틱톡<div class="fbody">'+escapeHtml(p.caption||'')+'</div></div>'; });
+    html+='<div class="plan-actions"><button class="plan-approve" data-go="1"><i class="ti ti-circle-check"></i> 승인 → Buffer 자동 예약</button><button class="plan-cancel">닫기</button></div>'
+      + '<div class="plan-note">승인 한 번이면 끝 — 제니야가 Make.com을 통해 Buffer에 전부 예약합니다.</div></div>';
+    host.innerHTML=html; closeBtn();
+    host.querySelector('[data-go]').onclick=function(){ var b=host.querySelector('[data-go]'); b.disabled=true; b.innerHTML='<i class="ti ti-loader-2"></i> 예약 중…';
+      fetch(SERVER_URL+'/content/plan/approve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind:'쇼츠'})}).then(function(r){return r.json();}).then(function(res){
+        if(res.error){ alert(res.error); b.disabled=false; b.innerHTML='<i class="ti ti-circle-check"></i> 승인 → Buffer 자동 예약'; return; }
+        host.innerHTML='<div class="plan-box plan-done"><i class="ti ti-circle-check-filled"></i> 예약 완료 — '+res.count+'건 Buffer 예약 요청을 보냈습니다</div>';
+        loadTodayTodo();
+      }).catch(function(){ alert('예약 실패'); b.disabled=false; b.innerHTML='<i class="ti ti-circle-check"></i> 승인 → Buffer 자동 예약'; });
+    };
+  }).catch(function(){ host.innerHTML='<div class="plan-box"><div class="plan-note">⚠️ 서버 연결 실패</div></div>'; });
 }
 
 // 캠페인 설정 폼 — 매달 바꾸는 강의정보를 한 곳에서 입력

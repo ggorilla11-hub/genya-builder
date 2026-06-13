@@ -1426,6 +1426,60 @@ app.get('/storage/init', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message, hint: 'jenya-server 서비스계정에 Storage 관리자(roles/storage.admin) 권한이 필요합니다(버킷 권한에서 부여).' }); }
 });
 
+// ============================================================
+// Phase 2 길A(완전자동) — 쇼츠 → Make.com 웹훅 → Buffer 예약
+//   승인 1번이면: 제니야가 날짜·채널·문구 계획을 만들어 Make 웹훅으로 POST → Make가 Buffer로 인스타·페북·유튜브·틱톡 예약
+//   ※ Buffer 인증은 Make의 Buffer 모듈(OAuth)이 처리. 제니야엔 Buffer 키 불필요. MAKE_WEBHOOK_URL만 설정.
+// ============================================================
+let DEPLOYS = loadJson('배포.json'); if (!Array.isArray(DEPLOYS)) DEPLOYS = [];
+const DEPLOY_CHANNELS = (process.env.DEPLOY_CHANNELS || 'instagram,facebook,youtube,tiktok').split(',').map((s) => s.trim());
+function planDateISO(i) {            // 내일부터 i일 뒤, 19:00 KST (=10:00 UTC)
+  const k = new Date(Date.now() + 9 * 3600 * 1000);
+  return new Date(Date.UTC(k.getUTCFullYear(), k.getUTCMonth(), k.getUTCDate() + 1 + i, 10, 0, 0)).toISOString();
+}
+function shortsCaption(c) {
+  const facts = String(c.facts || '').split('\n')[0] || '';
+  let cap = `[${c.name || '강의'}]`;
+  if (facts) cap += `\n${facts}`;
+  if (c.applyLink) cap += `\n▶ 신청: ${c.applyLink}`;
+  if (c.kakaoChannel) cap += `\n카카오톡 '${c.kakaoChannel}' 검색 → 채널추가`;
+  return cap;
+}
+function buildPlan(kind) {
+  const c = CAMPAIGN || {};
+  const items = myContents().filter((x) => x.type === kind && x.link);
+  return items.map((s, i) => ({
+    name: s.name || '', mediaUrl: s.link, scheduledAt: planDateISO(i),
+    channels: DEPLOY_CHANNELS, caption: shortsCaption(c),
+  }));
+}
+// 배포 계획 미리보기 (날짜·채널·문구)
+app.get('/content/plan', (req, res) => {
+  const kind = req.query.kind || '쇼츠';
+  const posts = buildPlan(kind);
+  const approved = DEPLOYS.find((d) => d.campaignId === ACTIVE_ID && d.kind === kind) || null;
+  res.json({ webhookConfigured: !!process.env.MAKE_WEBHOOK_URL, count: posts.length, posts, approved });
+});
+// 승인 → Make 웹훅으로 POST (Make가 Buffer로 예약)
+app.post('/content/plan/approve', async (req, res) => {
+  try {
+    const kind = (req.body || {}).kind || '쇼츠';
+    const url = process.env.MAKE_WEBHOOK_URL;
+    if (!url) return res.status(400).json({ error: 'Make.com 웹훅 주소(MAKE_WEBHOOK_URL)가 설정되지 않았습니다. Render 환경변수에 넣어 주세요.' });
+    const posts = buildPlan(kind);
+    if (!posts.length) return res.status(400).json({ error: '예약할 ' + kind + '가 없습니다. 먼저 업로드하세요.' });
+    const c = CAMPAIGN || {};
+    const payload = { campaign: { title: c.title || '', name: c.name || '' }, kind, posts };
+    const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    if (!r.ok) { const t = await r.text().catch(() => ''); return res.status(502).json({ error: 'Make 웹훅 응답 ' + r.status, detail: String(t).slice(0, 200) }); }
+    DEPLOYS = DEPLOYS.filter((d) => !(d.campaignId === ACTIVE_ID && d.kind === kind));
+    DEPLOYS.push({ campaignId: ACTIVE_ID, kind, approvedAt: new Date().toISOString(), count: posts.length });
+    saveJson('배포.json', DEPLOYS);
+    try { pushNotify({ kind: 'report', title: `${kind} ${posts.length}건 Buffer 예약 요청 보냄`, body: c.name || '' }); } catch (e) {}
+    res.json({ ok: true, count: posts.length });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── /promo/status: CRM 손 상태 + 비용 예상 ───────────────────
 app.get('/promo/status', async (req, res) => {
   runDuePromo().catch(() => {});   // 앱을 열어 서버가 깨면 밀린 예약부터 확인
