@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>10억 목돈마련 절대법칙 · FIRE 로드맵 | 오상열 CFP</title>
+<meta name="description" content="둘이 버는데 왜 돈은 안 모일까요? DESIRE 6단계 로드맵으로 경제적 자유(FIRE)를 설계하는 4주 비대면 과정. 오상열 CFP 25년.">
+<meta property="og:title" content="10억 목돈마련 절대법칙 · FIRE 로드맵">
+<meta property="og:description" content="둘이 버는데 왜 돈은 안 모일까요? DESIRE 6단계로 경제적 자유를 설계합니다.">
+<meta property="og:type" content="website">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=Pretendard:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css');
+
+:root{
+  --ink:#0F1B2D;        /* 깊은 네이비 — 신뢰 */
+  --ink-soft:#33445C;
+  --paper:#FBF8F2;      /* 따뜻한 페이퍼 */
+  --paper-card:#FFFFFF;
+  --gold:#C8A04B;       /* 금 — 부, 격조 */
+  --gold-deep:#A07E2E;
+  --fire:#E2543B;       /* FIRE — 불꽃 강조 */
+  --line:#E5DECF;
+  --muted:#7A8699;
+  --green:#1F8A5B;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  font-family:'Pretendard',-apple-system,sans-serif;
+  background:var(--paper);
+  color:var(--ink);
+  line-height:1.7;
+  -webkit-font-smoothing:antialiased;
+  overflow-x:hidden;
+}
+.serif{font-family:'Gowun Batang',serif}
+.wrap{max-width:600px;margin:0 auto;padding:0 22px}
+
+/* ===== 상단 마감 바 ===== */
+.deadline-bar{
+  position:sticky;top:0;z-index:50;
+  background:var(--fire);color:#fff;
+  text-align:center;padding:9px 12px;
+  font-size:13.5px;font-weight:600;letter-spacing:-0.2px;
+  box-shadow:0 2px 12px rgba(226,84,59,.25);
+}
+.deadline-bar b{font-weight:800}
+
+/* ===== 히어로 ===== */
+.hero{
+  background:
+    radial-gradient(circle at 80% -10%, rgba(200,160,75,.12), transparent 55%),
+    linear-gradient(170deg,var(--ink) 0%, #16263D 60%, #1B2E48 100%);
+  color:var(--paper);
+  padding:54px 0 60px;
+  position:relative;
+  overflow:hidden;
+}
+.hero::after{
+  content:"";position:absolute;left:0;right:0;bottom:-1px;height:40px;
+  background:var(--paper);
+  clip-path:polygon(0 100%, 100% 100%, 100% 38%, 50% 100%, 0 38%);
+}
+.eyebrow{
+  display:inline-block;
+  font-size:12.5px;font-weight:700;letter-spacing:2px;
+  color:var(--gold);
+  border:1px solid rgba(200,160,75,.4);
+  padding:6px 14px;border-radius:30px;
+  margin-bottom:22px;
+}
+.fire-word{
+  display:flex;align-items:center;gap:9px;
+  margin-bottom:16px;
+}
+.fire-word .flame{font-size:26px}
+.fire-word .txt{
+  font-size:14px;font-weight:600;color:#F2C9B8;letter-spacing:.5px;
+}
+.fire-word .txt b{color:var(--fire);font-weight:800}
+h1.hero-title{
+  font-family:'Gowun Batang',serif;
+  font-size:35px;line-height:1.32;font-weight:700;
+  letter-spacing:-0.5px;margin-bottom:20px;
+}
+h1.hero-title .hl{
+  color:var(--gold);
+  position:relative;white-space:nowrap;
+}
+.hero-sub{
+  font-size:16px;color:#C7D2E0;font-weight:300;
+  line-height:1.75;margin-bottom:30px;
+}
+.hero-sub b{color:#fff;font-weight:600}
+.hero-meta{
+  display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px;
+}
+.chip{
+  font-size:13px;font-weight:600;
+  background:rgba(255,255,255,.08);
+  border:1px solid rgba(255,255,255,.14);
+  color:#E8EEF6;
+  padding:7px 13px;border-radius:8px;
+}
+.chip.gold{background:rgba(200,160,75,.16);border-color:rgba(200,160,75,.4);color:var(--gold)}
+
+/* ===== 공통 섹션 ===== */
+section{padding:46px 0}
+.sec-label{
+  font-size:12.5px;font-weight:800;letter-spacing:2px;
+  color:var(--gold-deep);margin-bottom:12px;
+}
+.sec-title{
+  font-family:'Gowun Batang',serif;
+  font-size:25px;line-height:1.42;font-weight:700;
+  letter-spacing:-0.4px;margin-bottom:8px;
+}
+.sec-title .fire{color:var(--fire)}
+.sec-title .gold{color:var(--gold-deep)}
+
+/* ===== 문제 공감 ===== */
+.pain{background:var(--paper)}
+.pain-quote{
+  font-family:'Gowun Batang',serif;
+  font-size:23px;font-weight:700;line-height:1.5;
+  color:var(--ink);margin-bottom:24px;letter-spacing:-0.4px;
+}
+.pain-quote .u{
+  background:linear-gradient(transparent 62%, rgba(226,84,59,.22) 62%);
+}
+.pain-list{list-style:none;margin-top:8px}
+.pain-list li{
+  font-size:15.5px;color:var(--ink-soft);
+  padding:11px 0 11px 30px;position:relative;
+  border-bottom:1px solid var(--line);
+}
+.pain-list li::before{
+  content:"✓";position:absolute;left:0;top:11px;
+  color:var(--fire);font-weight:800;
+}
+.pain-turn{
+  margin-top:26px;padding:18px 20px;
+  background:var(--ink);color:var(--paper);
+  border-radius:14px;font-size:16px;font-weight:500;line-height:1.65;
+}
+.pain-turn b{color:var(--gold)}
+
+/* ===== DESIRE 6단계 ===== */
+.desire{background:var(--ink);color:var(--paper)}
+.desire .sec-label{color:var(--gold)}
+.desire .sec-title{color:#fff}
+.desire-intro{font-size:15px;color:#B9C5D6;margin-bottom:28px;font-weight:300}
+.step{
+  display:flex;gap:16px;align-items:flex-start;
+  padding:16px 0;border-bottom:1px solid rgba(255,255,255,.08);
+}
+.step:last-child{border-bottom:none}
+.step-let{
+  flex-shrink:0;width:44px;height:44px;border-radius:11px;
+  background:linear-gradient(145deg,var(--gold),var(--gold-deep));
+  color:var(--ink);font-weight:900;font-size:20px;
+  display:flex;align-items:center;justify-content:center;
+  font-family:'Gowun Batang',serif;
+}
+.step-body h4{font-size:16px;font-weight:700;margin-bottom:3px}
+.step-body p{font-size:13.5px;color:#A9B6C9;font-weight:300;line-height:1.55}
+.desire-foot{
+  margin-top:26px;text-align:center;
+  font-family:'Gowun Batang',serif;font-size:18px;color:var(--gold);font-weight:700;
+}
+
+/* ===== 5단계 원리 ===== */
+.five{background:var(--paper)}
+.five-row{
+  display:flex;gap:10px;justify-content:space-between;
+  margin-top:22px;flex-wrap:wrap;
+}
+.five-item{
+  flex:1;min-width:88px;text-align:center;
+  background:var(--paper-card);border:1px solid var(--line);
+  border-radius:13px;padding:18px 8px;
+}
+.five-item .n{
+  font-family:'Gowun Batang',serif;font-size:13px;color:var(--gold-deep);font-weight:700;
+}
+.five-item .ico{font-size:24px;margin:6px 0 8px}
+.five-item .nm{font-size:14px;font-weight:700;color:var(--ink)}
+
+/* ===== 강사 신뢰 ===== */
+.coach{background:linear-gradient(170deg,#16263D,var(--ink));color:var(--paper)}
+.coach .sec-label{color:var(--gold)}
+.coach-name{font-family:'Gowun Batang',serif;font-size:27px;font-weight:700;margin-bottom:4px}
+.coach-name span{font-size:16px;color:var(--gold);font-weight:400}
+.coach-role{font-size:14px;color:#B9C5D6;margin-bottom:22px;font-weight:300}
+.coach-stats{display:flex;gap:10px;flex-wrap:wrap}
+.cstat{
+  flex:1;min-width:70px;text-align:center;
+  background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);
+  border-radius:12px;padding:16px 6px;
+}
+.cstat .v{font-size:23px;font-weight:800;color:var(--gold)}
+.cstat .l{font-size:11.5px;color:#A9B6C9;margin-top:2px}
+.coach-cred{
+  margin-top:18px;font-size:13.5px;color:#C7D2E0;line-height:1.8;font-weight:300;
+}
+.coach-cred b{color:#fff;font-weight:600}
+
+/* ===== 과정 안내 카드 ===== */
+.enroll{background:var(--paper)}
+.course-card{
+  background:var(--paper-card);
+  border:1.5px solid var(--gold);
+  border-radius:20px;padding:30px 24px;
+  box-shadow:0 18px 50px -25px rgba(15,27,45,.4);
+  position:relative;overflow:hidden;
+}
+.course-card::before{
+  content:"";position:absolute;top:0;left:0;right:0;height:5px;
+  background:linear-gradient(90deg,var(--gold),var(--fire));
+}
+.course-badge{
+  display:inline-block;background:var(--fire);color:#fff;
+  font-size:12px;font-weight:800;letter-spacing:.5px;
+  padding:5px 12px;border-radius:20px;margin-bottom:14px;
+}
+.course-name{
+  font-family:'Gowun Batang',serif;font-size:23px;font-weight:700;
+  color:var(--ink);line-height:1.4;margin-bottom:6px;
+}
+.course-tag{font-size:14px;color:var(--gold-deep);font-weight:600;margin-bottom:20px}
+.detail{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:13px 0;border-bottom:1px solid var(--line);font-size:15px;
+}
+.detail .k{color:var(--muted);font-weight:500}
+.detail .v{color:var(--ink);font-weight:700;text-align:right}
+.detail .v .small{font-size:12.5px;color:var(--muted);font-weight:400}
+.price-row{
+  display:flex;align-items:baseline;justify-content:space-between;
+  padding:18px 0 6px;
+}
+.price-row .lbl{font-size:14px;color:var(--muted);font-weight:500}
+.price-row .amt{font-family:'Gowun Batang',serif;font-size:33px;font-weight:700;color:var(--ink)}
+.price-row .amt span{font-size:16px}
+
+/* 혜택 */
+.perks{margin:14px 0 4px;background:#FBF6EA;border:1px solid var(--line);border-radius:13px;padding:16px 18px}
+.perks li{list-style:none;font-size:14px;color:var(--ink-soft);padding:5px 0 5px 24px;position:relative}
+.perks li::before{content:"🎁";position:absolute;left:0;top:5px;font-size:13px}
+
+/* ===== CTA 버튼 ===== */
+.cta-area{margin-top:26px;display:flex;flex-direction:column;gap:11px}
+.btn{
+  display:flex;align-items:center;justify-content:center;gap:8px;
+  text-decoration:none;border-radius:13px;
+  font-size:17px;font-weight:700;padding:18px;
+  transition:transform .15s, box-shadow .15s;letter-spacing:-0.3px;
+}
+.btn:active{transform:scale(.98)}
+.btn-pay{
+  background:linear-gradient(135deg,var(--fire),#C8402A);color:#fff;
+  box-shadow:0 12px 30px -10px rgba(226,84,59,.6);
+}
+.btn-apply{
+  background:var(--ink);color:#fff;
+}
+.btn-kakao{
+  background:#FEE500;color:#3A2929;
+}
+.btn .sub{font-size:12px;font-weight:500;opacity:.85}
+.cta-note{text-align:center;font-size:13px;color:var(--muted);margin-top:6px}
+
+/* ===== 다른 길 (미니 허브) ===== */
+.other{background:var(--ink);color:var(--paper);padding:42px 0}
+.other .sec-label{color:var(--muted);text-align:center}
+.other-title{text-align:center;font-family:'Gowun Batang',serif;font-size:20px;font-weight:700;margin-bottom:6px}
+.other-desc{text-align:center;font-size:13.5px;color:#9DAABD;margin-bottom:26px;font-weight:300}
+.other-link{
+  display:flex;align-items:center;gap:14px;text-decoration:none;
+  background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);
+  border-radius:14px;padding:16px 18px;margin-bottom:11px;
+  transition:background .15s;
+}
+.other-link:active{background:rgba(255,255,255,.1)}
+.other-link .ic{font-size:26px;flex-shrink:0}
+.other-link .meat{flex:1}
+.other-link .ti{font-size:15.5px;font-weight:700;color:#fff;margin-bottom:2px}
+.other-link .de{font-size:12.5px;color:#9DAABD;font-weight:300;line-height:1.45}
+.other-link .pr{font-size:13px;font-weight:700;color:var(--gold);flex-shrink:0;text-align:right}
+.other-link .pr .dt{display:block;font-size:11px;color:#9DAABD;font-weight:400;margin-top:2px}
+.refund{
+  display:inline-block;background:rgba(31,138,91,.18);border:1px solid rgba(31,138,91,.4);
+  color:#5FD89E;font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;margin-top:5px;
+}
+
+/* 무료진단 */
+.free-row{display:flex;gap:9px;flex-wrap:wrap;margin-top:6px}
+.free-chip{
+  flex:1;min-width:0;text-align:center;text-decoration:none;
+  background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);
+  border-radius:11px;padding:13px 6px;
+}
+.free-chip .ic{font-size:20px}
+.free-chip .nm{font-size:12px;color:#C7D2E0;font-weight:600;margin-top:4px}
+.free-chip .fr{font-size:10px;color:var(--green);font-weight:700;margin-top:1px}
+
+/* ===== 푸터 ===== */
+footer{background:#0A1320;color:#7A8699;padding:34px 0 40px;text-align:center;font-size:12.5px;line-height:1.9}
+.foot-sns{display:flex;justify-content:center;gap:10px;margin-bottom:20px}
+.foot-sns a{
+  width:42px;height:42px;border-radius:11px;
+  background:rgba(255,255,255,.06);
+  display:flex;align-items:center;justify-content:center;
+  font-size:19px;text-decoration:none;
+}
+.foot-name{color:#C7D2E0;font-weight:700;font-size:14px;margin-bottom:4px}
+
+/* 스크롤 고정 CTA */
+.sticky-cta{
+  position:fixed;left:0;right:0;bottom:0;z-index:60;
+  background:rgba(251,248,242,.96);backdrop-filter:blur(8px);
+  border-top:1px solid var(--line);
+  padding:11px 16px;display:flex;gap:9px;
+  box-shadow:0 -8px 24px -12px rgba(15,27,45,.25);
+  transform:translateY(110%);transition:transform .3s;
+}
+.sticky-cta.show{transform:translateY(0)}
+.sticky-cta a{
+  flex:1;text-align:center;text-decoration:none;border-radius:11px;
+  font-size:15px;font-weight:700;padding:14px;
+}
+.sticky-cta .s-apply{background:var(--ink);color:#fff;flex:.8}
+.sticky-cta .s-pay{background:linear-gradient(135deg,var(--fire),#C8402A);color:#fff}
+
+@media(min-width:620px){
+  h1.hero-title{font-size:40px}
+}
+</style>
+</head>
+<body>
+
+<!-- 마감 바 -->
+<div class="deadline-bar">
+  ⏰ 6월 모집 마감 <b>6/19(금)</b> · 개강 <b>6/25(목)</b> · 줌 비대면
+</div>
+
+<!-- 히어로 -->
+<header class="hero">
+  <div class="wrap">
+    <span class="eyebrow">10억 목돈마련 절대법칙</span>
+    <div class="fire-word">
+      <span class="flame">🔥</span>
+      <span class="txt"><b>F.I.R.E</b> — 경제적 자유, 더 빠른 은퇴</span>
+    </div>
+    <h1 class="hero-title">둘이 버는데<br>왜 돈은 <span class="hl">안 모일까요?</span></h1>
+    <p class="hero-sub">
+      소득이 문제가 아닙니다. <b>순서</b>가 문제입니다.<br>
+      <b>DESIRE 6단계 로드맵</b>으로<br>
+      당신의 10억 목돈마련 설계도를 완성합니다.
+    </p>
+    <div class="hero-meta">
+      <span class="chip gold">4주 완성</span>
+      <span class="chip">매주 목요일 19–22시</span>
+      <span class="chip">줌 실시간</span>
+    </div>
+  </div>
+</header>
+
+<!-- 문제 공감 -->
+<section class="pain">
+  <div class="wrap">
+    <div class="sec-label">왜 안 모일까</div>
+    <p class="pain-quote">
+      맞벌이 10년, 그런데<br>
+      통장은 <span class="u">왜 그대로일까요?</span>
+    </p>
+    <ul class="pain-list">
+      <li>월급은 들어오는데 어디로 새는지 모른다</li>
+      <li>재테크 정보는 넘치는데 내 것은 없다</li>
+      <li>적금·보험·투자… 순서 없이 그냥 하고 있다</li>
+      <li>'언젠가'는 오는데 '목돈'은 안 온다</li>
+    </ul>
+    <div class="pain-turn">
+      문제는 당신의 소득이 아닙니다.<br>
+      <b>돈을 다루는 순서</b>를 배운 적이 없을 뿐입니다.
+    </div>
+  </div>
+</section>
+
+<!-- DESIRE 6단계 -->
+<section class="desire">
+  <div class="wrap">
+    <div class="sec-label">DESIRE 로드맵</div>
+    <h2 class="sec-title">경제적 자유로 가는<br><span class="gold">6단계 설계도</span></h2>
+    <p class="desire-intro">집을 짓듯, 재무도 순서가 있습니다. 기초부터 차근차근 쌓아 올립니다.</p>
+
+    <div class="step">
+      <div class="step-let">D</div>
+      <div class="step-body"><h4>Debt Free — 신용대출 상환</h4><p>금액이 작은 것부터 정리해 현금흐름의 숨통을 틉니다</p></div>
+    </div>
+    <div class="step">
+      <div class="step-let">E</div>
+      <div class="step-body"><h4>Emergency — 비상 예비자금</h4><p>흔들리지 않는 6개월치 안전판을 만듭니다</p></div>
+    </div>
+    <div class="step">
+      <div class="step-let">S</div>
+      <div class="step-body"><h4>Savings — 적립식 저축·투자</h4><p>매달 꾸준히 쌓아 종잣돈의 기초를 다집니다</p></div>
+    </div>
+    <div class="step">
+      <div class="step-let">I</div>
+      <div class="step-body"><h4>Investment — 목표 투자</h4><p>10억이라는 목적지를 향해 자산을 굴립니다</p></div>
+    </div>
+    <div class="step">
+      <div class="step-let">R</div>
+      <div class="step-body"><h4>Repay Mortgage — 담보대출 상환</h4><p>내 집의 담보대출을 줄여 진짜 내 자산으로 만듭니다</p></div>
+    </div>
+    <div class="step">
+      <div class="step-let">E</div>
+      <div class="step-body"><h4>Enjoy — 경제적 자유</h4><p>일하지 않아도 되는 자유 위에서 인생을 누립니다</p></div>
+    </div>
+    <p class="desire-foot">→ 이것이 FIRE입니다</p>
+  </div>
+</section>
+
+<!-- 5단계 원리 -->
+<section class="five">
+  <div class="wrap">
+    <div class="sec-label">돈의 원리</div>
+    <h2 class="sec-title">결국 <span class="gold">다섯 가지</span>입니다</h2>
+    <div class="five-row">
+      <div class="five-item"><div class="n">01</div><div class="ico">💼</div><div class="nm">벌고</div></div>
+      <div class="five-item"><div class="n">02</div><div class="ico">🏺</div><div class="nm">모으고</div></div>
+      <div class="five-item"><div class="n">03</div><div class="ico">🌱</div><div class="nm">불리고</div></div>
+      <div class="five-item"><div class="n">04</div><div class="ico">⚙️</div><div class="nm">굴리고</div></div>
+      <div class="five-item"><div class="n">05</div><div class="ico">🛡️</div><div class="nm">지키고</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- 강사 -->
+<section class="coach">
+  <div class="wrap">
+    <div class="sec-label">강사</div>
+    <div class="coach-name">오상열 <span>CFP</span></div>
+    <div class="coach-role">오원트금융연구소 대표 · 금융집짓기® 창시자</div>
+    <div class="coach-stats">
+      <div class="cstat"><div class="v">25년</div><div class="l">금융 경력</div></div>
+      <div class="cstat"><div class="v">2,000+</div><div class="l">개인 상담</div></div>
+      <div class="cstat"><div class="v">500+</div><div class="l">강의 세션</div></div>
+      <div class="cstat"><div class="v">4.7만</div><div class="l">유튜브 구독</div></div>
+    </div>
+    <div class="coach-cred">
+      <b>국제공인재무설계사(CFP)</b> · 금융연수원 외래교수<br>
+      前 삼성화재 영업교육팀 · 美 The American College CFP 과정 수료<br>
+      증권·펀드투자상담사 · 변액보험판매관리사
+    </div>
+  </div>
+</section>
+
+<!-- 과정 안내 + 결제 -->
+<section class="enroll" id="enroll">
+  <div class="wrap">
+    <div class="course-card">
+      <span class="course-badge">🔥 6월 모집중 · 마감 6/19</span>
+      <div class="course-name">10억 목돈마련 절대법칙</div>
+      <div class="course-tag">FIRE를 향한 DESIRE 6단계 · 4주 완성</div>
+
+      <div class="detail"><span class="k">개강</span><span class="v">2026. 6. 25 (목)</span></div>
+      <div class="detail"><span class="k">일정</span><span class="v">6/25·7/2·7/9·7/16<span class="small"> 매주 목 19–22시</span></span></div>
+      <div class="detail"><span class="k">방식</span><span class="v">줌 실시간 비대면</span></div>
+      <div class="detail"><span class="k">대상</span><span class="v">30–40대 맞벌이 직장인</span></div>
+
+      <ul class="perks">
+        <li>무료 1:1 재무진단 및 상담 1회</li>
+        <li>강의 다시보기 동영상 제공</li>
+        <li>추가 학습자료 일체</li>
+      </ul>
+
+      <div class="price-row">
+        <span class="lbl">수강료 (카드 가능)</span>
+        <span class="amt">55<span>만원</span></span>
+      </div>
+
+      <div class="cta-area">
+        <a class="btn btn-pay" href="https://link.payple.kr/NzcxOjc3NTQwNTcxNzMzMTMy">
+          지금 결제하고 자리 확보하기
+        </a>
+        <a class="btn btn-apply" href="https://docs.google.com/forms/d/e/1FAIpQLSejqqWGxDVeDqPkNHQXM2ATY5e8o06CWcFpbT7sEBpqAKhONg/viewform">
+          먼저 신청서 작성하기 <span class="sub">(상담 후 결제도 가능)</span>
+        </a>
+        <a class="btn btn-kakao" href="http://pf.kakao.com/_vxfmfxj">
+          💬 카카오톡 '금융집짓기' 채널추가 <span class="sub">· 무료 자료받기</span>
+        </a>
+      </div>
+      <p class="cta-note">정원 마감 시 조기 종료될 수 있습니다</p>
+    </div>
+  </div>
+</section>
+
+<!-- 다른 길 (미니 허브) -->
+<section class="other">
+  <div class="wrap">
+    <div class="sec-label">OTHER PATHS</div>
+    <div class="other-title">다른 길도 있습니다</div>
+    <p class="other-desc">당신에게 더 맞는 과정을 찾아보세요</p>
+
+    <a class="other-link" href="https://ohwant-hub.netlify.app/lecture-pro">
+      <span class="ic">🏛️</span>
+      <span class="meat">
+        <span class="ti">금융집짓기 상담전문가 과정</span>
+        <span class="de">보험·재무 전문가를 위한 4주 대면 + 1년 비대면</span>
+      </span>
+      <span class="pr">110만원<span class="dt">7/4 개강 · 8명</span></span>
+    </a>
+
+    <a class="other-link" href="./bootcamp.html">
+      <span class="ic">🤖</span>
+      <span class="meat">
+        <span class="ti">1인사업자 AI에이전트 만들기</span>
+        <span class="de">고객발굴·관리·마케팅 반복업무 자동화 직접 제작</span>
+        <span class="refund">✓ 미제작 시 전액환불</span>
+      </span>
+      <span class="pr">330만원<span class="dt">7/5 개강 · 8명</span></span>
+    </a>
+
+    <div style="margin-top:24px">
+      <p class="other-desc" style="margin-bottom:14px">🆓 먼저 무료로 진단해보고 싶다면</p>
+      <div class="free-row">
+        <a class="free-chip" href="https://owant.netlify.app/desire/"><div class="ic">🗺️</div><div class="nm">DESIRE 진단</div><div class="fr">무료</div></a>
+        <a class="free-chip" href="https://owant.netlify.app/house/"><div class="ic">🏛️</div><div class="nm">금융집짓기</div><div class="fr">무료</div></a>
+        <a class="free-chip" href="https://owant.netlify.app/wantcube/"><div class="ic">🎲</div><div class="nm">원트큐브</div><div class="fr">무료</div></a>
+        <a class="free-chip" href="https://moneya-frontend.vercel.app"><div class="ic">📱</div><div class="nm">AI머니야</div><div class="fr">무료</div></a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 푸터 -->
+<footer>
+  <div class="wrap">
+    <div class="foot-sns">
+      <a href="http://pf.kakao.com/_vxfmfxj">💬</a>
+      <a href="https://www.youtube.com/@OhSangRyul">▶</a>
+      <a href="https://www.instagram.com/oh_want">📷</a>
+      <a href="https://moneya-frontend.vercel.app">📱</a>
+    </div>
+    <div class="foot-name">오원트금융연구소</div>
+    서울 강남구 테헤란로 327 빅토리아빌딩 1702호<br>
+    대표 오상열 · CFP · 금융집짓기® 창시자<br>
+    <span style="font-size:11px;opacity:.7">ⓒ 2026 OHWANT. All rights reserved.</span>
+  </div>
+</footer>
+
+<!-- 스크롤 고정 CTA -->
+<div class="sticky-cta" id="stickyCta">
+  <a class="s-apply" href="https://docs.google.com/forms/d/e/1FAIpQLSejqqWGxDVeDqPkNHQXM2ATY5e8o06CWcFpbT7sEBpqAKhONg/viewform">신청서</a>
+  <a class="s-pay" href="https://link.payple.kr/NzcxOjc3NTQwNTcxNzMzMTMy">55만원 결제하기</a>
+</div>
+
+<script>
+// 스크롤 시 하단 고정 CTA 표시 (히어로 지나면)
+(function(){
+  var sticky=document.getElementById('stickyCta');
+  var enroll=document.getElementById('enroll');
+  window.addEventListener('scroll',function(){
+    if(window.scrollY>520){sticky.classList.add('show')}
+    else{sticky.classList.remove('show')}
+    // 결제 영역 보이면 숨김 (중복 방지)
+    var r=enroll.getBoundingClientRect();
+    if(r.top<window.innerHeight && r.bottom>0){sticky.classList.remove('show')}
+  });
+})();
+</script>
+</body>
+</html>

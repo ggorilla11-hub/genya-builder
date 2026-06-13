@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>1인사업자를 위한 AI에이전트 만들기 | 오상열</title>
+<meta name="description" content="고객발굴·고객관리·홍보마케팅 반복업무를 자동화하는 나만의 AI에이전트를 직접 만듭니다. 4주 대면 부트캠프. 미제작 시 전액환불.">
+<meta property="og:title" content="1인사업자를 위한 AI에이전트 만들기">
+<meta property="og:description" content="반복업무를 자동화하는 나만의 AI에이전트를 직접 만듭니다. 미제작 시 전액환불.">
+<meta property="og:type" content="website">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&display=swap" rel="stylesheet">
+<style>
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css');
+
+:root{
+  --bg:#0A0E14;          /* 거의 검정 — 테크 */
+  --bg-soft:#111722;
+  --panel:#161D2A;
+  --ink:#E8EDF4;
+  --ink-soft:#A4B0C2;
+  --muted:#6B7888;
+  --line:rgba(255,255,255,.09);
+  --neon:#3BE0C4;        /* 민트 네온 — AI/자동화 */
+  --neon-deep:#1FA88E;
+  --amber:#F4B740;       /* 환불보증 강조 */
+  --violet:#8B7FF0;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  font-family:'Pretendard',-apple-system,sans-serif;
+  background:var(--bg);color:var(--ink);line-height:1.7;
+  -webkit-font-smoothing:antialiased;overflow-x:hidden;
+}
+.serif{font-family:'Gowun Batang',serif}
+.wrap{max-width:600px;margin:0 auto;padding:0 22px}
+
+/* 마감 바 */
+.deadline-bar{
+  position:sticky;top:0;z-index:50;
+  background:linear-gradient(90deg,var(--neon-deep),var(--neon));
+  color:#04201B;text-align:center;padding:9px 12px;
+  font-size:13.5px;font-weight:700;letter-spacing:-0.2px;
+}
+
+/* 히어로 */
+.hero{
+  position:relative;padding:54px 0 58px;overflow:hidden;
+  background:
+    radial-gradient(circle at 15% 0%, rgba(59,224,196,.13), transparent 50%),
+    radial-gradient(circle at 90% 30%, rgba(139,127,240,.12), transparent 45%),
+    var(--bg);
+}
+/* 회로 느낌 도트 */
+.hero::before{
+  content:"";position:absolute;inset:0;
+  background-image:radial-gradient(rgba(255,255,255,.05) 1px, transparent 1px);
+  background-size:22px 22px;opacity:.6;
+}
+.hero .wrap{position:relative;z-index:1}
+.eyebrow{
+  display:inline-flex;align-items:center;gap:7px;
+  font-size:12.5px;font-weight:700;letter-spacing:1px;color:var(--neon);
+  border:1px solid rgba(59,224,196,.35);
+  padding:6px 14px;border-radius:30px;margin-bottom:22px;
+}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--neon);box-shadow:0 0 10px var(--neon)}
+h1.hero-title{
+  font-size:33px;line-height:1.34;font-weight:800;
+  letter-spacing:-0.8px;margin-bottom:18px;
+}
+h1.hero-title .neon{color:var(--neon)}
+h1.hero-title .v{color:var(--violet)}
+.hero-sub{font-size:15.5px;color:var(--ink-soft);font-weight:300;line-height:1.75;margin-bottom:26px}
+.hero-sub b{color:#fff;font-weight:600}
+.hero-meta{display:flex;flex-wrap:wrap;gap:8px}
+.chip{
+  font-size:13px;font-weight:600;background:rgba(255,255,255,.06);
+  border:1px solid var(--line);color:var(--ink);padding:7px 13px;border-radius:8px;
+}
+.chip.neon{background:rgba(59,224,196,.12);border-color:rgba(59,224,196,.35);color:var(--neon)}
+
+/* 환불 보증 띠 */
+.guarantee{
+  background:linear-gradient(100deg,rgba(244,183,64,.14),rgba(244,183,64,.06));
+  border-top:1px solid rgba(244,183,64,.3);border-bottom:1px solid rgba(244,183,64,.3);
+  padding:18px 0;
+}
+.guarantee .wrap{display:flex;align-items:center;gap:14px}
+.guarantee .shield{font-size:34px;flex-shrink:0}
+.guarantee .g-text{font-size:15px;font-weight:700;color:var(--amber);line-height:1.5}
+.guarantee .g-text span{display:block;font-size:12.5px;color:var(--ink-soft);font-weight:400;margin-top:2px}
+
+/* 섹션 */
+section{padding:46px 0}
+.sec-label{font-size:12px;font-weight:800;letter-spacing:2px;color:var(--neon-deep);margin-bottom:12px}
+.sec-title{font-size:24px;line-height:1.42;font-weight:800;letter-spacing:-0.5px;margin-bottom:10px}
+.sec-title .neon{color:var(--neon)}
+
+/* 페인 */
+.pain{background:var(--bg-soft)}
+.pain-quote{font-size:21px;font-weight:700;line-height:1.55;margin-bottom:22px;letter-spacing:-0.4px}
+.pain-quote .u{color:var(--neon)}
+.pain-list{list-style:none}
+.pain-list li{
+  font-size:15px;color:var(--ink-soft);padding:11px 0 11px 28px;position:relative;
+  border-bottom:1px solid var(--line);
+}
+.pain-list li::before{content:"⏳";position:absolute;left:0;top:11px;font-size:13px}
+.pain-turn{
+  margin-top:24px;padding:18px 20px;background:var(--panel);
+  border-left:3px solid var(--neon);border-radius:8px;
+  font-size:15.5px;font-weight:500;line-height:1.65;
+}
+.pain-turn b{color:var(--neon)}
+
+/* 무엇을 만드나 — 4개 에이전트 */
+.agents .agent{
+  display:flex;gap:15px;align-items:flex-start;padding:18px;
+  background:var(--panel);border:1px solid var(--line);border-radius:15px;margin-bottom:12px;
+  position:relative;overflow:hidden;
+}
+.agents .agent::before{
+  content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--neon);
+}
+.agent .ai-ic{
+  flex-shrink:0;width:46px;height:46px;border-radius:12px;
+  background:linear-gradient(145deg,rgba(59,224,196,.2),rgba(139,127,240,.15));
+  border:1px solid rgba(59,224,196,.3);
+  display:flex;align-items:center;justify-content:center;font-size:23px;
+}
+.agent .a-body h4{font-size:16.5px;font-weight:700;margin-bottom:3px}
+.agent .a-body p{font-size:13.5px;color:var(--ink-soft);font-weight:300;line-height:1.55}
+.agents-note{text-align:center;margin-top:20px;font-size:14px;color:var(--neon);font-weight:600}
+
+/* 커리큘럼 4주 */
+.curri{background:var(--bg-soft)}
+.week{
+  display:flex;gap:14px;align-items:flex-start;padding:16px 0;
+  border-bottom:1px solid var(--line);
+}
+.week:last-child{border-bottom:none}
+.week .wk{
+  flex-shrink:0;width:52px;height:52px;border-radius:13px;
+  background:var(--panel);border:1px solid rgba(59,224,196,.3);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+}
+.week .wk .n{font-size:18px;font-weight:800;color:var(--neon);line-height:1}
+.week .wk .w{font-size:10px;color:var(--muted);margin-top:1px}
+.week .w-body h4{font-size:15.5px;font-weight:700;margin-bottom:3px}
+.week .w-body p{font-size:13px;color:var(--ink-soft);font-weight:300;line-height:1.5}
+
+/* 강사 */
+.coach{background:var(--bg)}
+.coach .sec-label{color:var(--neon-deep)}
+.coach-name{font-size:26px;font-weight:800;margin-bottom:4px}
+.coach-name span{font-size:15px;color:var(--neon);font-weight:500}
+.coach-role{font-size:14px;color:var(--ink-soft);margin-bottom:20px;font-weight:300}
+.coach-stats{display:flex;gap:9px;flex-wrap:wrap}
+.cstat{
+  flex:1;min-width:70px;text-align:center;background:var(--panel);
+  border:1px solid var(--line);border-radius:12px;padding:15px 6px;
+}
+.cstat .v{font-size:21px;font-weight:800;color:var(--neon)}
+.cstat .l{font-size:11px;color:var(--muted);margin-top:2px}
+.coach-cred{margin-top:16px;font-size:13.5px;color:var(--ink-soft);line-height:1.75;font-weight:300}
+.coach-cred b{color:#fff;font-weight:600}
+.coach-why{
+  margin-top:18px;padding:16px 18px;background:var(--panel);border-radius:12px;
+  font-size:14px;color:var(--ink-soft);line-height:1.7;
+}
+.coach-why b{color:var(--neon)}
+
+/* 과정 카드 */
+.enroll{background:var(--bg-soft)}
+.course-card{
+  background:var(--panel);border:1.5px solid var(--neon-deep);border-radius:20px;
+  padding:30px 24px;position:relative;overflow:hidden;
+  box-shadow:0 0 60px -20px rgba(59,224,196,.4);
+}
+.course-card::before{content:"";position:absolute;top:0;left:0;right:0;height:5px;background:linear-gradient(90deg,var(--neon),var(--violet))}
+.course-badge{display:inline-block;background:var(--neon);color:#04201B;font-size:12px;font-weight:800;padding:5px 12px;border-radius:20px;margin-bottom:14px}
+.course-name{font-size:22px;font-weight:800;line-height:1.4;margin-bottom:6px}
+.course-tag{font-size:14px;color:var(--neon);font-weight:600;margin-bottom:20px}
+.detail{display:flex;justify-content:space-between;align-items:center;padding:13px 0;border-bottom:1px solid var(--line);font-size:15px}
+.detail .k{color:var(--muted);font-weight:500}
+.detail .v{color:var(--ink);font-weight:700;text-align:right}
+.detail .v .small{font-size:12.5px;color:var(--muted);font-weight:400}
+.price-row{display:flex;align-items:baseline;justify-content:space-between;padding:18px 0 6px}
+.price-row .lbl{font-size:14px;color:var(--muted)}
+.price-row .amt{font-size:32px;font-weight:800;color:#fff}
+.price-row .amt span{font-size:16px}
+.refund-box{
+  margin:14px 0 4px;background:rgba(244,183,64,.1);border:1px solid rgba(244,183,64,.35);
+  border-radius:13px;padding:16px 18px;display:flex;gap:12px;align-items:center;
+}
+.refund-box .ic{font-size:26px}
+.refund-box .t{font-size:14px;font-weight:700;color:var(--amber);line-height:1.45}
+.refund-box .t span{display:block;font-size:12.5px;color:var(--ink-soft);font-weight:400;margin-top:2px}
+
+.cta-area{margin-top:24px;display:flex;flex-direction:column;gap:11px}
+.btn{display:flex;align-items:center;justify-content:center;gap:8px;text-decoration:none;border-radius:13px;font-size:17px;font-weight:700;padding:18px;transition:transform .15s;letter-spacing:-0.3px}
+.btn:active{transform:scale(.98)}
+.btn-pay{background:linear-gradient(135deg,var(--neon),var(--neon-deep));color:#04201B;box-shadow:0 12px 30px -10px rgba(59,224,196,.5)}
+.btn-apply{background:rgba(255,255,255,.08);color:#fff;border:1px solid var(--line)}
+.btn-kakao{background:#FEE500;color:#3A2929}
+.btn .sub{font-size:12px;font-weight:500;opacity:.85}
+.cta-note{text-align:center;font-size:13px;color:var(--muted);margin-top:8px}
+
+/* 다른 길 */
+.other{background:var(--bg);padding:42px 0}
+.other .sec-label{color:var(--muted);text-align:center}
+.other-title{text-align:center;font-size:20px;font-weight:800;margin-bottom:6px}
+.other-desc{text-align:center;font-size:13.5px;color:var(--muted);margin-bottom:24px}
+.other-link{display:flex;align-items:center;gap:14px;text-decoration:none;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin-bottom:11px}
+.other-link:active{background:#1C2533}
+.other-link .ic{font-size:26px;flex-shrink:0}
+.other-link .meat{flex:1}
+.other-link .ti{font-size:15.5px;font-weight:700;color:#fff;margin-bottom:2px}
+.other-link .de{font-size:12.5px;color:var(--ink-soft);font-weight:300;line-height:1.45}
+.other-link .pr{font-size:13px;font-weight:700;color:var(--neon);flex-shrink:0;text-align:right}
+.other-link .pr .dt{display:block;font-size:11px;color:var(--muted);font-weight:400;margin-top:2px}
+
+footer{background:#06090F;color:var(--muted);padding:34px 0 40px;text-align:center;font-size:12.5px;line-height:1.9}
+.foot-sns{display:flex;justify-content:center;gap:10px;margin-bottom:20px}
+.foot-sns a{width:42px;height:42px;border-radius:11px;background:rgba(255,255,255,.06);display:flex;align-items:center;justify-content:center;font-size:19px;text-decoration:none}
+.foot-name{color:var(--ink-soft);font-weight:700;font-size:14px;margin-bottom:4px}
+
+.sticky-cta{position:fixed;left:0;right:0;bottom:0;z-index:60;background:rgba(10,14,20,.96);backdrop-filter:blur(8px);border-top:1px solid var(--line);padding:11px 16px;display:flex;gap:9px;transform:translateY(110%);transition:transform .3s}
+.sticky-cta.show{transform:translateY(0)}
+.sticky-cta a{flex:1;text-align:center;text-decoration:none;border-radius:11px;font-size:15px;font-weight:700;padding:14px}
+.sticky-cta .s-apply{background:rgba(255,255,255,.1);color:#fff;flex:.8}
+.sticky-cta .s-pay{background:linear-gradient(135deg,var(--neon),var(--neon-deep));color:#04201B}
+
+@media(min-width:620px){h1.hero-title{font-size:38px}}
+</style>
+</head>
+<body>
+
+<div class="deadline-bar">⚡ 모집 마감 7/3(금) · 개강 7/5(일) · 단 8명 한정</div>
+
+<header class="hero">
+  <div class="wrap">
+    <span class="eyebrow"><span class="dot"></span>1인사업자 · 프리랜서 · 소상공인</span>
+    <h1 class="hero-title">반복되는 일은<br><span class="neon">AI에이전트</span>에게,<br>당신은 <span class="v">사업</span>에 집중</h1>
+    <p class="hero-sub">
+      고객발굴·고객관리·홍보마케팅…<br>
+      매일 똑같이 반복하는 그 일들을<br>
+      <b>나만의 AI에이전트</b>가 대신하게 만듭니다.<br>
+      코딩 몰라도 됩니다. <b>직접 만들어 갑니다.</b>
+    </p>
+    <div class="hero-meta">
+      <span class="chip neon">4주 대면</span>
+      <span class="chip">단 8명</span>
+      <span class="chip">직접 제작 완성</span>
+    </div>
+  </div>
+</header>
+
+<!-- 환불 보증 -->
+<div class="guarantee">
+  <div class="wrap">
+    <span class="shield">🛡️</span>
+    <div class="g-text">
+      못 만들면 전액 환불합니다
+      <span>4주 안에 작동하는 AI에이전트를 못 만들면, 수강료 100% 돌려드립니다.</span>
+    </div>
+  </div>
+</div>
+
+<!-- 페인 -->
+<section class="pain">
+  <div class="wrap">
+    <div class="sec-label">왜 늘 시간이 없을까</div>
+    <p class="pain-quote">사업은 하나인데,<br><span class="u">일은 열 사람 몫</span>입니다.</p>
+    <ul class="pain-list">
+      <li>고객 찾고, 문의 답하고, 후속 연락하다 하루가 끝난다</li>
+      <li>SNS·블로그·문자… 홍보는 끝이 없다</li>
+      <li>나 하나뿐인데 사람을 쓰자니 비용이 무섭다</li>
+      <li>AI가 좋다는데, 어디서 어떻게 시작할지 모르겠다</li>
+    </ul>
+    <div class="pain-turn">
+      직원을 뽑는 대신, <b>지치지 않는 AI 직원</b>을 만드세요.<br>
+      한 번 만들면 24시간 일하고, 월급도 없습니다.
+    </div>
+  </div>
+</section>
+
+<!-- 무엇을 만드나 -->
+<section class="agents">
+  <div class="wrap">
+    <div class="sec-label">무엇을 만드나</div>
+    <h2 class="sec-title">당신의 <span class="neon">AI 직원 4명</span>을 만듭니다</h2>
+    <div class="agent">
+      <div class="ai-ic">🔍</div>
+      <div class="a-body"><h4>고객발굴 에이전트</h4><p>관심 고객을 찾아 매일 명단으로 정리해줍니다</p></div>
+    </div>
+    <div class="agent">
+      <div class="ai-ic">💬</div>
+      <div class="a-body"><h4>고객관리 에이전트</h4><p>문의 응대·예약·후속 연락을 자동으로 처리합니다</p></div>
+    </div>
+    <div class="agent">
+      <div class="ai-ic">📣</div>
+      <div class="a-body"><h4>홍보마케팅 에이전트</h4><p>SNS 글·이미지·콘텐츠를 만들어 배포 준비합니다</p></div>
+    </div>
+    <div class="agent">
+      <div class="ai-ic">📊</div>
+      <div class="a-body"><h4>운영관리 에이전트</h4><p>매출·고객·일정을 한눈에 보고받습니다</p></div>
+    </div>
+    <p class="agents-note">→ 모두 당신의 사업에 맞춰, 당신 손으로 완성합니다</p>
+  </div>
+</section>
+
+<!-- 커리큘럼 -->
+<section class="curri">
+  <div class="wrap">
+    <div class="sec-label">4주 커리큘럼</div>
+    <h2 class="sec-title">맨손에서 <span class="neon">완성</span>까지</h2>
+    <div class="week">
+      <div class="wk"><div class="n">1</div><div class="w">주차</div></div>
+      <div class="w-body"><h4>설계 — 내 사업의 반복업무 분석</h4><p>어떤 일을 AI에게 맡길지 찾고, 나만의 에이전트 설계도를 그립니다</p></div>
+    </div>
+    <div class="week">
+      <div class="wk"><div class="n">2</div><div class="w">주차</div></div>
+      <div class="w-body"><h4>제작 — 첫 에이전트 만들기</h4><p>실제로 작동하는 첫 AI에이전트를 직접 손으로 만들어봅니다</p></div>
+    </div>
+    <div class="week">
+      <div class="wk"><div class="n">3</div><div class="w">주차</div></div>
+      <div class="w-body"><h4>연결 — 자동화 흐름 완성</h4><p>고객발굴→관리→마케팅이 자동으로 이어지게 연결합니다</p></div>
+    </div>
+    <div class="week">
+      <div class="wk"><div class="n">4</div><div class="w">주차</div></div>
+      <div class="w-body"><h4>가동 — 내 사업에 실전 투입</h4><p>완성된 에이전트를 실제 사업에 적용하고 운영을 시작합니다</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- 강사 -->
+<section class="coach">
+  <div class="wrap">
+    <div class="sec-label">강사</div>
+    <div class="coach-name">오상열 <span>CFP</span></div>
+    <div class="coach-role">오원트금융연구소 대표 · 금융집짓기® 창시자</div>
+    <div class="coach-stats">
+      <div class="cstat"><div class="v">25년</div><div class="l">현장 경력</div></div>
+      <div class="cstat"><div class="v">2,000+</div><div class="l">개인 상담</div></div>
+      <div class="cstat"><div class="v">4.7만</div><div class="l">유튜브 구독</div></div>
+    </div>
+    <div class="coach-why">
+      비개발자인 제가 <b>직접 AI에이전트로 사업 전체를 자동화</b>했습니다.
+      고객발굴부터 결제·관리까지 — 코딩 없이 만든 그 방법 그대로,
+      여러분의 사업에 맞게 함께 만듭니다.
+    </div>
+  </div>
+</section>
+
+<!-- 과정 카드 -->
+<section class="enroll" id="enroll">
+  <div class="wrap">
+    <div class="course-card">
+      <span class="course-badge">⚡ 7월 1기 · 단 8명</span>
+      <div class="course-name">1인사업자를 위한<br>AI에이전트 만들기</div>
+      <div class="course-tag">반복업무 자동화 · 4주 대면 부트캠프</div>
+
+      <div class="detail"><span class="k">개강</span><span class="v">2026. 7. 5 (일)</span></div>
+      <div class="detail"><span class="k">일정</span><span class="v">매주 일요일<span class="small"> 오후 1–6시 · 4주</span></span></div>
+      <div class="detail"><span class="k">방식</span><span class="v">대면 (소수 정예)</span></div>
+      <div class="detail"><span class="k">정원</span><span class="v">단 8명</span></div>
+      <div class="detail"><span class="k">대상</span><span class="v">1인사업자·프리랜서·소상공인</span></div>
+
+      <div class="refund-box">
+        <span class="ic">🛡️</span>
+        <div class="t">미제작 시 전액환불
+          <span>작동하는 에이전트를 못 만들면 수강료 100% 환불</span>
+        </div>
+      </div>
+
+      <div class="price-row">
+        <span class="lbl">수강료 (카드 가능)</span>
+        <span class="amt">330<span>만원</span></span>
+      </div>
+
+      <div class="cta-area">
+        <a class="btn btn-pay" href="http://pf.kakao.com/_vxfmfxj">신청 문의하기 (카톡)</a>
+        <a class="btn btn-apply" href="https://docs.google.com/forms/d/e/1FAIpQLSejqqWGxDVeDqPkNHQXM2ATY5e8o06CWcFpbT7sEBpqAKhONg/viewform">신청서 작성하기</a>
+        <a class="btn btn-kakao" href="http://pf.kakao.com/_vxfmfxj">💬 카카오톡 '금융집짓기' 채널추가 <span class="sub">· 안내받기</span></a>
+      </div>
+      <p class="cta-note">단 8명 한정 · 마감 시 조기 종료</p>
+    </div>
+  </div>
+</section>
+
+<!-- 다른 길 -->
+<section class="other">
+  <div class="wrap">
+    <div class="sec-label">OTHER PATHS</div>
+    <div class="other-title">다른 과정도 있습니다</div>
+    <p class="other-desc">당신에게 더 맞는 길을 찾아보세요</p>
+
+    <a class="other-link" href="./index.html">
+      <span class="ic">💻</span>
+      <span class="meat">
+        <span class="ti">10억 목돈마련 절대법칙</span>
+        <span class="de">맞벌이를 위한 FIRE 재무설계 · 4주 줌 비대면</span>
+      </span>
+      <span class="pr">55만원<span class="dt">6/25 개강</span></span>
+    </a>
+
+    <a class="other-link" href="https://ohwant-hub.netlify.app/lecture-pro">
+      <span class="ic">🏛️</span>
+      <span class="meat">
+        <span class="ti">금융집짓기 상담전문가 과정</span>
+        <span class="de">보험·재무 전문가를 위한 4주 대면 + 1년 비대면</span>
+      </span>
+      <span class="pr">110만원<span class="dt">7/4 개강 · 8명</span></span>
+    </a>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="foot-sns">
+      <a href="http://pf.kakao.com/_vxfmfxj">💬</a>
+      <a href="https://www.youtube.com/@OhSangRyul">▶</a>
+      <a href="https://www.instagram.com/oh_want">📷</a>
+      <a href="https://moneya-frontend.vercel.app">📱</a>
+    </div>
+    <div class="foot-name">오원트금융연구소</div>
+    서울 강남구 테헤란로 327 빅토리아빌딩 1702호<br>
+    대표 오상열 · CFP · 금융집짓기® 창시자<br>
+    <span style="font-size:11px;opacity:.7">ⓒ 2026 OHWANT. All rights reserved.</span>
+  </div>
+</footer>
+
+<div class="sticky-cta" id="stickyCta">
+  <a class="s-apply" href="https://docs.google.com/forms/d/e/1FAIpQLSejqqWGxDVeDqPkNHQXM2ATY5e8o06CWcFpbT7sEBpqAKhONg/viewform">신청서</a>
+  <a class="s-pay" href="http://pf.kakao.com/_vxfmfxj">신청 문의하기</a>
+</div>
+
+<script>
+(function(){
+  var sticky=document.getElementById('stickyCta');
+  var enroll=document.getElementById('enroll');
+  window.addEventListener('scroll',function(){
+    if(window.scrollY>520){sticky.classList.add('show')}else{sticky.classList.remove('show')}
+    var r=enroll.getBoundingClientRect();
+    if(r.top<window.innerHeight && r.bottom>0){sticky.classList.remove('show')}
+  });
+})();
+</script>
+</body>
+</html>

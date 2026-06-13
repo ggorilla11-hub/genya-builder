@@ -1117,6 +1117,8 @@ const CAMPAIGN_DEFAULT = {
   title: '전문가 대면과정 7월',        // 캠페인 구분용 제목 (월·과정별 — 드롭다운에 표시)
   name: '전문가 대면과정 (금융집짓기 상담전문가)',
   date: '2026년 7월 4·11·18·25일 매주 토요일 13~18시 (4주 대면) + 수료 후 1년 온라인',
+  startDate: '',           // 개강일 (YYYY-MM-DD) — 제니야 코치가 오늘과 비교해 할 일 판정
+  endDate: '',             // 종료일 (YYYY-MM-DD)
   price: 1100000,
   mode: '대면',            // 대면 / 비대면 (안내 문자가 대면=장소, 비대면=줌 링크로 갈림)
   place: '',               // 대면 장소 (확정 시 입력)
@@ -1137,7 +1139,7 @@ const CAMPAIGN_DEFAULT = {
   leadSheetTab: '',        // 신청자 탭 (비우면 기본)
   crmPromo: true,          // CRM 설계사 홍보 문자 대상인가 (false면 SNS 매스 — 미발송 인원 안 띄움)
 };
-const CAMP_FIELDS = ['title', 'name', 'date', 'price', 'mode', 'place', 'onlineLink', 'capacity', 'applyLink', 'payLink', 'facts', 'prepare', 'notice', 'listenTarget', 'listenKeywords', 'contentNote', 'kakaoChannel', 'payTab', 'leadSheetId', 'leadSheetTab', 'crmPromo'];
+const CAMP_FIELDS = ['title', 'name', 'date', 'startDate', 'endDate', 'price', 'mode', 'place', 'onlineLink', 'capacity', 'applyLink', 'payLink', 'facts', 'prepare', 'notice', 'listenTarget', 'listenKeywords', 'contentNote', 'kakaoChannel', 'payTab', 'leadSheetId', 'leadSheetTab', 'crmPromo'];
 function newCampaignId() { return 'cmp' + Date.now() + Math.floor(Math.random() * 1000); }
 function toBool(v) { return !(v === false || v === 'false' || v === 'N' || v === 'n' || v === '아니오' || v === 0 || v === '0' || v === ''); }
 // 옛 탭 이름 자동 교정 (실제 AI머니야 탭은 "…결제DB") — 저장된 캠페인도 로드 시 바로잡힌다
@@ -1892,9 +1894,81 @@ app.get('/campaign/stats', async (req, res) => {
       poster: mine.filter((c) => c.type === '포스터').length,
       shorts: mine.filter((c) => c.type === '쇼츠').length,
       cardnews: mine.filter((c) => c.type === '카드뉴스').length,
+      // 콘텐츠 자동화 공장 5종
+      courseinfo: mine.filter((c) => c.type === '과정정보').length,
+      text: mine.filter((c) => c.type === '텍스트').length,
+      keyword: mine.filter((c) => c.type === '키워드').length,
+      audio: mine.filter((c) => c.type === '오디오').length,
     };
     res.json(out);
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── /campaign/today: "대표님, 오늘 하실 일" 코치 배너용 상태 ──
+//    활성 과정의 개강일(startDate)·종료일(endDate)을 오늘(KST)과 비교해 지금 할 일을 코치 말투로 안내.
+//    개강일은 startDate 우선, 없으면 일정(date) 텍스트에서 "YYYY년 M월 D" 첫 날짜를 추출(옛 캠페인 호환).
+const SHORTS_GOAL = 20;     // 한 달치 쇼츠 목표 (20일치)
+function ymdToDate(s) {     // "2026-06-18" → 그 날 00:00 UTC (KST 자정 비교용)
+  const m = String(s || '').match(/(\d{4})\D+(\d{1,2})\D+(\d{1,2})/);
+  if (!m) return null;
+  return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+}
+function parseOpenDate(s) {  // 자유 텍스트 "…2026년 6월 18·25일…"에서 첫 날짜
+  const m = String(s || '').match(/(\d{4})\s*년\s*(\d{1,2})\s*월\s*(\d{1,2})/);
+  if (!m) return null;
+  return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+}
+function kstMidnight() {
+  const n = new Date(Date.now() + 9 * 3600 * 1000);      // UTC→KST
+  return new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate()));
+}
+function mdLabel(d) { return d ? `${d.getUTCMonth() + 1}/${d.getUTCDate()}` : ''; }
+app.get('/campaign/today', (req, res) => {
+  const c = CAMPAIGN || {};
+  const mine = myContents();
+  const cnt = (t) => mine.filter((x) => x.type === t).length;
+  const counts = { 쇼츠: cnt('쇼츠'), 과정정보: cnt('과정정보'), 텍스트: cnt('텍스트'), 키워드: cnt('키워드'), 오디오: cnt('오디오') };
+  const open = ymdToDate(c.startDate) || parseOpenDate(c.date);   // 개강일 (시작일 우선)
+  const end = ymdToDate(c.endDate);                               // 종료일 (선택)
+  const today = kstMidnight();
+  const dday = open ? Math.round((open.getTime() - today.getTime()) / 86400000) : null;
+  const shorts = counts['쇼츠'];
+  const courseName = c.name || c.title || '이번 과정';
+  const openLabel = mdLabel(open);
+  let stage, headline, sub, tone;
+  if (!open) {
+    // (예외) 개강일 미입력 → 입력 유도
+    stage = 'needdate'; tone = 'gray';
+    headline = `${courseName}의 개강일을 먼저 입력해 주세요.`;
+    sub = '「캠페인 설정 → 과정 시작일·종료일」을 넣으면, 제니야가 오늘 날짜와 비교해 지금 하실 일을 안내합니다.';
+  } else if (dday >= 0) {
+    // 개강 전 = 모객 기간
+    if (shorts < SHORTS_GOAL) {
+      // ① 콘텐츠 미완 → 모객 집중
+      stage = 'recruit'; tone = 'purple';
+      headline = `${courseName} ${openLabel} 개강 (D-${dday}). 지금은 모객 집중 기간입니다!`;
+      sub = `쇼츠 ${shorts}/${SHORTS_GOAL}일치 올렸어요. 나머지를 업로드해 한 달치 홍보를 예약하세요. (자동배포 연결은 곧)`;
+    } else {
+      // ② 콘텐츠 완료 → 현황 지켜보기
+      stage = 'ready'; tone = 'green';
+      headline = `홍보 예약 완료! (${courseName} D-${dday}) 이제 신청·결제 현황을 지켜보세요. 🎉`;
+      sub = '쇼츠 20일치가 준비됐습니다. 진행판 ③ 신청·결제에서 들어오는 신청과 결제를 확인하세요.';
+    }
+  } else {
+    // ③ 개강 지남 (진행 중 또는 종료) → 다음 달 과정 준비 종용
+    stage = 'next'; tone = 'blue';
+    const ended = end && today.getTime() > end.getTime();
+    headline = ended
+      ? `${courseName}이(가) 끝났습니다! 지금 바로 다음 달 과정 정보를 입력하세요.`
+      : `${courseName}이(가) 시작됐습니다! 지금 바로 다음 달 과정 정보를 입력하세요.`;
+    sub = '한 달치 마케팅을 미리 예약해둬야 합니다. 진행판 「+ 새 캠페인」으로 다음 달 과정을 만들고, 쇼츠 20일치부터 올리세요.';
+  }
+  res.json({
+    title: c.title || '', name: c.name || '', mode: c.mode || '',
+    startDate: c.startDate || '', endDate: c.endDate || '', date: c.date || '',
+    open: open ? open.toISOString().slice(0, 10) : '', openLabel, dday,
+    counts, shortsGoal: SHORTS_GOAL, stage, tone, headline, sub,
+  });
 });
 
 // ── /pay/test: 발송 테스트 (돈 안 쓰고 검증, 완전 분리 경로) ──

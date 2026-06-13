@@ -5,3 +5,6 @@ server/data/
 
 # 구글 서비스 계정 열쇠 파일 (절대 깃에 올리지 않음)
 server/google-key.json
+
+# Local Netlify folder
+.netlify
