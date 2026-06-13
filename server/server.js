@@ -1480,6 +1480,22 @@ app.post('/content/plan/approve', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── 진단: MAKE_WEBHOOK_URL을 가려서 출력 + 라이브 핑(작은 테스트 POST) ──
+//   URL을 글자단위로 비교(host·길이·앞45·뒤6)하고, 실제로 보내면 Make가 몇으로 응답하는지 격리 확인.
+app.get('/content/webhook-check', async (req, res) => {
+  const u = process.env.MAKE_WEBHOOK_URL || '';
+  const info = { configured: !!u, length: u.length, head: u.slice(0, 45), tail: u.slice(-6), host: '' };
+  try { info.host = new URL(u).host; } catch (e) { info.host = '(URL 형식 오류)'; }
+  if (u) {
+    try {
+      const r = await fetch(u, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ test: true, from: 'genya-webhook-check', ts: new Date().toISOString() }) });
+      info.pingStatus = r.status; info.pingOk = r.ok;
+      info.pingBody = String(await r.text().catch(() => '')).slice(0, 120);
+    } catch (e) { info.pingError = e.message; }
+  }
+  res.json(info);
+});
+
 // ── /promo/status: CRM 손 상태 + 비용 예상 ───────────────────
 app.get('/promo/status', async (req, res) => {
   runDuePromo().catch(() => {});   // 앱을 열어 서버가 깨면 밀린 예약부터 확인
