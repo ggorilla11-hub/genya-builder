@@ -1358,7 +1358,7 @@ app.post('/campaign/contents/delete', async (req, res) => {
 // ============================================================
 const STORAGE_BUCKET = process.env.FIREBASE_STORAGE_BUCKET || 'moneya-72fe6.firebasestorage.app';
 const MAX_UPLOAD_MB = Number(process.env.MAX_UPLOAD_MB || 300);
-const UPLOAD_KINDS = { '쇼츠': 1, '오디오': 1, '카드뉴스': 1 };   // 큰/이미지 파일 업로드 대상 (작은 글은 시트 직접 저장)
+const UPLOAD_KINDS = { '쇼츠': 1, '오디오': 1, '카드뉴스': 1, '텍스트': 1 };   // 파일 업로드 대상(영상·오디오·이미지·문서). 텍스트는 직접입력+파일첨부 병행
 let _bucket = null;
 function storageBucket() {
   if (_bucket) return _bucket;

@@ -405,6 +405,18 @@ body{font-family:'Pretendard',-apple-system,sans-serif;font-weight:500;backgroun
 .ff-prog{height:10px;background:#eee;border-radius:6px;overflow:hidden;margin:8px 0 4px}
 .ff-bar{height:100%;width:0;background:#6C4AB6;transition:width .2s}
 .ff-status{font-size:12px;color:#444;margin-bottom:6px;min-height:14px}
+.ff-or{font-size:11px;color:#888;text-align:center;margin:8px 0 6px;font-weight:600}
+.frow-plan-btn{margin-top:7px;background:#fff;border:1px solid #f0a500;color:#9a6700;font-size:12px;font-weight:700;padding:5px 11px;border-radius:8px;cursor:pointer}
+.frow-plan-btn:hover{background:#fff7e6}
+.plan-box{margin-top:8px;padding:10px;background:#fffaf0;border:1px solid #ffe0a3;border-radius:9px}
+.plan-title{font-size:12px;font-weight:800;color:#9a6700;margin-bottom:6px}
+.plan-row{font-size:12px;color:#444;padding:2px 0;line-height:1.5}
+.plan-k{display:inline-block;min-width:42px;font-weight:700;color:#9a6700}
+.plan-actions{display:flex;gap:6px;margin-top:8px}
+.plan-approve{background:#2f9e6b;color:#fff;border:0;border-radius:7px;font-size:12px;font-weight:700;padding:6px 12px;cursor:pointer}
+.plan-cancel{background:#fff;border:1px solid #ccc;color:#777;border-radius:7px;font-size:12px;padding:6px 12px;cursor:pointer}
+.plan-note{font-size:11px;color:#888;margin-top:6px}
+.plan-done{background:#e6f6ec;border-color:#9bd9b4;color:#2f7d52;font-size:13px;font-weight:700;display:flex;align-items:center;gap:6px}
 </style>
 </head>
 <body>
@@ -521,7 +533,7 @@ body{font-family:'Pretendard',-apple-system,sans-serif;font-weight:500;backgroun
 
   </div>
 
-  <div class="foot">제니야 — <b>상단 프로젝트 × 좌측 에이전트 × 우측 도구</b> 교차 구조 · v2.3 (긴글·강의정보설정 버그수정 + 카드뉴스 칸 + 과정정보↔강의정보 연결 + 배지 색)</div>
+  <div class="foot">제니야 — <b>상단 프로젝트 × 좌측 에이전트 × 우측 도구</b> 교차 구조 · v2.4 (배포 계획 보기·승인 자리 UI + 텍스트 칸 .txt·docx·pdf 파일첨부)</div>
 </div>
 
 <!-- C-6. 업로드 모달 (+ 버튼으로 열림 — 실제 업로드는 3단계) -->
@@ -991,7 +1003,8 @@ var FOLDER_KINDS = [
    flow:'approve', next:'Buffer로 인스타·틱톡·페북·유튜브에 일자별 예약배포합니다. 배포 전 대표님 승인이 필요합니다.'},
   {key:'오디오', icon:'ti-microphone',  media:true,  accept:'audio/*', use:'녹음·오디오 — 팟캐스트·스포티파이 배포의 재료입니다.',
    flow:'wait', next:'팟캐스트(스포티파이)에 자동 등록하고 결과를 보고합니다. (승인 없이 자동, 결과만 확인)'},
-  {key:'텍스트', icon:'ti-file-text',   media:false, use:'영상 원본 스크립트·강의 텍스트 — 블로그·브런치·카페 글의 재료입니다.',
+  {key:'텍스트', icon:'ti-file-text',   media:false, fileUpload:true, accept:'.txt,.docx,.pdf,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+   use:'영상 원본 스크립트·강의 텍스트 — 블로그·브런치·카페 글의 재료입니다. (.txt·.docx·.pdf 파일도 첨부 가능)',
    flow:'approve', next:'블로그 글로 재구성해 티스토리·브런치에 RSS로 배포합니다(네이버는 반자동). 배포 전 승인 필요.'},
   {key:'과정정보',icon:'ti-info-circle', media:false, settings:true, use:'과정 핵심·혜택·대상 — 홍보글(카톡·이메일·문자)의 재료입니다.',
    flow:'approve', next:'여기서 입력한 일정·가격·혜택이 ②배포의 카톡·문자·이메일 홍보글에 자동 반영됩니다. 발송 전 승인.'},
@@ -1038,9 +1051,11 @@ function renderFolder(opts){
           html += '<div class="frow-items"><div class="fitem"><i class="ti ti-school"></i> '+escapeHtml(cc.name||'')
             + (cc.date?(' · '+escapeHtml(cc.date)):'') + (cc.price?(' · '+(Number(cc.price)||0).toLocaleString()+'원'):'') + '</div>'
             + (cc.facts?('<div class="fbody">'+escapeHtml(cc.facts)+'</div>'):'') + '</div>';
+          html += '<button class="frow-plan-btn" data-plan="'+escapeAttr(k.key)+'">'+planLabel(k)+'</button>';
         } else {
           html += '<div class="frow-use">강의명·일정·가격·혜택을 한 번 입력하면, ②배포의 홍보글이 자동으로 이 과정 정보로 만들어집니다.</div>';
         }
+        html += '<div class="frow-plan" id="fplan-'+escapeAttr(k.key)+'" style="display:none"></div>';
         html += '</div>';
         return;
       }
@@ -1062,8 +1077,10 @@ function renderFolder(opts){
             + '</div>';
         });
         html += '</div>';
+        html += '<button class="frow-plan-btn" data-plan="'+escapeAttr(k.key)+'">'+planLabel(k)+'</button>';
       }
-      html += '<div class="frow-form" id="fform-'+escapeAttr(k.key)+'" style="display:none"></div></div>';
+      html += '<div class="frow-form" id="fform-'+escapeAttr(k.key)+'" style="display:none"></div>';
+      html += '<div class="frow-plan" id="fplan-'+escapeAttr(k.key)+'" style="display:none"></div></div>';
     });
     html += '</div>';
     box.innerHTML = html; box.style.display='';
@@ -1075,6 +1092,7 @@ function renderFolder(opts){
     var dsb = box.querySelector('[data-settings]'); if(dsb) dsb.onclick = campaignForm;
     box.querySelectorAll('[data-add]').forEach(function(x){ x.onclick=function(){ toggleFolderForm(x.getAttribute('data-add')); }; });
     box.querySelectorAll('[data-del]').forEach(function(x){ x.onclick=function(){ folderDelete(x.getAttribute('data-del')); }; });
+    box.querySelectorAll('[data-plan]').forEach(function(x){ x.onclick=function(){ togglePlan(x.getAttribute('data-plan')); }; });
     if(opts.openKind){ toggleFolderForm(opts.openKind, true); var r=document.getElementById('frow-'+opts.openKind); if(r) r.scrollIntoView({behavior:'smooth',block:'center'}); }
   }).catch(function(){});
 }
@@ -1104,19 +1122,20 @@ function toggleFolderForm(kind, forceOpen){
     host.querySelector('.ff-cancel').onclick = function(){ host.style.display='none'; host.innerHTML=''; };
     return;
   }
-  // 글 칸(텍스트·과정정보·키워드): 직접 입력 + .txt 파일 선택 → 시트 직접 저장
+  // 글 칸(텍스트·키워드): ① 직접 입력 (+ ② 텍스트는 .txt·docx·pdf 파일 첨부 → 파이어베이스 원본 보관, 한글 안 깨짐)
+  var fileBlock = '';
+  if(k.fileUpload){
+    fileBlock = '<div class="ff-or">또는 파일 첨부 (한글 안 깨짐 · 원본 그대로 보관)</div>'
+      + '<div class="ff-drop" tabindex="0"><i class="ti ti-paperclip"></i> .txt · .docx · .pdf 끌어다 놓거나 눌러서 선택'
+      +   '<div class="ff-dsub">다글로 변환본 등 — 원본 그대로 보관, 목록엔 파일명+열기 (직접 입력보다 깨짐 없음)</div>'
+      +   '<input type="file" class="ff-fileinput" accept="'+(k.accept||'*/*')+'" style="display:none"></div>'
+      + '<div class="ff-prog" style="display:none"><div class="ff-bar"></div></div><div class="ff-status"></div>';
+  }
   host.innerHTML = '<input class="ff-name" placeholder="이름·설명 (예: '+escapeAttr(kind)+' 1)">'
-    + '<textarea class="ff-body" placeholder="내용을 직접 입력하거나, 아래에서 .txt 파일을 불러오세요"></textarea>'
-    + '<label class="ff-file"><i class="ti ti-upload"></i> 파일 선택(.txt)<input type="file" accept=".txt,.md,text/plain" style="display:none"></label>'
-    + '<div class="ff-actions"><button class="ff-save"><i class="ti ti-device-floppy"></i> 저장</button><button class="ff-cancel">취소</button></div>';
+    + '<textarea class="ff-body" placeholder="내용을 직접 입력하세요"></textarea>'
+    + '<div class="ff-actions"><button class="ff-save"><i class="ti ti-device-floppy"></i> 직접 입력 저장</button><button class="ff-cancel">취소</button></div>'
+    + fileBlock;
   host.style.display='';
-  var fileInput = host.querySelector('.ff-file input');
-  if(fileInput) fileInput.onchange = function(){
-    var f = fileInput.files[0]; if(!f) return;
-    var rd = new FileReader();
-    rd.onload = function(){ host.querySelector('.ff-body').value = rd.result; var nm=host.querySelector('.ff-name'); if(nm && !nm.value) nm.value = f.name.replace(/\.(txt|md)$/i,''); };
-    rd.readAsText(f);
-  };
   host.querySelector('.ff-cancel').onclick = function(){ host.style.display='none'; host.innerHTML=''; };
   host.querySelector('.ff-save').onclick = function(){
     var v = function(s){ var e=host.querySelector(s); return e?e.value.trim():''; };
@@ -1125,10 +1144,19 @@ function toggleFolderForm(kind, forceOpen){
     var btn=host.querySelector('.ff-save'); btn.disabled=true; btn.textContent='저장 중…';
     fetch(SERVER_URL+'/campaign/contents',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:kind,name:name,body:body})})
       .then(function(r){return r.json();}).then(function(res){
-        if(res.error){ alert(res.error); btn.disabled=false; btn.textContent='저장'; return; }
+        if(res.error){ alert(res.error); btn.disabled=false; btn.textContent='직접 입력 저장'; return; }
         loadCampaignStatus(); loadTodayTodo(); renderFolder();
-      }).catch(function(){ alert('저장 실패'); btn.disabled=false; btn.textContent='저장'; });
+      }).catch(function(){ alert('저장 실패'); btn.disabled=false; btn.textContent='직접 입력 저장'; });
   };
+  if(k.fileUpload){
+    var drop=host.querySelector('.ff-drop'), fi=host.querySelector('.ff-fileinput');
+    drop.onclick=function(){ fi.click(); };
+    drop.onkeydown=function(e){ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); fi.click(); } };
+    fi.onchange=function(){ if(fi.files[0]) doMediaUpload(kind, fi.files[0], host); };
+    drop.ondragover=function(e){ e.preventDefault(); drop.classList.add('dragover'); };
+    drop.ondragleave=function(){ drop.classList.remove('dragover'); };
+    drop.ondrop=function(e){ e.preventDefault(); drop.classList.remove('dragover'); var f=e.dataTransfer.files[0]; if(f) doMediaUpload(kind,f,host); };
+  }
 }
 // 미디어 직접 업로드: 서버에서 서명 URL 받기 → 브라우저가 파이어베이스로 직접 PUT(진행바) → 완료 통보(링크 자동 보관)
 function doMediaUpload(kind, file, host){
@@ -1163,6 +1191,45 @@ function openFolderKind(kind){
   var k=null; FOLDER_KINDS.forEach(function(x){ if(x.key===kind) k=x; });
   if(k && k.settings){ campaignForm(); return; }
   var b=document.getElementById('folder-view'); if(b) b.scrollIntoView({behavior:'smooth',block:'start'}); renderFolder({openKind:kind});
+}
+
+// ===== 배포 계획 보기 → 미리보기 → 승인 (지금은 자리/UI만, 실제 배포는 Phase 2) =====
+function planLabel(k){
+  if(k.flow==='wait') return '<i class="ti ti-eye"></i> 등록 계획 보기';
+  if(k.flow==='manual') return '<i class="ti ti-eye"></i> 명단 계획 보기';
+  return '<i class="ti ti-route"></i> 배포 계획 보기 · 승인';
+}
+function planPreview(k, course){
+  switch(k.key){
+    case '쇼츠':   return [['시점','개강 전까지 매일 1편 예약'],['채널','인스타·틱톡·페북·유튜브 (Buffer)'],['문구',course+' 홍보 캡션 자동 생성']];
+    case '카드뉴스': return [['시점','예약 발행'],['채널','인스타·페북'],['문구',course+' 카드뉴스 캡션']];
+    case '텍스트':  return [['시점','예약/즉시'],['채널','티스토리·브런치 RSS (네이버 반자동)'],['문구','블로그 글로 재구성']];
+    case '과정정보': return [['시점','예약 발송'],['채널','카톡·문자·이메일'],['문구',course+' 강의정보 기반 홍보글']];
+    case '오디오':  return [['시점','업로드 즉시'],['채널','스포티파이·팟캐스트'],['처리','자동 등록 → 결과 보고']];
+    case '키워드':  return [['시점','매일'],['채널','소셜리스닝(카페·유튜브 등)'],['처리','관심자 명단 자동 → 대표 직접 접촉']];
+  }
+  return [];
+}
+function togglePlan(kind){
+  var host=document.getElementById('fplan-'+kind); if(!host) return;
+  if(host.style.display!=='none'){ host.style.display='none'; host.innerHTML=''; return; }
+  var k=null; FOLDER_KINDS.forEach(function(x){ if(x.key===kind) k=x; }); if(!k) return;
+  var cc=CAMPAIGN_CACHE||{}; var course=cc.name||cc.title||'이 과정';
+  var rows=planPreview(k, course);
+  var html='<div class="plan-box"><div class="plan-title"><i class="ti ti-route"></i> 배포 계획 미리보기</div>';
+  rows.forEach(function(r){ html+='<div class="plan-row"><span class="plan-k">'+r[0]+'</span> '+escapeHtml(r[1])+'</div>'; });
+  if(k.flow==='approve'){
+    html+='<div class="plan-actions"><button class="plan-approve" data-papprove="'+escapeAttr(kind)+'"><i class="ti ti-circle-check"></i> 승인 → 배포 예약</button><button class="plan-cancel">닫기</button></div>'
+      + '<div class="plan-note">지금은 자리(UI)만 — 승인하면 "예약 완료"로 표시됩니다. 실제 발송 연결은 Phase 2.</div>';
+  } else {
+    html+='<div class="plan-actions"><button class="plan-cancel">닫기</button></div>'
+      + '<div class="plan-note">'+(k.flow==='wait'?'자동 진행 후 결과만 보고됩니다(승인 불필요).':'명단은 자동 생성, 접촉은 대표님이 직접.')+' 실제 작동은 Phase 2.</div>';
+  }
+  html+='</div>';
+  host.innerHTML=html; host.style.display='';
+  var ap=host.querySelector('[data-papprove]');
+  if(ap) ap.onclick=function(){ host.innerHTML='<div class="plan-box plan-done"><i class="ti ti-circle-check-filled"></i> 예약 완료 — 승인됨 <span class="plan-note">(Phase 2에서 실제 발송 예정)</span></div>'; };
+  host.querySelector('.plan-cancel').onclick=function(){ host.style.display='none'; host.innerHTML=''; };
 }
 
 // 캠페인 설정 폼 — 매달 바꾸는 강의정보를 한 곳에서 입력
