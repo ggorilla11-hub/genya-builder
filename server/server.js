@@ -2024,6 +2024,74 @@ app.get('/cardnews/sets', (req, res) => {
   res.json({ count: myCardSets().length, sets: myCardSets().map((s) => ({ setId: s.setId, setName: s.setName, images: s.images || [] })) });
 });
 
+// ── 카드뉴스 캐러셀 배포 (인스타·페북, 오후 6시·하루 1세트) ──
+const CARD_CHANNELS = (process.env.CARD_CHANNELS || 'instagram,facebook').split(',').map((s) => s.trim());
+const UPLOADPHOTOS_URL = process.env.UPLOADPHOTOS_URL || 'https://api.upload-post.com/api/upload_photos';
+function cardPlanDateISO(i) {   // 시작일(기본 내일)부터 하루 1세트, 오후 6시(KST)
+  const startOff = Number(process.env.CARD_START_OFFSET || 1);
+  const hour = Number(process.env.CARD_HOUR_KST || 18);
+  const k = new Date(Date.now() + 9 * 3600 * 1000);
+  return new Date(Date.UTC(k.getUTCFullYear(), k.getUTCMonth(), k.getUTCDate() + startOff + i, hour - 9, 0, 0)).toISOString();
+}
+function schedCards() { return SCHED.filter((s) => s.campaignId === ACTIVE_ID && s.kind === '카드뉴스'); }
+function pendingCardSets() {
+  const done = new Set(schedCards().map((s) => s.contentId));
+  const sets = myCardSets().filter((s) => !done.has(s.setId));
+  const base = schedCards().length;
+  return sets.map((s, j) => ({ setId: s.setId, setName: s.setName, images: s.images || [], scheduledAt: cardPlanDateISO(base + j), channels: CARD_CHANNELS }));
+}
+async function postCardToUploadPost(set, c) {
+  const caps = buildCaptions(c);
+  const form = new FormData();
+  form.append('user', process.env.UPLOADPOST_USER);
+  CARD_CHANNELS.forEach((ch) => form.append('platform[]', ch));
+  for (let i = 0; i < (set.images || []).length; i++) {
+    const im = set.images[i];
+    let r; try { r = await fetch(im.url); } catch (e) { continue; }
+    if (!r.ok) continue;
+    const ab = await r.arrayBuffer();
+    const isPng = /\.png(\?|$)/i.test(im.name || '') || /\.png(\?|$)/i.test(im.url || '');
+    form.append('photos[]', new Blob([ab], { type: isPng ? 'image/png' : 'image/jpeg' }), im.name || ('card' + (i + 1) + (isPng ? '.png' : '.jpg')));
+  }
+  form.append('title', caps.title);
+  form.append('caption', caps.instagram_title);
+  form.append('instagram_title', caps.instagram_title);   // 캡션(해시태그 포함)
+  form.append('facebook_title', caps.facebook_title);
+  if (set.scheduledAt) { form.append('scheduled_date', set.scheduledAt); form.append('timezone', 'Asia/Seoul'); }
+  form.append('async_upload', 'true');
+  const r2 = await fetch(UPLOADPHOTOS_URL, { method: 'POST', headers: { Authorization: `Apikey ${process.env.UPLOADPOST_API_KEY}` }, body: form });
+  const body = await r2.text().catch(() => ''); let job = ''; try { job = (JSON.parse(body).job_id) || ''; } catch (e) {}
+  return { ok: r2.ok, status: r2.status, job, body: String(body).slice(0, 300) };
+}
+app.get('/cardnews/plan', (req, res) => {
+  const now = Date.now();
+  const scheduled = schedCards().slice().sort((a, b) => String(a.scheduledAt).localeCompare(String(b.scheduledAt)))
+    .map((s) => ({ name: s.name, scheduledAt: s.scheduledAt, channels: s.channels || CARD_CHANNELS, status: (new Date(s.scheduledAt).getTime() < now ? '게시됨' : '예약됨') }));
+  const pending = pendingCardSets().map((p) => ({ setName: p.setName, scheduledAt: p.scheduledAt, channels: p.channels, count: (p.images || []).length }));
+  res.json({ posterConfigured: posterReady(), hour: Number(process.env.CARD_HOUR_KST || 18), scheduled, pending });
+});
+app.post('/cardnews/approve', async (req, res) => {
+  try {
+    if (!posterReady()) return res.status(400).json({ error: '발행 도구가 연결되지 않았습니다(UPLOADPOST_API_KEY·UPLOADPOST_USER).' });
+    const all = pendingCardSets();
+    if (!all.length) return res.status(400).json({ error: '새로 예약할 카드뉴스 세트가 없습니다(모두 예약됨 또는 업로드 없음).' });
+    const lim = Number((req.body || {}).limit);
+    const todo = (lim && lim > 0) ? all.slice(0, lim) : all;
+    const c = CAMPAIGN || {}; let added = 0; const fails = [];
+    for (let i = 0; i < todo.length; i++) {
+      const p = todo[i];
+      const out = await postCardToUploadPost(p, c);
+      if (out.ok) { SCHED.push({ campaignId: ACTIVE_ID, kind: '카드뉴스', contentId: p.setId, name: p.setName, scheduledAt: p.scheduledAt, channels: p.channels, job: out.job, ts: new Date().toISOString() }); added++; }
+      else fails.push({ name: p.setName, status: out.status, body: out.body });
+      if (i < todo.length - 1) await new Promise((rs) => setTimeout(rs, 500));
+    }
+    if (added) saveSched();
+    if (!added) return res.status(502).json({ error: '발행 도구가 모두 거부했습니다.', fails });
+    try { pushNotify({ kind: 'report', title: `카드뉴스 ${added}세트 SNS 예약 완료`, body: c.name || '' }); } catch (e) {}
+    res.json({ ok: true, added, failed: fails.length, fails, total: schedCards().length });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── 진단: 발행 도구(Upload-Post) 연결 상태 (키는 가려서) ──
 app.get('/content/webhook-check', (req, res) => {
   const key = process.env.UPLOADPOST_API_KEY || '';

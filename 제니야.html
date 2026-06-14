@@ -533,7 +533,7 @@ body{font-family:'Pretendard',-apple-system,sans-serif;font-weight:500;backgroun
 
   </div>
 
-  <div class="foot">제니야 — <b>상단 프로젝트 × 좌측 에이전트 × 우측 도구</b> 교차 구조 · v2.19 (카드뉴스 Step A: zip 폴더 업로드 → 해제 → 파이어베이스 저장 → 40세트 인식·목록 · 캐러셀 배포는 Step B)</div>
+  <div class="foot">제니야 — <b>상단 프로젝트 × 좌측 에이전트 × 우측 도구</b> 교차 구조 · v2.20 (카드뉴스 Step B: 예약 현황·승인 + 캐러셀(3장 한 게시물) 인스타·페북 오후6시·하루1세트, 추가분 이어붙이기)</div>
 </div>
 
 <!-- C-6. 업로드 모달 (+ 버튼으로 열림 — 실제 업로드는 3단계) -->
@@ -1218,7 +1218,7 @@ function openFolderKind(kind){
 function planLabel(k){
   if(k.key==='텍스트') return '<i class="ti ti-book"></i> 블로그 연재 코치';
   if(k.key==='오디오') return '<i class="ti ti-microphone"></i> 팟캐스트 업로드 코치';
-  if(k.key==='카드뉴스') return '<i class="ti ti-photo"></i> 카드뉴스 세트 보기';
+  if(k.key==='카드뉴스') return '<i class="ti ti-photo"></i> 배포 계획 보기·승인';
   if(k.key==='키워드') return '<i class="ti ti-brand-youtube"></i> 오늘의 유튜브 리드';
   if(k.flow==='wait') return '<i class="ti ti-eye"></i> 등록 계획 보기';
   if(k.flow==='manual') return '<i class="ti ti-eye"></i> 명단 계획 보기';
@@ -1285,21 +1285,35 @@ function uploadCardZip(file, host){
   xhr.onerror=function(){ if(st) st.textContent='⚠️ 업로드 오류'; };
   xhr.send(fd);
 }
-// 카드뉴스 세트 목록 보기 (zip 업로드분) — Step B에서 캐러셀 배포 버튼 추가 예정
+// 카드뉴스 캐러셀 예약 — 쇼츠와 같은 "예약 현황 + 새 예약분 + 승인" (오후 6시·하루 1세트)
 function cardSetsView(host){
-  host.style.display=''; host.innerHTML='<div class="plan-box"><div class="plan-title"><i class="ti ti-loader-2"></i> 카드뉴스 세트 불러오는 중…</div></div>';
+  host.style.display=''; host.innerHTML='<div class="plan-box"><div class="plan-title"><i class="ti ti-loader-2"></i> 카드뉴스 예약 현황 불러오는 중…</div></div>';
   function close(){ var x=host.querySelector('.plan-cancel'); if(x) x.onclick=function(){ host.style.display='none'; host.innerHTML=''; }; }
-  fetch(SERVER_URL+'/cardnews/sets').then(function(r){return r.json();}).then(function(d){
-    var html='<div class="plan-box"><div class="plan-title"><i class="ti ti-photo"></i> 카드뉴스 세트 '+(d.count||0)+'개</div>';
-    if(!d.count){ html+='<div class="plan-note">아직 올린 세트가 없어요. [올리기]로 40세트 zip을 올려주세요.</div>'; }
-    (d.sets||[]).forEach(function(s){
-      html+='<div class="fitem"><b>'+escapeHtml(s.setName||'세트')+'</b> ('+(s.images||[]).length+'장) ';
-      (s.images||[]).forEach(function(im,i){ html+=' <a href="'+escapeAttr(im.url)+'" target="_blank">'+(i+1)+'장</a>'; });
-      html+='</div>';
-    });
-    html+='<div class="plan-note">캐러셀 자동배포(오후 6시·하루 1세트)는 Step B에서 연결됩니다. ($16 Basic + 캐러셀 실측 후)</div>';
-    html+='<div class="plan-actions"><button class="plan-cancel">닫기</button></div></div>';
-    host.innerHTML=html; close();
+  fetch(SERVER_URL+'/cardnews/plan').then(function(r){return r.json();}).then(function(d){
+    if(!d.posterConfigured){
+      host.innerHTML='<div class="plan-box"><div class="plan-title">⚠️ 발행 도구 미연결</div>'
+        +'<div class="plan-note">Render 환경변수 UPLOADPOST_API_KEY·UPLOADPOST_USER 필요. (본격배포는 $16 Basic 무제한 권장)</div>'
+        +'<div class="plan-actions"><button class="plan-cancel">닫기</button></div></div>'; close(); return;
+    }
+    var sched=d.scheduled||[], pend=d.pending||[];
+    var html='<div class="plan-box"><div class="plan-title"><i class="ti ti-photo"></i> 카드뉴스 캐러셀 예약</div>';
+    html+='<div class="plan-note">설정: <b>하루 1세트</b> · '+hourKor(d.hour||18)+' · 인스타·페북 <b>캐러셀(3장 한 게시물)</b> <span style="color:#999">· 쇼츠(오전10시)와 분리</span></div>';
+    if(sched.length){
+      html+='<div style="font-weight:800;font-size:12px;margin-top:8px">📅 예약 현황 ('+sched.length+'세트)</div>';
+      sched.forEach(function(s){ html+='<div class="plan-row"><span class="plan-k">'+escapeHtml(fmtKST(s.scheduledAt))+'</span> '+escapeHtml(s.name||'')+' → '+(s.channels||[]).map(chKor).join('·')+' · '+(s.status==='게시됨'?'✅ 게시됨':'🕒 예약됨')+'</div>'; });
+    }
+    if(pend.length){
+      html+='<div style="font-weight:800;font-size:12px;margin-top:10px">🆕 새로 예약할 세트 '+pend.length+'개 <span style="font-weight:400;color:#999">(기존 예약 뒤에 이어서)</span></div>';
+      pend.forEach(function(p){ html+='<div class="plan-row"><span class="plan-k">'+escapeHtml(fmtKST(p.scheduledAt))+'</span> '+escapeHtml(p.setName||'')+' ('+(p.count||0)+'장) → '+(p.channels||[]).map(chKor).join('·')+'</div>'; });
+      html+='<div class="plan-actions"><button class="plan-approve" data-go="all"><i class="ti ti-circle-check"></i> 전체 승인 → '+pend.length+'세트 예약</button><button class="plan-approve" style="background:#3B6FB0" data-go="1">1세트 테스트</button><button class="plan-cancel">닫기</button></div>';
+    } else {
+      html+='<div class="plan-note" style="margin-top:8px">'+(sched.length?'올린 세트가 모두 예약됐어요. 새 zip을 올리면 이어서 예약됩니다.':'올린 세트가 없어요. 카드뉴스 칸 [올리기]로 zip을 먼저 올려주세요.')+'</div><div class="plan-actions"><button class="plan-cancel">닫기</button></div>';
+    }
+    html+='</div>'; host.innerHTML=html; close();
+    function doApprove(limit, btn){ btn.disabled=true; btn.innerHTML='<i class="ti ti-loader-2"></i> 예약 중…';
+      fetch(SERVER_URL+'/cardnews/approve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(limit?{limit:limit}:{})}).then(function(r){return r.json();}).then(function(res){ if(res.error) alert(res.error); cardSetsView(host); }).catch(function(){ alert('예약 실패'); cardSetsView(host); }); }
+    var ga=host.querySelector('[data-go="all"]'); if(ga) ga.onclick=function(){ doApprove(0, ga); };
+    var g1=host.querySelector('[data-go="1"]'); if(g1) g1.onclick=function(){ doApprove(1, g1); };
   }).catch(function(){ host.innerHTML='<div class="plan-box"><div class="plan-note">⚠️ 서버 연결 실패</div></div>'; });
 }
 function hourKor(h){ h=Number(h); return h<12?('오전 '+h+'시'):(h===12?'오후 12시':('오후 '+(h-12)+'시')); }
