@@ -2076,19 +2076,23 @@ app.post('/cardnews/approve', async (req, res) => {
     const all = pendingCardSets();
     if (!all.length) return res.status(400).json({ error: '새로 예약할 카드뉴스 세트가 없습니다(모두 예약됨 또는 업로드 없음).' });
     const lim = Number((req.body || {}).limit);
+    const immediate = !!(req.body || {}).immediate;   // true=예약시각 없이 즉시 발행
     const todo = (lim && lim > 0) ? all.slice(0, lim) : all;
-    const c = CAMPAIGN || {}; let added = 0; const fails = [];
+    const c = CAMPAIGN || {}; let added = 0; const fails = []; const results = [];
     for (let i = 0; i < todo.length; i++) {
-      const p = todo[i];
+      const p = todo[i]; const wasSched = p.scheduledAt;
+      if (immediate) p.scheduledAt = '';   // scheduled_date 안 보냄 → 바로 게시
       const out = await postCardToUploadPost(p, c);
-      if (out.ok) { SCHED.push({ campaignId: ACTIVE_ID, kind: '카드뉴스', contentId: p.setId, name: p.setName, scheduledAt: p.scheduledAt, channels: p.channels, job: out.job, ts: new Date().toISOString() }); added++; }
-      else fails.push({ name: p.setName, status: out.status, body: out.body });
+      if (out.ok) {
+        SCHED.push({ campaignId: ACTIVE_ID, kind: '카드뉴스', contentId: p.setId, name: p.setName, scheduledAt: immediate ? new Date().toISOString() : wasSched, channels: p.channels, job: out.job, ts: new Date().toISOString(), immediate });
+        added++; results.push({ name: p.setName, ok: true, photos: (p.images || []).length, body: out.body });
+      } else fails.push({ name: p.setName, status: out.status, body: out.body });
       if (i < todo.length - 1) await new Promise((rs) => setTimeout(rs, 500));
     }
     if (added) saveSched();
     if (!added) return res.status(502).json({ error: '발행 도구가 모두 거부했습니다.', fails });
-    try { pushNotify({ kind: 'report', title: `카드뉴스 ${added}세트 SNS 예약 완료`, body: c.name || '' }); } catch (e) {}
-    res.json({ ok: true, added, failed: fails.length, fails, total: schedCards().length });
+    try { pushNotify({ kind: 'report', title: `카드뉴스 ${added}세트 ${immediate ? '즉시 발행' : 'SNS 예약'}`, body: c.name || '' }); } catch (e) {}
+    res.json({ ok: true, added, immediate, failed: fails.length, fails, results, total: schedCards().length });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
