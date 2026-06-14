@@ -1433,9 +1433,13 @@ app.get('/storage/init', async (req, res) => {
 // ============================================================
 let DEPLOYS = loadJson('배포.json'); if (!Array.isArray(DEPLOYS)) DEPLOYS = [];
 const DEPLOY_CHANNELS = (process.env.DEPLOY_CHANNELS || 'instagram,facebook,youtube,tiktok').split(',').map((s) => s.trim());
-function planDateISO(i) {            // 내일부터 i일 뒤, 19:00 KST (=10:00 UTC)
-  const k = new Date(Date.now() + 9 * 3600 * 1000);
-  return new Date(Date.UTC(k.getUTCFullYear(), k.getUTCMonth(), k.getUTCDate() + 1 + i, 10, 0, 0)).toISOString();
+function planDateISO(i) {            // 시작일(기본 내일)부터 간격(기본 1일)마다, 시각(기본 오전10시 KST)
+  const hourKst = Number(process.env.POST_HOUR_KST || 10);     // 예약 시각(KST 시) — env로 변경
+  const interval = Number(process.env.POST_INTERVAL_DAYS || 1); // 며칠 간격 (1=매일, 2=격일)
+  const startOff = Number(process.env.POST_START_OFFSET_DAYS || 1); // 며칠 뒤부터 (1=내일)
+  const k = new Date(Date.now() + 9 * 3600 * 1000);            // 지금(KST)
+  // KST hourKst = UTC (hourKst-9). Date.UTC가 음수 시각도 올바른 순간으로 환산.
+  return new Date(Date.UTC(k.getUTCFullYear(), k.getUTCMonth(), k.getUTCDate() + startOff + i * interval, hourKst - 9, 0, 0)).toISOString();
 }
 function shortsCaption(c) {
   const facts = String(c.facts || '').split('\n')[0] || '';
