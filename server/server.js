@@ -1432,15 +1432,24 @@ app.get('/storage/init', async (req, res) => {
 //   승인 1번이면: 제니야가 날짜·채널·문구 계획을 만들어 Make 웹훅으로 POST → Make가 Buffer로 인스타·페북·유튜브·틱톡 예약
 //   ※ Buffer 인증은 Make의 Buffer 모듈(OAuth)이 처리. 제니야엔 Buffer 키 불필요. MAKE_WEBHOOK_URL만 설정.
 // ============================================================
-let DEPLOYS = loadJson('배포.json'); if (!Array.isArray(DEPLOYS)) DEPLOYS = [];
+let SCHED = loadJson('배포.json'); if (!Array.isArray(SCHED)) SCHED = [];
+SCHED = SCHED.filter((s) => s && s.contentId);   // 옛 마커(미사용) 정리 — 상세 예약 기록만 유지
+function saveSched() { saveJson('배포.json', SCHED); }
+function schedFor(kind) { return SCHED.filter((s) => s.campaignId === ACTIVE_ID && s.kind === kind); }
 const DEPLOY_CHANNELS = (process.env.DEPLOY_CHANNELS || 'instagram,facebook,youtube,tiktok').split(',').map((s) => s.trim());
-function planDateISO(i) {            // 시작일(기본 내일)부터 간격(기본 1일)마다, 시각(기본 오전10시 KST)
-  const hourKst = Number(process.env.POST_HOUR_KST || 10);     // 예약 시각(KST 시) — env로 변경
-  const interval = Number(process.env.POST_INTERVAL_DAYS || 1); // 며칠 간격 (1=매일, 2=격일)
-  const startOff = Number(process.env.POST_START_OFFSET_DAYS || 1); // 며칠 뒤부터 (1=내일)
-  const k = new Date(Date.now() + 9 * 3600 * 1000);            // 지금(KST)
-  // KST hourKst = UTC (hourKst-9). Date.UTC가 음수 시각도 올바른 순간으로 환산.
-  return new Date(Date.UTC(k.getUTCFullYear(), k.getUTCMonth(), k.getUTCDate() + startOff + i * interval, hourKst - 9, 0, 0)).toISOString();
+// 하루 발송 개수·시간: POST_PER_DAY(1/2…) + POST_HOURS_KST("10,18"). 1개면 POST_HOUR_KST/기본10시.
+const POST_PER_DAY = Math.max(1, Number(process.env.POST_PER_DAY || 1));
+const POST_HOURS = (process.env.POST_HOURS_KST || (POST_PER_DAY >= 2 ? '10,18' : String(process.env.POST_HOUR_KST || 10))).split(',').map((s) => Number(s.trim())).filter((n) => !isNaN(n));
+function planDateISO(i) {            // i번째 슬롯 → 날짜·시각. 하루 perDay개(시간 분산), 그 후 다음 날.
+  const startOff = Number(process.env.POST_START_OFFSET_DAYS || 1);
+  const interval = Number(process.env.POST_INTERVAL_DAYS || 1);
+  const hours = POST_HOURS.length ? POST_HOURS : [10];
+  const perDay = Math.min(POST_PER_DAY, hours.length) || 1;
+  const dayIdx = Math.floor(i / perDay), slot = i % perDay;
+  const hourKst = hours[slot] != null ? hours[slot] : hours[hours.length - 1];
+  const dayStep = perDay > 1 ? 1 : interval;   // 하루 다개=연속일 / 하루 1개=interval 간격
+  const k = new Date(Date.now() + 9 * 3600 * 1000);
+  return new Date(Date.UTC(k.getUTCFullYear(), k.getUTCMonth(), k.getUTCDate() + startOff + dayIdx * dayStep, hourKst - 9, 0, 0)).toISOString();
 }
 function extractCopy(facts) {   // 홍보사실에서 "대표 카피: ..." 한 줄만 추출(있으면 후크로)
   const m = String(facts || '').match(/대표\s*카피\s*[:：]\s*["“']?\s*([^"”'\/\n]+?)\s*["”']?\s*(?:\/|\n|$)/);
@@ -1482,11 +1491,14 @@ function buildCaptions(c) {
     tiktok_title: base,
   };
 }
-function buildPlan(kind) {
+// 아직 예약 안 된 쇼츠만, 기존 예약 개수 뒤(base)에 이어서 일정 배치
+function pendingShortsPlan(kind) {
   const c = CAMPAIGN || {};
-  const items = myContents().filter((x) => x.type === kind && x.link);
-  return items.map((s, i) => ({
-    name: s.name || '', mediaUrl: s.link, scheduledAt: planDateISO(i),
+  const done = new Set(schedFor(kind).map((s) => s.contentId));
+  const items = myContents().filter((x) => x.type === kind && x.link && !done.has(x.id));
+  const base = schedFor(kind).length;
+  return items.map((s, j) => ({
+    contentId: s.id, name: s.name || '', mediaUrl: s.link, scheduledAt: planDateISO(base + j),
     channels: DEPLOY_CHANNELS, caption: shortsCaption(c),
   }));
 }
@@ -1514,33 +1526,35 @@ async function postOneToUploadPost(p, c) {
   return { ok: r.ok, status: r.status, job, body: String(body).slice(0, 300) };
 }
 
-// 배포 계획 미리보기 (날짜·채널·문구)
+// 배포 계획 + 예약 현황 (현황 = 이미 예약된 것 / 새 예약분 = 미예약 쇼츠)
 app.get('/content/plan', (req, res) => {
   const kind = req.query.kind || '쇼츠';
-  const posts = buildPlan(kind);
-  const approved = DEPLOYS.find((d) => d.campaignId === ACTIVE_ID && d.kind === kind) || null;
-  res.json({ webhookConfigured: posterReady(), count: posts.length, posts, approved });
+  const pending = pendingShortsPlan(kind);
+  const now = Date.now();
+  const scheduled = schedFor(kind).slice().sort((a, b) => String(a.scheduledAt).localeCompare(String(b.scheduledAt)))
+    .map((s) => ({ name: s.name, scheduledAt: s.scheduledAt, channels: s.channels || DEPLOY_CHANNELS, status: (new Date(s.scheduledAt).getTime() < now ? '게시됨' : '예약됨') }));
+  res.json({ posterConfigured: posterReady(), perDay: Math.min(POST_PER_DAY, POST_HOURS.length || 1), times: POST_HOURS, scheduled, pending });
 });
-// 승인 → Upload-Post로 각 쇼츠를 인스타·페북·유튜브·틱톡에 직접 예약
+// 승인 → 미예약 쇼츠만 Upload-Post로 예약(기존 뒤에 이어서) + 상세 기록 저장
 app.post('/content/plan/approve', async (req, res) => {
   try {
     const kind = (req.body || {}).kind || '쇼츠';
     if (!posterReady()) return res.status(400).json({ error: '발행 도구가 아직 연결되지 않았습니다. Render에 UPLOADPOST_API_KEY·UPLOADPOST_USER를 넣어 주세요.' });
-    const posts = buildPlan(kind);
-    if (!posts.length) return res.status(400).json({ error: '예약할 ' + kind + '가 없습니다. 먼저 업로드하세요.' });
+    const pending = pendingShortsPlan(kind);
+    if (!pending.length) return res.status(400).json({ error: '새로 예약할 ' + kind + '가 없습니다(모두 예약됨 또는 업로드 없음).' });
     const c = CAMPAIGN || {};
-    let sent = 0; const fails = []; const results = [];
-    for (let i = 0; i < posts.length; i++) {
-      const out = await postOneToUploadPost(posts[i], c);
-      if (out.ok) { sent++; results.push({ i: i + 1, job: out.job }); } else fails.push({ i: i + 1, status: out.status, body: out.body });
-      if (i < posts.length - 1) await new Promise((rs) => setTimeout(rs, 400));
+    let added = 0; const fails = [];
+    for (let i = 0; i < pending.length; i++) {
+      const p = pending[i];
+      const out = await postOneToUploadPost(p, c);
+      if (out.ok) { SCHED.push({ campaignId: ACTIVE_ID, kind, contentId: p.contentId, name: p.name, link: p.mediaUrl, scheduledAt: p.scheduledAt, channels: p.channels, job: out.job, ts: new Date().toISOString() }); added++; }
+      else fails.push({ name: p.name, status: out.status, body: out.body });
+      if (i < pending.length - 1) await new Promise((rs) => setTimeout(rs, 400));
     }
-    if (!sent) return res.status(502).json({ error: '발행 도구가 모두 거부했습니다.', fails });
-    DEPLOYS = DEPLOYS.filter((d) => !(d.campaignId === ACTIVE_ID && d.kind === kind));
-    DEPLOYS.push({ campaignId: ACTIVE_ID, kind, approvedAt: new Date().toISOString(), count: sent });
-    saveJson('배포.json', DEPLOYS);
-    try { pushNotify({ kind: 'report', title: `${kind} ${sent}건 SNS 예약 완료`, body: c.name || '' }); } catch (e) {}
-    res.json({ ok: true, count: sent, failed: fails.length, fails, results });
+    if (added) saveSched();
+    if (!added) return res.status(502).json({ error: '발행 도구가 모두 거부했습니다.', fails });
+    try { pushNotify({ kind: 'report', title: `쇼츠 ${added}건 SNS 예약 완료`, body: c.name || '' }); } catch (e) {}
+    res.json({ ok: true, added, failed: fails.length, fails, total: schedFor(kind).length });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
