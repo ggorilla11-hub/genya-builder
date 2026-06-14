@@ -533,7 +533,7 @@ body{font-family:'Pretendard',-apple-system,sans-serif;font-weight:500;backgroun
 
   </div>
 
-  <div class="foot">제니야 — <b>상단 프로젝트 × 좌측 에이전트 × 우측 도구</b> 교차 구조 · v2.16 (유튜브 리드: 내상황+피드백요청=🔥핫 + [이 댓글로 바로가기] 딥링크 · 답글은 대표 직접=계정보호)</div>
+  <div class="foot">제니야 — <b>상단 프로젝트 × 좌측 에이전트 × 우측 도구</b> 교차 구조 · v2.17 (팟캐스트 업로드 코치: 주1회 "이번 주 올리실 차례" 떠먹여주기 + 제목·설명 자동 + 깨끗한 버전 확인 · 스포티파이 반자동)</div>
 </div>
 
 <!-- C-6. 업로드 모달 (+ 버튼으로 열림 — 실제 업로드는 3단계) -->
@@ -1199,6 +1199,7 @@ function openFolderKind(kind){
 // ===== 배포 계획 보기 → 미리보기 → 승인 (지금은 자리/UI만, 실제 배포는 Phase 2) =====
 function planLabel(k){
   if(k.key==='텍스트') return '<i class="ti ti-book"></i> 블로그 연재 코치';
+  if(k.key==='오디오') return '<i class="ti ti-microphone"></i> 팟캐스트 업로드 코치';
   if(k.key==='키워드') return '<i class="ti ti-brand-youtube"></i> 오늘의 유튜브 리드';
   if(k.flow==='wait') return '<i class="ti ti-eye"></i> 등록 계획 보기';
   if(k.flow==='manual') return '<i class="ti ti-eye"></i> 명단 계획 보기';
@@ -1220,6 +1221,7 @@ function togglePlan(kind){
   if(host.style.display!=='none'){ host.style.display='none'; host.innerHTML=''; return; }
   if(kind==='쇼츠'){ realPlan(host); return; }   // Phase2: 쇼츠는 실제 Upload-Post 연동
   if(kind==='텍스트'){ blogCoach(host); return; } // Phase4: 텍스트는 블로그 연재 코치
+  if(kind==='오디오'){ podcastCoach(host); return; } // 팟캐스트 업로드 코치(주1회 반자동)
   if(kind==='키워드'){ ytLeadsCoach(host); return; } // 대표 유튜브 채널 가망고객 발굴
   var k=null; FOLDER_KINDS.forEach(function(x){ if(x.key===kind) k=x; }); if(!k) return;
   var cc=CAMPAIGN_CACHE||{}; var course=cc.name||cc.title||'이 과정';
@@ -1274,6 +1276,54 @@ function realPlan(host){
         loadTodayTodo();
       }).catch(function(){ alert('예약 실패'); b.disabled=false; b.innerHTML='<i class="ti ti-circle-check"></i> 승인 → SNS 자동 예약'; });
     };
+  }).catch(function(){ host.innerHTML='<div class="plan-box"><div class="plan-note">⚠️ 서버 연결 실패</div></div>'; });
+}
+
+// 팟캐스트 업로드 코치 — 주1회 "이번 주 올리실 차례" (블로그와 같은 반자동, 스포티파이)
+function podcastCoach(host){
+  host.style.display=''; host.innerHTML='<div class="plan-box"><div class="plan-title"><i class="ti ti-loader-2"></i> 팟캐스트 연재 불러오는 중…</div></div>';
+  function close(){ var x=host.querySelector('.plan-cancel'); if(x) x.onclick=function(){ host.style.display='none'; host.innerHTML=''; }; }
+  fetch(SERVER_URL+'/podcast/status').then(function(r){return r.json();}).then(function(d){
+    if(d.error){ host.innerHTML='<div class="plan-box"><div class="plan-note">⚠️ '+escapeHtml(d.error)+'</div></div>'; return; }
+    if(!d.hasSeries){
+      host.innerHTML='<div class="plan-box"><div class="plan-title"><i class="ti ti-microphone"></i> 팟캐스트 연재 만들기</div>'
+        +'<div class="plan-note">오디오 칸에 올린 녹음들을 <b>주 1회씩</b> 올리도록 제니야가 종용합니다. 제목·설명은 제니야가 만들어 드려요.</div>'
+        +'<div class="plan-actions"><button class="plan-approve" data-build="1"><i class="ti ti-wand"></i> 연재 만들기</button><button class="plan-cancel">닫기</button></div></div>';
+      close();
+      host.querySelector('[data-build]').onclick=function(){ var b=host.querySelector('[data-build]'); b.disabled=true; b.innerHTML='<i class="ti ti-loader-2"></i> 만드는 중…';
+        fetch(SERVER_URL+'/podcast/build',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}).then(function(r){return r.json();}).then(function(res){ if(res.error){ alert(res.error); b.disabled=false; b.innerHTML='연재 만들기'; return; } podcastCoach(host); }).catch(function(){ alert('실패'); b.disabled=false; b.innerHTML='연재 만들기'; });
+      };
+      return;
+    }
+    var html='<div class="plan-box"><div class="plan-title"><i class="ti ti-microphone"></i> 팟캐스트 연재 '+d.publishedCount+'/'+d.total+' 업로드</div>';
+    if(d.allDone){
+      html+='<div class="plan-done" style="margin-top:6px"><i class="ti ti-trophy"></i> 준비된 회차 모두 업로드 완료! 🎉</div>';
+    } else if(d.today){
+      html+='<div style="color:#9a6700;font-size:14px;font-weight:800;margin:6px 0">🎙️ 이번 주 팟캐스트 '+d.today.n+'회차 올리실 차례예요!</div>';
+      html+='<div class="plan-note" style="background:#fff1f0;border:1px solid #ffb3ab;border-radius:7px;padding:7px;color:#b3261e">'+escapeHtml(d.cleanCheck)+'</div>';
+      html+='<div style="font-size:12px;margin:6px 0"><b>오디오:</b> '+escapeHtml(d.today.audioName||'')+(d.today.audioLink?(' <a href="'+escapeAttr(d.today.audioLink)+'" target="_blank">열기</a>'):'')+'</div>';
+      html+='<div style="font-size:12px;font-weight:700;margin-top:6px">제목</div><div class="fbody">'+escapeHtml(d.today.title||'')+'</div>'
+          +'<div style="font-size:12px;font-weight:700;margin-top:4px">설명</div><div class="fbody">'+escapeHtml(d.today.description||'')+'</div>';
+      html+='<div class="plan-note">① 깨끗한 오디오 확인 → ② [Spotify 접속] → ③ 새 에피소드 업로드 → ④ [제목 복사]·[설명 복사] 붙여넣기 → ⑤ 게시 → ⑥ 아래 확인 후 [업로드 완료]</div>';
+      html+='<div class="plan-actions">'
+        +'<button class="plan-approve" data-ct="1"><i class="ti ti-copy"></i> 제목 복사</button>'
+        +'<button class="plan-approve" data-cd="1"><i class="ti ti-copy"></i> 설명 복사</button>'
+        +'<button class="folder-link" data-spot="1"><i class="ti ti-external-link"></i> Spotify 접속</button></div>';
+      html+='<label style="display:block;font-size:12px;margin:8px 0;color:#b3261e"><input type="checkbox" class="pod-clean"> 실명·민감내용 삭제된 깨끗한 버전 확인했습니다</label>';
+      html+='<div class="plan-actions"><button class="plan-approve" style="background:#2f9e6b" data-done="'+d.today.n+'" disabled><i class="ti ti-check"></i> 업로드 완료</button><button class="plan-cancel">닫기</button></div>';
+    } else if(d.next){
+      html+='<div class="plan-note">이번 주 올릴 회차는 없어요. 다음 '+d.next.n+'회차는 <b>'+escapeHtml(d.next.date)+'</b>에 알려드릴게요.</div><div class="plan-actions"><button class="plan-cancel">닫기</button></div>';
+    }
+    html+='<div style="margin-top:8px;font-size:11px;color:#666;line-height:1.7">';
+    (d.episodes||[]).forEach(function(e){ html+=(e.published?'✅':'⬜')+' '+e.n+'회차 '+escapeHtml(e.audioName)+' · '+escapeHtml(e.scheduledDate)+'<br>'; });
+    html+='</div></div>';
+    host.innerHTML=html; close();
+    var ct=host.querySelector('[data-ct]'); if(ct&&d.today) ct.onclick=function(){ copyText(d.today.title, ct); };
+    var cd=host.querySelector('[data-cd]'); if(cd&&d.today) cd.onclick=function(){ copyText(d.today.description, cd); };
+    var sp=host.querySelector('[data-spot]'); if(sp) sp.onclick=function(){ window.open(d.uploadUrl||'https://creators.spotify.com/','_blank'); };
+    var chk=host.querySelector('.pod-clean'), dn=host.querySelector('[data-done]');
+    if(chk&&dn){ chk.onchange=function(){ dn.disabled=!chk.checked; }; }
+    if(dn) dn.onclick=function(){ if(dn.disabled) return; if(!confirm('이 회차를 업로드 완료로 표시할까요?')) return; fetch(SERVER_URL+'/podcast/published',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({n:Number(dn.getAttribute('data-done'))})}).then(function(r){return r.json();}).then(function(){ podcastCoach(host); }).catch(function(){}); };
   }).catch(function(){ host.innerHTML='<div class="plan-box"><div class="plan-note">⚠️ 서버 연결 실패</div></div>'; });
 }
 

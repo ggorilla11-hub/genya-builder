@@ -1869,6 +1869,86 @@ app.get('/ytleads/today', (req, res) => {
   res.json({ configured: !!process.env.YOUTUBE_API_KEY, handle: '@' + YT_HANDLE, todayCount: todayList.length, total: YTLEADS.length, hot: YTLEADS.filter((l) => l.tier === '🔥핫').length, leads: show.slice(0, 50).map((l) => ({ tier: l.tier, author: l.author, text: l.text, link: l.link, video: l.videoTitle })) });
 });
 
+// ============================================================
+// 팟캐스트 연재 코치 — 주1회 "이번 주 올리실 차례" 떠먹여주기 (블로그와 같은 반자동)
+//   스포티파이는 업로드 공식 API 없음 → 업로드는 대표 손, 제목·설명·일정·종용은 제니야.
+// ============================================================
+let PODCAST = loadJson('팟캐스트.json'); if (!Array.isArray(PODCAST)) PODCAST = [];
+const PODCAST_TAB = process.env.PODCAST_TAB || '제니야_팟캐스트연재';
+const PODCAST_SHOW_ID = process.env.PODCAST_SHOW_ID || '5zhZOQbkja62ksj4D9p3MY';
+const PODCAST_UPLOAD_URL = process.env.PODCAST_UPLOAD_URL || 'https://creators.spotify.com/';
+let podChain = Promise.resolve();
+async function savePodcastToSheet() {
+  const sheets = sheetsClient(); if (!sheets || !RESV_SHEET_ID) return;
+  const meta = await sheets.spreadsheets.get({ spreadsheetId: RESV_SHEET_ID, fields: 'sheets.properties.title' });
+  if (!meta.data.sheets.some((s) => s.properties.title === PODCAST_TAB)) {
+    await sheets.spreadsheets.batchUpdate({ spreadsheetId: RESV_SHEET_ID, requestBody: { requests: [{ addSheet: { properties: { title: PODCAST_TAB } } }] } });
+  }
+  await sheets.spreadsheets.values.update({ spreadsheetId: RESV_SHEET_ID, range: `'${PODCAST_TAB}'!A1`, valueInputOption: 'RAW', requestBody: { values: [['podcast', JSON.stringify(PODCAST)]] } });
+}
+function savePodcast() { saveJson('팟캐스트.json', PODCAST); podChain = podChain.catch(() => {}).then(() => savePodcastToSheet()).catch((e) => console.warn('⚠️ 팟캐스트 시트 저장 실패:', e.message)); return podChain; }
+(async () => { const sheets = sheetsClient(); if (!sheets || !RESV_SHEET_ID) return; try { const got = await sheets.spreadsheets.values.get({ spreadsheetId: RESV_SHEET_ID, range: `'${PODCAST_TAB}'!A1:B1` }); const row = (got.data.values || [])[0]; if (row && row[0] === 'podcast' && row[1]) { const arr = JSON.parse(row[1]); if (Array.isArray(arr)) { PODCAST = arr; saveJson('팟캐스트.json', PODCAST); console.log(`🎙️ 팟캐스트 연재 복원: ${PODCAST.length}개`); } } } catch (e) {} })();
+function activePodcast() { return PODCAST.find((p) => p.campaignId === ACTIVE_ID) || null; }
+async function podcastDraft(c, ep) {
+  const system = '너는 오상열 CFP의 재무상담쇼 팟캐스트 에피소드의 제목·설명(쇼노트)을 쓰는 작가다. 과장·수익보장 금지, 신뢰감 있게.';
+  const ask = `팟캐스트 에피소드 정보로 제목과 설명을 써라.\n- 오디오 파일명: ${ep.audioName || '강의 녹음'}\n- 강의/주제: ${c.name || ''} / ${String(c.facts || '').split('\n')[0] || ''}\n[요구]\n- 제목: 듣고 싶게 만드는 1줄(35자 내)\n- 설명: 2~3문장 쇼노트(무엇을 다루는지, 누구에게 도움되는지)\n[출력 형식 그대로]\n[제목]\n(제목)\n[설명]\n(설명)`;
+  let title = ep.audioName || '재무상담쇼', desc = '';
+  try {
+    const r = await anthropic.messages.create({ model: MODEL, max_tokens: 700, system, messages: [{ role: 'user', content: ask }] });
+    const out = r.content.filter((b) => b.type === 'text').map((b) => b.text).join('\n');
+    title = ((out.match(/\[제목\]\s*([\s\S]*?)\s*\[설명\]/) || [])[1] || title).trim();
+    desc = ((out.match(/\[설명\]\s*([\s\S]*)$/) || [])[1] || '').trim();
+  } catch (e) {}
+  const fullDesc = [desc, '', ctaBlock(c)].filter(Boolean).join('\n').trim();   // 설명 + 강의정보·카톡·신청 CTA
+  return { title, description: fullDesc };
+}
+app.post('/podcast/build', async (req, res) => {
+  try {
+    const c = CAMPAIGN || {};
+    const auds = myContents().filter((x) => x.type === '오디오');
+    if (!auds.length) return res.status(400).json({ error: '오디오 칸에 올린 녹음이 없습니다. 먼저 오디오를 올려주세요.' });
+    const interval = Number(process.env.PODCAST_INTERVAL_DAYS || 7);   // 주1회
+    const startOff = Number(process.env.PODCAST_START_OFFSET || 0);
+    const episodes = auds.map((a, i) => ({ n: i + 1, audioName: a.name || `에피소드 ${i + 1}`, audioLink: a.link || '', scheduledDate: addDaysYMD(startOff + i * interval), published: false, publishedAt: '', draft: null }));
+    PODCAST = PODCAST.filter((p) => p.campaignId !== ACTIVE_ID);
+    PODCAST.push({ campaignId: ACTIVE_ID, createdAt: new Date().toISOString(), intervalDays: interval, episodes });
+    await savePodcast();
+    res.json({ ok: true, count: episodes.length, episodes: episodes.map((e) => ({ n: e.n, audioName: e.audioName, scheduledDate: e.scheduledDate })) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.get('/podcast/status', async (req, res) => {
+  try {
+    const p = activePodcast(); if (!p) return res.json({ hasSeries: false });
+    const today = addDaysYMD(0);
+    const total = p.episodes.length;
+    const publishedCount = p.episodes.filter((e) => e.published).length;
+    const due = p.episodes.find((e) => !e.published && e.scheduledDate <= today);
+    const nextUp = p.episodes.find((e) => !e.published && e.scheduledDate > today);
+    let todayEp = null;
+    if (due) {
+      if (!due.draft) { due.draft = await podcastDraft(CAMPAIGN || {}, due); await savePodcast(); }
+      todayEp = { n: due.n, audioName: due.audioName, audioLink: due.audioLink, title: due.draft.title, description: due.draft.description };
+    }
+    res.json({
+      hasSeries: true, total, publishedCount, today: todayEp,
+      next: nextUp ? { n: nextUp.n, date: nextUp.scheduledDate } : null,
+      allDone: publishedCount >= total,
+      uploadUrl: PODCAST_UPLOAD_URL, showUrl: `https://open.spotify.com/show/${PODCAST_SHOW_ID}`,
+      cleanCheck: '⚠️ 올리기 전 꼭 확인: 수강생 실명·민감정보가 삭제된 "깨끗한 버전"인지 다시 들어보세요. (수강생 보호)',
+      episodes: p.episodes.map((e) => ({ n: e.n, audioName: e.audioName, scheduledDate: e.scheduledDate, published: e.published })),
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/podcast/published', async (req, res) => {
+  const n = Number((req.body || {}).n);
+  const p = activePodcast(); if (!p) return res.status(400).json({ error: '연재 없음' });
+  const ep = p.episodes.find((e) => e.n === n); if (!ep) return res.status(404).json({ error: '해당 회차 없음' });
+  ep.published = true; ep.publishedAt = new Date().toISOString();
+  await savePodcast();
+  try { pushNotify({ kind: 'report', title: `팟캐스트 ${n}주차 업로드 완료`, body: (ep.draft && ep.draft.title) || ep.audioName }); } catch (e) {}
+  res.json({ ok: true });
+});
+
 // ── 진단: 발행 도구(Upload-Post) 연결 상태 (키는 가려서) ──
 app.get('/content/webhook-check', (req, res) => {
   const key = process.env.UPLOADPOST_API_KEY || '';
