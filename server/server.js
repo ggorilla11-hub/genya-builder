@@ -1510,7 +1510,8 @@ async function postOneToUploadPost(p, c) {
   form.append('async_upload', 'true');
   const r = await fetch(UPLOADPOST_URL, { method: 'POST', headers: { Authorization: `Apikey ${process.env.UPLOADPOST_API_KEY}` }, body: form });
   const body = await r.text().catch(() => '');
-  return { ok: r.ok, status: r.status, body: String(body).slice(0, 300) };
+  let job = ''; try { const j = JSON.parse(body); job = j.job_id || j.id || ''; } catch (e) {}
+  return { ok: r.ok, status: r.status, job, body: String(body).slice(0, 300) };
 }
 
 // 배포 계획 미리보기 (날짜·채널·문구)
@@ -1528,10 +1529,10 @@ app.post('/content/plan/approve', async (req, res) => {
     const posts = buildPlan(kind);
     if (!posts.length) return res.status(400).json({ error: '예약할 ' + kind + '가 없습니다. 먼저 업로드하세요.' });
     const c = CAMPAIGN || {};
-    let sent = 0; const fails = [];
+    let sent = 0; const fails = []; const results = [];
     for (let i = 0; i < posts.length; i++) {
       const out = await postOneToUploadPost(posts[i], c);
-      if (out.ok) sent++; else fails.push({ i: i + 1, status: out.status, body: out.body });
+      if (out.ok) { sent++; results.push({ i: i + 1, job: out.job }); } else fails.push({ i: i + 1, status: out.status, body: out.body });
       if (i < posts.length - 1) await new Promise((rs) => setTimeout(rs, 400));
     }
     if (!sent) return res.status(502).json({ error: '발행 도구가 모두 거부했습니다.', fails });
@@ -1539,7 +1540,18 @@ app.post('/content/plan/approve', async (req, res) => {
     DEPLOYS.push({ campaignId: ACTIVE_ID, kind, approvedAt: new Date().toISOString(), count: sent });
     saveJson('배포.json', DEPLOYS);
     try { pushNotify({ kind: 'report', title: `${kind} ${sent}건 SNS 예약 완료`, body: c.name || '' }); } catch (e) {}
-    res.json({ ok: true, count: sent, failed: fails.length, fails });
+    res.json({ ok: true, count: sent, failed: fails.length, fails, results });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── 발행 이력 조회 (재업로드 없이 job_id·채널별 상태 확인) ──
+app.get('/content/jobs', async (req, res) => {
+  if (!posterReady()) return res.status(400).json({ error: '발행 도구 미연결' });
+  try {
+    const r = await fetch('https://api.upload-post.com/api/uploadposts/history', { headers: { Authorization: `Apikey ${process.env.UPLOADPOST_API_KEY}` } });
+    const text = await r.text().catch(() => '');
+    let data; try { data = JSON.parse(text); } catch (e) { data = String(text).slice(0, 2000); }
+    res.status(r.ok ? 200 : 502).json({ status: r.status, data });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
