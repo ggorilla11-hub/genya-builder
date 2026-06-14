@@ -1453,47 +1453,64 @@ function buildPlan(kind) {
     channels: DEPLOY_CHANNELS, caption: shortsCaption(c),
   }));
 }
+// ── 발행 도구 = Upload-Post (API 하나로 인스타·페북·유튜브·틱톡 직접 예약. Make·Buffer 불필요) ──
+//   대표님 1회: upload-post.com 가입 → 프로필에 내 SNS 연결 → API 키. 그 뒤는 제니야가 코드로 예약.
+const UPLOADPOST_URL = process.env.UPLOADPOST_URL || 'https://api.upload-post.com/api/upload';
+function posterReady() { return !!(process.env.UPLOADPOST_API_KEY && process.env.UPLOADPOST_USER); }
+async function postOneToUploadPost(p, c) {
+  const form = new FormData();
+  form.append('user', process.env.UPLOADPOST_USER);
+  (p.channels || DEPLOY_CHANNELS).forEach((ch) => form.append('platform[]', ch));
+  form.append('video', p.mediaUrl);              // 공개 URL 허용(파이어베이스 링크)
+  form.append('title', p.caption || (c.name || ''));
+  if (p.scheduledAt) { form.append('scheduled_date', p.scheduledAt); form.append('timezone', 'Asia/Seoul'); }
+  form.append('async_upload', 'true');
+  const r = await fetch(UPLOADPOST_URL, { method: 'POST', headers: { Authorization: `Apikey ${process.env.UPLOADPOST_API_KEY}` }, body: form });
+  const body = await r.text().catch(() => '');
+  return { ok: r.ok, status: r.status, body: String(body).slice(0, 300) };
+}
+
 // 배포 계획 미리보기 (날짜·채널·문구)
 app.get('/content/plan', (req, res) => {
   const kind = req.query.kind || '쇼츠';
   const posts = buildPlan(kind);
   const approved = DEPLOYS.find((d) => d.campaignId === ACTIVE_ID && d.kind === kind) || null;
-  res.json({ webhookConfigured: !!process.env.MAKE_WEBHOOK_URL, count: posts.length, posts, approved });
+  res.json({ webhookConfigured: posterReady(), count: posts.length, posts, approved });
 });
-// 승인 → Make 웹훅으로 POST (Make가 Buffer로 예약)
+// 승인 → Upload-Post로 각 쇼츠를 인스타·페북·유튜브·틱톡에 직접 예약
 app.post('/content/plan/approve', async (req, res) => {
   try {
     const kind = (req.body || {}).kind || '쇼츠';
-    const url = process.env.MAKE_WEBHOOK_URL;
-    if (!url) return res.status(400).json({ error: 'Make.com 웹훅 주소(MAKE_WEBHOOK_URL)가 설정되지 않았습니다. Render 환경변수에 넣어 주세요.' });
+    if (!posterReady()) return res.status(400).json({ error: '발행 도구가 아직 연결되지 않았습니다. Render에 UPLOADPOST_API_KEY·UPLOADPOST_USER를 넣어 주세요.' });
     const posts = buildPlan(kind);
     if (!posts.length) return res.status(400).json({ error: '예약할 ' + kind + '가 없습니다. 먼저 업로드하세요.' });
     const c = CAMPAIGN || {};
-    const payload = { campaign: { title: c.title || '', name: c.name || '' }, kind, posts };
-    const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-    if (!r.ok) { const t = await r.text().catch(() => ''); return res.status(502).json({ error: 'Make 웹훅 응답 ' + r.status, detail: String(t).slice(0, 200) }); }
+    let sent = 0; const fails = [];
+    for (let i = 0; i < posts.length; i++) {
+      const out = await postOneToUploadPost(posts[i], c);
+      if (out.ok) sent++; else fails.push({ i: i + 1, status: out.status, body: out.body });
+      if (i < posts.length - 1) await new Promise((rs) => setTimeout(rs, 400));
+    }
+    if (!sent) return res.status(502).json({ error: '발행 도구가 모두 거부했습니다.', fails });
     DEPLOYS = DEPLOYS.filter((d) => !(d.campaignId === ACTIVE_ID && d.kind === kind));
-    DEPLOYS.push({ campaignId: ACTIVE_ID, kind, approvedAt: new Date().toISOString(), count: posts.length });
+    DEPLOYS.push({ campaignId: ACTIVE_ID, kind, approvedAt: new Date().toISOString(), count: sent });
     saveJson('배포.json', DEPLOYS);
-    try { pushNotify({ kind: 'report', title: `${kind} ${posts.length}건 Buffer 예약 요청 보냄`, body: c.name || '' }); } catch (e) {}
-    res.json({ ok: true, count: posts.length });
+    try { pushNotify({ kind: 'report', title: `${kind} ${sent}건 SNS 예약 완료`, body: c.name || '' }); } catch (e) {}
+    res.json({ ok: true, count: sent, failed: fails.length, fails });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ── 진단: MAKE_WEBHOOK_URL을 가려서 출력 + 라이브 핑(작은 테스트 POST) ──
-//   URL을 글자단위로 비교(host·길이·앞45·뒤6)하고, 실제로 보내면 Make가 몇으로 응답하는지 격리 확인.
-app.get('/content/webhook-check', async (req, res) => {
-  const u = process.env.MAKE_WEBHOOK_URL || '';
-  const info = { configured: !!u, length: u.length, head: u.slice(0, 45), tail: u.slice(-6), host: '' };
-  try { info.host = new URL(u).host; } catch (e) { info.host = '(URL 형식 오류)'; }
-  if (u) {
-    try {
-      const r = await fetch(u, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ test: true, from: 'genya-webhook-check', ts: new Date().toISOString() }) });
-      info.pingStatus = r.status; info.pingOk = r.ok;
-      info.pingBody = String(await r.text().catch(() => '')).slice(0, 120);
-    } catch (e) { info.pingError = e.message; }
-  }
-  res.json(info);
+// ── 진단: 발행 도구(Upload-Post) 연결 상태 (키는 가려서) ──
+app.get('/content/webhook-check', (req, res) => {
+  const key = process.env.UPLOADPOST_API_KEY || '';
+  res.json({
+    posterReady: posterReady(),
+    provider: 'upload-post',
+    apiKeySet: !!key, apiKeyTail: key ? key.slice(-4) : '',
+    user: process.env.UPLOADPOST_USER || '(미설정)',
+    endpoint: UPLOADPOST_URL,
+    channels: DEPLOY_CHANNELS,
+  });
 });
 
 // ── /promo/status: CRM 손 상태 + 비용 예상 ───────────────────
