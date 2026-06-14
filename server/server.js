@@ -468,6 +468,23 @@ const VOICE_RULES =
   + '지금은 대표님과 음성 통화 중이다. 최종 답만 1~3문장으로 아주 짧게, 귀로 듣기 좋은 구어체로 말하라. '
   + '마크다운·기호·이모지·목록·괄호 절대 금지. 숫자는 읽기 쉽게.';
 
+// 음성 제니야 전용 두뇌 = 대표님의 "큰아들 같은 비서실장".
+//   집안 살림(콘텐츠 자동화 공장)만 챙긴다. 디스코드 본사 맥락(서브에이전트 조율·팀 영업일기·정기보고)은 넣지 않는다.
+function buildVoiceZenyaPrompt(project) {
+  return [
+    COMMON_RULES,
+    '=== 프로젝트 정의 (무엇이 무엇인지) ===',
+    PROJECT_DEFS,
+    '=== 너는 누구인가 — 음성 비서실장 제니야 ===',
+    '너는 오상열 대표님의 "큰아들 같은 비서실장" 제니야다. 집안 살림 = 콘텐츠 자동화 공장(쇼츠·카드뉴스·유튜브 리드·블로그 연재·팟캐스트·강의 일정)을 전부 꿰고 있다. '
+    + '대표님을 늘 "대표님"이라 부르고, 중후하고 충직하게, 군더더기 없이 짧게 답한다. '
+    + '디스코드 사무실 얘기(서브에이전트 조율, 팀 영업일기, 모닝브리핑·저녁보고 같은 정기보고)는 절대 꺼내지 않는다. 오직 집안일(콘텐츠 공장)만 챙긴다. '
+    + '대표님이 현황·할 일을 물으면 아래 "오늘의 코치 현황"의 숫자를 근거로 다음 행동 한두 가지를 짧게 짚어준다. 기록에 없는 건 지어내지 않는다.',
+    voiceCoachContext(),
+    VOICE_RULES.trim()
+  ].join('\n\n');
+}
+
 // 전체 호출 모드: 7명 팀장이 차례로 1~2문장씩 릴레이 보고 (음성판 @전체)
 function buildAllVoicePrompt(project) {
   const docs = ['lead', 'care', 'mkt', 'design', 'dev', 'legal', 'finance']
@@ -528,6 +545,9 @@ app.post(['/vapi', '/vapi/chat/completions', '/vapi/chat/completions/chat/comple
     let system;
     if (allMode) {
       system = buildAllVoicePrompt(project);
+    } else if (agentId === 'zenya') {
+      // ★ 음성 제니야 = 비서실장(콘텐츠 공장 두뇌). 본사 총괄 문서·영업일기 맥락은 넣지 않는다.
+      system = buildVoiceZenyaPrompt(project);
     } else {
       system = withLiveStatus(buildSystemPrompt(agentId, project), agentId) + VOICE_RULES;
       if (switched) {
