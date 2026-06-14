@@ -1965,6 +1965,65 @@ app.post('/podcast/published', async (req, res) => {
   res.json({ ok: true });
 });
 
+// ============================================================
+// 카드뉴스 세트 — zip(폴더 40개×3장) 업로드 → 해제 → 파이어베이스 저장 → 세트 인식
+//   각 폴더 = 1세트(캐러셀 3장), 파일명 순서 유지. (캐러셀 자동배포는 Step B)
+// ============================================================
+const multer = require('multer');
+const AdmZip = require('adm-zip');
+const zipUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 200 * 1024 * 1024 } });
+let CARDSETS = loadJson('카드뉴스세트.json'); if (!Array.isArray(CARDSETS)) CARDSETS = [];
+const CARDSETS_TAB = process.env.CARDSETS_TAB || '제니야_카드뉴스세트';
+let cardChain = Promise.resolve();
+async function saveCardSetsToSheet() {
+  const sheets = sheetsClient(); if (!sheets || !RESV_SHEET_ID) return;
+  const meta = await sheets.spreadsheets.get({ spreadsheetId: RESV_SHEET_ID, fields: 'sheets.properties.title' });
+  if (!meta.data.sheets.some((s) => s.properties.title === CARDSETS_TAB)) {
+    await sheets.spreadsheets.batchUpdate({ spreadsheetId: RESV_SHEET_ID, requestBody: { requests: [{ addSheet: { properties: { title: CARDSETS_TAB } } }] } });
+  }
+  await sheets.spreadsheets.values.update({ spreadsheetId: RESV_SHEET_ID, range: `'${CARDSETS_TAB}'!A1`, valueInputOption: 'RAW', requestBody: { values: [['cardsets', JSON.stringify(CARDSETS)]] } });
+}
+function saveCardSets() { saveJson('카드뉴스세트.json', CARDSETS); cardChain = cardChain.catch(() => {}).then(() => saveCardSetsToSheet()).catch((e) => console.warn('⚠️ 카드뉴스 시트 저장 실패:', e.message)); return cardChain; }
+(async () => { const sheets = sheetsClient(); if (!sheets || !RESV_SHEET_ID) return; try { const got = await sheets.spreadsheets.values.get({ spreadsheetId: RESV_SHEET_ID, range: `'${CARDSETS_TAB}'!A1:B1` }); const row = (got.data.values || [])[0]; if (row && row[0] === 'cardsets' && row[1]) { const arr = JSON.parse(row[1]); if (Array.isArray(arr)) { CARDSETS = arr; saveJson('카드뉴스세트.json', CARDSETS); console.log(`🖼️ 카드뉴스 세트 복원: ${CARDSETS.length}개`); } } } catch (e) {} })();
+function myCardSets() { return CARDSETS.filter((s) => s.campaignId === ACTIVE_ID); }
+
+// zip 업로드: 폴더별 1세트(3장), 파일명 순서 유지 → 각 이미지 파이어베이스 저장
+app.post('/cardnews/upload', zipUpload.single('zip'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'zip 파일이 없습니다.' });
+    const bucket = storageBucket(); if (!bucket) return res.status(503).json({ error: '스토리지가 설정되지 않았습니다.' });
+    const zip = new AdmZip(req.file.buffer);
+    const entries = zip.getEntries().filter((e) => !e.isDirectory && /\.(jpe?g|png|webp)$/i.test(e.entryName) && !/(^|\/)__MACOSX\//.test(e.entryName));
+    if (!entries.length) return res.status(400).json({ error: 'zip 안에 이미지(jpg·png)가 없습니다.' });
+    const groups = {};
+    entries.forEach((e) => { const parts = e.entryName.split('/').filter(Boolean); const folder = parts.length > 1 ? parts[parts.length - 2] : '기본'; (groups[folder] = groups[folder] || []).push(e); });
+    const folders = Object.keys(groups).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    const list = []; let imgCount = 0;
+    for (const folder of folders) {
+      const imgs = groups[folder].sort((a, b) => a.entryName.localeCompare(b.entryName, undefined, { numeric: true }));
+      const setId = 'cs' + Date.now() + Math.floor(Math.random() * 1000) + list.length;
+      const images = [];
+      for (let i = 0; i < imgs.length; i++) {
+        const e = imgs[i]; const buf = e.getData();
+        const ext = (e.entryName.match(/\.(jpe?g|png|webp)$/i) || ['.jpg'])[0].toLowerCase();
+        const ct = ext.indexOf('png') >= 0 ? 'image/png' : (ext.indexOf('webp') >= 0 ? 'image/webp' : 'image/jpeg');
+        const path0 = `genya-content/${ACTIVE_ID || 'none'}/카드뉴스/${setId}/${i + 1}${ext.indexOf('png') >= 0 ? '.png' : (ext.indexOf('webp') >= 0 ? '.webp' : '.jpg')}`;
+        const token = crypto.randomUUID();
+        await bucket.file(path0).save(buf, { metadata: { contentType: ct, metadata: { firebaseStorageDownloadTokens: token } } });
+        images.push({ name: e.entryName.split('/').pop(), url: `https://firebasestorage.googleapis.com/v0/b/${STORAGE_BUCKET}/o/${encodeURIComponent(path0)}?alt=media&token=${token}` });
+        imgCount++;
+      }
+      CARDSETS.push({ campaignId: ACTIVE_ID, setId, setName: folder, images, createdAt: new Date().toISOString() });
+      list.push({ setName: folder, count: images.length });
+    }
+    await saveCardSets();
+    res.json({ ok: true, sets: list.length, images: imgCount, list });
+  } catch (e) { console.warn('cardnews upload 오류:', e.message); res.status(500).json({ error: e.message }); }
+});
+app.get('/cardnews/sets', (req, res) => {
+  res.json({ count: myCardSets().length, sets: myCardSets().map((s) => ({ setId: s.setId, setName: s.setName, images: s.images || [] })) });
+});
+
 // ── 진단: 발행 도구(Upload-Post) 연결 상태 (키는 가려서) ──
 app.get('/content/webhook-check', (req, res) => {
   const key = process.env.UPLOADPOST_API_KEY || '';
