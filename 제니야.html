@@ -533,7 +533,7 @@ body{font-family:'Pretendard',-apple-system,sans-serif;font-weight:500;backgroun
 
   </div>
 
-  <div class="foot">제니야 — <b>상단 프로젝트 × 좌측 에이전트 × 우측 도구</b> 교차 구조 · v2.7 (배포 미리보기에 날짜·시간(요일)·채널 표시 + 예약시각 env로 설정 가능, 기본 오전10시 KST)</div>
+  <div class="foot">제니야 — <b>상단 프로젝트 × 좌측 에이전트 × 우측 도구</b> 교차 구조 · v2.8 (SNS 쇼츠 caption 짧게: 핵심카피·강의명·개강일·신청·해시태그 + 과정별 해시태그 칸)</div>
 </div>
 
 <!-- C-6. 업로드 모달 (+ 버튼으로 열림 — 실제 업로드는 3단계) -->
@@ -1301,6 +1301,7 @@ function campaignForm(){
     + '<textarea data-ck="facts" style="width:100%;height:56px;padding:5px;border:1px solid #ccc;border-radius:5px;font-size:12px;box-sizing:border-box">'+escapeHtml(c.facts||'')+'</textarea></div>'
     + row('신청 링크','applyLink',c.applyLink) + row('결제 링크','payLink',c.payLink)
     + row('카카오 채널명 (콘텐츠에 "검색→채널추가" 문구로)','kakaoChannel',c.kakaoChannel,'예: 금융집짓기')
+    + row('SNS 해시태그 (쇼츠 caption 끝에)','hashtags',c.hashtags,'예: #재테크 #맞벌이 #10억모으기 #FIRE #재무설계')
     + row('소셜리스닝 대상(어떤 고민)','listenTarget',c.listenTarget,'예: 노후·자녀교육비 걱정')
     + row('소셜리스닝 키워드','listenKeywords',c.listenKeywords,'예: 재무설계, 보험리모델링')
     + '<div style="margin-top:10px;padding-top:8px;border-top:1px dashed #d6c9f0;font-size:11px;color:#6C4AB6;font-weight:700">데이터 출처 (캠페인별 — 어느 결제·신청을 읽고, 설계사 문자 대상인지)</div>'
