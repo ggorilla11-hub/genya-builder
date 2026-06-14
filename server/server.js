@@ -468,6 +468,49 @@ const VOICE_RULES =
   + '지금은 대표님과 음성 통화 중이다. 최종 답만 1~3문장으로 아주 짧게, 귀로 듣기 좋은 구어체로 말하라. '
   + '마크다운·기호·이모지·목록·괄호 절대 금지. 숫자는 읽기 쉽게.';
 
+// ISO(UTC) → KST "6/16 18시" 표기
+function fmtK(iso) { try { const k = new Date(new Date(iso).getTime() + 9 * 3600 * 1000); return (k.getUTCMonth() + 1) + '/' + k.getUTCDate() + ' ' + k.getUTCHours() + '시'; } catch (e) { return ''; } }
+
+// 음성 제니야가 답하기 직전에 서버의 "지금 이 순간" 현황을 통째로 끌어온다 (실시간 조회).
+//   예약 현황·유튜브 리드 명단·오늘 한 일·개강 D-day까지 — "별장 집사처럼" 즉답하게.
+function voiceLiveStatus() {
+  const now = Date.now();
+  const today = addDaysYMD(0);   // KST 오늘 YYYY-MM-DD
+  const L = ['=== 실시간 현황 (지금 이 순간 서버 데이터 — 오직 이 숫자·명단만 근거로 답하라. 없으면 "아직 없습니다") ==='];
+
+  // 개강 D-day
+  if (CAMPAIGN && CAMPAIGN.startDate) {
+    const od = ymdToDate(CAMPAIGN.startDate), td = ymdToDate(today);
+    if (od && td) {
+      const dd = Math.round((od.getTime() - td.getTime()) / 86400000);
+      L.push(`· 강의: ${CAMPAIGN.name || ''} / 개강 ${CAMPAIGN.startDate} — 오늘 ${today}, ${dd > 0 ? 'D-' + dd : (dd === 0 ? 'D-DAY' : 'D+' + (-dd))}`);
+    }
+  }
+  // 쇼츠
+  const shAll = schedFor('쇼츠');
+  const shFut = shAll.filter((s) => s.scheduledAt && new Date(s.scheduledAt).getTime() > now);
+  L.push(`· 쇼츠: 게시됨 ${shAll.length - shFut.length} · 예약대기 ${shFut.length}${shFut.length ? '(다음 ' + fmtK(shFut[0].scheduledAt) + ')' : ''} · 아직 미예약 ${pendingShortsPlan('쇼츠').length}개`);
+  // 카드뉴스
+  const cdAll = schedCards();
+  const cdFut = cdAll.filter((s) => s.scheduledAt && new Date(s.scheduledAt).getTime() > now);
+  L.push(`· 카드뉴스: 세트 ${CARDSETS.length}개 · 게시됨 ${cdAll.length - cdFut.length} · 예약대기 ${cdFut.length}${cdFut.length ? '(다음 ' + fmtK(cdFut[0].scheduledAt) + ')' : ''} · 아직 미예약 ${pendingCardSets().length}개`);
+  // 유튜브 리드 (명단 일부 포함)
+  const hot = YTLEADS.filter((l) => /핫/.test(l.tier || '')).length;
+  const warm = YTLEADS.filter((l) => /웜/.test(l.tier || '')).length;
+  const recent = YTLEADS.slice(-5).reverse().map((l) => `${l.author}(${(l.tier || '').replace(/[🔥🌤]/g, '')})`).join(', ');
+  L.push(`· 유튜브 가망고객: 총 ${YTLEADS.length}명 (핫 ${hot}·웜 ${warm})${recent ? ' / 최근: ' + recent : ''}`);
+  // 블로그·팟캐스트
+  const blog = SERIES.reduce((a, s) => a.concat(s.episodes || []), []);
+  const pod = PODCAST.reduce((a, s) => a.concat(s.episodes || []), []);
+  L.push(`· 블로그 연재: 총 ${blog.length}편 (발행 ${blog.filter((e) => e.published).length}·오늘까지 발행할 차례 ${blog.filter((e) => !e.published && e.scheduledDate <= today).length})`);
+  L.push(`· 팟캐스트: 총 ${pod.length}편 (발행 ${pod.filter((e) => e.published).length})`);
+  // 오늘 한 일
+  const postedToday = SCHED.filter((s) => s.ts && String(s.ts).slice(0, 10) === today).length;
+  const blogToday = blog.filter((e) => e.publishedAt && String(e.publishedAt).slice(0, 10) === today).length;
+  L.push(`· 오늘(${today}) 한 일: 예약/게시 처리 ${postedToday}건, 블로그 발행 ${blogToday}편`);
+  return L.join('\n');
+}
+
 // 음성 제니야 전용 두뇌 = 대표님의 "큰아들 같은 비서실장".
 //   집안 살림(콘텐츠 자동화 공장)만 챙긴다. 디스코드 본사 맥락(서브에이전트 조율·팀 영업일기·정기보고)은 넣지 않는다.
 function buildVoiceZenyaPrompt(project) {
@@ -479,8 +522,8 @@ function buildVoiceZenyaPrompt(project) {
     '너는 오상열 대표님의 "큰아들 같은 비서실장" 제니야다. 집안 살림 = 콘텐츠 자동화 공장(쇼츠·카드뉴스·유튜브 리드·블로그 연재·팟캐스트·강의 일정)을 전부 꿰고 있다. '
     + '대표님을 늘 "대표님"이라 부르고, 중후하고 충직하게, 군더더기 없이 짧게 답한다. '
     + '디스코드 사무실 얘기(서브에이전트 조율, 팀 영업일기, 모닝브리핑·저녁보고 같은 정기보고)는 절대 꺼내지 않는다. 오직 집안일(콘텐츠 공장)만 챙긴다. '
-    + '대표님이 현황·할 일을 물으면 아래 "오늘의 코치 현황"의 숫자를 근거로 다음 행동 한두 가지를 짧게 짚어준다. 기록에 없는 건 지어내지 않는다.',
-    voiceCoachContext(),
+    + '대표님이 현황·예약·리드 명단·오늘 한 일·개강일을 물으면, 아래 "실시간 현황"의 지금 숫자·명단을 근거로 별장 집사처럼 즉답하고, 필요하면 다음 행동 한두 가지를 짧게 짚어준다. 기록에 없는 건 지어내지 말고 "아직 없습니다"라고 한다.',
+    voiceLiveStatus(),
     VOICE_RULES.trim()
   ].join('\n\n');
 }
