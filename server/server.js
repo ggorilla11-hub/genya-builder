@@ -1803,29 +1803,63 @@ async function ytUploadsPlaylist(key) {
   }
   return item && item.contentDetails && item.contentDetails.relatedPlaylists && item.contentDetails.relatedPlaylists.uploads;
 }
-async function runYtLeadCollect() {
+// LLM이 후보 댓글을 읽고 "진짜 가망고객"만 판별 (질문·고민=리드, 훈수·의견=제외) + 핫/웜 재분류
+async function classifyLeadsLLM(items) {
+  const system = '너는 재무상담·재테크 강의 마케터의 리드 판별 보조다. 핵심 기준: 도움을 "구하는" 사람만 가망고객(리드)이다. 도움을 "주는"(훈수·조언·의견·논쟁), 단순 칭찬·감사, 자랑·스팸은 가망고객이 아니다.';
+  for (let off = 0; off < items.length; off += 40) {
+    const chunk = items.slice(off, off + 40);
+    const list = chunk.map((c, i) => `${i}. ${String(c.text).replace(/\s+/g, ' ').slice(0, 150)}`).join('\n');
+    const ask = `아래 유튜브 댓글을 분류해라. tier 기준:\n- "hot": 상담·신청·연락·수강·등록 의향이 명확 ("상담 문의","강의 신청 어떻게","연락처","수업 듣고 싶어요")\n- "warm": 재정 고민·질문·관심은 있으나 아직 행동 전, 또는 도움/추천을 구함 ("10억 막막","재테크 시작하고 싶은데","종잣돈 어떻게","추천 부탁드려요","초보라 모르겠어요")\n- "no": 도움을 주는/의견 내는 사람(훈수·조언·논쟁 "~하십쇼","코인 사라","왜 안해요"), 단순 칭찬·감사("좋은 영상 감사합니다"), 자랑·스팸\n반드시 JSON 배열만 출력(설명·코드블록 금지): [{"i":0,"tier":"warm"}, ...]\n\n댓글:\n${list}`;
+    let ok = false, out = '';
+    try { const r = await anthropic.messages.create({ model: MODEL, max_tokens: 1500, system, messages: [{ role: 'user', content: ask }] }); out = r.content.filter((b) => b.type === 'text').map((b) => b.text).join(''); ok = true; } catch (e) { ok = false; }
+    let arr = null; if (ok) { try { arr = JSON.parse(out.slice(out.indexOf('['), out.lastIndexOf(']') + 1)); } catch (e) { arr = null; } }
+    if (Array.isArray(arr)) {
+      arr.forEach((x) => { if (typeof x.i === 'number' && chunk[x.i]) chunk[x.i].llmTier = x.tier; });
+      chunk.forEach((it) => { if (!it.llmTier) it.llmTier = 'no'; });   // LLM이 안 고른 건 제외
+    } else {
+      chunk.forEach((it) => { it.llmFailed = true; });                  // LLM 장애 → 키워드 폴백(데이터 보존)
+    }
+  }
+  return items;
+}
+async function runYtLeadCollect(opts) {
+  opts = opts || {};
   const key = process.env.YOUTUBE_API_KEY; if (!key) return { error: 'YOUTUBE_API_KEY 미설정' };
   const uploads = await ytUploadsPlaylist(key); if (!uploads) return { error: `채널을 찾지 못했습니다(@${YT_HANDLE}). 핸들(YT_CHANNEL_HANDLE) 확인.` };
+  if (opts.reset) { YTLEADS = []; }
   const maxV = Math.min(Number(process.env.YT_MAX_VIDEOS || 30), 50);
   let pl; try { pl = await (await fetch(`https://www.googleapis.com/youtube/v3/playlistItems?part=contentDetails,snippet&maxResults=${maxV}&playlistId=${uploads}&key=${key}`)).json(); } catch (e) { return { error: '영상 목록 조회 실패' }; }
   const vids = (pl.items || []).map((it) => ({ id: it.contentDetails && it.contentDetails.videoId, title: it.snippet && it.snippet.title })).filter((v) => v.id);
-  const seen = new Set(YTLEADS.map((l) => l.commentId)); let added = 0; const now = new Date().toISOString();
+  const seen = new Set(YTLEADS.map((l) => l.commentId)); const cands = [];
   for (const v of vids) {
     let cs; try { cs = await (await fetch(`https://www.googleapis.com/youtube/v3/commentThreads?part=snippet&order=time&maxResults=50&videoId=${v.id}&key=${key}`)).json(); } catch (e) { continue; }
     (cs.items || []).forEach((ci) => {
       const sn = ci.snippet && ci.snippet.topLevelComment && ci.snippet.topLevelComment.snippet; if (!sn) return;
-      const text = String(sn.textOriginal || ''); const tier = ytTier(text); if (!tier) return;
+      const text = String(sn.textOriginal || ''); if (!ytTier(text)) return;   // 키워드로 1차 후보만 추림(노이즈 줄여 LLM 비용 절감)
       if (seen.has(ci.id)) return; seen.add(ci.id);
-      YTLEADS.push({ commentId: ci.id, ts: now, tier, author: sn.authorDisplayName || '', text: text.slice(0, 200), link: `https://www.youtube.com/watch?v=${v.id}&lc=${ci.id}`, videoTitle: v.title || '', publishedAt: sn.publishedAt || '' });
-      added++;
+      cands.push({ commentId: ci.id, author: sn.authorDisplayName || '', text: text.slice(0, 200), link: `https://www.youtube.com/watch?v=${v.id}&lc=${ci.id}`, videoTitle: v.title || '', kwTier: ytTier(text) });
     });
   }
-  if (added) { await saveYtLeads(); try { pushNotify({ kind: 'report', title: `유튜브 가망고객 ${added}명 발굴`, body: '@' + YT_HANDLE }); } catch (e) {} }
-  return { ok: true, added, total: YTLEADS.length };
+  if (!cands.length) return { ok: true, added: 0, total: YTLEADS.length, candidates: 0 };
+  await classifyLeadsLLM(cands);   // llmTier: hot/warm/no/(불명)
+  let added = 0, hot = 0; const now = new Date().toISOString();
+  cands.forEach((c) => {
+    let tier;
+    if (c.llmFailed) tier = c.kwTier;                 // LLM 장애 → 키워드 폴백(보존)
+    else if (c.llmTier === 'hot') tier = '🔥핫';
+    else if (c.llmTier === 'warm') tier = '🌤웜';
+    else return;                                       // 'no' → 제외(시트에 안 넣음)
+    if (tier === '🔥핫') hot++;
+    YTLEADS.push({ commentId: c.commentId, ts: now, tier, author: c.author, text: c.text, link: c.link, videoTitle: c.videoTitle });
+    added++;
+  });
+  await saveYtLeads();
+  if (added) { try { pushNotify({ kind: 'report', title: `유튜브 가망고객 ${added}명 발굴 (🔥${hot})`, body: '@' + YT_HANDLE }); } catch (e) {} }
+  return { ok: true, added, hot, candidates: cands.length, excluded: cands.length - added, total: YTLEADS.length };
 }
 let YT_LAST_DAY = '';
 async function runDueYtLeads() { if (!process.env.YOUTUBE_API_KEY) return; const d = addDaysYMD(0); if (d === YT_LAST_DAY) return; YT_LAST_DAY = d; await runYtLeadCollect().catch(() => {}); }
-app.post('/ytleads/collect', async (req, res) => { try { res.json(await runYtLeadCollect()); } catch (e) { res.status(500).json({ error: e.message }); } });
+app.post('/ytleads/collect', async (req, res) => { try { res.json(await runYtLeadCollect({ reset: !!(req.body || {}).reset })); } catch (e) { res.status(500).json({ error: e.message }); } });
 app.get('/ytleads/today', (req, res) => {
   const today = addDaysYMD(0);
   const todayList = YTLEADS.filter((l) => String(l.ts).slice(0, 10) === today);
