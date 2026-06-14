@@ -1461,6 +1461,27 @@ function shortsCaption(c) {
   lines.push(c.hashtags || process.env.POST_HASHTAGS || '#재테크 #재무설계 #목돈마련 #맞벌이');
   return lines.join('\n');
 }
+function capTitle(s) { s = String(s || '').replace(/\s+/g, ' ').trim(); return s.length > 90 ? s.slice(0, 89).trim() + '…' : s; }
+// 채널별 caption: 유튜브=짧은 제목+긴 설명 / 인스타=해시태그 많이 / 페북·틱톡=공통 짧은 본문
+function buildCaptions(c) {
+  const copy = extractCopy(c.facts);
+  const hook = copy || c.name || '강의';
+  const base = shortsCaption(c);                                  // 공통 짧은 본문(해시태그 포함)
+  const tags = c.hashtags || process.env.POST_HASHTAGS || '#재테크 #재무설계 #목돈마련 #맞벌이';
+  const open = ymdToDate(c.startDate) || parseOpenDate(c.date);
+  const openStr = open ? `${open.getUTCMonth() + 1}/${open.getUTCDate()} 개강` : '';
+  const ytTitle = capTitle(c.name ? `${hook} | ${c.name}` : hook);   // 유튜브 제목 ≤90자(제한 100 안전)
+  const ytDesc = ['💰 ' + hook, c.name || '', openStr, c.date ? ('일정: ' + c.date) : '',
+    c.applyLink ? ('▶ 신청 ' + c.applyLink) : '', c.kakaoChannel ? (`카톡 '${c.kakaoChannel}' 검색→친구추가`) : '', tags].filter(Boolean).join('\n');
+  return {
+    title: ytTitle,                       // 안전한 기본 제목(≤90) — 유튜브 필수 충족
+    description: ytDesc,                   // 유튜브·페북 설명(설명 중심)
+    youtube_title: ytTitle,
+    instagram_title: base + ' #쇼츠 #릴스 #돈공부 #경제공부',   // 인스타: 해시태그 더
+    facebook_title: base,
+    tiktok_title: base,
+  };
+}
 function buildPlan(kind) {
   const c = CAMPAIGN || {};
   const items = myContents().filter((x) => x.type === kind && x.link);
@@ -1474,11 +1495,17 @@ function buildPlan(kind) {
 const UPLOADPOST_URL = process.env.UPLOADPOST_URL || 'https://api.upload-post.com/api/upload';
 function posterReady() { return !!(process.env.UPLOADPOST_API_KEY && process.env.UPLOADPOST_USER); }
 async function postOneToUploadPost(p, c) {
+  const caps = buildCaptions(c);
   const form = new FormData();
   form.append('user', process.env.UPLOADPOST_USER);
   (p.channels || DEPLOY_CHANNELS).forEach((ch) => form.append('platform[]', ch));
   form.append('video', p.mediaUrl);              // 공개 URL 허용(파이어베이스 링크)
-  form.append('title', p.caption || (c.name || ''));
+  form.append('title', caps.title);              // 안전한 짧은 제목(≤90) — 유튜브 100자 제한 충족
+  form.append('description', caps.description);  // 유튜브·페북 설명(설명 중심)
+  form.append('youtube_title', caps.youtube_title);
+  form.append('instagram_title', caps.instagram_title);   // 인스타: 해시태그 많이
+  form.append('facebook_title', caps.facebook_title);
+  form.append('tiktok_title', caps.tiktok_title);
   if (p.scheduledAt) { form.append('scheduled_date', p.scheduledAt); form.append('timezone', 'Asia/Seoul'); }
   form.append('async_upload', 'true');
   const r = await fetch(UPLOADPOST_URL, { method: 'POST', headers: { Authorization: `Apikey ${process.env.UPLOADPOST_API_KEY}` }, body: form });
