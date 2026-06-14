@@ -8,3 +8,10 @@ server/google-key.json
 
 # Local Netlify folder
 .netlify
+
+# 영상·원본 소재는 깃에 올리지 않는다 (용량 큼 · 파이어베이스/드라이브에 보관)
+소재(6월)/
+*.mp4
+*.mov
+*.docx
+*.pdf
