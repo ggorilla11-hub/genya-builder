@@ -1540,8 +1540,10 @@ app.post('/content/plan/approve', async (req, res) => {
   try {
     const kind = (req.body || {}).kind || '쇼츠';
     if (!posterReady()) return res.status(400).json({ error: '발행 도구가 아직 연결되지 않았습니다. Render에 UPLOADPOST_API_KEY·UPLOADPOST_USER를 넣어 주세요.' });
-    const pending = pendingShortsPlan(kind);
-    if (!pending.length) return res.status(400).json({ error: '새로 예약할 ' + kind + '가 없습니다(모두 예약됨 또는 업로드 없음).' });
+    const allPending = pendingShortsPlan(kind);
+    if (!allPending.length) return res.status(400).json({ error: '새로 예약할 ' + kind + '가 없습니다(모두 예약됨 또는 업로드 없음).' });
+    const lim = Number((req.body || {}).limit);
+    const pending = (lim && lim > 0) ? allPending.slice(0, lim) : allPending;   // limit이 있으면 그만큼만(테스트용)
     const c = CAMPAIGN || {};
     let added = 0; const fails = [];
     for (let i = 0; i < pending.length; i++) {
