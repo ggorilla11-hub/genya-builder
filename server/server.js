@@ -1602,7 +1602,7 @@ function splitEpisodes(text) {
   segs.forEach((s) => {
     const lines = s.srcText.split('\n').map((x) => x.trim()).filter(Boolean);
     let topic = ''; for (const ln of lines) { const t = ln.replace(/^제\s*\d+\s*편\s*[.:)]?\s*/, '').trim(); if (t) { topic = t; break; } }
-    s.srcTitle = ('제' + s.n + '편 ' + topic).trim().slice(0, 40);
+    s.srcTitle = (topic || ('제' + s.n + '편')).trim().slice(0, 40);   // 주제명만(목록이 "N편"을 이미 붙임)
     if (!byN[s.n] || s.srcText.length > byN[s.n].srcText.length) byN[s.n] = s; // 목차(짧음) vs 본문(긺) → 긴 것
   });
   return Object.keys(byN).map((k) => byN[k]).sort((a, b) => a.n - b.n);
