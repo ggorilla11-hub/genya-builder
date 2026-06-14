@@ -533,7 +533,7 @@ body{font-family:'Pretendard',-apple-system,sans-serif;font-weight:500;backgroun
 
   </div>
 
-  <div class="foot">제니야 — <b>상단 프로젝트 × 좌측 에이전트 × 우측 도구</b> 교차 구조 · v2.15 (유튜브 리드 스마트 필터: LLM이 '도움 구하는 사람'만 가망고객 판별 — 훈수·칭찬 제외)</div>
+  <div class="foot">제니야 — <b>상단 프로젝트 × 좌측 에이전트 × 우측 도구</b> 교차 구조 · v2.16 (유튜브 리드: 내상황+피드백요청=🔥핫 + [이 댓글로 바로가기] 딥링크 · 답글은 대표 직접=계정보호)</div>
 </div>
 
 <!-- C-6. 업로드 모달 (+ 버튼으로 열림 — 실제 업로드는 3단계) -->
@@ -1293,7 +1293,7 @@ function ytLeadsCoach(host){
     if(!d.leads.length){ html+='<div class="plan-note">아직 발굴된 리드가 없어요. [지금 발굴]을 눌러보세요. (20~40초)</div>'; }
     d.leads.forEach(function(l){
       html+='<div class="fitem">'+escapeHtml(l.tier)+' <b>'+escapeHtml(l.author||'')+'</b>: '+escapeHtml(l.text||'')
-        +(l.link?(' <a href="'+escapeAttr(l.link)+'" target="_blank">유튜브에서 답글</a>'):'')
+        +(l.link?(' <a href="'+escapeAttr(l.link)+'" target="_blank">이 댓글로 바로가기 ▶</a>'):'')
         +(l.video?('<span style="color:#999"> · '+escapeHtml(l.video)+'</span>'):'')+'</div>';
     });
     html+='</div>'; host.innerHTML=html; close();
