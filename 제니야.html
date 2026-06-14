@@ -533,7 +533,7 @@ body{font-family:'Pretendard',-apple-system,sans-serif;font-weight:500;backgroun
 
   </div>
 
-  <div class="foot">제니야 — <b>상단 프로젝트 × 좌측 에이전트 × 우측 도구</b> 교차 구조 · v2.8 (SNS 쇼츠 caption 짧게: 핵심카피·강의명·개강일·신청·해시태그 + 과정별 해시태그 칸)</div>
+  <div class="foot">제니야 — <b>상단 프로젝트 × 좌측 에이전트 × 우측 도구</b> 교차 구조 · v2.11 (Phase4: docx→블로그 8편 연재, 제니야가 떠먹여주는 반자동 코치 — 추출·분리·재구성·격일일정·복사/네이버글쓰기/발행완료)</div>
 </div>
 
 <!-- C-6. 업로드 모달 (+ 버튼으로 열림 — 실제 업로드는 3단계) -->
@@ -1195,6 +1195,7 @@ function openFolderKind(kind){
 
 // ===== 배포 계획 보기 → 미리보기 → 승인 (지금은 자리/UI만, 실제 배포는 Phase 2) =====
 function planLabel(k){
+  if(k.key==='텍스트') return '<i class="ti ti-book"></i> 블로그 연재 코치';
   if(k.flow==='wait') return '<i class="ti ti-eye"></i> 등록 계획 보기';
   if(k.flow==='manual') return '<i class="ti ti-eye"></i> 명단 계획 보기';
   return '<i class="ti ti-route"></i> 배포 계획 보기 · 승인';
@@ -1213,7 +1214,8 @@ function planPreview(k, course){
 function togglePlan(kind){
   var host=document.getElementById('fplan-'+kind); if(!host) return;
   if(host.style.display!=='none'){ host.style.display='none'; host.innerHTML=''; return; }
-  if(kind==='쇼츠'){ realPlan(host); return; }   // Phase2 길A: 쇼츠는 실제 Make→Buffer 연동
+  if(kind==='쇼츠'){ realPlan(host); return; }   // Phase2: 쇼츠는 실제 Upload-Post 연동
+  if(kind==='텍스트'){ blogCoach(host); return; } // Phase4: 텍스트는 블로그 연재 코치
   var k=null; FOLDER_KINDS.forEach(function(x){ if(x.key===kind) k=x; }); if(!k) return;
   var cc=CAMPAIGN_CACHE||{}; var course=cc.name||cc.title||'이 과정';
   var rows=planPreview(k, course);
@@ -1267,6 +1269,49 @@ function realPlan(host){
         loadTodayTodo();
       }).catch(function(){ alert('예약 실패'); b.disabled=false; b.innerHTML='<i class="ti ti-circle-check"></i> 승인 → SNS 자동 예약'; });
     };
+  }).catch(function(){ host.innerHTML='<div class="plan-box"><div class="plan-note">⚠️ 서버 연결 실패</div></div>'; });
+}
+
+// Phase4 블로그 연재 코치 — 제니야가 "오늘 이 편, 이렇게" 떠먹여주는 반자동
+function blogCoach(host){
+  host.style.display=''; host.innerHTML='<div class="plan-box"><div class="plan-title"><i class="ti ti-loader-2"></i> 블로그 연재 불러오는 중…</div></div>';
+  function close(){ var x=host.querySelector('.plan-cancel'); if(x) x.onclick=function(){ host.style.display='none'; host.innerHTML=''; }; }
+  fetch(SERVER_URL+'/blog/status').then(function(r){return r.json();}).then(function(d){
+    if(d.error){ host.innerHTML='<div class="plan-box"><div class="plan-note">⚠️ '+escapeHtml(d.error)+'</div></div>'; return; }
+    if(!d.hasSeries){
+      host.innerHTML='<div class="plan-box"><div class="plan-title"><i class="ti ti-book"></i> 블로그 8편 연재 만들기</div>'
+        +'<div class="plan-note">텍스트 칸의 강의 원고(docx)에서 "제N편"을 찾아 블로그 글로 나눕니다. 하루(격일)에 한 편씩 제니야가 떠먹여 드려요.</div>'
+        +'<div class="plan-actions"><button class="plan-approve" data-build="1"><i class="ti ti-wand"></i> 연재 만들기</button><button class="plan-cancel">닫기</button></div></div>';
+      close();
+      host.querySelector('[data-build]').onclick=function(){ var b=host.querySelector('[data-build]'); b.disabled=true; b.innerHTML='<i class="ti ti-loader-2"></i> 분석 중…(원고가 길면 시간 걸려요)';
+        fetch(SERVER_URL+'/blog/build',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}).then(function(r){return r.json();}).then(function(res){
+          if(res.error){ alert(res.error); b.disabled=false; b.innerHTML='연재 만들기'; return; } blogCoach(host);
+        }).catch(function(){ alert('실패'); b.disabled=false; b.innerHTML='연재 만들기'; });
+      };
+      return;
+    }
+    var html='<div class="plan-box"><div class="plan-title"><i class="ti ti-book"></i> 블로그 연재 '+d.publishedCount+'/'+d.total+' 발행</div>';
+    if(d.allDone){
+      html+='<div class="plan-done" style="margin-top:6px"><i class="ti ti-trophy"></i> 8편 모두 발행 완료! 수고하셨어요 🎉</div>';
+    } else if(d.today){
+      html+='<div style="color:#9a6700;font-size:14px;font-weight:800;margin:6px 0">📣 오늘은 블로그 '+d.today.n+'편 「'+escapeHtml(d.today.title)+'」 발행할 차례예요!</div>';
+      html+='<div class="fbody" style="max-height:220px">'+escapeHtml(d.today.fullText)+'</div>';
+      html+='<div class="plan-note">① [글 전체 복사] → ② [네이버 글쓰기 열기]에 붙여넣기 → ③ 발행 → ④ [발행 완료]</div>';
+      html+='<div class="plan-actions">'
+        +'<button class="plan-approve" data-copy="1"><i class="ti ti-copy"></i> ① 글 전체 복사</button>'
+        +'<button class="folder-link" data-naver="1"><i class="ti ti-external-link"></i> ② 네이버 글쓰기</button>'
+        +'<button class="plan-approve" style="background:#2f9e6b" data-done="'+d.today.n+'"><i class="ti ti-check"></i> ④ 발행 완료</button>'
+        +'<button class="plan-cancel">닫기</button></div>';
+    } else if(d.next){
+      html+='<div class="plan-note">오늘 발행할 편은 없어요. 다음 '+d.next.n+'편은 <b>'+escapeHtml(d.next.date)+'</b>에 알려드릴게요.</div><div class="plan-actions"><button class="plan-cancel">닫기</button></div>';
+    }
+    html+='<div style="margin-top:8px;font-size:11px;color:#666;line-height:1.7">';
+    (d.episodes||[]).forEach(function(e){ html+=(e.published?'✅':'⬜')+' '+e.n+'편 '+escapeHtml(e.title)+' · '+escapeHtml(e.scheduledDate)+'<br>'; });
+    html+='</div></div>';
+    host.innerHTML=html; close();
+    var cp=host.querySelector('[data-copy]'); if(cp&&d.today) cp.onclick=function(){ copyText(d.today.fullText, cp); };
+    var nv=host.querySelector('[data-naver]'); if(nv) nv.onclick=function(){ window.open('https://blog.naver.com/PostWriteForm.naver','_blank'); };
+    var dn=host.querySelector('[data-done]'); if(dn) dn.onclick=function(){ if(!confirm('이 편을 발행 완료로 표시할까요?')) return; fetch(SERVER_URL+'/blog/published',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({n:Number(dn.getAttribute('data-done'))})}).then(function(r){return r.json();}).then(function(){ blogCoach(host); }).catch(function(){}); };
   }).catch(function(){ host.innerHTML='<div class="plan-box"><div class="plan-note">⚠️ 서버 연결 실패</div></div>'; });
 }
 

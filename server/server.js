@@ -1555,6 +1555,131 @@ app.get('/content/jobs', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ============================================================
+// Phase 4 — 텍스트(docx) → 블로그 8편 연재 (제니야가 떠먹여주는 반자동)
+//   추출 → 제N편 분리 → 편별 블로그 글 재구성(LLM, 저품질 방지) → 격일 일정 → 코치 UI(복사·네이버 글쓰기·발행완료)
+//   네이버는 자동발행 막힘/탐지 위험 → 발행만 대표 손(복사붙여넣기), 그 외 전부 자동.
+// ============================================================
+let SERIES = loadJson('블로그.json'); if (!Array.isArray(SERIES)) SERIES = [];
+const BLOG_TAB = process.env.BLOG_TAB || '제니야_블로그연재';
+let blogChain = Promise.resolve();
+async function saveSeriesToSheet() {
+  const sheets = sheetsClient(); if (!sheets || !RESV_SHEET_ID) return;
+  const meta = await sheets.spreadsheets.get({ spreadsheetId: RESV_SHEET_ID, fields: 'sheets.properties.title' });
+  if (!meta.data.sheets.some((s) => s.properties.title === BLOG_TAB)) {
+    await sheets.spreadsheets.batchUpdate({ spreadsheetId: RESV_SHEET_ID, requestBody: { requests: [{ addSheet: { properties: { title: BLOG_TAB } } }] } });
+  }
+  await sheets.spreadsheets.values.update({ spreadsheetId: RESV_SHEET_ID, range: `'${BLOG_TAB}'!A1`, valueInputOption: 'RAW', requestBody: { values: [['series', JSON.stringify(SERIES)]] } });
+}
+function saveSeries() {
+  saveJson('블로그.json', SERIES);
+  blogChain = blogChain.catch(() => {}).then(() => saveSeriesToSheet()).catch((e) => console.warn('⚠️ 블로그 시트 저장 실패:', e.message));
+  return blogChain;
+}
+(async () => {
+  const sheets = sheetsClient(); if (!sheets || !RESV_SHEET_ID) return;
+  try {
+    const got = await sheets.spreadsheets.values.get({ spreadsheetId: RESV_SHEET_ID, range: `'${BLOG_TAB}'!A1:B1` });
+    const row = (got.data.values || [])[0]; if (row && row[0] === 'series' && row[1]) { const arr = JSON.parse(row[1]); if (Array.isArray(arr)) { SERIES = arr; saveJson('블로그.json', SERIES); console.log(`📖 블로그 연재 복원: ${SERIES.length}개`); } }
+  } catch (e) {}
+})();
+
+function addDaysYMD(days) { const n = new Date(Date.now() + 9 * 3600 * 1000); n.setUTCDate(n.getUTCDate() + days); return n.toISOString().slice(0, 10); }
+async function extractTextFromUrl(url) {
+  const res = await fetch(url); if (!res.ok) throw new Error('파일 다운로드 실패 ' + res.status);
+  const buf = Buffer.from(await res.arrayBuffer());
+  const path0 = decodeURIComponent(String(url).split('?')[0]).toLowerCase();
+  if (path0.endsWith('.docx')) { const mammoth = require('mammoth'); return (await mammoth.extractRawText({ buffer: buf })).value || ''; }
+  if (path0.endsWith('.pdf')) { const pdf = require('pdf-parse/lib/pdf-parse.js'); return (await pdf(buf)).text || ''; }
+  return buf.toString('utf8');
+}
+function splitEpisodes(text) {
+  text = String(text || '').replace(/\r/g, '');
+  const re = /제\s*(\d+)\s*편/g; const marks = []; let m;
+  while ((m = re.exec(text))) marks.push({ n: Number(m[1]), idx: m.index });
+  const segs = marks.map((mk, i) => ({ n: mk.n, srcText: text.slice(mk.idx, i + 1 < marks.length ? marks[i + 1].idx : text.length).trim() }));
+  const byN = {};
+  segs.forEach((s) => { s.srcTitle = (s.srcText.split('\n')[0] || '').trim().slice(0, 60); if (!byN[s.n] || s.srcText.length > byN[s.n].srcText.length) byN[s.n] = s; }); // 목차(짧음) vs 본문(긺) → 긴 것
+  return Object.keys(byN).map((k) => byN[k]).sort((a, b) => a.n - b.n);
+}
+function activeSeries() { return SERIES.find((s) => s.campaignId === ACTIVE_ID) || null; }
+function parseBlog(t) {
+  t = String(t || '');
+  const g = (re) => (t.match(re) || [])[1] || '';
+  let title = g(/\[제목\]\s*([\s\S]*?)\s*\[본문\]/).trim();
+  let body = g(/\[본문\]\s*([\s\S]*?)\s*\[해시태그\]/).trim();
+  let tags = g(/\[해시태그\]\s*([\s\S]*)$/).trim();
+  if (!title && !body) { const lines = t.trim().split('\n'); title = (lines.shift() || '').trim(); body = lines.join('\n').trim(); }
+  return { title, body, hashtags: tags };
+}
+async function rewriteEpisode(c, ep) {
+  const system = '당신은 오원트금융연구소 오상열 대표(CFP 25년, 금융연수원 외래교수)의 1인칭 관점으로 쓰는 네이버 블로그 글 작가입니다. 실제 강의 내용을 바탕으로, 검색에 잘 걸리고 신뢰가는 고품질 글을 씁니다. 저품질(채우기 텍스트, 의미 없는 반복, 과장·수익보장)은 절대 금지. 1인칭 경험·전문가 관점, 소제목으로 구조화, 구체적 예시.';
+  const tags = c.hashtags || '#재테크 #재무설계 #목돈마련 #맞벌이';
+  const ask = `다음 강의 내용을 네이버 블로그 글 1편으로 재구성해 주세요.\n\n[원본: 제${ep.n}편]\n${String(ep.srcText).slice(0, 6000)}\n\n[요구사항]\n- 도입(공감 후크) → 본문(## 소제목 3~5개, 구체 설명·예시) → 마무리(요약+행동제안)\n- 1인칭("제가 25년간…"), 전문가 관점, 검색 잘 되게 핵심 키워드 자연스럽게\n- 맨 끝 CTA 2줄: 카카오톡 '${c.kakaoChannel || '금융집짓기'}' 검색→채널추가 / ${c.name || '강의'} 신청: ${c.applyLink || ''}\n- 해시태그 8~12개(${tags} 포함)\n- 분량 1200~1800자, 마크다운(소제목 ##) 사용\n\n[출력 형식 — 이 마커 그대로]\n[제목]\n(한 줄 제목)\n[본문]\n(마크다운 본문)\n[해시태그]\n(#태그들)`;
+  const r = await anthropic.messages.create({ model: MODEL, max_tokens: 4000, system, messages: [{ role: 'user', content: ask }] });
+  const out = r.content.filter((b) => b.type === 'text').map((b) => b.text).join('\n');
+  const p = parseBlog(out);
+  const fullText = [p.title, '', p.body, '', p.hashtags].join('\n').trim();
+  return { title: p.title || ep.srcTitle, body: p.body, hashtags: p.hashtags, fullText };
+}
+
+// 연재 만들기: 추출 → 분리 → 일정(격일) → 저장 (글 재구성은 발행일에 lazy)
+app.post('/blog/build', async (req, res) => {
+  try {
+    const c = CAMPAIGN || {};
+    const b = req.body || {};
+    const mine = myContents().filter((x) => x.type === '텍스트');
+    let src = b.contentId ? mine.find((x) => x.id === b.contentId) : null;
+    if (!src) src = mine.find((x) => x.link) || mine.find((x) => x.body); // 파일 우선, 없으면 직접입력
+    if (!src) return res.status(400).json({ error: '텍스트 칸에 docx/pdf 파일이나 글이 없습니다.' });
+    const text = src.link ? await extractTextFromUrl(src.link) : String(src.body || '');
+    if (!text || text.length < 50) return res.status(400).json({ error: '추출된 텍스트가 너무 짧습니다(추출 실패?).' });
+    let eps = splitEpisodes(text);
+    if (eps.length < 2) return res.status(400).json({ error: `"제N편" 목차를 못 찾았습니다(찾은 편수 ${eps.length}). 원본 목차 표기를 확인하세요.` });
+    const interval = Number(process.env.BLOG_INTERVAL_DAYS || 2);
+    const startOff = Number(process.env.BLOG_START_OFFSET || 0);
+    const episodes = eps.map((e, i) => ({ n: e.n, srcTitle: e.srcTitle, srcText: e.srcText, scheduledDate: addDaysYMD(startOff + i * interval), published: false, publishedAt: '', blog: null }));
+    SERIES = SERIES.filter((s) => s.campaignId !== ACTIVE_ID);
+    SERIES.push({ campaignId: ACTIVE_ID, sourceContentId: src.id, createdAt: new Date().toISOString(), intervalDays: interval, episodes });
+    await saveSeries();
+    res.json({ ok: true, count: episodes.length, episodes: episodes.map((e) => ({ n: e.n, title: e.srcTitle, scheduledDate: e.scheduledDate, chars: e.srcText.length })) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// 상태: 오늘 발행할 편(없으면 다음 편 날짜) + 진행률. 오늘 편은 글을 lazy 생성·캐시.
+app.get('/blog/status', async (req, res) => {
+  try {
+    const s = activeSeries();
+    if (!s) return res.json({ hasSeries: false });
+    const today = addDaysYMD(0);
+    const total = s.episodes.length;
+    const publishedCount = s.episodes.filter((e) => e.published).length;
+    const due = s.episodes.find((e) => !e.published && e.scheduledDate <= today);
+    const nextUp = s.episodes.find((e) => !e.published && e.scheduledDate > today);
+    let todayEp = null;
+    if (due) {
+      if (!due.blog) { const c = CAMPAIGN || {}; due.blog = await rewriteEpisode(c, due); await saveSeries(); }
+      todayEp = { n: due.n, title: due.blog.title, fullText: due.blog.fullText, scheduledDate: due.scheduledDate };
+    }
+    res.json({
+      hasSeries: true, total, publishedCount,
+      today: todayEp,
+      next: nextUp ? { n: nextUp.n, date: nextUp.scheduledDate } : null,
+      allDone: publishedCount >= total,
+      episodes: s.episodes.map((e) => ({ n: e.n, title: (e.blog && e.blog.title) || e.srcTitle, scheduledDate: e.scheduledDate, published: e.published })),
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// 한 편 발행 완료 표시
+app.post('/blog/published', async (req, res) => {
+  const n = Number((req.body || {}).n);
+  const s = activeSeries(); if (!s) return res.status(400).json({ error: '연재 없음' });
+  const ep = s.episodes.find((e) => e.n === n); if (!ep) return res.status(404).json({ error: '해당 편 없음' });
+  ep.published = true; ep.publishedAt = new Date().toISOString();
+  await saveSeries();
+  try { pushNotify({ kind: 'report', title: `블로그 ${n}편 발행 완료`, body: (ep.blog && ep.blog.title) || ep.srcTitle }); } catch (e) {}
+  res.json({ ok: true });
+});
+
 // ── 진단: 발행 도구(Upload-Post) 연결 상태 (키는 가려서) ──
 app.get('/content/webhook-check', (req, res) => {
   const key = process.env.UPLOADPOST_API_KEY || '';
