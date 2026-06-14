@@ -2040,13 +2040,18 @@ function pendingCardSets() {
   const base = schedCards().length;
   return sets.map((s, j) => ({ setId: s.setId, setName: s.setName, images: s.images || [], scheduledAt: cardPlanDateISO(base + j), channels: CARD_CHANNELS }));
 }
+// 미리보기/합본 이미지(가로로 넓어 인스타 비율 위반) 제외 → 낱장만 캐러셀로
+const CARD_EXCLUDE = new RegExp(process.env.CARD_EXCLUDE_PATTERN || '미리보기|합본|preview|montage|썸네일|thumb|전체|모음', 'i');
+function cardImages(set) { const imgs = (set.images || []).filter((im) => !CARD_EXCLUDE.test(im.name || '')); return imgs.length ? imgs : (set.images || []); }
 async function postCardToUploadPost(set, c) {
   const caps = buildCaptions(c);
+  const cap = shortsCaption(c);   // 카드뉴스 캡션(쇼츠/릴스 태그 없이, 신청링크+카톡 포함)
   const form = new FormData();
   form.append('user', process.env.UPLOADPOST_USER);
   CARD_CHANNELS.forEach((ch) => form.append('platform[]', ch));
-  for (let i = 0; i < (set.images || []).length; i++) {
-    const im = set.images[i];
+  const imgs = cardImages(set);   // 미리보기 제외 낱장만
+  for (let i = 0; i < imgs.length; i++) {
+    const im = imgs[i];
     let r; try { r = await fetch(im.url); } catch (e) { continue; }
     if (!r.ok) continue;
     const ab = await r.arrayBuffer();
@@ -2054,9 +2059,9 @@ async function postCardToUploadPost(set, c) {
     form.append('photos[]', new Blob([ab], { type: isPng ? 'image/png' : 'image/jpeg' }), im.name || ('card' + (i + 1) + (isPng ? '.png' : '.jpg')));
   }
   form.append('title', caps.title);
-  form.append('caption', caps.instagram_title);
-  form.append('instagram_title', caps.instagram_title);   // 캡션(해시태그 포함)
-  form.append('facebook_title', caps.facebook_title);
+  form.append('caption', cap);
+  form.append('instagram_title', cap);
+  form.append('facebook_title', cap);
   if (set.scheduledAt) { form.append('scheduled_date', set.scheduledAt); form.append('timezone', 'Asia/Seoul'); }
   form.append('async_upload', 'true');
   const r2 = await fetch(UPLOADPHOTOS_URL, { method: 'POST', headers: { Authorization: `Apikey ${process.env.UPLOADPOST_API_KEY}` }, body: form });
@@ -2067,7 +2072,7 @@ app.get('/cardnews/plan', (req, res) => {
   const now = Date.now();
   const scheduled = schedCards().slice().sort((a, b) => String(a.scheduledAt).localeCompare(String(b.scheduledAt)))
     .map((s) => ({ name: s.name, scheduledAt: s.scheduledAt, channels: s.channels || CARD_CHANNELS, status: (new Date(s.scheduledAt).getTime() < now ? '게시됨' : '예약됨') }));
-  const pending = pendingCardSets().map((p) => ({ setName: p.setName, scheduledAt: p.scheduledAt, channels: p.channels, count: (p.images || []).length }));
+  const pending = pendingCardSets().map((p) => ({ setName: p.setName, scheduledAt: p.scheduledAt, channels: p.channels, count: cardImages(p).length }));
   res.json({ posterConfigured: posterReady(), hour: Number(process.env.CARD_HOUR_KST || 18), scheduled, pending });
 });
 app.post('/cardnews/approve', async (req, res) => {
