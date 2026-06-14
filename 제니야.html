@@ -521,7 +521,7 @@ body{font-family:'Pretendard',-apple-system,sans-serif;font-weight:500;backgroun
         <div class="row">
           <button class="plus" id="plus" title="자료 업로드"><i class="ti ti-plus"></i></button>
           <input id="inp" placeholder="제니야 또는 에이전트에게 말하거나 입력…">
-          <button class="mic" id="mic" title="음성 (4단계 예정)"><i class="ti ti-microphone"></i></button>
+          <button class="mic" id="mic" title="음성으로 말하기"><i class="ti ti-microphone"></i></button>
           <button class="send" id="send" title="보내기"><i class="ti ti-arrow-up"></i></button>
         </div>
         <div class="hint">+ 버튼 또는 대화창에 끌어다 놓기로 자료를 올릴 수 있어요 · 결과물은 캔버스로 받아요</div>
@@ -533,7 +533,7 @@ body{font-family:'Pretendard',-apple-system,sans-serif;font-weight:500;backgroun
 
   </div>
 
-  <div class="foot">제니야 — <b>상단 프로젝트 × 좌측 에이전트 × 우측 도구</b> 교차 구조 · v2.21 (카드뉴스 캐러셀: 미리보기/합본 제외 낱장만 발행 → 인스타 비율 충족 + 카드용 캡션(쇼츠/릴스 태그 제거))</div>
+  <div class="foot">제니야 — <b>상단 프로젝트 × 좌측 에이전트 × 우측 도구</b> 교차 구조 · v2.22 (음성통합 Phase 1: 🎤 브라우저 음성인식(ko-KR)→제니야 두뇌→화면+음성 답변, 음성 코치 현황 주입)</div>
 </div>
 
 <!-- C-6. 업로드 모달 (+ 버튼으로 열림 — 실제 업로드는 3단계) -->
@@ -2528,7 +2528,8 @@ function ensureTodayThen(cb){
 }
 
 // 특정 에이전트에게 직접 묻기 — 그 에이전트 본인이 1인칭으로 답한다 (대행 없음)
-function askAgent(agent, message){
+function askAgent(agent, message, opts){
+  opts = opts || {};
   var waiting = addMessage('<i class="ti ti-loader-2"></i> 생각 중입니다…', agent.id);
   return fetch(SERVER_URL + '/chat', {
     method: 'POST',
@@ -2537,7 +2538,8 @@ function askAgent(agent, message){
       message: message,
       project: state.project.name,
       agent:   agent.name,
-      agentId: agent.id              // 서버가 이 id로 agents/ 문서를 찾는다
+      agentId: agent.id,             // 서버가 이 id로 agents/ 문서를 찾는다
+      voice:   !!opts.voice          // 🎤 음성 대화면 코치 현황 주입 + 짧은 답
     })
   })
   .then(function(r){ return r.json(); })
@@ -2545,6 +2547,7 @@ function askAgent(agent, message){
     var text = data.reply ? escapeHtml(data.reply).replace(/\n/g, '<br>')
                           : '⚠️ ' + escapeHtml(data.error || '답을 받지 못했습니다.');
     updateMessage(waiting, text);
+    if(opts.voice && data.reply) speakOut(data.reply);   // 답을 음성으로도 읽어준다(TTS)
     loadDashboard();   // 새 영업일기가 생겼으니 상단 숫자 갱신
   })
   .catch(function(){
@@ -2694,15 +2697,86 @@ async function startVoice(){
   }
 }
 
-document.getElementById('mic').onclick = function(){
-  if(meeting.running){ addMessage('회의가 도는 동안에는 음성을 켤 수 없습니다.', 'zenya'); return; }
-  if(voiceActive || voiceConnecting){ stopVoice(); return; }
-  if(!VAPI_ASSISTANT_ID){
-    addMessage('음성 준비 중입니다 — Vapi 대시보드에서 "제니야" 어시스턴트를 만들어 ID를 넣으면 켜집니다.', 'zenya');
+// ==========================================================
+// ★ Phase 1 음성통합 — 브라우저 Web Speech API (무료·가벼움)
+//   🎤 누르고 말하면 → 한국어(ko-KR) 음성인식 → 기존 /chat 두뇌 → 답을 화면+음성(TTS)으로.
+//   (위 Vapi 코드는 유료 통화용 — 지금은 쓰지 않고, 이 무료 방식으로 켠다.)
+//   명령 실행(서버에 일 시키기)은 Phase 2. 지원 안 되는 브라우저면 안내(→ 녹음·Whisper 대안).
+// ==========================================================
+var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+var recog = null, listening = false;
+
+function setMicUI(){
+  var m = document.getElementById('mic'); if(!m) return;
+  m.className = 'mic' + (listening ? ' live' : '');
+  m.title = listening ? '듣는 중 — 누르면 멈춤' : '음성으로 말하기';
+}
+
+// 글 → 음성 (브라우저 SpeechSynthesis, 한국어 보이스 우선). 링크는 "링크"로 읽어 듣기 쉽게.
+function speakOut(text){
+  try{
+    if(!('speechSynthesis' in window)) return;
+    var clean = String(text).replace(/<[^>]+>/g,' ').replace(/https?:\/\/\S+/g,'링크').replace(/\s+/g,' ').trim().slice(0,500);
+    if(!clean) return;
+    window.speechSynthesis.cancel();
+    var u = new SpeechSynthesisUtterance(clean);
+    u.lang='ko-KR'; u.rate=1.05; u.pitch=1.0;
+    var vs = window.speechSynthesis.getVoices() || [];
+    var ko = vs.filter(function(v){ return /ko[-_]?KR/i.test(v.lang||''); })[0];
+    if(ko) u.voice = ko;
+    window.speechSynthesis.speak(u);
+  }catch(e){}
+}
+
+// 음성으로 들어온 한 마디를 두뇌로 — 지금 선택된 에이전트와 1:1 코치 대화
+function sendVoiceText(text){
+  text = (text||'').trim(); if(!text) return;
+  if(dayState.view !== dayState.today){ ensureTodayThen(function(){ sendVoiceText(text); }); return; }
+  addMessage('🎤 ' + escapeHtml(text), 'u');
+  saveMsg('u', text);
+  askAgent(state.agent, text, { voice:true });
+}
+
+function startListen(){
+  if(!SR){
+    addMessage('이 브라우저는 음성 인식을 지원하지 않습니다. 크롬이나 엣지에서 열어 주세요. (그래도 안 되면 녹음→글변환(Whisper) 방식으로 넘어가겠습니다.)','zenya');
     return;
   }
-  ensureTodayThen(startVoice);   // 과거 날짜를 보던 중이면 오늘로 돌아간 뒤 통화 시작
+  if(listening){ try{ recog && recog.stop(); }catch(e){} return; }   // 듣는 중에 다시 누르면 멈춤
+  recog = new SR();
+  recog.lang='ko-KR'; recog.interimResults=true; recog.continuous=false; recog.maxAlternatives=1;
+  var inp = document.getElementById('inp');
+  recog.onstart = function(){ listening=true; setMicUI(); };
+  recog.onresult = function(e){
+    var fin='', itm='';
+    for(var i=e.resultIndex;i<e.results.length;i++){
+      var t=e.results[i][0].transcript;
+      if(e.results[i].isFinal) fin+=t; else itm+=t;
+    }
+    inp.value = (fin+itm);           // 인식되는 글을 실시간으로 입력칸에 미리보기
+  };
+  recog.onerror = function(e){
+    listening=false; setMicUI();
+    var m = e.error==='not-allowed' ? '마이크 권한이 거부됐습니다. 주소창 왼쪽 자물쇠(🔒)에서 마이크를 허용해 주세요.'
+          : e.error==='no-speech' ? '말씀이 들리지 않았어요. 🎤를 다시 누르고 말씀해 주세요.'
+          : e.error==='audio-capture' ? '마이크를 찾지 못했어요. 마이크 연결을 확인해 주세요.'
+          : '음성 인식 오류('+e.error+'). 다시 시도해 주세요.';
+    addMessage(m,'zenya');
+  };
+  recog.onend = function(){
+    listening=false; setMicUI();
+    var said=(inp.value||'').trim(); inp.value='';
+    if(said) sendVoiceText(said);   // 말이 끝나면 자동으로 두뇌에 전달
+  };
+  try{ recog.start(); }catch(e){ listening=false; setMicUI(); }
+}
+
+document.getElementById('mic').onclick = function(){
+  if(meeting.running){ addMessage('회의가 도는 동안에는 음성을 켤 수 없습니다.','zenya'); return; }
+  startListen();
 };
+// 일부 브라우저는 보이스 목록을 비동기로 채운다 — 미리 한 번 깨워둔다
+try{ if('speechSynthesis' in window) window.speechSynthesis.getVoices(); }catch(e){}
 
 // ── 멀티 에이전트 회의 ──────────────────────────────────
 // 흐름: 1라운드(7명 첫 의견) → 2라운드(회의록 읽고 자유 반응) → 제니야 의장 종합.

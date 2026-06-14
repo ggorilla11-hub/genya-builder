@@ -182,6 +182,28 @@ function withLiveStatus(system, agentId) {
     + '\n(팀 현황 질문에는 이 기록을 근거로 즉시 답하라. 기록 밖의 일은 지어내지 말 것)';
 }
 
+// 음성 비서(제니야)용 코치 현황: 강의 일정 + 콘텐츠 5종 현황을 한 묶음으로.
+//   /chat에 voice:true로 들어온 음성 대화에서만 붙인다(텍스트 대화는 그대로).
+//   호출 시점(요청 때)엔 아래 전역들이 모두 초기화돼 있어 안전하다.
+function voiceCoachContext() {
+  const now = Date.now();
+  const fut = (k) => SCHED.filter((s) => s && s.kind === k && s.scheduledAt && new Date(s.scheduledAt).getTime() > now).length;
+  const blogEps = SERIES.reduce((a, s) => a.concat(s.episodes || []), []);
+  const podEps = PODCAST.reduce((a, s) => a.concat(s.episodes || []), []);
+  const L = ['=== 오늘의 코치 현황 (대표님 음성 비서용 — 아래 숫자만 근거로, 지어내지 말 것) ==='];
+  if (typeof CAMPAIGN !== 'undefined' && CAMPAIGN && (CAMPAIGN.name || CAMPAIGN.facts)) {
+    L.push(`· 현재 강의: ${CAMPAIGN.name || '(이름 미정)'}${CAMPAIGN.startDate ? ' / 개강 ' + CAMPAIGN.startDate : ''}`);
+    if (CAMPAIGN.facts) L.push(`· 강의 사실: ${String(CAMPAIGN.facts).replace(/\s+/g, ' ').slice(0, 240)}`);
+  }
+  L.push(`· 쇼츠: 예약 대기 ${fut('쇼츠')}건`);
+  L.push(`· 카드뉴스: 세트 ${CARDSETS.length}개 · 배포 예약 ${fut('카드뉴스')}건`);
+  L.push(`· 유튜브 리드(가망고객): ${YTLEADS.length}명`);
+  L.push(`· 블로그 연재: 총 ${blogEps.length}편 (발행 ${blogEps.filter((e) => e.published).length}편)`);
+  L.push(`· 팟캐스트: 총 ${podEps.length}편 (발행 ${podEps.filter((e) => e.published).length}편)`);
+  L.push('대표님이 "오늘 어때?"·"할 일?" 등을 물으면 위 숫자를 근거로 코치처럼 다음 행동 1~2가지를 짧게 제안하라.');
+  return L.join('\n');
+}
+
 // 에이전트의 시스템 프롬프트 조립: 공통 규칙(00) + 전용 문서 + 현재 프로젝트 맥락
 function buildSystemPrompt(agentId, projectName) {
   const a = AGENT_DOCS[agentId] || AGENT_DOCS.zenya;   // 모르는 id면 총괄이 받는다
@@ -254,7 +276,7 @@ app.get('/health', (req, res) => {
 // 주는 것: { reply: "에이전트의 답" }
 app.post('/chat', async (req, res) => {
   try {
-    const { message, project, agentId } = req.body || {};
+    const { message, project, agentId, voice } = req.body || {};
 
     if (!message || typeof message !== 'string') {
       return res.status(400).json({ error: 'message(말씀 내용)가 필요합니다.' });
@@ -274,6 +296,13 @@ app.post('/chat', async (req, res) => {
               + diaryDigest(message);
     } else {
       system = withLiveStatus(system, agentId);
+    }
+
+    // 음성 대화(🎤)면 코치 현황을 붙이고, 답을 듣기 쉽게 짧게 하도록 안내
+    if (voice) {
+      system += '\n\n' + voiceCoachContext()
+              + '\n\n[음성 대화 규칙] 지금은 대표님이 마이크로 말하고 귀로 듣는 음성 대화다. '
+              + '답은 2~3문장으로 짧게, 듣기 좋은 구어체로. 링크·표·목록·이모지 나열 금지(소리내 읽기 어렵다).';
     }
 
     const response = await anthropic.messages.create({
