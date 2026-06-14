@@ -1699,6 +1699,78 @@ app.post('/blog/published', async (req, res) => {
   res.json({ ok: true });
 });
 
+// ============================================================
+// 키워드 소셜리스닝 — 관심자 명단 자동 수집 (공식 무료 API: 유튜브 댓글 + 네이버 검색)
+//   완전 자동·합법·무료. 접촉(댓글·DM)은 대표 직접(계정보호). 공통 리드 엔진.
+// ============================================================
+let LEADS = loadJson('관심자.json'); if (!Array.isArray(LEADS)) LEADS = [];
+const LEADS_TAB = process.env.LEADS_TAB || '제니야_관심자명단';
+let leadsChain = Promise.resolve();
+async function saveLeadsToSheet() {
+  const sheets = sheetsClient(); if (!sheets || !RESV_SHEET_ID) return;
+  const meta = await sheets.spreadsheets.get({ spreadsheetId: RESV_SHEET_ID, fields: 'sheets.properties.title' });
+  if (!meta.data.sheets.some((s) => s.properties.title === LEADS_TAB)) {
+    await sheets.spreadsheets.batchUpdate({ spreadsheetId: RESV_SHEET_ID, requestBody: { requests: [{ addSheet: { properties: { title: LEADS_TAB } } }] } });
+  }
+  const rows = LEADS.slice(-2000).map((l) => [l.ts, l.source, l.author, l.text, l.link, l.keyword, l.campaignId]);
+  await sheets.spreadsheets.values.clear({ spreadsheetId: RESV_SHEET_ID, range: `'${LEADS_TAB}'!A1:Z` });
+  await sheets.spreadsheets.values.update({ spreadsheetId: RESV_SHEET_ID, range: `'${LEADS_TAB}'!A1`, valueInputOption: 'RAW', requestBody: { values: [['ts', 'source', 'author', 'text', 'link', 'keyword', 'campaignId'], ...rows] } });
+}
+function saveLeads() { saveJson('관심자.json', LEADS); leadsChain = leadsChain.catch(() => {}).then(() => saveLeadsToSheet()).catch((e) => console.warn('⚠️ 관심자 시트 저장 실패:', e.message)); return leadsChain; }
+(async () => { const sheets = sheetsClient(); if (!sheets || !RESV_SHEET_ID) return; try { const got = await sheets.spreadsheets.values.get({ spreadsheetId: RESV_SHEET_ID, range: `'${LEADS_TAB}'!A2:G` }); const rows = got.data.values || []; if (rows.length) { LEADS = rows.filter((r) => r[4]).map((r) => ({ ts: r[0], source: r[1], author: r[2], text: r[3], link: r[4], keyword: r[5], campaignId: r[6] })); saveJson('관심자.json', LEADS); console.log(`🔍 관심자 명단 복원: ${LEADS.length}건`); } } catch (e) {} })();
+
+function leadsKeywords() {
+  const raw = String((CAMPAIGN || {}).listenKeywords || '').split(/[,\n]/).map((x) => x.trim()).filter(Boolean);
+  return raw.length ? raw : ['재테크', '맞벌이 재테크', '10억 모으기', '종잣돈', '목돈 마련', '재무설계', '노후준비', '경제적 자유', 'FIRE', '직장인 재테크', '적금 추천', '투자 초보', '가계부', '돈 안 모임', '부자되는 법'];
+}
+const LEAD_INTENT = /(어떻게|어떡|추천|모으|모이|막막|시작|초보|고민|할까요|방법|좋을까|궁금|문의|해야|도와|알려|얼마)/;
+function leadKey(l) { return (l.link || '') + '|' + (l.author || '') + '|' + String(l.text || '').slice(0, 20); }
+async function collectYouTube(keywords, key) {
+  const out = [];
+  for (const kw of keywords) {
+    let s; try { s = await (await fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&order=date&maxResults=4&q=${encodeURIComponent(kw)}&key=${key}`)).json(); } catch (e) { continue; }
+    for (const it of (s.items || [])) {
+      const vid = it.id && it.id.videoId; if (!vid) continue;
+      let cs; try { cs = await (await fetch(`https://www.googleapis.com/youtube/v3/commentThreads?part=snippet&maxResults=15&order=relevance&videoId=${vid}&key=${key}`)).json(); } catch (e) { continue; }
+      (cs.items || []).forEach((ci) => { const sn = ci.snippet && ci.snippet.topLevelComment && ci.snippet.topLevelComment.snippet; if (!sn) return; const text = String(sn.textOriginal || ''); if (!LEAD_INTENT.test(text)) return; out.push({ source: '유튜브', author: sn.authorDisplayName || '', text: text.slice(0, 160), link: `https://www.youtube.com/watch?v=${vid}&lc=${ci.id}`, keyword: kw }); });
+    }
+  }
+  return out;
+}
+async function collectNaver(keywords, id, secret) {
+  const out = []; const hdr = { 'X-Naver-Client-Id': id, 'X-Naver-Client-Secret': secret };
+  const strip = (s) => String(s || '').replace(/<[^>]+>/g, '').replace(/&[a-z]+;/g, ' ').trim();
+  for (const kw of keywords) {
+    for (const [api, src, af] of [['kin', '네이버 지식iN', null], ['cafearticle', '네이버 카페', null], ['blog', '네이버 블로그', 'bloggername']]) {
+      let r; try { r = await (await fetch(`https://openapi.naver.com/v1/search/${api}.json?display=5&sort=date&query=${encodeURIComponent(kw)}`, { headers: hdr })).json(); } catch (e) { continue; }
+      (r.items || []).forEach((it) => { out.push({ source: src, author: af ? strip(it[af]) : '', text: strip(it.title), link: it.link || '', keyword: kw }); });
+    }
+  }
+  return out;
+}
+function leadsConfigured() { return !!(process.env.YOUTUBE_API_KEY || (process.env.NAVER_CLIENT_ID && process.env.NAVER_CLIENT_SECRET)); }
+async function runLeadCollect() {
+  if (!leadsConfigured()) return { error: '무료 API 키 미설정 (YOUTUBE_API_KEY 또는 NAVER_CLIENT_ID/SECRET).' };
+  const kws = leadsKeywords().slice(0, 6);   // 할당량 보호: 회당 6개 키워드
+  let found = [];
+  if (process.env.YOUTUBE_API_KEY) { try { found = found.concat(await collectYouTube(kws, process.env.YOUTUBE_API_KEY)); } catch (e) {} }
+  if (process.env.NAVER_CLIENT_ID && process.env.NAVER_CLIENT_SECRET) { try { found = found.concat(await collectNaver(kws, process.env.NAVER_CLIENT_ID, process.env.NAVER_CLIENT_SECRET)); } catch (e) {} }
+  const seen = new Set(LEADS.map(leadKey)); let added = 0; const now = new Date().toISOString();
+  found.forEach((l) => { const k = leadKey(l); if (l.link && !seen.has(k)) { seen.add(k); LEADS.push({ id: 'l' + Date.now() + Math.floor(Math.random() * 1000), ts: now, campaignId: ACTIVE_ID, source: l.source, author: l.author, text: l.text, link: l.link, keyword: l.keyword }); added++; } });
+  if (added) { await saveLeads(); try { pushNotify({ kind: 'report', title: `관심자 ${added}명 새로 수집`, body: kws.slice(0, 3).join(', ') }); } catch (e) {} }
+  return { ok: true, added, total: LEADS.length };
+}
+let LEAD_LAST_DAY = '';
+async function runDueLeads() { if (!leadsConfigured()) return; const d = addDaysYMD(0); if (d === LEAD_LAST_DAY) return; LEAD_LAST_DAY = d; await runLeadCollect().catch(() => {}); }
+app.post('/leads/collect', async (req, res) => { try { res.json(await runLeadCollect()); } catch (e) { res.status(500).json({ error: e.message }); } });
+app.get('/leads/today', (req, res) => {
+  const today = addDaysYMD(0);
+  const mine = LEADS.filter((l) => !l.campaignId || l.campaignId === ACTIVE_ID);
+  const todayList = mine.filter((l) => String(l.ts).slice(0, 10) === today);
+  const show = (todayList.length ? todayList : mine).slice(-40).reverse();
+  res.json({ configured: leadsConfigured(), todayCount: todayList.length, total: mine.length, leads: show.map((l) => ({ source: l.source, author: l.author, text: l.text, link: l.link, keyword: l.keyword })) });
+});
+
 // ── 진단: 발행 도구(Upload-Post) 연결 상태 (키는 가려서) ──
 app.get('/content/webhook-check', (req, res) => {
   const key = process.env.UPLOADPOST_API_KEY || '';
@@ -1948,6 +2020,7 @@ app.get('/promo/tick', async (req, res) => { res.json(await runDuePromo()); });
 app.get('/tick', async (req, res) => {
   const promo = await runDuePromo().catch((e) => ({ error: e.message }));
   const pay   = await runDuePayments().catch((e) => ({ error: e.message }));
+  runDueLeads().catch(() => {});   // 하루 1회 관심자 자동 수집 (날짜 가드)
   res.json({ ok: true, ts: new Date().toISOString(), promo, pay });
 });
 
