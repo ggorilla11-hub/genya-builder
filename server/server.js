@@ -2090,7 +2090,7 @@ app.post('/cardnews/approve', async (req, res) => {
       const out = await postCardToUploadPost(p, c);
       if (out.ok) {
         SCHED.push({ campaignId: ACTIVE_ID, kind: '카드뉴스', contentId: p.setId, name: p.setName, scheduledAt: immediate ? new Date().toISOString() : wasSched, channels: p.channels, job: out.job, ts: new Date().toISOString(), immediate });
-        added++; results.push({ name: p.setName, ok: true, photos: (p.images || []).length, body: out.body });
+        added++; results.push({ name: p.setName, ok: true, photos: cardImages(p).length, body: out.body });
       } else fails.push({ name: p.setName, status: out.status, body: out.body });
       if (i < todo.length - 1) await new Promise((rs) => setTimeout(rs, 500));
     }
