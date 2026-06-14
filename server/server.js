@@ -1809,7 +1809,7 @@ async function classifyLeadsLLM(items) {
   for (let off = 0; off < items.length; off += 40) {
     const chunk = items.slice(off, off + 40);
     const list = chunk.map((c, i) => `${i}. ${String(c.text).replace(/\s+/g, ' ').slice(0, 150)}`).join('\n');
-    const ask = `아래 유튜브 댓글을 분류해라. tier 기준:\n- "hot": 상담·신청·연락·수강·등록 의향이 명확 ("상담 문의","강의 신청 어떻게","연락처","수업 듣고 싶어요")\n- "warm": 재정 고민·질문·관심은 있으나 아직 행동 전, 또는 도움/추천을 구함 ("10억 막막","재테크 시작하고 싶은데","종잣돈 어떻게","추천 부탁드려요","초보라 모르겠어요")\n- "no": 도움을 주는/의견 내는 사람(훈수·조언·논쟁 "~하십쇼","코인 사라","왜 안해요"), 단순 칭찬·감사("좋은 영상 감사합니다"), 자랑·스팸\n반드시 JSON 배열만 출력(설명·코드블록 금지): [{"i":0,"tier":"warm"}, ...]\n\n댓글:\n${list}`;
+    const ask = `아래 유튜브 댓글을 분류해라. tier 기준:\n- "hot": ① 상담·신청·연락·수강·등록 의향이 명확("상담 문의","강의 신청 어떻게","연락처"), 또는 ② 본인의 구체적 재정 상황(소득·자산·적금·플랜·포트폴리오 등)을 적으며 피드백·점검·봐달라고 청함 = 사실상 1:1 상담 요청 ("27살 1.3억 플랜 짰는데 피드백 부탁","제 포트폴리오 분배 잘 됐는지 봐주세요","실급여 120인데 어떡하나요")\n- "warm": 본인 상황 구체 서술 없이 일반적 재정 질문·고민·관심·추천요청 ("10억 막막","재테크 시작하고 싶은데","종잣돈 어떻게","추천 부탁","금 투자 어떻게 생각하세요","왜 IRP 추천하세요")\n- "no": 도움을 주는/의견 내는 사람(훈수·조언·논쟁 "~하십쇼","코인 사라","왜 안해요"), 단순 칭찬·감사("좋은 영상 감사합니다"), 자랑·스팸\n반드시 JSON 배열만 출력(설명·코드블록 금지): [{"i":0,"tier":"hot"}, ...]\n\n댓글:\n${list}`;
     let ok = false, out = '';
     try { const r = await anthropic.messages.create({ model: MODEL, max_tokens: 1500, system, messages: [{ role: 'user', content: ask }] }); out = r.content.filter((b) => b.type === 'text').map((b) => b.text).join(''); ok = true; } catch (e) { ok = false; }
     let arr = null; if (ok) { try { arr = JSON.parse(out.slice(out.indexOf('['), out.lastIndexOf(']') + 1)); } catch (e) { arr = null; } }
