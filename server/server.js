@@ -1599,7 +1599,12 @@ function splitEpisodes(text) {
   while ((m = re.exec(text))) marks.push({ n: Number(m[1]), idx: m.index });
   const segs = marks.map((mk, i) => ({ n: mk.n, srcText: text.slice(mk.idx, i + 1 < marks.length ? marks[i + 1].idx : text.length).trim() }));
   const byN = {};
-  segs.forEach((s) => { s.srcTitle = (s.srcText.split('\n')[0] || '').trim().slice(0, 60); if (!byN[s.n] || s.srcText.length > byN[s.n].srcText.length) byN[s.n] = s; }); // 목차(짧음) vs 본문(긺) → 긴 것
+  segs.forEach((s) => {
+    const lines = s.srcText.split('\n').map((x) => x.trim()).filter(Boolean);
+    let topic = ''; for (const ln of lines) { const t = ln.replace(/^제\s*\d+\s*편\s*[.:)]?\s*/, '').trim(); if (t) { topic = t; break; } }
+    s.srcTitle = ('제' + s.n + '편 ' + topic).trim().slice(0, 40);
+    if (!byN[s.n] || s.srcText.length > byN[s.n].srcText.length) byN[s.n] = s; // 목차(짧음) vs 본문(긺) → 긴 것
+  });
   return Object.keys(byN).map((k) => byN[k]).sort((a, b) => a.n - b.n);
 }
 function activeSeries() { return SERIES.find((s) => s.campaignId === ACTIVE_ID) || null; }
@@ -1612,14 +1617,28 @@ function parseBlog(t) {
   if (!title && !body) { const lines = t.trim().split('\n'); title = (lines.shift() || '').trim(); body = lines.join('\n').trim(); }
   return { title, body, hashtags: tags };
 }
+// 강의정보 기반 CTA 블록 (6/25 개강·4주 목요일 줌·55만 — date에서 자동 추출). 8편 공통.
+function ctaBlock(c) {
+  const open = ymdToDate(c.startDate) || parseOpenDate(c.date);
+  const dateStr = open ? `${open.getUTCFullYear()}년 ${open.getUTCMonth() + 1}월 ${open.getUTCDate()}일 개강` : '';
+  const wk = (String(c.date).match(/(\d+)\s*주/) || [])[1];
+  const dow = (String(c.date).match(/([월화수목금토일])\s*요일/) || [])[1];
+  const place = (c.mode === '비대면') ? '줌' : '대면';
+  const won = c.price ? `${Math.round(Number(c.price) / 10000)}만원` : '';
+  const inner = [wk ? wk + '주' : '', dow ? dow + '요일' : '', place].filter(Boolean).join(' ') + (won ? ', ' + won : '');
+  const lines = [];
+  if (dateStr) lines.push(`📅 ${dateStr} (${inner})`);
+  if (c.applyLink) lines.push(`▶ ${c.name || '강의'} 신청: ${c.applyLink}`);
+  if (c.kakaoChannel) lines.push(`카카오톡 '${c.kakaoChannel}' 검색 → 채널 추가`);
+  return lines.join('\n');
+}
 async function rewriteEpisode(c, ep) {
   const system = '당신은 오원트금융연구소 오상열 대표(CFP 25년, 금융연수원 외래교수)의 1인칭 관점으로 쓰는 네이버 블로그 글 작가입니다. 실제 강의 내용을 바탕으로, 검색에 잘 걸리고 신뢰가는 고품질 글을 씁니다. 저품질(채우기 텍스트, 의미 없는 반복, 과장·수익보장)은 절대 금지. 1인칭 경험·전문가 관점, 소제목으로 구조화, 구체적 예시.';
-  const tags = c.hashtags || '#재테크 #재무설계 #목돈마련 #맞벌이';
-  const ask = `다음 강의 내용을 네이버 블로그 글 1편으로 재구성해 주세요.\n\n[원본: 제${ep.n}편]\n${String(ep.srcText).slice(0, 6000)}\n\n[요구사항]\n- 도입(공감 후크) → 본문(## 소제목 3~5개, 구체 설명·예시) → 마무리(요약+행동제안)\n- 1인칭("제가 25년간…"), 전문가 관점, 검색 잘 되게 핵심 키워드 자연스럽게\n- 맨 끝 CTA 2줄: 카카오톡 '${c.kakaoChannel || '금융집짓기'}' 검색→채널추가 / ${c.name || '강의'} 신청: ${c.applyLink || ''}\n- 해시태그 8~12개(${tags} 포함)\n- 분량 1200~1800자, 마크다운(소제목 ##) 사용\n\n[출력 형식 — 이 마커 그대로]\n[제목]\n(한 줄 제목)\n[본문]\n(마크다운 본문)\n[해시태그]\n(#태그들)`;
+  const ask = `다음 강의 내용을 네이버 블로그 글 1편으로 재구성해 주세요.\n\n[원본: 제${ep.n}편]\n${String(ep.srcText).slice(0, 6000)}\n\n[요구사항]\n- 도입(공감 후크) → 본문(## 소제목 3~5개, 구체 설명·예시) → 마무리(요약+행동제안)\n- 1인칭("제가 25년간…"), 전문가 관점, 검색 잘 되게 핵심 키워드 자연스럽게\n- ⚠️ 본문에는 신청링크·카톡채널·CTA·연락처를 넣지 마세요 (시스템이 맨 끝에 자동으로 붙입니다)\n- 해시태그 8~12개 (재테크·재무설계 등 + 이 편 주제 키워드)\n- 분량 1200~1800자, 마크다운(소제목 ##) 사용\n\n[출력 형식 — 이 마커 그대로]\n[제목]\n(한 줄 제목)\n[본문]\n(마크다운 본문, CTA 없이)\n[해시태그]\n(#태그들)`;
   const r = await anthropic.messages.create({ model: MODEL, max_tokens: 4000, system, messages: [{ role: 'user', content: ask }] });
   const out = r.content.filter((b) => b.type === 'text').map((b) => b.text).join('\n');
   const p = parseBlog(out);
-  const fullText = [p.title, '', p.body, '', p.hashtags].join('\n').trim();
+  const fullText = [p.title, '', p.body, '', '─────────────', ctaBlock(c), '', p.hashtags].filter((x) => x !== undefined).join('\n').trim();
   return { title: p.title || ep.srcTitle, body: p.body, hashtags: p.hashtags, fullText };
 }
 

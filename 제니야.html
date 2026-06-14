@@ -533,7 +533,7 @@ body{font-family:'Pretendard',-apple-system,sans-serif;font-weight:500;backgroun
 
   </div>
 
-  <div class="foot">제니야 — <b>상단 프로젝트 × 좌측 에이전트 × 우측 도구</b> 교차 구조 · v2.11 (Phase4: docx→블로그 8편 연재, 제니야가 떠먹여주는 반자동 코치 — 추출·분리·재구성·격일일정·복사/네이버글쓰기/발행완료)</div>
+  <div class="foot">제니야 — <b>상단 프로젝트 × 좌측 에이전트 × 우측 도구</b> 교차 구조 · v2.12 (블로그 다듬기: CTA 개강일·수강료 자동 + 편 주제명 표시 + 발행 코치에 이미지 단계 추가)</div>
 </div>
 
 <!-- C-6. 업로드 모달 (+ 버튼으로 열림 — 실제 업로드는 3단계) -->
@@ -1296,11 +1296,12 @@ function blogCoach(host){
     } else if(d.today){
       html+='<div style="color:#9a6700;font-size:14px;font-weight:800;margin:6px 0">📣 오늘은 블로그 '+d.today.n+'편 「'+escapeHtml(d.today.title)+'」 발행할 차례예요!</div>';
       html+='<div class="fbody" style="max-height:220px">'+escapeHtml(d.today.fullText)+'</div>';
-      html+='<div class="plan-note">① [글 전체 복사] → ② [네이버 글쓰기 열기]에 붙여넣기 → ③ 발행 → ④ [발행 완료]</div>';
+      html+='<div class="plan-note">① [글 전체 복사] → ② [네이버 글쓰기] → ③ 붙여넣기 + <b>이미지 1~2장 추가</b> → ④ 발행 → ⑤ [발행 완료]</div>';
+      html+='<div class="plan-note" style="background:#fff7e6;border:1px solid #ffe0a3;border-radius:7px;padding:7px;color:#9a6700">🖼️ <b>저품질 방지 — 이미지 꼭 넣기:</b> 네이버에 붙여넣은 후, 본문 중간에 관련 이미지 1~2장을 넣어주세요. 강의 포스터나 무료 이미지(unsplash 등) 활용. (텍스트만 있으면 네이버 저품질 위험)</div>';
       html+='<div class="plan-actions">'
         +'<button class="plan-approve" data-copy="1"><i class="ti ti-copy"></i> ① 글 전체 복사</button>'
         +'<button class="folder-link" data-naver="1"><i class="ti ti-external-link"></i> ② 네이버 글쓰기</button>'
-        +'<button class="plan-approve" style="background:#2f9e6b" data-done="'+d.today.n+'"><i class="ti ti-check"></i> ④ 발행 완료</button>'
+        +'<button class="plan-approve" style="background:#2f9e6b" data-done="'+d.today.n+'"><i class="ti ti-check"></i> ⑤ 발행 완료</button>'
         +'<button class="plan-cancel">닫기</button></div>';
     } else if(d.next){
       html+='<div class="plan-note">오늘 발행할 편은 없어요. 다음 '+d.next.n+'편은 <b>'+escapeHtml(d.next.date)+'</b>에 알려드릴게요.</div><div class="plan-actions"><button class="plan-cancel">닫기</button></div>';
