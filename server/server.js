@@ -1771,6 +1771,70 @@ app.get('/leads/today', (req, res) => {
   res.json({ configured: leadsConfigured(), todayCount: todayList.length, total: mine.length, leads: show.map((l) => ({ source: l.source, author: l.author, text: l.text, link: l.link, keyword: l.keyword })) });
 });
 
+// ============================================================
+// 대표 유튜브 채널 댓글 → 가망고객 발굴 (핫/웜, 무료 YouTube Data API · API키만)
+//   대표 본인 채널 공개 댓글 읽기 = 합법·무료. 답글(접촉)은 대표 직접(계정보호).
+// ============================================================
+let YTLEADS = loadJson('유튜브리드.json'); if (!Array.isArray(YTLEADS)) YTLEADS = [];
+const YTLEADS_TAB = process.env.YTLEADS_TAB || '제니야_유튜브리드';
+const YT_HANDLE = (process.env.YT_CHANNEL_HANDLE || 'OhSangRyul').replace(/^@/, '');
+const YT_HOT = /(상담|신청|연락|등록|수강|문의|디엠|dm|카톡|어떻게\s*신청)/i;
+const YT_WARM = /(고민|10억|억\s*모|재테크|종잣돈|목돈|노후|돈\s*안?\s*모|얼마|어떻게\s*모|시작|초보|추천|투자|적금|가계부|모으|모이)/;
+function ytTier(t) { if (YT_HOT.test(t)) return '🔥핫'; if (YT_WARM.test(t)) return '🌤웜'; return ''; }
+let ytChain = Promise.resolve();
+async function saveYtLeadsToSheet() {
+  const sheets = sheetsClient(); if (!sheets || !RESV_SHEET_ID) return;
+  const meta = await sheets.spreadsheets.get({ spreadsheetId: RESV_SHEET_ID, fields: 'sheets.properties.title' });
+  if (!meta.data.sheets.some((s) => s.properties.title === YTLEADS_TAB)) {
+    await sheets.spreadsheets.batchUpdate({ spreadsheetId: RESV_SHEET_ID, requestBody: { requests: [{ addSheet: { properties: { title: YTLEADS_TAB } } }] } });
+  }
+  const rows = YTLEADS.slice(-2000).map((l) => [l.ts, l.tier, l.author, l.text, l.link, l.videoTitle, l.commentId]);
+  await sheets.spreadsheets.values.clear({ spreadsheetId: RESV_SHEET_ID, range: `'${YTLEADS_TAB}'!A1:Z` });
+  await sheets.spreadsheets.values.update({ spreadsheetId: RESV_SHEET_ID, range: `'${YTLEADS_TAB}'!A1`, valueInputOption: 'RAW', requestBody: { values: [['ts', 'tier', 'author', 'text', 'link', 'videoTitle', 'commentId'], ...rows] } });
+}
+function saveYtLeads() { saveJson('유튜브리드.json', YTLEADS); ytChain = ytChain.catch(() => {}).then(() => saveYtLeadsToSheet()).catch((e) => console.warn('⚠️ 유튜브리드 시트 저장 실패:', e.message)); return ytChain; }
+(async () => { const sheets = sheetsClient(); if (!sheets || !RESV_SHEET_ID) return; try { const got = await sheets.spreadsheets.values.get({ spreadsheetId: RESV_SHEET_ID, range: `'${YTLEADS_TAB}'!A2:G` }); const rows = got.data.values || []; if (rows.length) { YTLEADS = rows.filter((r) => r[6]).map((r) => ({ ts: r[0], tier: r[1], author: r[2], text: r[3], link: r[4], videoTitle: r[5], commentId: r[6] })); saveJson('유튜브리드.json', YTLEADS); console.log(`▶️ 유튜브 리드 복원: ${YTLEADS.length}건`); } } catch (e) {} })();
+
+async function ytUploadsPlaylist(key) {
+  let r; try { r = await (await fetch(`https://www.googleapis.com/youtube/v3/channels?part=contentDetails&forHandle=${encodeURIComponent(YT_HANDLE)}&key=${key}`)).json(); } catch (e) { return null; }
+  let item = (r.items || [])[0];
+  if (!item) { // 핸들로 못 찾으면 검색 폴백
+    try { const s = await (await fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&type=channel&maxResults=1&q=${encodeURIComponent(YT_HANDLE)}&key=${key}`)).json(); const cid = s.items && s.items[0] && s.items[0].id && s.items[0].id.channelId; if (cid) { const r2 = await (await fetch(`https://www.googleapis.com/youtube/v3/channels?part=contentDetails&id=${cid}&key=${key}`)).json(); item = (r2.items || [])[0]; } } catch (e) {}
+  }
+  return item && item.contentDetails && item.contentDetails.relatedPlaylists && item.contentDetails.relatedPlaylists.uploads;
+}
+async function runYtLeadCollect() {
+  const key = process.env.YOUTUBE_API_KEY; if (!key) return { error: 'YOUTUBE_API_KEY 미설정' };
+  const uploads = await ytUploadsPlaylist(key); if (!uploads) return { error: `채널을 찾지 못했습니다(@${YT_HANDLE}). 핸들(YT_CHANNEL_HANDLE) 확인.` };
+  const maxV = Math.min(Number(process.env.YT_MAX_VIDEOS || 30), 50);
+  let pl; try { pl = await (await fetch(`https://www.googleapis.com/youtube/v3/playlistItems?part=contentDetails,snippet&maxResults=${maxV}&playlistId=${uploads}&key=${key}`)).json(); } catch (e) { return { error: '영상 목록 조회 실패' }; }
+  const vids = (pl.items || []).map((it) => ({ id: it.contentDetails && it.contentDetails.videoId, title: it.snippet && it.snippet.title })).filter((v) => v.id);
+  const seen = new Set(YTLEADS.map((l) => l.commentId)); let added = 0; const now = new Date().toISOString();
+  for (const v of vids) {
+    let cs; try { cs = await (await fetch(`https://www.googleapis.com/youtube/v3/commentThreads?part=snippet&order=time&maxResults=50&videoId=${v.id}&key=${key}`)).json(); } catch (e) { continue; }
+    (cs.items || []).forEach((ci) => {
+      const sn = ci.snippet && ci.snippet.topLevelComment && ci.snippet.topLevelComment.snippet; if (!sn) return;
+      const text = String(sn.textOriginal || ''); const tier = ytTier(text); if (!tier) return;
+      if (seen.has(ci.id)) return; seen.add(ci.id);
+      YTLEADS.push({ commentId: ci.id, ts: now, tier, author: sn.authorDisplayName || '', text: text.slice(0, 200), link: `https://www.youtube.com/watch?v=${v.id}&lc=${ci.id}`, videoTitle: v.title || '', publishedAt: sn.publishedAt || '' });
+      added++;
+    });
+  }
+  if (added) { await saveYtLeads(); try { pushNotify({ kind: 'report', title: `유튜브 가망고객 ${added}명 발굴`, body: '@' + YT_HANDLE }); } catch (e) {} }
+  return { ok: true, added, total: YTLEADS.length };
+}
+let YT_LAST_DAY = '';
+async function runDueYtLeads() { if (!process.env.YOUTUBE_API_KEY) return; const d = addDaysYMD(0); if (d === YT_LAST_DAY) return; YT_LAST_DAY = d; await runYtLeadCollect().catch(() => {}); }
+app.post('/ytleads/collect', async (req, res) => { try { res.json(await runYtLeadCollect()); } catch (e) { res.status(500).json({ error: e.message }); } });
+app.get('/ytleads/today', (req, res) => {
+  const today = addDaysYMD(0);
+  const todayList = YTLEADS.filter((l) => String(l.ts).slice(0, 10) === today);
+  const show = (todayList.length ? todayList : YTLEADS).slice();
+  const ord = { '🔥핫': 0, '🌤웜': 1 };
+  show.sort((a, b) => (ord[a.tier] != null ? ord[a.tier] : 9) - (ord[b.tier] != null ? ord[b.tier] : 9));
+  res.json({ configured: !!process.env.YOUTUBE_API_KEY, handle: '@' + YT_HANDLE, todayCount: todayList.length, total: YTLEADS.length, hot: YTLEADS.filter((l) => l.tier === '🔥핫').length, leads: show.slice(0, 50).map((l) => ({ tier: l.tier, author: l.author, text: l.text, link: l.link, video: l.videoTitle })) });
+});
+
 // ── 진단: 발행 도구(Upload-Post) 연결 상태 (키는 가려서) ──
 app.get('/content/webhook-check', (req, res) => {
   const key = process.env.UPLOADPOST_API_KEY || '';
@@ -2020,7 +2084,8 @@ app.get('/promo/tick', async (req, res) => { res.json(await runDuePromo()); });
 app.get('/tick', async (req, res) => {
   const promo = await runDuePromo().catch((e) => ({ error: e.message }));
   const pay   = await runDuePayments().catch((e) => ({ error: e.message }));
-  runDueLeads().catch(() => {});   // 하루 1회 관심자 자동 수집 (날짜 가드)
+  runDueLeads().catch(() => {});   // 하루 1회 관심자(키워드) 자동 수집
+  runDueYtLeads().catch(() => {}); // 하루 1회 대표 유튜브 채널 가망고객 발굴
   res.json({ ok: true, ts: new Date().toISOString(), promo, pay });
 });
 

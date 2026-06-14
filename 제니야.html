@@ -533,7 +533,7 @@ body{font-family:'Pretendard',-apple-system,sans-serif;font-weight:500;backgroun
 
   </div>
 
-  <div class="foot">제니야 — <b>상단 프로젝트 × 좌측 에이전트 × 우측 도구</b> 교차 구조 · v2.13 (키워드 소셜리스닝: 유튜브 댓글+네이버 지식iN/카페/블로그 무료 자동 수집 → "오늘의 관심자 명단")</div>
+  <div class="foot">제니야 — <b>상단 프로젝트 × 좌측 에이전트 × 우측 도구</b> 교차 구조 · v2.14 (대표 유튜브 채널 댓글 → 가망고객 자동 발굴: 🔥핫/🌤웜 분류 · 답글은 대표 직접)</div>
 </div>
 
 <!-- C-6. 업로드 모달 (+ 버튼으로 열림 — 실제 업로드는 3단계) -->
@@ -1199,7 +1199,7 @@ function openFolderKind(kind){
 // ===== 배포 계획 보기 → 미리보기 → 승인 (지금은 자리/UI만, 실제 배포는 Phase 2) =====
 function planLabel(k){
   if(k.key==='텍스트') return '<i class="ti ti-book"></i> 블로그 연재 코치';
-  if(k.key==='키워드') return '<i class="ti ti-search"></i> 오늘의 관심자 명단';
+  if(k.key==='키워드') return '<i class="ti ti-brand-youtube"></i> 오늘의 유튜브 리드';
   if(k.flow==='wait') return '<i class="ti ti-eye"></i> 등록 계획 보기';
   if(k.flow==='manual') return '<i class="ti ti-eye"></i> 명단 계획 보기';
   return '<i class="ti ti-route"></i> 배포 계획 보기 · 승인';
@@ -1220,7 +1220,7 @@ function togglePlan(kind){
   if(host.style.display!=='none'){ host.style.display='none'; host.innerHTML=''; return; }
   if(kind==='쇼츠'){ realPlan(host); return; }   // Phase2: 쇼츠는 실제 Upload-Post 연동
   if(kind==='텍스트'){ blogCoach(host); return; } // Phase4: 텍스트는 블로그 연재 코치
-  if(kind==='키워드'){ leadsCoach(host); return; } // 소셜리스닝: 관심자 명단
+  if(kind==='키워드'){ ytLeadsCoach(host); return; } // 대표 유튜브 채널 가망고객 발굴
   var k=null; FOLDER_KINDS.forEach(function(x){ if(x.key===kind) k=x; }); if(!k) return;
   var cc=CAMPAIGN_CACHE||{}; var course=cc.name||cc.title||'이 과정';
   var rows=planPreview(k, course);
@@ -1277,7 +1277,35 @@ function realPlan(host){
   }).catch(function(){ host.innerHTML='<div class="plan-box"><div class="plan-note">⚠️ 서버 연결 실패</div></div>'; });
 }
 
-// 키워드 소셜리스닝 — 오늘의 관심자 명단 (유튜브 댓글 + 네이버 지식iN/카페/블로그, 무료 자동)
+// 대표 유튜브 채널 댓글 → 가망고객 발굴 (핫/웜, 무료·답글은 대표 직접)
+function ytLeadsCoach(host){
+  host.style.display=''; host.innerHTML='<div class="plan-box"><div class="plan-title"><i class="ti ti-loader-2"></i> 유튜브 리드 불러오는 중…</div></div>';
+  function close(){ var x=host.querySelector('.plan-cancel'); if(x) x.onclick=function(){ host.style.display='none'; host.innerHTML=''; }; }
+  fetch(SERVER_URL+'/ytleads/today').then(function(r){return r.json();}).then(function(d){
+    if(!d.configured){
+      host.innerHTML='<div class="plan-box"><div class="plan-title">⚠️ YOUTUBE_API_KEY 미설정</div>'
+        +'<div class="plan-note">Google Cloud(moneya-72fe6)에서 <b>YouTube Data API v3</b> 사용설정 → API 키를 Render 환경변수 <b>YOUTUBE_API_KEY</b>에 넣으면, 대표님 채널(@OhSangRyul) 댓글에서 가망고객을 자동 발굴합니다. (무료·합법)</div>'
+        +'<div class="plan-actions"><button class="plan-cancel">닫기</button></div></div>'; close(); return;
+    }
+    var html='<div class="plan-box"><div class="plan-title"><i class="ti ti-brand-youtube"></i> 오늘의 유튜브 리드 '+d.todayCount+'명 <span style="font-weight:400;color:#888">('+escapeHtml(d.handle)+' · 누적 '+d.total+' · 🔥핫 '+d.hot+')</span></div>';
+    html+='<div class="plan-note">대표님 채널 댓글에서 자동 발굴. 🔥핫=즉시 답글 / 🌤웜=관심. <b>답글(접촉)은 대표님이 직접</b> 다세요 — 계정 보호를 위해 자동 답글은 안 합니다.</div>';
+    html+='<div class="plan-actions"><button class="plan-approve" data-collect="1"><i class="ti ti-refresh"></i> 지금 발굴</button><button class="plan-cancel">닫기</button></div>';
+    if(!d.leads.length){ html+='<div class="plan-note">아직 발굴된 리드가 없어요. [지금 발굴]을 눌러보세요. (20~40초)</div>'; }
+    d.leads.forEach(function(l){
+      html+='<div class="fitem">'+escapeHtml(l.tier)+' <b>'+escapeHtml(l.author||'')+'</b>: '+escapeHtml(l.text||'')
+        +(l.link?(' <a href="'+escapeAttr(l.link)+'" target="_blank">유튜브에서 답글</a>'):'')
+        +(l.video?('<span style="color:#999"> · '+escapeHtml(l.video)+'</span>'):'')+'</div>';
+    });
+    html+='</div>'; host.innerHTML=html; close();
+    var cb=host.querySelector('[data-collect]'); if(cb) cb.onclick=function(){ cb.disabled=true; cb.innerHTML='<i class="ti ti-loader-2"></i> 발굴 중…(20~40초)';
+      fetch(SERVER_URL+'/ytleads/collect',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}).then(function(r){return r.json();}).then(function(res){
+        if(res.error){ alert(res.error); cb.disabled=false; cb.innerHTML='지금 발굴'; return; } ytLeadsCoach(host);
+      }).catch(function(){ alert('발굴 실패'); cb.disabled=false; cb.innerHTML='지금 발굴'; });
+    };
+  }).catch(function(){ host.innerHTML='<div class="plan-box"><div class="plan-note">⚠️ 서버 연결 실패</div></div>'; });
+}
+
+// 키워드 소셜리스닝 — 오늘의 관심자 명단 (유튜브 댓글 + 네이버 지식iN/카페/블로그, 무료 자동) [보조]
 function leadsCoach(host){
   host.style.display=''; host.innerHTML='<div class="plan-box"><div class="plan-title"><i class="ti ti-loader-2"></i> 관심자 명단 불러오는 중…</div></div>';
   function close(){ var x=host.querySelector('.plan-cancel'); if(x) x.onclick=function(){ host.style.display='none'; host.innerHTML=''; }; }
