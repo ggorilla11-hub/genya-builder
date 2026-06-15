@@ -2052,6 +2052,30 @@ app.post('/content/conversion', (req, res) => {
 
 // ── 📣 페북 빌드인퍼블릭 — 자동발행 불가(페북 정책) → 제니야가 초안 써주고 대표가 복사·게시(떠먹여주는 반자동) ──
 //    그날 콘텐츠 공장 현황 기반이라 매번 내용이 다르다. 톤=과정·솔직, 짧게, 부트캠프 니즈환기.
+// 회차 영구저장(시트 백업) — 글 올릴 때마다 +1. 시리즈명은 "비개발자의 일기".
+let BIP = loadJson('빌드인퍼블릭.json'); if (!BIP || typeof BIP !== 'object' || Array.isArray(BIP)) BIP = { count: 0 };
+if (typeof BIP.count !== 'number') BIP.count = 0;
+const BIP_SERIES = process.env.BIP_SERIES || '비개발자의 일기';
+const BIP_TAB = process.env.BIP_TAB || '제니야_빌드인퍼블릭';
+let bipChain = Promise.resolve();
+async function saveBipToSheet() {
+  const sheets = sheetsClient(); if (!sheets || !RESV_SHEET_ID) return;
+  const meta = await sheets.spreadsheets.get({ spreadsheetId: RESV_SHEET_ID, fields: 'sheets.properties.title' });
+  if (!meta.data.sheets.some((s) => s.properties.title === BIP_TAB)) {
+    await sheets.spreadsheets.batchUpdate({ spreadsheetId: RESV_SHEET_ID, requestBody: { requests: [{ addSheet: { properties: { title: BIP_TAB } } }] } });
+  }
+  await sheets.spreadsheets.values.update({ spreadsheetId: RESV_SHEET_ID, range: `'${BIP_TAB}'!A1`, valueInputOption: 'RAW', requestBody: { values: [['bip', JSON.stringify(BIP)]] } });
+}
+function saveBip() { saveJson('빌드인퍼블릭.json', BIP); bipChain = bipChain.catch(() => {}).then(() => saveBipToSheet()).catch((e) => console.warn('BIP 시트 저장 실패:', e.message)); return bipChain; }
+(async () => { const sheets = sheetsClient(); if (!sheets || !RESV_SHEET_ID) return; try { const got = await sheets.spreadsheets.values.get({ spreadsheetId: RESV_SHEET_ID, range: `'${BIP_TAB}'!A1:B1` }); const row = (got.data.values || [])[0]; if (row && row[0] === 'bip' && row[1]) { const o = JSON.parse(row[1]); if (o && typeof o.count === 'number') { BIP = o; saveJson('빌드인퍼블릭.json', BIP); console.log(`빌드인퍼블릭 회차 복원: 발행 ${BIP.count}건`); } } } catch (e) {} })();
+function bipKstDate() { const k = new Date(Date.now() + 9 * 3600 * 1000); return `${k.getUTCFullYear()}년 ${k.getUTCMonth() + 1}월 ${k.getUTCDate()}일`; }
+app.get('/buildinpublic/state', (req, res) => res.json({ published: BIP.count || 0, nextEpisode: (BIP.count || 0) + 1, series: BIP_SERIES }));
+// 발행 완료 도장 → 회차 +1 (발행 자체는 대표가 페북에서 직접)
+app.post('/buildinpublic/published', (req, res) => {
+  BIP.count = (BIP.count || 0) + 1; BIP.lastPublishedAt = new Date().toISOString(); saveBip();
+  res.json({ ok: true, published: BIP.count, nextEpisode: BIP.count + 1 });
+});
+
 app.post('/buildinpublic/draft', async (req, res) => {
   try {
     if (!process.env.ANTHROPIC_API_KEY) return res.status(503).json({ error: '서버에 API 키가 아직 없습니다.' });
@@ -2060,8 +2084,11 @@ app.post('/buildinpublic/draft', async (req, res) => {
     const status = voiceLiveStatus();
     const yt = youtubeCheckText();
     const eng = engagementText();
+    const episode = (BIP.count || 0) + 1;     // 이번에 올릴 회차(아직 미발행)
+    const dateStr = bipKstDate();
     const sys = [
       '너는 오상열 대표님의 페이스북 "빌드인퍼블릭(build in public)" 글을 대신 써주는 작가다.',
+      `시리즈명은 "${BIP_SERIES}"이고 이번이 ${episode}회차다.`,
       '대표님은 비개발자(CFP 25년 재무전문가)인데 AI로 9개월째 자기 사업용 AI 비서·콘텐츠 자동화 공장을 직접 만들고 있다. 그 만드는 과정을 솔직하게 페북에 기록한다.',
       '',
       '=== 오늘 콘텐츠 공장 현황 (글감이 될 만한 사실만 골라 쓴다. 없는 건 절대 지어내지 말 것) ===',
@@ -2075,11 +2102,21 @@ app.post('/buildinpublic/draft', async (req, res) => {
       '- 1인칭("저는"), 담백·진솔한 말투. 이모지는 한두 개만.',
       '- 끝맺음은 부트캠프 니즈환기: 직접 "수강하세요/사세요" 절대 금지. 대신 "비개발자인 나도 했으니 당신 사업에도 이런 AI 직원을 둘 수 있다"는 마음이 은근히 들게.',
       '- 맨 끝에 해시태그 3~5개(#빌드인퍼블릭 #AI에이전트 등).',
-      '출력: 페북에 그대로 붙여넣을 글 본문만. 머리말·설명·따옴표·마크다운 없이 본문만.',
+      '',
+      '=== 출력 형식 (반드시 지킬 것) ===',
+      '첫 줄에 "부제: "를 쓰고 그날 핵심을 압축한 한 줄을 쓴다(후킹되게, 12~25자, 따옴표 없이. 예: 새벽 3시, 모든 게 막혀 있었다).',
+      '그 다음 빈 줄을 두고 본문을 쓴다.',
+      '시리즈명·회차·날짜·제목은 절대 쓰지 마라(시스템이 자동으로 맨 위에 붙인다). 본문에서 부제 문구를 똑같이 반복하지 마라.',
     ].filter(Boolean).join('\n');
-    const r = await anthropic.messages.create({ model: MODEL, max_tokens: 1500, system: sys, messages: [{ role: 'user', content: '오늘치 빌드인퍼블릭 페북 글 초안을 써줘.' }] });
-    const draft = r.content.filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim();
-    res.json({ ok: true, draft });
+    const r = await anthropic.messages.create({ model: MODEL, max_tokens: 1500, system: sys, messages: [{ role: 'user', content: `${BIP_SERIES} ${episode}회차 빌드인퍼블릭 페북 글 초안을 써줘.` }] });
+    const rawTxt = r.content.filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim();
+    // 부제·본문 분리 → 제목 블록 자동 조립
+    let subtitle = '', body = rawTxt;
+    const mm = rawTxt.match(/^\s*부제\s*[:：]\s*(.+)/);
+    if (mm) { subtitle = mm[1].trim().replace(/^[”“"'']+|[”“"'']+$/g, ''); body = rawTxt.slice(rawTxt.indexOf(mm[0]) + mm[0].length).trim(); }
+    else { const lines = rawTxt.split('\n'); subtitle = (lines.shift() || '').replace(/^부제\s*[:：]?\s*/, '').replace(/^[”“"'']+|[”“"'']+$/g, '').trim().slice(0, 30); body = lines.join('\n').trim(); }
+    const draft = `${BIP_SERIES} #${episode}\n(${dateStr}) — ${subtitle}\n\n${body}`;
+    res.json({ ok: true, draft, episode, date: dateStr, subtitle, series: BIP_SERIES });
   } catch (e) { console.error('[buildinpublic/draft]', e.message); res.status(500).json({ error: e.message }); }
 });
 // 빌드인퍼블릭 첨부 이미지 업로드 완료(파이어베이스 링크만 발급, 콘텐츠 보관함엔 안 넣음)

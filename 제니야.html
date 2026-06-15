@@ -426,6 +426,7 @@ body{font-family:'Pretendard',-apple-system,sans-serif;font-weight:500;backgroun
 .bip-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;align-items:center}
 .bip-gen,.bip-copy{background:#1877F2;color:#fff;border:0;border-radius:8px;font-size:13px;font-weight:700;padding:8px 14px;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:5px}
 .bip-fb{background:#0b5fcc;color:#fff;border-radius:8px;font-size:13px;font-weight:700;padding:8px 14px;text-decoration:none;display:inline-flex;align-items:center;gap:5px}
+.bip-done{background:#2f9e6b;color:#fff;border:0;border-radius:8px;font-size:13px;font-weight:700;padding:8px 14px;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:5px}
 .bip-recent,.bip-upl{background:#fff;border:1px solid #9AA4A0;color:#46524D;border-radius:8px;font-size:12px;font-weight:700;padding:6px 10px;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:4px}
 .bip-attachwrap{margin-top:10px;padding:8px 10px;background:#F4F7FF;border-radius:8px}
 .bip-ah{font-size:11px;font-weight:700;color:#46524D}
@@ -567,9 +568,10 @@ body{font-family:'Pretendard',-apple-system,sans-serif;font-weight:500;backgroun
       </div>
       <div class="bip-row">
         <button class="bip-copy" id="bip-copy"><i class="ti ti-copy"></i> ① 초안 복사</button>
-        <a class="bip-fb" id="bip-fb" href="https://www.facebook.com/" target="_blank" rel="noopener"><i class="ti ti-brand-facebook"></i> ② 페북 개인계정 바로가기</a>
+        <a class="bip-fb" id="bip-fb" href="https://www.facebook.com/osang.yeol" target="_blank" rel="noopener"><i class="ti ti-brand-facebook"></i> ② 페북 개인계정 바로가기</a>
+        <button class="bip-done" id="bip-done"><i class="ti ti-circle-check"></i> ③ 올렸어요 (다음 회차로)</button>
       </div>
-      <div class="bip-hint">① 복사 → ② 페북 열기 → 붙여넣기(Ctrl+V) → 위 사진 첨부 → 발행 (발행은 대표님 손)</div>
+      <div class="bip-hint">① 복사 → ② 페북 열기 → 붙여넣기(Ctrl+V) → 사진 첨부 → 발행 → ③ 올렸어요 누르면 다음 회차로 +1 (발행은 대표님 손)</div>
     </div>
   </div>
 
@@ -3039,8 +3041,11 @@ function bipLoadRecent(){
     (d.contents||[]).filter(function(c){return c.type==='쇼츠'&&c.link;}).slice(-3).forEach(function(c){ bipAddThumb(c.link, c.name||'쇼츠'); });
   }).catch(function(){});
 }
+function bipSetCoach(next,series){ var el=document.getElementById('bip-coach'); if(el) el.textContent='오늘 올리실 차례예요 — 이번엔 '+(series||'비개발자의 일기')+' #'+(next||1)+' (제니야가 초안 준비할게요)'; }
 (function bipInit(){
   var gen=document.getElementById('bip-gen'); if(!gen) return;
+  // 현재 회차 불러오기
+  fetch(SERVER_URL+'/buildinpublic/state').then(function(r){return r.json();}).then(function(s){ bipSetCoach(s.nextEpisode,s.series); }).catch(function(){});
   gen.onclick=function(){
     gen.disabled=true; gen.innerHTML='<i class="ti ti-loader-2"></i> 제니야가 쓰는 중…';
     var note=(document.getElementById('bip-note')||{}).value||'';
@@ -3062,6 +3067,15 @@ function bipLoadRecent(){
   var imgInput=document.getElementById('bip-img'), upl=document.getElementById('bip-upl');
   if(upl&&imgInput){ imgInput.onchange=function(){ Array.prototype.forEach.call(imgInput.files,bipUploadImage); imgInput.value=''; }; }
   var recent=document.getElementById('bip-recent'); if(recent) recent.onclick=function(){ bipLoadRecent(); };
+  var done=document.getElementById('bip-done');
+  if(done) done.onclick=function(){
+    if(!window.confirm('페북에 올리셨나요? 누르면 회차가 +1 되어 다음 글은 다음 번호로 시작합니다.')) return;
+    done.disabled=true;
+    fetch(SERVER_URL+'/buildinpublic/published',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})
+      .then(function(r){return r.json();}).then(function(s){ done.disabled=false;
+        done.innerHTML='<i class="ti ti-check"></i> 올림 완료! 다음은 #'+(s.nextEpisode||'?');
+        bipSetCoach(s.nextEpisode); }).catch(function(){ done.disabled=false; alert('처리 실패'); });
+  };
 })();
 
 // 회의 중단 버튼 연결
