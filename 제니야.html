@@ -427,6 +427,11 @@ body{font-family:'Pretendard',-apple-system,sans-serif;font-weight:500;backgroun
 .bip-gen,.bip-copy{background:#1877F2;color:#fff;border:0;border-radius:8px;font-size:13px;font-weight:700;padding:8px 14px;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:5px}
 .bip-fb{background:#0b5fcc;color:#fff;border-radius:8px;font-size:13px;font-weight:700;padding:8px 14px;text-decoration:none;display:inline-flex;align-items:center;gap:5px}
 .bip-done{background:#2f9e6b;color:#fff;border:0;border-radius:8px;font-size:13px;font-weight:700;padding:8px 14px;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:5px}
+.bip-tabs{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}
+.bip-tab{background:#fff;border:1px solid #cdd6e8;color:#46524D;border-radius:18px;font-size:12px;font-weight:700;padding:5px 12px;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:4px}
+.bip-tab.active{background:#1877F2;color:#fff;border-color:#1877F2}
+.bip-tip{font-size:11.5px;color:#7a5a00;background:#FFF8E7;border:1px solid #FFE0A3;border-radius:8px;padding:7px 9px;margin-top:7px;line-height:1.5}
+.bip-card{background:#fff;border:1px solid #6C4AB6;color:#6C4AB6;border-radius:8px;font-size:12px;font-weight:700;padding:6px 10px;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:4px}
 .bip-recent,.bip-upl{background:#fff;border:1px solid #9AA4A0;color:#46524D;border-radius:8px;font-size:12px;font-weight:700;padding:6px 10px;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:4px}
 .bip-attachwrap{margin-top:10px;padding:8px 10px;background:#F4F7FF;border-radius:8px}
 .bip-ah{font-size:11px;font-weight:700;color:#46524D}
@@ -558,20 +563,27 @@ body{font-family:'Pretendard',-apple-system,sans-serif;font-weight:500;backgroun
     <div class="bip-row"><button class="bip-gen" id="bip-gen"><i class="ti ti-wand"></i> 오늘 초안 만들기</button></div>
     <div id="bip-result" style="display:none">
       <textarea id="bip-draft" class="bip-draft"></textarea>
-      <div class="bip-attachwrap">
-        <div class="bip-ah">📎 붙일 거리 (대표님이 페북에서 직접 첨부 — 아래서 사진을 받아 두세요)</div>
+      <div class="bip-tabs" id="bip-tabs">
+        <button class="bip-tab active" data-ch="facebook"><i class="ti ti-brand-facebook"></i> 페북</button>
+        <button class="bip-tab" data-ch="instagram"><i class="ti ti-brand-instagram"></i> 인스타</button>
+        <button class="bip-tab" data-ch="youtube"><i class="ti ti-brand-youtube"></i> 유튜브 커뮤니티</button>
+      </div>
+      <div class="bip-tip" id="bip-tip"></div>
+      <div class="bip-attachwrap" id="bip-attachwrap">
+        <div class="bip-ah">📎 붙일 사진 (인스타는 필수 · 페북/유튜브는 선택)</div>
         <div class="bip-row">
+          <button class="bip-card" id="bip-card"><i class="ti ti-photo"></i> 표지 카드 이미지 만들기</button>
           <label class="bip-upl" id="bip-upl"><i class="ti ti-photo-up"></i> 이미지 첨부(캡처 등)<input type="file" id="bip-img" accept="image/*" multiple hidden></label>
           <button class="bip-recent" id="bip-recent"><i class="ti ti-folder"></i> 최근 카드뉴스·쇼츠 가져오기</button>
         </div>
         <div id="bip-attaches" class="bip-attaches"></div>
       </div>
       <div class="bip-row">
-        <button class="bip-copy" id="bip-copy"><i class="ti ti-copy"></i> ① 초안 복사</button>
-        <a class="bip-fb" id="bip-fb" href="https://www.facebook.com/osang.yeol" target="_blank" rel="noopener"><i class="ti ti-brand-facebook"></i> ② 페북 개인계정 바로가기</a>
+        <button class="bip-copy" id="bip-copy"><i class="ti ti-copy"></i> ① 글 복사</button>
+        <a class="bip-fb" id="bip-go" href="https://www.facebook.com/osang.yeol" target="_blank" rel="noopener"><i class="ti ti-external-link"></i> ② 페북 바로가기</a>
         <button class="bip-done" id="bip-done"><i class="ti ti-circle-check"></i> ③ 올렸어요 (다음 회차로)</button>
       </div>
-      <div class="bip-hint">① 복사 → ② 페북 열기 → 붙여넣기(Ctrl+V) → 사진 첨부 → 발행 → ③ 올렸어요 누르면 다음 회차로 +1 (발행은 대표님 손)</div>
+      <div class="bip-hint" id="bip-hint">① 글 복사 → ② 채널 열기 → 붙여넣기(Ctrl+V) → (사진 필요시 첨부) → 발행 → ③ 올렸어요(+1). 세 채널 다 자동발행은 안 돼 직접 올리십니다.</div>
     </div>
   </div>
 
@@ -3042,10 +3054,35 @@ function bipLoadRecent(){
   }).catch(function(){});
 }
 function bipSetCoach(next,series){ var el=document.getElementById('bip-coach'); if(el) el.textContent='오늘 올리실 차례예요 — 이번엔 '+(series||'비개발자의 일기')+' #'+(next||1)+' (제니야가 초안 준비할게요)'; }
+var BIP_CH={}, bipActiveCh='facebook';
+var BIP_CHLABEL={facebook:'② 페북 바로가기',instagram:'② 인스타 바로가기',youtube:'② 유튜브 커뮤니티 바로가기'};
+var BIP_CHTIP={
+  facebook:'페북: 글을 그대로 붙여넣고(사진은 선택) 발행. 링크도 클릭됩니다. 자동발행은 페북 정책상 안 돼 직접 올리십니다.',
+  instagram:'인스타: 사진이 필수예요(텍스트만은 게시 불가). [표지 카드 이미지 만들기]나 [최근 카드뉴스·쇼츠]로 사진을 받아 올리고, 글은 캡션에 붙여넣으세요. 캡션 속 링크는 클릭이 안 됩니다.',
+  youtube:'유튜브 커뮤니티: 자동 게시 API가 없어 직접 올리셔야 해요. 바로가기 → 커뮤니티 [게시물 만들기]에 붙여넣기(사진 선택). 본채널 4.63만 구독자에게 노출됩니다.'
+};
+function bipSelectCh(ch){
+  bipActiveCh=ch;
+  var tabs=document.querySelectorAll('.bip-tab'); for(var i=0;i<tabs.length;i++){ tabs[i].classList.toggle('active', tabs[i].getAttribute('data-ch')===ch); }
+  var go=document.getElementById('bip-go'); if(go){ go.href=(BIP_CH[ch]&&BIP_CH[ch].url)||'#'; go.innerHTML='<i class="ti ti-external-link"></i> '+(BIP_CHLABEL[ch]||'② 바로가기'); }
+  var tip=document.getElementById('bip-tip'); if(tip) tip.textContent=BIP_CHTIP[ch]||'';
+}
+function bipWrapDraw(ctx,text,x,y,maxW,lh){ text=String(text||''); var line='',yy=y; for(var i=0;i<text.length;i++){ var t=line+text[i]; if(ctx.measureText(t).width>maxW&&line){ ctx.fillText(line,x,yy); line=text[i]; yy+=lh; } else line=t; } if(line) ctx.fillText(line,x,yy); return yy; }
+function bipMakeCard(){
+  var m=window.bipMeta||{};
+  var cv=document.createElement('canvas'); cv.width=1080; cv.height=1350; var x=cv.getContext('2d');
+  var g=x.createLinearGradient(0,0,0,1350); g.addColorStop(0,'#1877F2'); g.addColorStop(1,'#0a3b86'); x.fillStyle=g; x.fillRect(0,0,1080,1350);
+  x.fillStyle='rgba(255,255,255,.92)'; x.font='700 44px "Malgun Gothic",sans-serif'; x.fillText((m.series||'비개발자의 일기')+'   #'+(m.episode||1), 96, 250);
+  x.fillStyle='rgba(255,255,255,.7)'; x.font='400 36px "Malgun Gothic",sans-serif'; x.fillText('('+(m.date||'')+')', 96, 312);
+  x.fillStyle='#fff'; x.font='800 78px "Malgun Gothic",sans-serif';
+  bipWrapDraw(x, m.subtitle||'', 96, 600, 888, 100);
+  x.fillStyle='rgba(255,255,255,.78)'; x.font='500 34px "Malgun Gothic",sans-serif'; x.fillText('비개발자가 AI로 직접 만드는 기록', 96, 1250);
+  cv.toBlob(function(b){ if(!b) return; var u=URL.createObjectURL(b); var a=document.createElement('a'); a.href=u; a.download='비개발자의일기_'+(m.episode||1)+'.png'; document.body.appendChild(a); a.click(); a.remove(); bipAddThumb(u,'표지 카드'); }, 'image/png');
+}
 (function bipInit(){
   var gen=document.getElementById('bip-gen'); if(!gen) return;
-  // 현재 회차 불러오기
-  fetch(SERVER_URL+'/buildinpublic/state').then(function(r){return r.json();}).then(function(s){ bipSetCoach(s.nextEpisode,s.series); }).catch(function(){});
+  fetch(SERVER_URL+'/buildinpublic/state').then(function(r){return r.json();}).then(function(s){ BIP_CH=s.channels||{}; bipSetCoach(s.nextEpisode,s.series); bipSelectCh('facebook'); }).catch(function(){});
+  var tabs=document.querySelectorAll('.bip-tab'); for(var i=0;i<tabs.length;i++){ (function(t){ t.onclick=function(){ bipSelectCh(t.getAttribute('data-ch')); }; })(tabs[i]); }
   gen.onclick=function(){
     gen.disabled=true; gen.innerHTML='<i class="ti ti-loader-2"></i> 제니야가 쓰는 중…';
     var note=(document.getElementById('bip-note')||{}).value||'';
@@ -3053,23 +3090,26 @@ function bipSetCoach(next,series){ var el=document.getElementById('bip-coach'); 
       .then(function(r){return r.json();}).then(function(d){
         gen.disabled=false; gen.innerHTML='<i class="ti ti-wand"></i> 다시 쓰기';
         if(d.error){ alert('초안 실패: '+d.error); return; }
+        window.bipMeta={series:d.series,episode:d.episode,date:d.date,subtitle:d.subtitle};
         document.getElementById('bip-result').style.display='';
         document.getElementById('bip-draft').value=d.draft||'';
+        bipSelectCh(bipActiveCh);
         document.getElementById('bip-draft').scrollIntoView({behavior:'smooth',block:'center'});
       }).catch(function(){ gen.disabled=false; gen.innerHTML='<i class="ti ti-wand"></i> 오늘 초안 만들기'; alert('서버 연결 실패'); });
   };
   var copy=document.getElementById('bip-copy');
   if(copy) copy.onclick=function(){ var t=document.getElementById('bip-draft'); if(!t) return;
-    var done=function(){ copy.innerHTML='<i class="ti ti-check"></i> 복사됨! 이제 ②페북으로'; setTimeout(function(){ copy.innerHTML='<i class="ti ti-copy"></i> ① 초안 복사'; },1800); };
-    if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(t.value).then(done).catch(function(){ t.select(); document.execCommand('copy'); done(); }); }
-    else { t.select(); try{ document.execCommand('copy'); }catch(e){} done(); }
+    var ok=function(){ copy.innerHTML='<i class="ti ti-check"></i> 복사됨! ②바로가기로'; setTimeout(function(){ copy.innerHTML='<i class="ti ti-copy"></i> ① 글 복사'; },1800); };
+    if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(t.value).then(ok).catch(function(){ t.select(); document.execCommand('copy'); ok(); }); }
+    else { t.select(); try{ document.execCommand('copy'); }catch(e){} ok(); }
   };
-  var imgInput=document.getElementById('bip-img'), upl=document.getElementById('bip-upl');
-  if(upl&&imgInput){ imgInput.onchange=function(){ Array.prototype.forEach.call(imgInput.files,bipUploadImage); imgInput.value=''; }; }
+  var imgInput=document.getElementById('bip-img');
+  if(imgInput){ imgInput.onchange=function(){ Array.prototype.forEach.call(imgInput.files,bipUploadImage); imgInput.value=''; }; }
   var recent=document.getElementById('bip-recent'); if(recent) recent.onclick=function(){ bipLoadRecent(); };
+  var card=document.getElementById('bip-card'); if(card) card.onclick=function(){ bipMakeCard(); };
   var done=document.getElementById('bip-done');
   if(done) done.onclick=function(){
-    if(!window.confirm('페북에 올리셨나요? 누르면 회차가 +1 되어 다음 글은 다음 번호로 시작합니다.')) return;
+    if(!window.confirm('올리셨나요? 누르면 회차가 +1 되어 다음 글은 다음 번호로 시작합니다. (여러 채널에 올려도 한 편 = 1회차)')) return;
     done.disabled=true;
     fetch(SERVER_URL+'/buildinpublic/published',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})
       .then(function(r){return r.json();}).then(function(s){ done.disabled=false;

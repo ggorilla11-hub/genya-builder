@@ -2057,6 +2057,12 @@ let BIP = loadJson('빌드인퍼블릭.json'); if (!BIP || typeof BIP !== 'objec
 if (typeof BIP.count !== 'number') BIP.count = 0;
 const BIP_SERIES = process.env.BIP_SERIES || '비개발자의 일기';
 const BIP_TAB = process.env.BIP_TAB || '제니야_빌드인퍼블릭';
+// 빌드인퍼블릭 다채널 — 같은 일기를 채널별로 올린다(자동발행X, 바로가기+복사). 주소는 env로 변경 가능.
+const BIP_CHANNELS = {
+  facebook: { name: '페북', url: process.env.BIP_FB_URL || 'https://www.facebook.com/osang.yeol' },
+  instagram: { name: '인스타', url: process.env.BIP_IG_URL || 'https://www.instagram.com/oh_want' },
+  youtube: { name: '유튜브 커뮤니티', url: process.env.BIP_YT_URL || 'https://www.youtube.com/@OhSangRyul/community' },
+};
 let bipChain = Promise.resolve();
 async function saveBipToSheet() {
   const sheets = sheetsClient(); if (!sheets || !RESV_SHEET_ID) return;
@@ -2069,7 +2075,7 @@ async function saveBipToSheet() {
 function saveBip() { saveJson('빌드인퍼블릭.json', BIP); bipChain = bipChain.catch(() => {}).then(() => saveBipToSheet()).catch((e) => console.warn('BIP 시트 저장 실패:', e.message)); return bipChain; }
 (async () => { const sheets = sheetsClient(); if (!sheets || !RESV_SHEET_ID) return; try { const got = await sheets.spreadsheets.values.get({ spreadsheetId: RESV_SHEET_ID, range: `'${BIP_TAB}'!A1:B1` }); const row = (got.data.values || [])[0]; if (row && row[0] === 'bip' && row[1]) { const o = JSON.parse(row[1]); if (o && typeof o.count === 'number') { BIP = o; saveJson('빌드인퍼블릭.json', BIP); console.log(`빌드인퍼블릭 회차 복원: 발행 ${BIP.count}건`); } } } catch (e) {} })();
 function bipKstDate() { const k = new Date(Date.now() + 9 * 3600 * 1000); return `${k.getUTCFullYear()}년 ${k.getUTCMonth() + 1}월 ${k.getUTCDate()}일`; }
-app.get('/buildinpublic/state', (req, res) => res.json({ published: BIP.count || 0, nextEpisode: (BIP.count || 0) + 1, series: BIP_SERIES }));
+app.get('/buildinpublic/state', (req, res) => res.json({ published: BIP.count || 0, nextEpisode: (BIP.count || 0) + 1, series: BIP_SERIES, channels: BIP_CHANNELS }));
 // 발행 완료 도장 → 회차 +1 (발행 자체는 대표가 페북에서 직접)
 app.post('/buildinpublic/published', (req, res) => {
   BIP.count = (BIP.count || 0) + 1; BIP.lastPublishedAt = new Date().toISOString(); saveBip();
