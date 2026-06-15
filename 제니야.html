@@ -2966,8 +2966,11 @@ document.getElementById('pastbar-today').onclick = function(){ renderDay(dayStat
 // 배포 버전 표시 — 서버 /version(배포 커밋·서버시작 시각)을 읽어 푸터에 자동 표시 (배포됐는지 화면으로 즉시 확인)
 fetch(SERVER_URL+'/version').then(function(r){return r.json();}).then(function(v){
   var el=document.getElementById('ver'); if(!el) return;
-  var t=(v.startedAt||'').replace('T',' ').slice(0,16);
-  el.textContent='최신배포 '+(t||'?')+' · '+(v.short||'local');
+  var t='?';
+  try{ var p={}; new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(new Date(v.startedAt)).forEach(function(x){p[x.type]=x.value;});
+    t=p.year+'-'+p.month+'-'+p.day+' '+p.hour+':'+p.minute;
+  }catch(e){ t=(v.startedAt||'').replace('T',' ').slice(0,16); }
+  el.textContent='최신배포 '+t+' (한국시간) · '+(v.short||'local');
   el.title='commit '+(v.commit||'local');
 }).catch(function(){ var el=document.getElementById('ver'); if(el) el.textContent='(서버 연결 안 됨)'; });
 
