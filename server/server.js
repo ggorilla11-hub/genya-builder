@@ -538,19 +538,37 @@ const ZENYA_RULES = [
   '대표님이 가족과 저녁 먹는 시간을 되찾는 것. 모든 일의 최종 목적.',
 ].join('\n');
 
-// 외부 발행 결과: Upload-Post 실제 게시 이력(/content/jobs)을 요약해 두뇌에 넣는다 (30초 캐시, 4초 타임아웃).
+// 발행 이력 전체 수집(페이지네이션) — 기본 limit이 작아 유튜브 행이 잘리는 문제 해결.
+//   limit=50 시도 후 거부되면 기본값으로 폴백, 페이지를 넘기며 모은다.
+async function fetchAllHistory(maxItems) {
+  maxItems = maxItems || 120;
+  const all = []; let perPage = 50;
+  for (let page = 1; page <= 12 && all.length < maxItems; page++) {
+    let rows = null;
+    try {
+      let r = await fetch(`https://api.upload-post.com/api/uploadposts/history?limit=${perPage}&page=${page}`, { headers: { Authorization: `Apikey ${process.env.UPLOADPOST_API_KEY}` }, signal: AbortSignal.timeout(8000) });
+      if (!r.ok && page === 1) { perPage = 10; r = await fetch(`https://api.upload-post.com/api/uploadposts/history?page=${page}`, { headers: { Authorization: `Apikey ${process.env.UPLOADPOST_API_KEY}` }, signal: AbortSignal.timeout(8000) }); }
+      if (r.ok) { const d = await r.json().catch(() => null); rows = (d && Array.isArray(d.history)) ? d.history : []; }
+    } catch (e) {}
+    if (!rows || !rows.length) break;
+    all.push(...rows);
+    if (rows.length < perPage) break;   // 마지막 페이지
+  }
+  return all;
+}
+
+// 외부 발행 결과: Upload-Post 실제 게시 이력(/content/jobs)을 요약해 두뇌에 넣는다 (30초 캐시).
 let _pubCache = { ts: 0, text: '' };
 async function publishStatusText() {
   if (!posterReady()) return '';
   if (Date.now() - _pubCache.ts < 30000 && _pubCache.text) return _pubCache.text;
   let out = '';
   try {
-    const r = await fetch('https://api.upload-post.com/api/uploadposts/history?limit=200', { headers: { Authorization: `Apikey ${process.env.UPLOADPOST_API_KEY}` }, signal: AbortSignal.timeout(6000) });
-    if (r.ok) {
-      const data = await r.json().catch(() => ({}));
+    const hist = await fetchAllHistory(120);
+    if (hist.length) {
       const chKor = { instagram: '인스타', facebook: '페북', youtube: '유튜브', tiktok: '틱톡' };
       const g = {};
-      (data.history || []).slice(0, 120).forEach((h) => {
+      hist.forEach((h) => {
         const day = String(h.upload_timestamp || '').slice(0, 10); if (!day) return;
         const kind = h.media_type === 'photo' ? '카드뉴스' : '쇼츠';
         const gk = day + '|' + kind; g[gk] = g[gk] || {};
@@ -1795,10 +1813,12 @@ app.post('/content/plan/approve', async (req, res) => {
 app.get('/content/jobs', async (req, res) => {
   if (!posterReady()) return res.status(400).json({ error: '발행 도구 미연결' });
   try {
-    const r = await fetch('https://api.upload-post.com/api/uploadposts/history?limit=200', { headers: { Authorization: `Apikey ${process.env.UPLOADPOST_API_KEY}` } });
+    const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 100);
+    const page = Math.max(Number(req.query.page) || 1, 1);
+    const r = await fetch(`https://api.upload-post.com/api/uploadposts/history?limit=${limit}&page=${page}`, { headers: { Authorization: `Apikey ${process.env.UPLOADPOST_API_KEY}` } });
     const text = await r.text().catch(() => '');
     let data; try { data = JSON.parse(text); } catch (e) { data = String(text).slice(0, 2000); }
-    res.status(r.ok ? 200 : 502).json({ status: r.status, data });
+    res.status(r.ok ? 200 : 502).json({ status: r.status, count: (data && data.history) ? data.history.length : 0, data });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -1895,12 +1915,8 @@ async function buildResults() {
     health: {},
     conversion: { applyClicks: null, applySubmits: null, kakaoFriends: null, note: '신청 폼 클릭·신청 수, 카톡 친구 수는 자동 수집 불가 → 수동 입력 또는 플랫폼 직접 확인.' },
   };
-  // 1) 발행 이력 (limit 크게 → 유튜브 포함 전부)
-  let history = [];
-  try {
-    const r = await fetch('https://api.upload-post.com/api/uploadposts/history?limit=200', { headers: { Authorization: `Apikey ${process.env.UPLOADPOST_API_KEY}` }, signal: AbortSignal.timeout(8000) });
-    if (r.ok) { const d = await r.json().catch(() => ({})); history = Array.isArray(d.history) ? d.history : []; }
-  } catch (e) {}
+  // 1) 발행 이력 (페이지네이션 → 유튜브 포함 전부)
+  const history = await fetchAllHistory(150);
   history.forEach((h) => {
     const ch = h.platform; const c = (out.publish.byChannel[ch] = out.publish.byChannel[ch] || { ok: 0, fail: 0 });
     if (h.success) { c.ok++; out.publish.success++; } else { c.fail++; out.publish.fail++; }
