@@ -1757,6 +1757,34 @@ app.post('/content/scheduled/cancel', async (req, res) => {
   res.status(c.ok ? 200 : 502).json(c);
 });
 
+// ── 대장 동기화: Upload-Post에 실제 잡힌 카드뉴스 예약을 우리 SCHED로 복구(유실 후 중복승인 방지) ──
+//    카드뉴스는 세트 업로드 순서 = 예약 날짜 순서라 순서로 정확히 짝지을 수 있다.
+app.post('/cardnews/reconcile', async (req, res) => {
+  try {
+    if (!posterReady()) return res.status(400).json({ error: '발행 도구 미연결' });
+    const r = await fetch('https://api.upload-post.com/api/uploadposts/schedule', { headers: { Authorization: `Apikey ${process.env.UPLOADPOST_API_KEY}` } });
+    const data = await r.json().catch(() => ({}));
+    const photos = (data.scheduled_posts || []).filter((p) => p.post_type === 'photo')
+      .sort((a, b) => String(a.scheduled_date).localeCompare(String(b.scheduled_date)));
+    const sets = myCardSets();                                  // 업로드 순서 = 원래 예약 순서
+    const skip = Math.max(0, sets.length - photos.length);      // 이미 게시돼 큐에서 빠진 앞쪽 세트 수
+    SCHED = SCHED.filter((s) => !(s.campaignId === ACTIVE_ID && s.kind === '카드뉴스'));   // 카드뉴스분 비우고 재구성
+    let added = 0;
+    for (let i = 0; i < skip && i < sets.length; i++) {         // 이미 게시된 세트 → 게시됨으로 표시(중복승인 방지)
+      SCHED.push({ campaignId: ACTIVE_ID, kind: '카드뉴스', contentId: sets[i].setId, name: sets[i].setName, scheduledAt: new Date(Date.now() - 86400000).toISOString(), channels: CARD_CHANNELS, job: '', ts: new Date().toISOString(), reconciled: true, fired: true });
+    }
+    for (let i = 0; i < photos.length; i++) {                   // 미래 예약분 → 실제 job_id와 함께 복구
+      const set = sets[i + skip]; if (!set) break;
+      const sd = String(photos[i].scheduled_date);
+      const at = /[zZ]|[+\-]\d\d:?\d\d$/.test(sd) ? sd : (sd + 'Z');
+      SCHED.push({ campaignId: ACTIVE_ID, kind: '카드뉴스', contentId: set.setId, name: set.setName, scheduledAt: new Date(at).toISOString(), channels: CARD_CHANNELS, job: photos[i].job_id, ts: new Date().toISOString(), reconciled: true });
+      added++;
+    }
+    await saveSched();
+    res.json({ ok: true, scheduledPhotos: photos.length, sets: sets.length, skip, futureRestored: added });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── 예약 삭제/취소: 우리 예약대장에서 제거 + (미래 예약+job_id면) Upload-Post에서도 취소 ──
 //    body: { kind, contentId } 또는 { kind, contentIds:[...] } 또는 { kind, all:true }
 app.post('/content/sched/delete', async (req, res) => {
