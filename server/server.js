@@ -285,24 +285,20 @@ app.post('/chat', async (req, res) => {
       return res.status(503).json({ error: '서버 금고(.env)에 API 키가 아직 없습니다. 키를 넣고 서버를 다시 켜 주세요.' });
     }
 
-    // ── 진짜 정체성: 공통 규칙(00) + 에이전트 전용 문서 + 프로젝트 맥락 ──
-    let system = buildSystemPrompt(agentId, project);
-
-    // 보고 요청(모닝브리핑/저녁보고/현황/대시보드)이면 취합용 일기 전체를,
-    // 평상시 대화면 실시간 현황(최근 48시간 일기)을 항상 붙인다 → 언제 물어도 즉답
-    const isBriefing = (!agentId || agentId === 'zenya') && /모닝브리핑|저녁보고|현황|대시보드/.test(message);
-    if (isBriefing) {
-      system += '\n\n=== 영업일기 실데이터 (취합 대상 — 오직 이 기록만 근거로 팀별 숫자 요약을 보고하라) ===\n'
-              + diaryDigest(message);
+    // ── 정체성 분기: 제니야(비서실장) = 텍스트도 음성과 동일한 깨끗한 콘텐츠 공장 두뇌.
+    //    호명된 팀 에이전트만 기존 본사(디스코드) 두뇌(총괄·영업일기)를 쓴다.
+    let system;
+    let isBriefing = false;   // 제니야는 더 이상 정기보고(디스코드)를 하지 않는다
+    if (!agentId || agentId === 'zenya') {
+      system = buildZenyaPrompt(project) + '\n\n' + (await publishStatusText());
+      if (voice) system += VOICE_RULES;   // 음성이면 더 짧게
     } else {
-      system = withLiveStatus(system, agentId);
-    }
-
-    // 음성 대화(🎤)면 코치 현황을 붙이고, 답을 듣기 쉽게 짧게 하도록 안내
-    if (voice) {
-      system += '\n\n' + voiceCoachContext()
-              + '\n\n[음성 대화 규칙] 지금은 대표님이 마이크로 말하고 귀로 듣는 음성 대화다. '
-              + '답은 2~3문장으로 짧게, 듣기 좋은 구어체로. 링크·표·목록·이모지 나열 금지(소리내 읽기 어렵다).';
+      system = withLiveStatus(buildSystemPrompt(agentId, project), agentId);
+      if (voice) {
+        system += '\n\n' + voiceCoachContext()
+                + '\n\n[음성 대화 규칙] 지금은 대표님이 마이크로 말하고 귀로 듣는 음성 대화다. '
+                + '답은 2~3문장으로 짧게, 듣기 좋은 구어체로. 링크·표·목록·이모지 나열 금지(소리내 읽기 어렵다).';
+      }
     }
 
     const response = await anthropic.messages.create({
@@ -511,20 +507,75 @@ function voiceLiveStatus() {
   return L.join('\n');
 }
 
-// 음성 제니야 전용 두뇌 = 대표님의 "큰아들 같은 비서실장".
-//   집안 살림(콘텐츠 자동화 공장)만 챙긴다. 디스코드 본사 맥락(서브에이전트 조율·팀 영업일기·정기보고)은 넣지 않는다.
-function buildVoiceZenyaPrompt(project) {
+// ★ 제니야(비서실장) 전용 깨끗한 베이스 — 디스코드 본사 framing(총괄·서브에이전트·정기보고·팀장·영업일기) 일절 없음.
+//   COMMON_RULES(공통 규칙)은 "총괄 모드 / 서브에이전트 / 전용 프롬프트 01~07 / @팀장" framing이 박혀 있어
+//   제니야 두뇌엔 쓰지 않는다(그건 호명된 팀 에이전트 전용). 좋은 보편 규칙만 추려 새로 쓴다.
+const ZENYA_RULES = [
+  '=== 너의 사용자 ===',
+  '사용자는 오상열 대표님(오원트금융연구소 대표, CFP 25년, 비개발자). 호칭은 항상 "대표님".',
+  '=== 말투 ===',
+  '담백·직설·실무 중심, 군더더기 인사·위로 최소화. 짧고 또렷한 구어체(평소 2~4문장). 기술은 무엇을·왜로 쉽게(대표는 비개발자).',
+  '=== 절대 원칙 ===',
+  '1. 산출물·결과로 끝낸다. 숫자·파일·링크로 증명. "열심히 하겠습니다" 같은 빈말 금지.',
+  '2. 휴먼인더루프 — 외부로 나가는 것(발송·게시·제출·결제)은 반드시 대표 승인 후 실행. 초안까지는 알아서.',
+  '3. 실데이터가 없으면 지어내지 말고 "아직 없습니다"라고 정직하게. 숫자 날조 금지.',
+  '4. 모르면 묻는다. 추측 진행 금지.',
+  '5. 금기 — 밤 21시~익일 8시 자동 알림 금지, 스팸 금지, 민감정보 유출 금지.',
+  '=== 핵심 자산 ===',
+  '금융집짓기® 특허, DESIRE 6단계, 유튜브 4.7만·팟캐스트 365회, 묵은 CRM 4366명(재발굴 1순위).',
+  '=== 숨은 1순위 ===',
+  '대표님이 가족과 저녁 먹는 시간을 되찾는 것. 모든 일의 최종 목적.',
+].join('\n');
+
+// 외부 발행 결과: Upload-Post 실제 게시 이력(/content/jobs)을 요약해 두뇌에 넣는다 (30초 캐시, 4초 타임아웃).
+let _pubCache = { ts: 0, text: '' };
+async function publishStatusText() {
+  if (!posterReady()) return '';
+  if (Date.now() - _pubCache.ts < 30000 && _pubCache.text) return _pubCache.text;
+  let out = '';
+  try {
+    const r = await fetch('https://api.upload-post.com/api/uploadposts/history', { headers: { Authorization: `Apikey ${process.env.UPLOADPOST_API_KEY}` }, signal: AbortSignal.timeout(4000) });
+    if (r.ok) {
+      const data = await r.json().catch(() => ({}));
+      const chKor = { instagram: '인스타', facebook: '페북', youtube: '유튜브', tiktok: '틱톡' };
+      const g = {};
+      (data.history || []).slice(0, 60).forEach((h) => {
+        const day = String(h.upload_timestamp || '').slice(0, 10); if (!day) return;
+        const kind = h.media_type === 'photo' ? '카드뉴스' : '쇼츠';
+        const gk = day + '|' + kind; g[gk] = g[gk] || {};
+        const ch = chKor[h.platform] || h.platform;
+        const c = (g[gk][ch] = g[gk][ch] || { ok: 0, fail: 0, err: '' });
+        if (h.success) c.ok++; else { c.fail++; if (!c.err && h.error_message) c.err = String(h.error_message).split('.')[0].slice(0, 40); }
+      });
+      const keys = Object.keys(g).sort().reverse().slice(0, 6);
+      const lines = keys.map((k) => {
+        const [day, kind] = k.split('|');
+        const parts = Object.keys(g[k]).map((ch) => { const c = g[k][ch];
+          if (c.ok && !c.fail) return `${ch} ${c.ok}성공`;
+          if (!c.ok && c.fail) return `${ch} ${c.fail}실패(${c.err || '원인미상'})`;
+          return `${ch} ${c.ok}성공·${c.fail}실패`; });
+        return `· ${day.slice(5)} ${kind}: ${parts.join(' / ')}`;
+      });
+      if (lines.length) out = '=== 외부 발행 결과 (Upload-Post 실제 SNS 게시 이력 — "진짜 나갔나?"는 오직 이것만 근거) ===\n'
+        + lines.join('\n') + '\n(이력에 안 보이는 채널은 "아직 게시 이력 없음"이라 답하라. 내부 예약과 실제 발행은 다르다.)';
+    }
+  } catch (e) {}
+  _pubCache = { ts: Date.now(), text: out };
+  return out;
+}
+
+// 제니야(비서실장) 두뇌 — 텍스트·음성 공용. 디스코드 본사 맥락 없이 콘텐츠 공장 캐비닛만.
+function buildZenyaPrompt(project) {
   return [
-    COMMON_RULES,
-    '=== 프로젝트 정의 (무엇이 무엇인지) ===',
+    ZENYA_RULES,
+    '=== 강의(과정) 정의 — 무엇을 파는지 ===',
     PROJECT_DEFS,
-    '=== 너는 누구인가 — 음성 비서실장 제니야 ===',
+    '=== 너는 누구인가 — 비서실장 제니야 ===',
     '너는 오상열 대표님의 "큰아들 같은 비서실장" 제니야다. 집안 살림 = 콘텐츠 자동화 공장(쇼츠·카드뉴스·유튜브 리드·블로그 연재·팟캐스트·강의 일정)을 전부 꿰고 있다. '
     + '대표님을 늘 "대표님"이라 부르고, 중후하고 충직하게, 군더더기 없이 짧게 답한다. '
-    + '디스코드 사무실 얘기(서브에이전트 조율, 팀 영업일기, 모닝브리핑·저녁보고 같은 정기보고)는 절대 꺼내지 않는다. 오직 집안일(콘텐츠 공장)만 챙긴다. '
-    + '대표님이 현황·예약·리드 명단·오늘 한 일·개강일을 물으면, 아래 "실시간 현황"의 지금 숫자·명단을 근거로 별장 집사처럼 즉답하고, 필요하면 다음 행동 한두 가지를 짧게 짚어준다. 기록에 없는 건 지어내지 말고 "아직 없습니다"라고 한다.',
+    + '너는 회사 조직을 지휘하는 "총괄"이 아니라, 대표님 곁에서 콘텐츠 공장만 챙기는 비서실장이다. 디스코드 사무실·총괄·팀장·서브에이전트·영업일기·모닝브리핑/저녁보고 같은 본사 얘기는 절대 꺼내지 않는다. '
+    + '대표님이 현황·예약·발행결과·리드·오늘 한 일·개강일을 물으면, 아래 "실시간 현황"과 "외부 발행 결과"의 지금 숫자만 근거로 즉답하고, 필요하면 다음 행동 한두 가지를 짧게 짚어준다. 기록에 없으면 지어내지 말고 "아직 없습니다".',
     voiceLiveStatus(),
-    VOICE_RULES.trim()
   ].join('\n\n');
 }
 
@@ -589,8 +640,8 @@ app.post(['/vapi', '/vapi/chat/completions', '/vapi/chat/completions/chat/comple
     if (allMode) {
       system = buildAllVoicePrompt(project);
     } else if (agentId === 'zenya') {
-      // ★ 음성 제니야 = 비서실장(콘텐츠 공장 두뇌). 본사 총괄 문서·영업일기 맥락은 넣지 않는다.
-      system = buildVoiceZenyaPrompt(project);
+      // ★ 음성 제니야 = 비서실장(콘텐츠 공장 두뇌). 본사 총괄·영업일기 맥락 없음 + 외부 발행 결과 포함.
+      system = buildZenyaPrompt(project) + '\n\n' + (await publishStatusText()) + VOICE_RULES;
     } else {
       system = withLiveStatus(buildSystemPrompt(agentId, project), agentId) + VOICE_RULES;
       if (switched) {
