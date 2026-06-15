@@ -903,8 +903,9 @@ function campaignPhase(n){
       + '<button class="appr" data-act="paysetup">결제후 손 설정·켜기</button>'
       + '<button class="appr" style="background:#3B6FB0" data-act="paypreview">결제문자 미리보기</button></div>';
   } else {
-    html = '<b>④ 분석</b><br>발굴→신청→결제→매출 한눈에.'
-      + '<div style="margin-top:6px"><button class="appr" data-act="stats">모집현황 보기</button></div>';
+    html = '<b>④ 분석</b><br>발굴→신청→결제→매출, 그리고 SNS 발행·반응 결과 한눈에.'
+      + '<div style="margin-top:6px"><button class="appr" data-act="stats">모집현황 보기</button>'
+      + '<button class="appr" style="background:#6C4AB6" data-act="resultdash">📊 결과분석 대시보드</button></div>';
   }
   updateMessage(w, html);
   w.querySelectorAll('[data-act]').forEach(function(x){
@@ -913,6 +914,7 @@ function campaignPhase(n){
       if(a==='campedit') campaignForm(); else if(a==='mkt') mktMake(); else if(a==='promo') promoDraft();
       else if(a==='promotest') promoTestDraft(); else if(a==='carenew') careNew(); else if(a==='paysetup') paySetup();
       else if(a==='paypreview') payPreview(); else if(a==='stats') payStats(); else if(a==='contents') contentsPanel();
+      else if(a==='resultdash') resultsDashboard();
     };
   });
 }
@@ -957,6 +959,54 @@ function contentDelete(id){
   if(!window.confirm('이 콘텐츠를 보관함에서 지울까요?\n(여기 올린 파일 원본은 함께 삭제됩니다. 드라이브·유튜브 링크는 원본이 남습니다)')) return;
   fetch(SERVER_URL + '/campaign/contents/delete', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id})})
     .then(function(r){return r.json();}).then(function(){ loadCampaignStatus(); loadTodayTodo(); contentsPanel(); }).catch(function(){});
+}
+
+// 📊 결과분석 대시보드 — 틀은 항상, 데이터는 발행·반응이 쌓이는 대로 자동. (인스타 반응=자동 / 유튜브·페북 반응·전환=수동·플랫폼확인)
+var _dashTimer=null;
+function resultsDashboard(){
+  var w=addMessage('<i class="ti ti-loader-2"></i> 📊 결과분석 대시보드 여는 중…','zenya');
+  var chK={instagram:'인스타',facebook:'페북',youtube:'유튜브',tiktok:'틱톡'};
+  function chip(label,on){ var c=on?'#1D9E75':'#e23b3b', bg=on?'#EAF7F1':'#fdeeee'; return '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;color:'+c+';background:'+bg+';margin:2px 3px 0 0">'+label+(on?' ✓':' ✗')+'</span>'; }
+  function sec(t){ return '<div style="font-weight:800;font-size:12px;color:#6C4AB6;margin:10px 0 4px">'+t+'</div>'; }
+  function render(d){
+    var cv=d._conv||{}, h=d.health||{}, conn=h.connected||{}, pub=d.publish||{}, topics=d.topics||[], ads=d.adCandidates||[];
+    var html='<b>📊 결과분석 대시보드</b> <span style="font-size:10px;color:#999">'+(d.generatedAt?('· '+d.generatedAt.slice(5,16).replace('T',' ')+' 기준'):'')+' · 60초 자동갱신</span>';
+    html+=sec('🩺 발송 건강검진 (어제 실패 원인 상시 점검)');
+    html+='<div>'+chip('인스타 연결',conn.instagram)+chip('페북 연결',conn.facebook)+chip('유튜브 연결',conn.youtube)+'<span style="font-size:11px;color:#66736E"> · 요금제 '+(h.plan||'?')+'</span></div>';
+    if(h.fbFilename) html+='<div style="font-size:11px;margin-top:3px">'+(h.fbFilename.unsafe?('⚠️ 페북 파일명 위험 '+h.fbFilename.unsafe+'/'+h.fbFilename.total+'건 — 짧게 재업로드 필요'):('✅ 페북 파일명 안전 ('+h.fbFilename.total+'건 전부 짧은 영문)'))+'</div>';
+    if(h.youtubeQueued) html+='<div style="font-size:11px;margin-top:2px">'+((h.youtubeQueued.withYoutube===h.youtubeQueued.total)?('✅ 유튜브 큐 포함 '+h.youtubeQueued.withYoutube+'/'+h.youtubeQueued.total):('⚠️ 유튜브 큐 누락 '+(h.youtubeQueued.total-h.youtubeQueued.withYoutube)+'건'))+'</div>';
+    html+=sec('📤 발행 현황 (채널별 성공/실패)');
+    var bc=pub.byChannel||{}, keys=Object.keys(bc);
+    if(keys.length){ keys.forEach(function(k){ html+='<div style="font-size:12px">· '+(chK[k]||k)+': <b style="color:#1D9E75">성공 '+bc[k].ok+'</b> / <b style="color:#e23b3b">실패 '+bc[k].fail+'</b></div>'; }); }
+    else html+='<div style="font-size:11px;color:#999">아직 수집 중 — 첫 발행이 나가면 채워집니다.</div>';
+    if((pub.recent||[]).length){ html+='<div style="font-size:11px;color:#66736E;margin-top:4px">최근 발행:</div>';
+      pub.recent.slice(0,8).forEach(function(r){ var t=(r.ts||'').slice(5,16).replace('T',' ');
+        html+='<div style="font-size:11px">'+t+' '+(chK[r.ch]||r.ch)+' '+r.kind+' '+(r.ok?'✅':'❌ '+escapeHtml(r.err||''))+(r.url?(' <a href="'+escapeAttr(r.url)+'" target="_blank" style="color:#3B6FB0">열기</a>'):'')+'</div>'; }); }
+    html+=sec('❤️ SNS 반응 — 인스타 자동수집 (유튜브·페북은 플랫폼 직접 확인)');
+    if(topics.length){ html+='<div style="font-size:11px;color:#66736E">반응 좋은 순 (조회/도달/♥/저장):</div>';
+      topics.slice(0,6).forEach(function(t){ html+='<div style="font-size:11px">· ['+t.kind+'] '+escapeHtml(t.title)+' — 조회 <b>'+t.views+'</b>·도달 '+t.reach+'·♥'+t.likes+'·저장 '+t.saves+(t.url?(' <a href="'+escapeAttr(t.url)+'" target="_blank" style="color:#3B6FB0">보기</a>'):'')+'</div>'; }); }
+    else html+='<div style="font-size:11px;color:#999">아직 수집 중 — 인스타 게시물이 쌓이면 자동으로 채워집니다.</div>';
+    if(ads.length){ html+=sec('📣 광고 밀 후보 (반응 상위 — 실행은 대표 승인)');
+      ads.forEach(function(a){ html+='<div style="font-size:11px">· '+escapeHtml(a.title)+' — 조회 '+a.views+'·반응률 '+a.engageRate+'% <span style="color:#6C4AB6">→ "이거 광고 밀까요?"</span></div>'; }); }
+    html+=sec('🔁 전환 (자동 불가 → 직접 입력/확인)');
+    html+='<div style="font-size:11px;color:#66736E">신청 폼 클릭·신청 수, 카톡 친구 수는 자동수집이 안 됩니다. 직접 입력해 추적하세요.</div>';
+    html+='<div style="margin-top:4px;font-size:11px">신청 수 <input id="cv-sub" type="number" value="'+(cv.applySubmits!=null?cv.applySubmits:'')+'" style="width:60px"> · 카톡 친구 <input id="cv-kak" type="number" value="'+(cv.kakaoFriends!=null?cv.kakaoFriends:'')+'" style="width:60px"> <button class="appr gray" id="cv-save" style="padding:1px 8px">저장</button>'+(cv.updatedAt?(' <span style="color:#999">('+String(cv.updatedAt).slice(5,16).replace("T"," ")+' 갱신)</span>'):'')+'</div>';
+    html+='<div style="font-size:10px;color:#999;margin-top:8px">데이터는 발행·반응이 쌓일 때마다 자동으로 채워집니다. 제니야에게 "요즘 뭐가 반응 좋아?"·"광고 뭘 밀까?"라고 물어도 됩니다.</div>';
+    html+='<div style="margin-top:4px"><button class="appr gray" id="dash-refresh" style="padding:1px 8px">🔄 새로고침</button></div>';
+    updateMessage(w,html);
+    var sv=w.querySelector('#cv-save'); if(sv) sv.onclick=function(){ var body={applySubmits:w.querySelector('#cv-sub').value, kakaoFriends:w.querySelector('#cv-kak').value};
+      fetch(SERVER_URL+'/content/conversion',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(function(r){return r.json();}).then(function(){ load(); }).catch(function(){}); };
+    var rf=w.querySelector('#dash-refresh'); if(rf) rf.onclick=function(){ load(); };
+  }
+  function load(){
+    fetch(SERVER_URL+'/content/results').then(function(r){return r.json();}).then(function(d){
+      if(d.error){ updateMessage(w,'⚠️ '+escapeHtml(d.error)+' (발행 도구 연결 후 표시됩니다)'); return; }
+      fetch(SERVER_URL+'/content/conversion').then(function(r){return r.json();}).then(function(cv){ d._conv=cv||{}; render(d); }).catch(function(){ d._conv={}; render(d); });
+    }).catch(function(){ updateMessage(w,'⚠️ 서버 연결 실패'); });
+  }
+  load();
+  if(_dashTimer) clearInterval(_dashTimer);
+  _dashTimer=setInterval(load, 60000);
 }
 
 /* ==========================================================
