@@ -545,12 +545,12 @@ async function publishStatusText() {
   if (Date.now() - _pubCache.ts < 30000 && _pubCache.text) return _pubCache.text;
   let out = '';
   try {
-    const r = await fetch('https://api.upload-post.com/api/uploadposts/history', { headers: { Authorization: `Apikey ${process.env.UPLOADPOST_API_KEY}` }, signal: AbortSignal.timeout(4000) });
+    const r = await fetch('https://api.upload-post.com/api/uploadposts/history?limit=200', { headers: { Authorization: `Apikey ${process.env.UPLOADPOST_API_KEY}` }, signal: AbortSignal.timeout(6000) });
     if (r.ok) {
       const data = await r.json().catch(() => ({}));
       const chKor = { instagram: '인스타', facebook: '페북', youtube: '유튜브', tiktok: '틱톡' };
       const g = {};
-      (data.history || []).slice(0, 60).forEach((h) => {
+      (data.history || []).slice(0, 120).forEach((h) => {
         const day = String(h.upload_timestamp || '').slice(0, 10); if (!day) return;
         const kind = h.media_type === 'photo' ? '카드뉴스' : '쇼츠';
         const gk = day + '|' + kind; g[gk] = g[gk] || {};
@@ -1795,7 +1795,7 @@ app.post('/content/plan/approve', async (req, res) => {
 app.get('/content/jobs', async (req, res) => {
   if (!posterReady()) return res.status(400).json({ error: '발행 도구 미연결' });
   try {
-    const r = await fetch('https://api.upload-post.com/api/uploadposts/history', { headers: { Authorization: `Apikey ${process.env.UPLOADPOST_API_KEY}` } });
+    const r = await fetch('https://api.upload-post.com/api/uploadposts/history?limit=200', { headers: { Authorization: `Apikey ${process.env.UPLOADPOST_API_KEY}` } });
     const text = await r.text().catch(() => '');
     let data; try { data = JSON.parse(text); } catch (e) { data = String(text).slice(0, 2000); }
     res.status(r.ok ? 200 : 502).json({ status: r.status, data });
@@ -1879,6 +1879,95 @@ app.get('/content/analytics-account', async (req, res) => {
     const text = await r.text().catch(() => ''); let data; try { data = JSON.parse(text); } catch (e) { data = String(text).slice(0, 2000); }
     res.status(r.ok ? 200 : 502).json({ status: r.status, data });
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── 📊 결과분석 대시보드 집계 (틀은 항상, 데이터는 들어오는 대로) ──
+//    발행현황(채널별 성공/실패, 유튜브 포함) + 인스타 반응(자동) + 주제별 순위·광고후보 + 건강검진 + 전환(수동)
+const HKEY = (h) => `${h.platform}|${h.upload_timestamp}|${h.platform_post_id || h.request_id || ''}`;
+let _resultsCache = { ts: 0, data: null };
+async function buildResults() {
+  if (Date.now() - _resultsCache.ts < 300000 && _resultsCache.data) return _resultsCache.data;
+  const out = {
+    generatedAt: new Date().toISOString(),
+    publish: { byChannel: {}, recent: [], total: 0, success: 0, fail: 0 },
+    engagement: { instagram: [], note: '인스타는 자동 수집(조회·도달·좋아요). 유튜브·페북 게시물별 수치는 권한 막힘 → 플랫폼에서 직접 확인.' },
+    topics: [], adCandidates: [],
+    health: {},
+    conversion: { applyClicks: null, applySubmits: null, kakaoFriends: null, note: '신청 폼 클릭·신청 수, 카톡 친구 수는 자동 수집 불가 → 수동 입력 또는 플랫폼 직접 확인.' },
+  };
+  // 1) 발행 이력 (limit 크게 → 유튜브 포함 전부)
+  let history = [];
+  try {
+    const r = await fetch('https://api.upload-post.com/api/uploadposts/history?limit=200', { headers: { Authorization: `Apikey ${process.env.UPLOADPOST_API_KEY}` }, signal: AbortSignal.timeout(8000) });
+    if (r.ok) { const d = await r.json().catch(() => ({})); history = Array.isArray(d.history) ? d.history : []; }
+  } catch (e) {}
+  history.forEach((h) => {
+    const ch = h.platform; const c = (out.publish.byChannel[ch] = out.publish.byChannel[ch] || { ok: 0, fail: 0 });
+    if (h.success) { c.ok++; out.publish.success++; } else { c.fail++; out.publish.fail++; }
+    out.publish.total++;
+  });
+  out.publish.recent = history.slice(0, 24).map((h) => ({
+    ts: h.upload_timestamp, ch: h.platform, kind: h.media_type === 'photo' ? '카드뉴스' : '쇼츠',
+    ok: !!h.success, err: h.success ? '' : String(h.error_message || '').split('.')[0].slice(0, 50),
+    url: h.post_url || '', title: String(h.post_title || '').split('\n')[0].replace(/^💰\s*/, '').slice(0, 30),
+  }));
+  // 2) 인스타 반응(자동) — 성공한 인스타 게시물 request_id로 per-post 분석 (최근 20개, 캐시로 보호)
+  const igReqs = [...new Map(history.filter((h) => h.platform === 'instagram' && h.success && h.request_id).map((h) => [h.request_id, h])).values()].slice(0, 20);
+  for (const h of igReqs) {
+    try {
+      const r = await fetch(`https://api.upload-post.com/api/uploadposts/post-analytics/${h.request_id}?platform=instagram`, { headers: { Authorization: `Apikey ${process.env.UPLOADPOST_API_KEY}` }, signal: AbortSignal.timeout(6000) });
+      if (!r.ok) continue;
+      const d = await r.json().catch(() => ({}));
+      const m = (((d.platforms || {}).instagram || {}).post_metrics) || null;
+      if (m) out.engagement.instagram.push({
+        title: String(h.post_title || '').split('\n')[0].replace(/^💰\s*/, '').slice(0, 30),
+        kind: h.media_type === 'photo' ? '카드뉴스' : '쇼츠',
+        views: m.views || 0, reach: m.reach || 0, likes: m.likes || 0, comments: m.comments || 0, saves: m.saves || 0, shares: m.shares || 0,
+        url: h.post_url || '', ts: h.upload_timestamp,
+      });
+    } catch (e) {}
+  }
+  // 주제별 비교(반응순) + 광고 후보(상위 = 도달 대비 좋아요·저장 좋은 것)
+  out.topics = out.engagement.instagram.slice().sort((a, b) => b.views - a.views);
+  out.adCandidates = out.topics.filter((t) => t.views > 0).slice(0, 3)
+    .map((t) => ({ title: t.title, kind: t.kind, views: t.views, reach: t.reach, likes: t.likes, saves: t.saves, url: t.url,
+      engageRate: t.reach ? Math.round((t.likes + t.saves + t.shares) / t.reach * 1000) / 10 : 0 }));
+  // 3) 건강검진 — 채널 연결 + 요금제 + 페북 파일명 안전 + 유튜브 큐 포함
+  const now = Date.now();
+  const futShorts = SCHED.filter((s) => s.campaignId === ACTIVE_ID && s.kind === '쇼츠' && s.scheduledAt && new Date(s.scheduledAt).getTime() > now);
+  out.health = {
+    connected: null, plan: null,
+    fbFilename: futShorts.length ? { total: futShorts.length, unsafe: futShorts.filter((s) => !fbNameSafe(s.link)).length } : null,
+    youtubeQueued: futShorts.length ? { total: futShorts.length, withYoutube: futShorts.filter((s) => (s.channels || []).includes('youtube')).length } : null,
+    upcoming: SCHED.filter((s) => s.campaignId === ACTIVE_ID && s.scheduledAt && new Date(s.scheduledAt).getTime() > now)
+      .sort((a, b) => String(a.scheduledAt).localeCompare(String(b.scheduledAt))).slice(0, 5)
+      .map((s) => ({ at: s.scheduledAt, kind: s.kind, channels: s.channels || [] })),
+  };
+  try {
+    const r = await fetch('https://api.upload-post.com/api/uploadposts/users', { headers: { Authorization: `Apikey ${process.env.UPLOADPOST_API_KEY}` }, signal: AbortSignal.timeout(6000) });
+    if (r.ok) { const d = await r.json().catch(() => ({})); const prof = (d.profiles || []).find((p) => p.username === process.env.UPLOADPOST_USER) || (d.profiles || [])[0];
+      if (prof) { const sa = prof.social_accounts || {}; out.health.connected = {}; ['instagram', 'facebook', 'youtube', 'tiktok'].forEach((k) => { const v = sa[k]; out.health.connected[k] = !!(v && (typeof v === 'object' ? Object.keys(v).length : String(v).length)); }); } }
+  } catch (e) {}
+  try {
+    const r = await fetch('https://api.upload-post.com/api/uploadposts/me', { headers: { Authorization: `Apikey ${process.env.UPLOADPOST_API_KEY}` }, signal: AbortSignal.timeout(5000) });
+    if (r.ok) { const d = await r.json().catch(() => ({})); out.health.plan = d.plan || null; }
+  } catch (e) {}
+  _resultsCache = { ts: Date.now(), data: out };
+  return out;
+}
+app.get('/content/results', async (req, res) => {
+  if (!posterReady()) return res.status(400).json({ error: '발행 도구 미연결' });
+  try { res.json(await buildResults()); } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// 전환 지표 수동 입력(신청 수·카톡 친구 수) — 자동 못 가져오는 값 보관
+let CONV = loadJson('전환.json'); if (!CONV || typeof CONV !== 'object' || Array.isArray(CONV)) CONV = {};
+app.get('/content/conversion', (req, res) => res.json(CONV));
+app.post('/content/conversion', (req, res) => {
+  const b = req.body || {};
+  ['applySubmits', 'applyClicks', 'kakaoFriends'].forEach((k) => { if (b[k] != null && b[k] !== '') CONV[k] = Number(b[k]); });
+  CONV.updatedAt = new Date().toISOString();
+  saveJson('전환.json', CONV);
+  res.json({ ok: true, conversion: CONV });
 });
 
 // ── 대장 동기화: Upload-Post에 실제 잡힌 카드뉴스 예약을 우리 SCHED로 복구(유실 후 중복승인 방지) ──
