@@ -1855,6 +1855,32 @@ app.post('/content/scheduled/cancel', async (req, res) => {
   res.status(c.ok ? 200 : 502).json(c);
 });
 
+// ── 게시물별 반응 분석 (조회·좋아요·댓글·도달 등) — Upload-Post post-analytics ──
+app.get('/content/post-analytics', async (req, res) => {
+  if (!posterReady()) return res.status(400).json({ error: '발행 도구 미연결' });
+  const rid = req.query.requestId || req.query.request_id;
+  const ppid = req.query.platformPostId, plat = req.query.platform;
+  try {
+    let url;
+    if (rid) { url = `https://api.upload-post.com/api/uploadposts/post-analytics/${encodeURIComponent(rid)}`; if (plat) url += `?platform=${encodeURIComponent(plat)}`; }
+    else if (ppid && plat) { url = `https://api.upload-post.com/api/uploadposts/post-analytics?platform_post_id=${encodeURIComponent(ppid)}&platform=${encodeURIComponent(plat)}&user=${encodeURIComponent(process.env.UPLOADPOST_USER)}`; }
+    else return res.status(400).json({ error: 'requestId 또는 (platformPostId+platform) 필요' });
+    const r = await fetch(url, { headers: { Authorization: `Apikey ${process.env.UPLOADPOST_API_KEY}` } });
+    const text = await r.text().catch(() => ''); let data; try { data = JSON.parse(text); } catch (e) { data = String(text).slice(0, 2000); }
+    res.status(r.ok ? 200 : 502).json({ status: r.status, data });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// ── 계정 단위 분석 (팔로워·조회·도달 시계열) — Upload-Post analytics ──
+app.get('/content/analytics-account', async (req, res) => {
+  if (!posterReady()) return res.status(400).json({ error: '발행 도구 미연결' });
+  const platforms = req.query.platforms || 'instagram,facebook,youtube';
+  try {
+    const r = await fetch(`https://api.upload-post.com/api/uploadposts/analytics/${encodeURIComponent(process.env.UPLOADPOST_USER)}?platforms=${encodeURIComponent(platforms)}`, { headers: { Authorization: `Apikey ${process.env.UPLOADPOST_API_KEY}` } });
+    const text = await r.text().catch(() => ''); let data; try { data = JSON.parse(text); } catch (e) { data = String(text).slice(0, 2000); }
+    res.status(r.ok ? 200 : 502).json({ status: r.status, data });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── 대장 동기화: Upload-Post에 실제 잡힌 카드뉴스 예약을 우리 SCHED로 복구(유실 후 중복승인 방지) ──
 //    카드뉴스는 세트 업로드 순서 = 예약 날짜 순서라 순서로 정확히 짝지을 수 있다.
 app.post('/cardnews/reconcile', async (req, res) => {
