@@ -291,7 +291,7 @@ app.post('/chat', async (req, res) => {
     let isBriefing = false;   // 제니야는 더 이상 정기보고(디스코드)를 하지 않는다
     if (!agentId || agentId === 'zenya') {
       const [pub, conn] = await Promise.all([publishStatusText(), channelStatusText()]);
-      system = buildZenyaPrompt(project) + '\n\n' + conn + '\n\n' + pub;
+      system = buildZenyaPrompt(project) + '\n\n' + conn + '\n\n' + pub + '\n\n' + engagementText();
       if (voice) system += VOICE_RULES;   // 음성이면 더 짧게
     } else {
       system = withLiveStatus(buildSystemPrompt(agentId, project), agentId);
@@ -638,7 +638,8 @@ function buildZenyaPrompt(project) {
     + '너는 회사 조직을 지휘하는 "총괄"이 아니라, 대표님 곁에서 콘텐츠 공장만 챙기는 비서실장이다. 디스코드 사무실·총괄·팀장·서브에이전트·영업일기·모닝브리핑/저녁보고 같은 본사 얘기는 절대 꺼내지 않는다. '
     + '너는 세 가지를 구분해서 안다 — ① 다가오는 발송 예약(아래 "실시간 현황"의 채널 포함 목록 = 내일 어느 채널로 나갈지) ② 외부 발행 결과(과거에 실제로 SNS에 나간 이력) ③ 채널 연결 상태(어느 SNS가 발행 도구에 연결됐나). '
     + '"내일 나가냐?"고 물으면 ①의 예약 목록(채널 포함)을 근거로 답하라. 과거 실패(②)가 있어도 예약(①)에 잡혀 있고 채널이 연결(③)돼 있으면 발행은 예정대로 진행된다 — 과거 결과를 미래에 그대로 외삽하지 말 것. "게시 이력 0건"을 "연결 안 됨"으로 오해하지 말 것(연결 상태는 ③으로 확인). 과거 실패 원인(예: 페북 파일명)이 해결됐는지는 "실시간 현황"의 단서로 같이 짚어준다. '
-    + '대표님이 현황·예약·발행결과·리드·오늘 한 일·개강일을 물으면, 아래 숫자만 근거로 즉답하고 다음 행동 한두 가지를 짧게 짚어준다. 기록에 없으면 지어내지 말고 "아직 없습니다".',
+    + '대표님이 현황·예약·발행결과·리드·오늘 한 일·개강일을 물으면, 아래 숫자만 근거로 즉답하고 다음 행동 한두 가지를 짧게 짚어준다. 기록에 없으면 지어내지 말고 "아직 없습니다". '
+    + '대표님이 "요즘 뭐가 제일 반응 좋아?"·"광고 뭘 밀까?"를 물으면 아래 "SNS 반응 분석"(인스타 자동수치)을 근거로 반응 좋은 콘텐츠를 짚고, 1순위를 "이거 광고 밀까요?"로 먼저 제안하라(실행은 대표 승인 후). 유튜브·페북 게시물별 수치는 자동수집이 막혀 있으니 "플랫폼에서 직접 확인"으로 안내하고, 반응 비교는 인스타 수치만 근거로 한다.',
     voiceLiveStatus(),
   ].join('\n\n');
 }
@@ -704,9 +705,9 @@ app.post(['/vapi', '/vapi/chat/completions', '/vapi/chat/completions/chat/comple
     if (allMode) {
       system = buildAllVoicePrompt(project);
     } else if (agentId === 'zenya') {
-      // ★ 음성 제니야 = 비서실장(콘텐츠 공장 두뇌). 본사 총괄·영업일기 없음 + 외부 발행결과 + 채널 연결상태.
+      // ★ 음성 제니야 = 비서실장(콘텐츠 공장 두뇌). 본사 총괄·영업일기 없음 + 외부 발행결과 + 채널 연결상태 + 반응 분석.
       const [pub, conn] = await Promise.all([publishStatusText(), channelStatusText()]);
-      system = buildZenyaPrompt(project) + '\n\n' + conn + '\n\n' + pub + VOICE_RULES;
+      system = buildZenyaPrompt(project) + '\n\n' + conn + '\n\n' + pub + '\n\n' + engagementText() + VOICE_RULES;
     } else {
       system = withLiveStatus(buildSystemPrompt(agentId, project), agentId) + VOICE_RULES;
       if (switched) {
@@ -1975,6 +1976,21 @@ app.get('/content/results', async (req, res) => {
   if (!posterReady()) return res.status(400).json({ error: '발행 도구 미연결' });
   try { res.json(await buildResults()); } catch (e) { res.status(500).json({ error: e.message }); }
 });
+// 두뇌용 반응 요약 — 무거운 집계는 안 돌리고 이미 데워진 캐시만 읽는다(채팅 지연 방지).
+function engagementText() {
+  const data = _resultsCache.data; if (!data) return '';
+  const top = (data.topics || []).filter((t) => t.views > 0).slice(0, 5);
+  if (!top.length) return '';
+  const lines = top.map((t, i) => `${i + 1}. [${t.kind}] ${t.title} — 조회 ${t.views}·도달 ${t.reach}·좋아요 ${t.likes}·저장 ${t.saves}`);
+  let out = '=== SNS 반응 분석 (인스타 자동 수집 — "요즘 뭐가 반응 좋아"의 근거) ===\n' + lines.join('\n');
+  const a = (data.adCandidates || [])[0];
+  if (a) out += `\n· 광고 후보 1순위: "${a.title}" (조회 ${a.views}·반응률 ${a.engageRate}%). "광고 뭘 밀까" 물으면 이걸 근거로 "이거 광고 밀까요?" 제안하라(실행은 대표 승인).`;
+  out += '\n(유튜브·페북 게시물별 수치는 권한 막힘 → "플랫폼에서 직접 확인"으로 안내. 반응 비교·광고 제안은 인스타 수치만 근거로 한다.)';
+  return out;
+}
+// 집계 캐시를 주기적으로 데워둔다(서버 깬 뒤 8초, 이후 5분마다) → 두뇌가 즉시 반응 데이터를 갖게.
+setTimeout(() => { if (posterReady()) buildResults().catch(() => {}); }, 8000);
+setInterval(() => { if (posterReady()) buildResults().catch(() => {}); }, 300000);
 // 전환 지표 수동 입력(신청 수·카톡 친구 수) — 자동 못 가져오는 값 보관
 let CONV = loadJson('전환.json'); if (!CONV || typeof CONV !== 'object' || Array.isArray(CONV)) CONV = {};
 app.get('/content/conversion', (req, res) => res.json(CONV));
