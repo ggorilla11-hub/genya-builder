@@ -1438,10 +1438,14 @@ app.post('/campaign/contents', async (req, res) => {
 });
 app.post('/campaign/contents/delete', async (req, res) => {
   const id = (req.body || {}).id;
+  const gone = CONTENTS.find((c) => c.id === id);
   const before = CONTENTS.length;
   CONTENTS = CONTENTS.filter((c) => c.id !== id);
+  // 파이어베이스에 올린 원본(쇼츠·오디오 등)이면 파일 바이트도 같이 삭제. 드라이브/유튜브 링크는 경로가 안 잡혀 그대로 둠.
+  let fileDeleted = false;
+  if (gone && gone.link) { const p = fbPathFromUrl(gone.link); const bucket = storageBucket(); if (p && bucket) { try { await bucket.file(p).delete(); fileDeleted = true; } catch (e) {} } }
   if (CONTENTS.length !== before) await saveContents();
-  res.json({ ok: true, removed: before - CONTENTS.length });
+  res.json({ ok: true, removed: before - CONTENTS.length, fileDeleted });
 });
 
 // ============================================================
@@ -1462,6 +1466,28 @@ function storageBucket() {
   return _bucket;
 }
 function safeName(s) { return String(s || 'file').replace(/[^\w.\-가-힣]/g, '_').slice(-80) || 'file'; }
+// 파이어베이스 공개 URL(.../o/<경로>?alt=media...)에서 실제 객체 경로를 뽑는다 (파일 바이트 삭제용)
+function fbPathFromUrl(url) { const m = String(url || '').match(/\/o\/([^?]+)/); return m ? decodeURIComponent(m[1]) : ''; }
+// 이미지 가로·세로 읽기(외부 라이브러리 없이 헤더만 파싱: PNG·JPEG·WEBP) — 인스타 비율 검사용
+function imageDims(buf) {
+  try {
+    if (buf.length > 24 && buf[0] === 0x89 && buf[1] === 0x50) return { w: buf.readUInt32BE(16), h: buf.readUInt32BE(20) }; // PNG
+    if (buf[0] === 0xFF && buf[1] === 0xD8) { // JPEG
+      let o = 2;
+      while (o + 9 < buf.length) {
+        if (buf[o] !== 0xFF) { o++; continue; }
+        const m = buf[o + 1];
+        if (m >= 0xC0 && m <= 0xCF && m !== 0xC4 && m !== 0xC8 && m !== 0xCC) return { h: buf.readUInt16BE(o + 5), w: buf.readUInt16BE(o + 7) };
+        if (m === 0xD8 || m === 0xD9 || (m >= 0xD0 && m <= 0xD7)) { o += 2; continue; }
+        o += 2 + buf.readUInt16BE(o + 2);
+      }
+    }
+    if (buf.length > 30 && buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 12) === 'WEBP') { // WEBP(VP8X)
+      if (buf.toString('ascii', 12, 16) === 'VP8X') return { w: 1 + (buf[24] | (buf[25] << 8) | (buf[26] << 16)), h: 1 + (buf[27] | (buf[28] << 8) | (buf[29] << 16)) };
+    }
+  } catch (e) {}
+  return null;
+}
 
 // ① 업로드 허가증(서명 URL) 발급 — 브라우저가 이 URL로 버킷에 직접 PUT
 app.post('/content/upload-url', async (req, res) => {
@@ -1473,7 +1499,9 @@ app.post('/content/upload-url', async (req, res) => {
     const size = Number(b.size || 0);
     if (size > MAX_UPLOAD_MB * 1024 * 1024) return res.status(400).json({ error: `파일이 너무 큽니다(최대 ${MAX_UPLOAD_MB}MB).` });
     const contentType = String(b.contentType || 'application/octet-stream');
-    const objectPath = `genya-content/${ACTIVE_ID || 'none'}/${b.kind}/${Date.now()}_${safeName(b.filename)}`;
+    // 파일명은 짧은 영문/숫자로만 — 긴 한글 파일명은 페북이 거부("파일 이름이 너무 깁니다"). 표시 이름(name)은 별도 보관이라 영향 없음.
+    const ext = (String(b.filename || '').match(/\.[A-Za-z0-9]{1,5}$/) || [''])[0].toLowerCase();
+    const objectPath = `genya-content/${ACTIVE_ID || 'none'}/${b.kind}/${Date.now()}_${Math.random().toString(36).slice(2, 8)}${ext}`;
     const [url] = await bucket.file(objectPath).getSignedUrl({
       version: 'v4', action: 'write', expires: Date.now() + 15 * 60 * 1000, contentType,
     });
@@ -1526,7 +1554,20 @@ app.get('/storage/init', async (req, res) => {
 // ============================================================
 let SCHED = loadJson('배포.json'); if (!Array.isArray(SCHED)) SCHED = [];
 SCHED = SCHED.filter((s) => s && s.contentId);   // 옛 마커(미사용) 정리 — 상세 예약 기록만 유지
-function saveSched() { saveJson('배포.json', SCHED); }
+// ★ 예약대장 영구저장: Render 재시작 시 로컬 JSON은 사라진다 → 구글시트에도 백업/복원(CARDSETS·CONTENTS와 동일 방식)
+const SCHED_TAB = process.env.SCHED_TAB || '제니야_배포예약';
+let schedChain = Promise.resolve();
+async function saveSchedToSheet() {
+  const sheets = sheetsClient(); if (!sheets || !RESV_SHEET_ID) return;
+  const meta = await sheets.spreadsheets.get({ spreadsheetId: RESV_SHEET_ID, fields: 'sheets.properties.title' });
+  if (!meta.data.sheets.some((s) => s.properties.title === SCHED_TAB)) {
+    await sheets.spreadsheets.batchUpdate({ spreadsheetId: RESV_SHEET_ID, requestBody: { requests: [{ addSheet: { properties: { title: SCHED_TAB } } }] } });
+  }
+  await sheets.spreadsheets.values.update({ spreadsheetId: RESV_SHEET_ID, range: `'${SCHED_TAB}'!A1`, valueInputOption: 'RAW', requestBody: { values: [['sched', JSON.stringify(SCHED)]] } });
+}
+function saveSched() { saveJson('배포.json', SCHED); schedChain = schedChain.catch(() => {}).then(() => saveSchedToSheet()).catch((e) => console.warn('⚠️ 배포예약 시트 저장 실패:', e.message)); return schedChain; }
+// 서버 시작 시: 시트에서 배포예약 복원 (재시작으로 로컬이 비어도 시트가 살린다)
+(async () => { const sheets = sheetsClient(); if (!sheets || !RESV_SHEET_ID) return; try { const got = await sheets.spreadsheets.values.get({ spreadsheetId: RESV_SHEET_ID, range: `'${SCHED_TAB}'!A1:B1` }); const row = (got.data.values || [])[0]; if (row && row[0] === 'sched' && row[1]) { const arr = JSON.parse(row[1]); if (Array.isArray(arr)) { SCHED = arr.filter((s) => s && s.contentId); saveJson('배포.json', SCHED); console.log(`📅 배포예약 시트 복원: ${SCHED.length}건`); } } } catch (e) {} })();
 function schedFor(kind) { return SCHED.filter((s) => s.campaignId === ACTIVE_ID && s.kind === kind); }
 const DEPLOY_CHANNELS = (process.env.DEPLOY_CHANNELS || 'instagram,facebook,youtube,tiktok').split(',').map((s) => s.trim());
 // 하루 발송 개수·시간: POST_PER_DAY(1/2…) + POST_HOURS_KST("10,18"). 1개면 POST_HOUR_KST/기본10시.
@@ -1624,7 +1665,7 @@ app.get('/content/plan', (req, res) => {
   const pending = pendingShortsPlan(kind);
   const now = Date.now();
   const scheduled = schedFor(kind).slice().sort((a, b) => String(a.scheduledAt).localeCompare(String(b.scheduledAt)))
-    .map((s) => ({ name: s.name, scheduledAt: s.scheduledAt, channels: s.channels || DEPLOY_CHANNELS, status: (new Date(s.scheduledAt).getTime() < now ? '게시됨' : '예약됨') }));
+    .map((s) => ({ contentId: s.contentId, job: s.job || '', name: s.name, scheduledAt: s.scheduledAt, channels: s.channels || DEPLOY_CHANNELS, status: (new Date(s.scheduledAt).getTime() < now ? '게시됨' : '예약됨') }));
   res.json({ posterConfigured: posterReady(), perDay: Math.min(POST_PER_DAY, POST_HOURS.length || 1), times: POST_HOURS, scheduled, pending });
 });
 // 승인 → 미예약 쇼츠만 Upload-Post로 예약(기존 뒤에 이어서) + 상세 기록 저장
@@ -1660,6 +1701,84 @@ app.get('/content/jobs', async (req, res) => {
     const text = await r.text().catch(() => '');
     let data; try { data = JSON.parse(text); } catch (e) { data = String(text).slice(0, 2000); }
     res.status(r.ok ? 200 : 502).json({ status: r.status, data });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Upload-Post 예약 1건 취소(job_id) ──
+async function cancelUploadPostJob(jobId) {
+  if (!jobId) return { ok: false, skipped: true };
+  try {
+    const r = await fetch(`https://api.upload-post.com/api/uploadposts/schedule/${encodeURIComponent(jobId)}`, { method: 'DELETE', headers: { Authorization: `Apikey ${process.env.UPLOADPOST_API_KEY}` } });
+    return { ok: r.ok, status: r.status };
+  } catch (e) { return { ok: false, error: e.message }; }
+}
+
+// ── 진단: 채널 연결 상태 (토큰 끊김 여부 — 어느 SNS가 실제 연결됐나) ──
+app.get('/content/accounts', async (req, res) => {
+  if (!posterReady()) return res.status(400).json({ error: '발행 도구 미연결' });
+  try {
+    const r = await fetch('https://api.upload-post.com/api/uploadposts/users', { headers: { Authorization: `Apikey ${process.env.UPLOADPOST_API_KEY}` } });
+    const text = await r.text().catch(() => ''); let data; try { data = JSON.parse(text); } catch (e) { data = String(text).slice(0, 1500); }
+    let connected = null;
+    try {
+      const prof = (data.profiles || []).find((p) => p.username === process.env.UPLOADPOST_USER) || (data.profiles || [])[0];
+      if (prof) { const sa = prof.social_accounts || {}; connected = {}; ['instagram', 'facebook', 'youtube', 'tiktok'].forEach((k) => { const v = sa[k]; connected[k] = !!(v && (typeof v === 'object' ? Object.keys(v).length : String(v).length)); }); }
+    } catch (e) {}
+    res.status(r.ok ? 200 : 502).json({ status: r.status, user: process.env.UPLOADPOST_USER, connected, raw: data });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── 진단: 요금제/계정 (유료 활성 여부) ──
+app.get('/content/account-plan', async (req, res) => {
+  if (!posterReady()) return res.status(400).json({ error: '발행 도구 미연결' });
+  try {
+    const r = await fetch('https://api.upload-post.com/api/uploadposts/me', { headers: { Authorization: `Apikey ${process.env.UPLOADPOST_API_KEY}` } });
+    const text = await r.text().catch(() => ''); let data; try { data = JSON.parse(text); } catch (e) { data = String(text).slice(0, 1500); }
+    res.status(r.ok ? 200 : 502).json({ status: r.status, data });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Upload-Post에 실제 잡힌 예약 목록 (유실분 포함, 옛 쇼츠 정리용) ──
+app.get('/content/scheduled', async (req, res) => {
+  if (!posterReady()) return res.status(400).json({ error: '발행 도구 미연결' });
+  try {
+    const r = await fetch('https://api.upload-post.com/api/uploadposts/schedule', { headers: { Authorization: `Apikey ${process.env.UPLOADPOST_API_KEY}` } });
+    const text = await r.text().catch(() => ''); let data; try { data = JSON.parse(text); } catch (e) { data = String(text).slice(0, 3000); }
+    res.status(r.ok ? 200 : 502).json({ status: r.status, data });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Upload-Post 예약 직접 취소(job_id) — 우리 대장에 없는 유실분도 정리 가능 ──
+app.post('/content/scheduled/cancel', async (req, res) => {
+  if (!posterReady()) return res.status(400).json({ error: '발행 도구 미연결' });
+  const jobId = (req.body || {}).jobId || (req.body || {}).job_id;
+  if (!jobId) return res.status(400).json({ error: 'jobId(취소할 예약 번호) 필요' });
+  const c = await cancelUploadPostJob(jobId);
+  res.status(c.ok ? 200 : 502).json(c);
+});
+
+// ── 예약 삭제/취소: 우리 예약대장에서 제거 + (미래 예약+job_id면) Upload-Post에서도 취소 ──
+//    body: { kind, contentId } 또는 { kind, contentIds:[...] } 또는 { kind, all:true }
+app.post('/content/sched/delete', async (req, res) => {
+  try {
+    const b = req.body || {};
+    const kind = b.kind || '쇼츠';
+    const all = !!b.all;
+    const ids = Array.isArray(b.contentIds) ? b.contentIds : (b.contentId ? [b.contentId] : []);
+    if (!all && !ids.length) return res.status(400).json({ error: '지울 대상(contentId)이나 all:true가 필요합니다.' });
+    const now = Date.now();
+    const target = SCHED.filter((s) => s.campaignId === ACTIVE_ID && s.kind === kind && (all || ids.includes(s.contentId)));
+    if (!target.length) return res.status(404).json({ error: '지울 예약을 찾지 못했습니다(이미 비었을 수 있음).' });
+    const canceled = [];
+    for (const s of target) {
+      const future = s.scheduledAt && new Date(s.scheduledAt).getTime() > now;   // 이미 게시된 건 취소 불가
+      if (future && s.job) { const c = await cancelUploadPostJob(s.job); canceled.push({ name: s.name, job: s.job, ok: c.ok, status: c.status }); }
+    }
+    const remove = new Set(target);
+    const before = SCHED.length;
+    SCHED = SCHED.filter((s) => !remove.has(s));
+    await saveSched();
+    res.json({ ok: true, removed: before - SCHED.length, canceled });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -2115,6 +2234,27 @@ app.post('/cardnews/upload', zipUpload.single('zip'), async (req, res) => {
 app.get('/cardnews/sets', (req, res) => {
   res.json({ count: myCardSets().length, sets: myCardSets().map((s) => ({ setId: s.setId, setName: s.setName, images: s.images || [] })) });
 });
+// 카드뉴스 세트(파일) 삭제 — CARDSETS에서 제거 + 파이어베이스 이미지 삭제 + 관련 예약도 취소·제거
+app.post('/cardnews/sets/delete', async (req, res) => {
+  try {
+    const setId = (req.body || {}).setId;
+    const set = CARDSETS.find((s) => s.setId === setId && s.campaignId === ACTIVE_ID);
+    if (!set) return res.status(404).json({ error: '세트를 찾지 못했습니다.' });
+    // 1) 파이어베이스 원본 이미지 삭제
+    const bucket = storageBucket();
+    if (bucket) { for (const im of (set.images || [])) { const p = fbPathFromUrl(im.url); if (p) { try { await bucket.file(p).delete(); } catch (e) {} } } }
+    // 2) 세트 제거
+    CARDSETS = CARDSETS.filter((s) => s !== set);
+    await saveCardSets();
+    // 3) 이 세트로 잡힌 예약도 정리(미래면 Upload-Post 취소)
+    const now = Date.now();
+    const sched = SCHED.filter((s) => s.campaignId === ACTIVE_ID && s.kind === '카드뉴스' && s.contentId === setId);
+    const canceled = [];
+    for (const s of sched) { if (s.scheduledAt && new Date(s.scheduledAt).getTime() > now && s.job) { const c = await cancelUploadPostJob(s.job); canceled.push({ job: s.job, ok: c.ok }); } }
+    if (sched.length) { const rm = new Set(sched); SCHED = SCHED.filter((s) => !rm.has(s)); await saveSched(); }
+    res.json({ ok: true, schedRemoved: sched.length, canceled });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 
 // ── 카드뉴스 캐러셀 배포 (인스타·페북, 오후 6시·하루 1세트) ──
 const CARD_CHANNELS = (process.env.CARD_CHANNELS || 'instagram,facebook').split(',').map((s) => s.trim());
@@ -2142,14 +2282,23 @@ async function postCardToUploadPost(set, c) {
   form.append('user', process.env.UPLOADPOST_USER);
   CARD_CHANNELS.forEach((ch) => form.append('platform[]', ch));
   const imgs = cardImages(set);   // 미리보기 제외 낱장만
+  // 먼저 다 받아서 비율 검사 → 인스타 허용범위(4:5≈0.8 ~ 1.91:1) 벗어난 장은 자동 제외. 단, 전부 탈락하면 그대로 보냄(아예 0장 방지).
+  const fetched = [];
   for (let i = 0; i < imgs.length; i++) {
     const im = imgs[i];
     let r; try { r = await fetch(im.url); } catch (e) { continue; }
     if (!r.ok) continue;
-    const ab = await r.arrayBuffer();
+    const buf = Buffer.from(await r.arrayBuffer());
     const isPng = /\.png(\?|$)/i.test(im.name || '') || /\.png(\?|$)/i.test(im.url || '');
-    form.append('photos[]', new Blob([ab], { type: isPng ? 'image/png' : 'image/jpeg' }), im.name || ('card' + (i + 1) + (isPng ? '.png' : '.jpg')));
+    const d = imageDims(buf);
+    const ratio = (d && d.w && d.h) ? d.w / d.h : null;
+    fetched.push({ buf, isPng, name: im.name || ('card' + (i + 1) + (isPng ? '.png' : '.jpg')), ratio });
   }
+  const okRatio = fetched.filter((f) => f.ratio == null || (f.ratio >= 0.8 && f.ratio <= 1.91));
+  const use = okRatio.length ? okRatio : fetched;   // 전부 비율 위반이면 어쩔 수 없이 전부 보냄
+  const skipped = fetched.length - use.length;
+  if (skipped) console.warn(`⚠️ 카드뉴스 "${set.setName}" 비율위반 ${skipped}장 제외(인스타 4:5~1.91:1)`);
+  use.forEach((f) => form.append('photos[]', new Blob([f.buf], { type: f.isPng ? 'image/png' : 'image/jpeg' }), f.name));
   form.append('title', caps.title);
   form.append('caption', cap);
   form.append('instagram_title', cap);
@@ -2163,8 +2312,8 @@ async function postCardToUploadPost(set, c) {
 app.get('/cardnews/plan', (req, res) => {
   const now = Date.now();
   const scheduled = schedCards().slice().sort((a, b) => String(a.scheduledAt).localeCompare(String(b.scheduledAt)))
-    .map((s) => ({ name: s.name, scheduledAt: s.scheduledAt, channels: s.channels || CARD_CHANNELS, status: (new Date(s.scheduledAt).getTime() < now ? '게시됨' : '예약됨') }));
-  const pending = pendingCardSets().map((p) => ({ setName: p.setName, scheduledAt: p.scheduledAt, channels: p.channels, count: cardImages(p).length }));
+    .map((s) => ({ contentId: s.contentId, job: s.job || '', name: s.name, scheduledAt: s.scheduledAt, channels: s.channels || CARD_CHANNELS, status: (new Date(s.scheduledAt).getTime() < now ? '게시됨' : '예약됨') }));
+  const pending = pendingCardSets().map((p) => ({ setId: p.setId, setName: p.setName, scheduledAt: p.scheduledAt, channels: p.channels, count: cardImages(p).length }));
   res.json({ posterConfigured: posterReady(), hour: Number(process.env.CARD_HOUR_KST || 18), scheduled, pending });
 });
 app.post('/cardnews/approve', async (req, res) => {
