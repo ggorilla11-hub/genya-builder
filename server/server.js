@@ -298,7 +298,7 @@ app.post('/chat', async (req, res) => {
     let isBriefing = false;   // 제니야는 더 이상 정기보고(디스코드)를 하지 않는다
     if (!agentId || agentId === 'zenya') {
       const [pub, conn] = await Promise.all([publishStatusText(), channelStatusText()]);
-      system = buildZenyaPrompt(project) + '\n\n' + conn + '\n\n' + pub + '\n\n' + engagementText();
+      system = buildZenyaPrompt(project) + '\n\n' + conn + '\n\n' + pub + '\n\n' + youtubeCheckText() + '\n\n' + engagementText();
       if (voice) system += VOICE_RULES;   // 음성이면 더 짧게
     } else {
       system = withLiveStatus(buildSystemPrompt(agentId, project), agentId);
@@ -714,7 +714,7 @@ app.post(['/vapi', '/vapi/chat/completions', '/vapi/chat/completions/chat/comple
     } else if (agentId === 'zenya') {
       // ★ 음성 제니야 = 비서실장(콘텐츠 공장 두뇌). 본사 총괄·영업일기 없음 + 외부 발행결과 + 채널 연결상태 + 반응 분석.
       const [pub, conn] = await Promise.all([publishStatusText(), channelStatusText()]);
-      system = buildZenyaPrompt(project) + '\n\n' + conn + '\n\n' + pub + '\n\n' + engagementText() + VOICE_RULES;
+      system = buildZenyaPrompt(project) + '\n\n' + conn + '\n\n' + pub + '\n\n' + youtubeCheckText() + '\n\n' + engagementText() + VOICE_RULES;
     } else {
       system = withLiveStatus(buildSystemPrompt(agentId, project), agentId) + VOICE_RULES;
       if (switched) {
@@ -1912,6 +1912,36 @@ app.get('/content/analytics-account', async (req, res) => {
 // ── 📊 결과분석 대시보드 집계 (틀은 항상, 데이터는 들어오는 대로) ──
 //    발행현황(채널별 성공/실패, 유튜브 포함) + 인스타 반응(자동) + 주제별 순위·광고후보 + 건강검진 + 전환(수동)
 const HKEY = (h) => `${h.platform}|${h.upload_timestamp}|${h.platform_post_id || h.request_id || ''}`;
+// ── 유튜브 실제 게시 검증 — "success=true"를 믿지 말고 실제 영상 URL을 열어 어느 채널인지 확인 ──
+//    Upload-Post는 채널 지정이 안 되고 연결된 채널로만 올라간다. 대표 본채널이 아니면 "엉뚱한 채널" 경보.
+const YT_MAIN_CHANNEL_ID = process.env.YT_MAIN_CHANNEL_ID || 'UCQxyqyUyMpNzHZvK0V_mOGQ';   // 오상열 @OhSangRyul (4.63만)
+const YT_MAIN_HANDLE = process.env.YT_MAIN_HANDLE || '@OhSangRyul';
+async function youtubeVideoChannel(videoId) {
+  try {
+    const r = await fetch(`https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`, { headers: { 'Accept-Language': 'ko' }, signal: AbortSignal.timeout(8000) });
+    if (!r.ok) return { exists: false };
+    const t = await r.text();
+    if (/"status":"ERROR"|Video unavailable|"isUnavailable":true/.test(t) && !/"channelId"/.test(t)) return { exists: false };
+    const channelId = (t.match(/"channelId":"(UC[\w-]+)"/) || [])[1] || '';
+    const handle = (t.match(/"ownerProfileUrl":"[^"]*?\/(@[^"\\]+)"/) || [])[1] || '';
+    return { exists: !!channelId, channelId, handle: handle ? decodeURIComponent(handle) : '' };
+  } catch (e) { return { exists: null, error: e.message }; }
+}
+async function verifyYoutubePublish(history) {
+  const yt = (history || []).filter((h) => h.platform === 'youtube' && h.success && (h.platform_post_id || h.post_url));
+  if (!yt.length) return { status: 'none', note: '유튜브 게시 이력 없음' };
+  const latest = yt[0];
+  const vid = latest.platform_post_id || (String(latest.post_url || '').match(/[?&]v=([\w-]+)/) || [])[1] || '';
+  if (!vid) return { status: 'unknown', note: '영상 ID 추출 실패' };
+  const ch = await youtubeVideoChannel(vid);
+  const url = `https://www.youtube.com/watch?v=${vid}`;
+  if (ch.exists === false) return { status: 'missing', videoId: vid, url, note: '영상이 실제로 존재하지 않음(미게시·삭제·비공개)' };
+  if (ch.exists == null) return { status: 'unknown', videoId: vid, url, note: '확인 실패(네트워크)' };
+  const isMain = ch.channelId === YT_MAIN_CHANNEL_ID;
+  return { status: isMain ? 'main' : 'wrong', videoId: vid, url, channelId: ch.channelId, handle: ch.handle,
+    expectedChannelId: YT_MAIN_CHANNEL_ID, expectedHandle: YT_MAIN_HANDLE, isMainChannel: isMain,
+    note: isMain ? '대표 본채널에 정상 게시됨' : `엉뚱한 채널(${ch.handle || ch.channelId})에 게시됨 — 본채널(${YT_MAIN_HANDLE}) 아님. Upload-Post 유튜브 재연결 필요` };
+}
 let _resultsCache = { ts: 0, data: null };
 async function buildResults() {
   if (Date.now() - _resultsCache.ts < 300000 && _resultsCache.data) return _resultsCache.data;
@@ -1976,6 +2006,8 @@ async function buildResults() {
     const r = await fetch('https://api.upload-post.com/api/uploadposts/me', { headers: { Authorization: `Apikey ${process.env.UPLOADPOST_API_KEY}` }, signal: AbortSignal.timeout(5000) });
     if (r.ok) { const d = await r.json().catch(() => ({})); out.health.plan = d.plan || null; }
   } catch (e) {}
+  // ★ 유튜브 실제 게시 검증 (success=true를 믿지 말고 실제 영상 채널 확인)
+  out.health.youtubePublish = await verifyYoutubePublish(history);
   _resultsCache = { ts: Date.now(), data: out };
   return out;
 }
@@ -1994,6 +2026,15 @@ function engagementText() {
   if (a) out += `\n· 광고 후보 1순위: "${a.title}" (조회 ${a.views}·반응률 ${a.engageRate}%). "광고 뭘 밀까" 물으면 이걸 근거로 "이거 광고 밀까요?" 제안하라(실행은 대표 승인).`;
   out += '\n(유튜브·페북 게시물별 수치는 권한 막힘 → "플랫폼에서 직접 확인"으로 안내. 반응 비교·광고 제안은 인스타 수치만 근거로 한다.)';
   return out;
+}
+// 유튜브 실제 게시 검증을 두뇌에 — "success"만 믿지 말고 실제 채널 확인 결과로 답하게.
+function youtubeCheckText() {
+  const yp = _resultsCache.data && _resultsCache.data.health && _resultsCache.data.health.youtubePublish;
+  if (!yp || yp.status === 'none') return '';
+  if (yp.status === 'main') return '=== 유튜브 실제 게시 검증 ===\n✅ 유튜브 최근 영상이 대표 본채널에 정상 게시됨 확인.';
+  if (yp.status === 'wrong') return `=== 유튜브 실제 게시 검증 (★중요) ===\n⚠️ 유튜브 업로드는 "성공"으로 뜨지만 실제 영상은 ${yp.handle || '엉뚱한 채널'}(${yp.channelId})에 올라가 있고 대표님 본채널(${yp.expectedHandle})이 아니다. Upload-Post 유튜브 연결이 잘못된 채널에 걸려 있다. 절대 "유튜브 나갔다/성공"이라고 보고하지 말고, "유튜브는 엉뚱한 부채널에 올라가서 본채널엔 안 떴다 — 재연결이 필요하다"고 정확히 답하라.`;
+  if (yp.status === 'missing') return '=== 유튜브 실제 게시 검증 (★중요) ===\n⚠️ 유튜브는 success로 떠도 실제 영상이 존재하지 않는다(미게시·삭제·비공개). "유튜브 나갔다"고 보고하지 말 것.';
+  return '';
 }
 // 집계 캐시를 주기적으로 데워둔다(서버 깬 뒤 8초, 이후 5분마다) → 두뇌가 즉시 반응 데이터를 갖게.
 setTimeout(() => { if (posterReady()) buildResults().catch(() => {}); }, 8000);

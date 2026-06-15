@@ -975,6 +975,14 @@ function resultsDashboard(){
     html+='<div>'+chip('인스타 연결',conn.instagram)+chip('페북 연결',conn.facebook)+chip('유튜브 연결',conn.youtube)+'<span style="font-size:11px;color:#66736E"> · 요금제 '+(h.plan||'?')+'</span></div>';
     if(h.fbFilename) html+='<div style="font-size:11px;margin-top:3px">'+(h.fbFilename.unsafe?('⚠️ 페북 파일명 위험 '+h.fbFilename.unsafe+'/'+h.fbFilename.total+'건 — 짧게 재업로드 필요'):('✅ 페북 파일명 안전 ('+h.fbFilename.total+'건 전부 짧은 영문)'))+'</div>';
     if(h.youtubeQueued) html+='<div style="font-size:11px;margin-top:2px">'+((h.youtubeQueued.withYoutube===h.youtubeQueued.total)?('✅ 유튜브 큐 포함 '+h.youtubeQueued.withYoutube+'/'+h.youtubeQueued.total):('⚠️ 유튜브 큐 누락 '+(h.youtubeQueued.total-h.youtubeQueued.withYoutube)+'건'))+'</div>';
+    if(h.youtubePublish){ var yp=h.youtubePublish, msg, col;
+      if(yp.status==='main'){ msg='✅ 유튜브 실제 게시: 대표 본채널 확인됨'; col='#1D9E75'; }
+      else if(yp.status==='wrong'){ msg='🚨 유튜브 실제 게시: <b>엉뚱한 채널</b>('+escapeHtml(yp.handle||yp.channelId||'')+')에 올라감 — 본채널 아님! Upload-Post 유튜브 재연결 필요'; col='#e23b3b'; }
+      else if(yp.status==='missing'){ msg='🚨 유튜브: success인데 실제 영상이 없음(미게시)'; col='#e23b3b'; }
+      else if(yp.status==='none'){ msg='유튜브 실제 게시: 아직 게시 이력 없음'; col='#66736E'; }
+      else { msg='유튜브 실제 게시: 확인 중'; col='#66736E'; }
+      html+='<div style="font-size:11px;margin-top:2px;color:'+col+'">'+msg+(yp.url?(' <a href="'+escapeAttr(yp.url)+'" target="_blank" style="color:#3B6FB0">영상 열기</a>'):'')+'</div>';
+    }
     html+=sec('📤 발행 현황 (채널별 성공/실패)');
     var bc=pub.byChannel||{}, keys=Object.keys(bc);
     if(keys.length){ keys.forEach(function(k){ html+='<div style="font-size:12px">· '+(chK[k]||k)+': <b style="color:#1D9E75">성공 '+bc[k].ok+'</b> / <b style="color:#e23b3b">실패 '+bc[k].fail+'</b></div>'; }); }
