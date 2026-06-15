@@ -19,6 +19,7 @@ const Anthropic = require('@anthropic-ai/sdk');
 // ── 기본 설정 ──────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
 const MODEL = 'claude-opus-4-8';          // 클로드 최신 최상위 모델
+const SERVER_START = new Date().toISOString();   // 서버 켜진 시각 — 배포되면 갱신됨(화면 버전 표시용)
 
 // ── 정체성 문서 읽기 (agents/ 폴더) ─────────────────────────
 // 서버가 켜질 때 한 번 읽어 기억해 둔다.
@@ -269,6 +270,12 @@ app.get('/', (req, res) => {
 // ── 살아있는지 확인용 창구 ─────────────────────────────────
 app.get('/health', (req, res) => {
   res.json({ ok: true, name: 'jenya-server', message: '제니야 중계 서버가 켜져 있습니다.' });
+});
+// ── 배포 버전 — 화면 푸터가 이걸 읽어 "최신 배포 시각·커밋"을 보여준다(배포됐는지 화면으로 즉시 확인) ──
+app.get('/version', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const commit = process.env.RENDER_GIT_COMMIT || '';
+  res.json({ commit, short: commit ? commit.slice(0, 7) : 'local', startedAt: SERVER_START });
 });
 
 // ── /chat 창구: 말씀을 받아 클로드에 중계 ──────────────────

@@ -533,7 +533,7 @@ body{font-family:'Pretendard',-apple-system,sans-serif;font-weight:500;backgroun
 
   </div>
 
-  <div class="foot">제니야 — <b>상단 프로젝트 × 좌측 에이전트 × 우측 도구</b> 교차 구조 · v2.26 (음성 Phase2-①: 답하기 전에 실시간 현황 조회 — 예약 명세·유튜브 리드 명단·오늘 한 일·개강 D-day 즉답)</div>
+  <div class="foot">제니야 — <b>상단 프로젝트 × 좌측 에이전트 × 우측 도구</b> 교차 구조 · <span id="ver" title="배포 버전">버전 확인 중…</span></div>
 </div>
 
 <!-- C-6. 업로드 모달 (+ 버튼으로 열림 — 실제 업로드는 3단계) -->
@@ -2954,6 +2954,14 @@ document.getElementById('day-prev').onclick  = function(){ dayStep(-1); };
 document.getElementById('day-next').onclick  = function(){ dayStep(1); };
 document.getElementById('day-today').onclick = function(){ renderDay(dayState.today); };
 document.getElementById('pastbar-today').onclick = function(){ renderDay(dayState.today); };
+
+// 배포 버전 표시 — 서버 /version(배포 커밋·서버시작 시각)을 읽어 푸터에 자동 표시 (배포됐는지 화면으로 즉시 확인)
+fetch(SERVER_URL+'/version').then(function(r){return r.json();}).then(function(v){
+  var el=document.getElementById('ver'); if(!el) return;
+  var t=(v.startedAt||'').replace('T',' ').slice(0,16);
+  el.textContent='최신배포 '+(t||'?')+' · '+(v.short||'local');
+  el.title='commit '+(v.commit||'local');
+}).catch(function(){ var el=document.getElementById('ver'); if(el) el.textContent='(서버 연결 안 됨)'; });
 
 // 회의 중단 버튼 연결
 document.getElementById('meet-stop').onclick = function(){
