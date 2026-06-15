@@ -1331,7 +1331,7 @@ function planLabel(k){
   if(k.key==='텍스트') return '<i class="ti ti-book"></i> 블로그 연재 코치';
   if(k.key==='오디오') return '<i class="ti ti-microphone"></i> 팟캐스트 업로드 코치';
   if(k.key==='카드뉴스') return '<i class="ti ti-photo"></i> 배포 계획 보기·승인';
-  if(k.key==='키워드') return '<i class="ti ti-brand-youtube"></i> 오늘의 유튜브 리드';
+  if(k.key==='키워드') return '<i class="ti ti-users-group"></i> 고객발굴 리드 (유튜브·네이버)';
   if(k.flow==='wait') return '<i class="ti ti-eye"></i> 등록 계획 보기';
   if(k.flow==='manual') return '<i class="ti ti-eye"></i> 명단 계획 보기';
   return '<i class="ti ti-route"></i> 배포 계획 보기 · 승인';
@@ -1354,7 +1354,7 @@ function togglePlan(kind){
   if(kind==='텍스트'){ blogCoach(host); return; } // Phase4: 텍스트는 블로그 연재 코치
   if(kind==='오디오'){ podcastCoach(host); return; } // 팟캐스트 업로드 코치(주1회 반자동)
   if(kind==='카드뉴스'){ cardSetsView(host); return; } // 카드뉴스 세트 목록(zip 업로드분)
-  if(kind==='키워드'){ ytLeadsCoach(host); return; } // 대표 유튜브 채널 가망고객 발굴
+  if(kind==='키워드'){ leadsHub(host); return; } // 고객발굴 리드 허브 — 유튜브·네이버 동등
   var k=null; FOLDER_KINDS.forEach(function(x){ if(x.key===kind) k=x; }); if(!k) return;
   var cc=CAMPAIGN_CACHE||{}; var course=cc.name||cc.title||'이 과정';
   var rows=planPreview(k, course);
@@ -1534,11 +1534,11 @@ function ytLeadsCoach(host){
     }
     var html='<div class="plan-box"><div class="plan-title"><i class="ti ti-brand-youtube"></i> 오늘의 유튜브 리드 '+d.todayCount+'명 <span style="font-weight:400;color:#888">('+escapeHtml(d.handle)+' · 누적 '+d.total+' · 🔥핫 '+d.hot+')</span></div>';
     html+='<div class="plan-note">대표님 채널 댓글에서 자동 발굴. 🔥핫=즉시 답글 / 🌤웜=관심. <b>답글(접촉)은 대표님이 직접</b> 다세요 — 계정 보호를 위해 자동 답글은 안 합니다.</div>';
-    html+='<div class="plan-actions"><button class="plan-approve" data-collect="1"><i class="ti ti-refresh"></i> 지금 발굴</button><button class="plan-approve" style="background:#03C75A" data-naver="1"><i class="ti ti-coffee"></i> 네이버 카페 리드</button><button class="plan-cancel">닫기</button></div>';
+    html+='<div class="plan-actions"><button class="plan-approve" data-collect="1"><i class="ti ti-refresh"></i> 지금 발굴</button><button class="plan-cancel">닫기</button></div>';
     if(!d.leads.length){ html+='<div class="plan-note">아직 발굴된 리드가 없어요. [지금 발굴]을 눌러보세요. (20~40초)</div>'; }
     d.leads.forEach(function(l){
       html+='<div class="fitem">'+escapeHtml(l.tier)+' <b>'+escapeHtml(l.author||'')+'</b>: '+escapeHtml(l.text||'')
-        +(l.link?(' <a href="'+escapeAttr(l.link)+'" target="_blank">이 댓글로 바로가기 ▶</a>'):'')
+        +(l.link?(' <a href="'+escapeAttr((l.link||'').replace(/^http:/,'https:'))+'" target="_blank" rel="noopener">이 댓글로 바로가기 ▶</a>'):'')
         +(l.video?('<span style="color:#999"> · '+escapeHtml(l.video)+'</span>'):'')+'</div>';
     });
     html+='</div>'; host.innerHTML=html; close();
@@ -1547,8 +1547,22 @@ function ytLeadsCoach(host){
         if(res.error){ alert(res.error); cb.disabled=false; cb.innerHTML='지금 발굴'; return; } ytLeadsCoach(host);
       }).catch(function(){ alert('발굴 실패'); cb.disabled=false; cb.innerHTML='지금 발굴'; });
     };
-    var nb=host.querySelector('[data-naver]'); if(nb) nb.onclick=function(){ naverLeadsView(host); };
   }).catch(function(){ host.innerHTML='<div class="plan-box"><div class="plan-note">⚠️ 서버 연결 실패</div></div>'; });
+}
+
+// 고객발굴 리드 허브 — [유튜브 리드]와 [네이버 카페 리드]를 동등한 형제 버튼으로 나란히
+function leadsHub(host){
+  host.style.display='';
+  host.innerHTML='<div style="display:flex;gap:8px;margin:4px 0 8px;flex-wrap:wrap">'
+    +'<button class="appr" id="lh-yt" style="background:#FF0000;color:#fff;border-color:#FF0000;font-size:13px;padding:7px 14px"><i class="ti ti-brand-youtube"></i> 유튜브 리드</button>'
+    +'<button class="appr" id="lh-nv" style="background:#03C75A;color:#fff;border-color:#03C75A;font-size:13px;padding:7px 14px"><i class="ti ti-coffee"></i> 네이버 카페 리드</button>'
+    +'</div><div id="leads-sub"></div>';
+  var sub=host.querySelector('#leads-sub');
+  var y=document.getElementById('lh-yt'), n=document.getElementById('lh-nv');
+  function act(w){ if(y) y.style.opacity=(w==='yt')?'1':'0.5'; if(n) n.style.opacity=(w==='nv')?'1':'0.5'; }
+  y.onclick=function(){ act('yt'); ytLeadsCoach(sub); };
+  n.onclick=function(){ act('nv'); naverLeadsView(sub); };
+  act('yt'); ytLeadsCoach(sub);   // 기본: 유튜브 리드(원하면 네이버 버튼으로 전환)
 }
 
 // 네이버 카페 리드 — 공식 검색 API로 카페글 수집 + AI 핫/웜 분류 + 카페글 바로가기 (유튜브 리드와 같은 방식)
@@ -1562,19 +1576,18 @@ function naverLeadsView(host){
     posts.sort(function(a,b){ return (ord[a.tier]==null?9:ord[a.tier])-(ord[b.tier]==null?9:ord[b.tier]); });
     var html='<div class="plan-box"><div class="plan-title"><i class="ti ti-coffee"></i> 네이버 카페 리드 '+d.count+'건 <span style="font-weight:400;color:#888">(🔥핫 '+d.hot+' · 🌤웜 '+d.warm+' · 제외 '+d.excluded+')</span></div>';
     html+='<div class="plan-note">공식 검색 API로 공개 카페글 수집 → AI가 핫🔥(지금 상담 필요)/웜🌤(정보 탐색)으로 분류. <b>접촉(댓글·쪽지)은 대표님이 직접</b> — 자동 발송 안 합니다.</div>';
-    html+='<div class="plan-actions"><button class="plan-approve" data-recollect="1"><i class="ti ti-refresh"></i> 다시 발굴</button><button class="plan-approve" style="background:#FF0000" data-yt="1"><i class="ti ti-brand-youtube"></i> 유튜브 리드</button><button class="plan-cancel">닫기</button></div>';
+    html+='<div class="plan-actions"><button class="plan-approve" data-recollect="1"><i class="ti ti-refresh"></i> 다시 발굴</button><button class="plan-cancel">닫기</button></div>';
     var shown=0;
     posts.forEach(function(l){
       if(l.tier==='제외') return;   // 화면엔 핫·웜(실제 리드)만, 제외는 숨김
       shown++;
       html+='<div class="fitem">'+escapeHtml(l.tier)+' <span style="color:#03C75A;font-weight:700">['+escapeHtml(l.keyword)+']</span> '+escapeHtml(l.title||'')
         +' <span style="color:#999">@'+escapeHtml(l.cafename||'')+'</span>'
-        +(l.link?(' <a href="'+escapeAttr(l.link)+'" target="_blank">카페글 바로가기 ▶</a>'):'')+'</div>';
+        +(l.link?(' <a href="'+escapeAttr((l.link||'').replace(/^http:/,'https:'))+'" target="_blank" rel="noopener">카페글 바로가기 ▶</a>'):'')+'</div>';
     });
     if(!shown) html+='<div class="plan-note">핫·웜 리드가 없어요(제외만). [다시 발굴]을 눌러보세요.</div>';
     html+='</div>'; host.innerHTML=html; close();
     var rc=host.querySelector('[data-recollect]'); if(rc) rc.onclick=function(){ naverLeadsView(host); };
-    var yb=host.querySelector('[data-yt]'); if(yb) yb.onclick=function(){ ytLeadsCoach(host); };
   }).catch(function(){ host.innerHTML='<div class="plan-box"><div class="plan-note">⚠️ 서버 연결 실패(또는 시간 초과 — 다시 시도해 주세요)</div><div class="plan-actions"><button class="plan-cancel">닫기</button></div></div>'; });
 }
 

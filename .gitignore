@@ -15,3 +15,10 @@ server/google-key.json
 *.mov
 *.docx
 *.pdf
+
+# 미리보기/스크린샷 산출물 (제니야 작업 검증용 — 깃에 안 올림)
+*_미리보기.html
+*_미리보기.png
+bip_*.html
+bip_*.png
+naver_leads_screen.*
