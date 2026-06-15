@@ -2405,6 +2405,41 @@ app.get('/leads/today', (req, res) => {
   res.json({ configured: leadsConfigured(), todayCount: todayList.length, total: mine.length, leads: show.map((l) => ({ source: l.source, author: l.author, text: l.text, link: l.link, keyword: l.keyword })) });
 });
 
+// ── 네이버 카페 리드 검증 — 특정 키워드로 카페글만 수집 + 핫/웜/제외 분류(유튜브 엔진 방식) + 카페명 포함 ──
+//    1차 검증용. 대량 시스템 아님. ?kw=콤마키워드 / ?display=N 로 조정.
+app.get('/naverleads/test', async (req, res) => {
+  try {
+    if (!process.env.NAVER_CLIENT_ID || !process.env.NAVER_CLIENT_SECRET) return res.status(400).json({ error: 'NAVER_CLIENT_ID/SECRET 미설정' });
+    const kws = (req.query.kw ? String(req.query.kw) : '퇴직금,연금저축 이전,보험 해지,IRP,상속세,종신보험,노후준비,10억 만들기')
+      .split(',').map((s) => s.trim()).filter(Boolean).slice(0, 12);
+    const hdr = { 'X-Naver-Client-Id': process.env.NAVER_CLIENT_ID, 'X-Naver-Client-Secret': process.env.NAVER_CLIENT_SECRET };
+    const strip = (s) => String(s || '').replace(/<[^>]+>/g, '').replace(/&[a-z#0-9]+;/g, ' ').replace(/\s+/g, ' ').trim();
+    const display = Math.min(Math.max(Number(req.query.display) || 4, 1), 10);
+    const posts = []; const apiErrors = [];
+    for (const kw of kws) {
+      let r; try { r = await fetch(`https://openapi.naver.com/v1/search/cafearticle.json?display=${display}&sort=sim&query=${encodeURIComponent(kw)}`, { headers: hdr }); }
+      catch (e) { apiErrors.push({ kw, error: e.message }); continue; }
+      if (!r.ok) { apiErrors.push({ kw, status: r.status }); continue; }
+      const d = await r.json().catch(() => ({}));
+      (d.items || []).forEach((it) => posts.push({ keyword: kw, title: strip(it.title), desc: strip(it.description), cafename: strip(it.cafename), link: it.link || '' }));
+    }
+    if (!posts.length) return res.json({ ok: true, count: 0, keywords: kws, apiErrors, posts: [], note: '카페글 0건' });
+    // 핫/웜/제외 분류 (LLM — 유튜브 엔진과 같은 기준)
+    let tiers = {};
+    try {
+      const lst = posts.map((p, i) => `${i}. [${p.keyword}] 제목:${p.title} / 내용:${p.desc.slice(0, 70)} / 카페:${p.cafename}`).join('\n');
+      const sys = '너는 재무상담·재테크 강의 마케터의 리드 분류기다. 핵심 기준: 도움을 "구하는" 사람만 리드다. hot=지금 상담이 필요해 보임(결정 임박·절박·본인의 구체적 질문), warm=정보 탐색·가벼운 궁금, exclude=훈수·정보제공·후기·자랑·광고/홍보/모집·단순감상·스팸. 오직 JSON 배열만 출력: [{"i":0,"t":"hot"},{"i":1,"t":"warm"},{"i":2,"t":"exclude"}]';
+      const cr = await anthropic.messages.create({ model: MODEL, max_tokens: 1500, system: sys, messages: [{ role: 'user', content: lst }] });
+      const txt = cr.content.filter((b) => b.type === 'text').map((b) => b.text).join('');
+      JSON.parse((txt.match(/\[[\s\S]*\]/) || ['[]'])[0]).forEach((x) => { if (typeof x.i === 'number') tiers[x.i] = x.t; });
+    } catch (e) {}
+    const tk = (t) => t === 'hot' ? '🔥핫' : t === 'warm' ? '🌤웜' : '제외';
+    const out = posts.map((p, i) => ({ keyword: p.keyword, cafename: p.cafename, tier: tk(tiers[i]), title: p.title, link: p.link }));
+    const hot = out.filter((p) => p.tier === '🔥핫').length, warm = out.filter((p) => p.tier === '🌤웜').length;
+    res.json({ ok: true, count: out.length, keywords: kws, hot, warm, excluded: out.length - hot - warm, apiErrors, posts: out });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ============================================================
 // 대표 유튜브 채널 댓글 → 가망고객 발굴 (핫/웜, 무료 YouTube Data API · API키만)
 //   대표 본인 채널 공개 댓글 읽기 = 합법·무료. 답글(접촉)은 대표 직접(계정보호).
