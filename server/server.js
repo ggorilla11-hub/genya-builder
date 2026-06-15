@@ -290,7 +290,8 @@ app.post('/chat', async (req, res) => {
     let system;
     let isBriefing = false;   // 제니야는 더 이상 정기보고(디스코드)를 하지 않는다
     if (!agentId || agentId === 'zenya') {
-      system = buildZenyaPrompt(project) + '\n\n' + (await publishStatusText());
+      const [pub, queue] = await Promise.all([publishStatusText(), scheduledQueueText()]);
+      system = buildZenyaPrompt(project) + '\n\n' + queue + '\n\n' + pub;
       if (voice) system += VOICE_RULES;   // 음성이면 더 짧게
     } else {
       system = withLiveStatus(buildSystemPrompt(agentId, project), agentId);
@@ -486,6 +487,8 @@ function voiceLiveStatus() {
   const shAll = schedFor('쇼츠');
   const shFut = shAll.filter((s) => s.scheduledAt && new Date(s.scheduledAt).getTime() > now);
   L.push(`· 쇼츠: 게시됨 ${shAll.length - shFut.length} · 예약대기 ${shFut.length}${shFut.length ? '(다음 ' + fmtK(shFut[0].scheduledAt) + ')' : ''} · 아직 미예약 ${pendingShortsPlan('쇼츠').length}개`);
+  if (shFut.length) { const unsafe = shFut.filter((s) => !fbNameSafe(s.link)).length;
+    L.push(`  └ 예약된 쇼츠 페북 파일명: ${unsafe ? unsafe + '건 긴 파일명(페북 실패 위험 — 짧게 재업로드 필요)' : '전부 짧은 영문 → 페북 정상 예상(어제 실패 원인 해소됨)'}`); }
   // 카드뉴스
   const cdAll = schedCards();
   const cdFut = cdAll.filter((s) => s.scheduledAt && new Date(s.scheduledAt).getTime() > now);
@@ -564,6 +567,43 @@ async function publishStatusText() {
   return out;
 }
 
+// 페북 파일명 안전성: 짧은 아스키 파일명이면 페북 통과(어제 실패 원인=긴 한글 파일명)
+function fbNameSafe(link) {
+  const m = String(link || '').match(/\/o\/([^?]+)/);
+  if (!m) return true;
+  const base = (decodeURIComponent(m[1]).split('/').pop()) || '';
+  return base.length <= 40 && /^[\x00-\x7F]+$/.test(base);
+}
+
+// 실제 예약 큐: Upload-Post 발행 서버에 진짜 걸린 미래 예약(내부 대장과 별개) — "내일 나가냐"의 근거.
+let _queueCache = { ts: 0, text: '' };
+async function scheduledQueueText() {
+  if (!posterReady()) return '';
+  if (Date.now() - _queueCache.ts < 30000 && _queueCache.text) return _queueCache.text;
+  let out = '';
+  try {
+    const r = await fetch('https://api.upload-post.com/api/uploadposts/schedule', { headers: { Authorization: `Apikey ${process.env.UPLOADPOST_API_KEY}` }, signal: AbortSignal.timeout(4000) });
+    if (r.ok) {
+      const data = await r.json().catch(() => ({}));
+      const chKor = { instagram: '인스타', facebook: '페북', youtube: '유튜브', tiktok: '틱톡' };
+      const posts = (data.scheduled_posts || []).slice().sort((a, b) => String(a.scheduled_date).localeCompare(String(b.scheduled_date)));
+      const lines = posts.slice(0, 6).map((p) => {
+        const sd = String(p.scheduled_date); const at = /[zZ]$/.test(sd) ? sd : (sd + 'Z');
+        const kst = new Date(new Date(at).getTime() + 9 * 3600 * 1000);
+        const label = `${kst.getUTCMonth() + 1}/${kst.getUTCDate()} ${kst.getUTCHours()}시`;
+        const kind = p.post_type === 'photo' ? '카드뉴스' : '쇼츠';
+        const chs = (p.platforms || []).map((c) => chKor[c] || c).join('·');
+        return `· ${label} ${kind} → ${chs}`;
+      });
+      if (lines.length) out = `=== 실제 예약 큐 (내부 대장 아니라 Upload-Post 발행 서버에 진짜 걸린 미래 예약 · 총 ${posts.length}건, 가까운 순) ===\n`
+        + lines.join('\n')
+        + '\n(이 큐에 채널이 들어 있으면 그 채널로 "나갈 예정"이다. 과거 발행 실패가 있어도 큐에 잡혀 있으면 발행은 예정대로 진행된다. 과거 결과와 미래 예약을 절대 혼동하지 말 것.)';
+    }
+  } catch (e) {}
+  _queueCache = { ts: Date.now(), text: out };
+  return out;
+}
+
 // 제니야(비서실장) 두뇌 — 텍스트·음성 공용. 디스코드 본사 맥락 없이 콘텐츠 공장 캐비닛만.
 function buildZenyaPrompt(project) {
   return [
@@ -574,7 +614,9 @@ function buildZenyaPrompt(project) {
     '너는 오상열 대표님의 "큰아들 같은 비서실장" 제니야다. 집안 살림 = 콘텐츠 자동화 공장(쇼츠·카드뉴스·유튜브 리드·블로그 연재·팟캐스트·강의 일정)을 전부 꿰고 있다. '
     + '대표님을 늘 "대표님"이라 부르고, 중후하고 충직하게, 군더더기 없이 짧게 답한다. '
     + '너는 회사 조직을 지휘하는 "총괄"이 아니라, 대표님 곁에서 콘텐츠 공장만 챙기는 비서실장이다. 디스코드 사무실·총괄·팀장·서브에이전트·영업일기·모닝브리핑/저녁보고 같은 본사 얘기는 절대 꺼내지 않는다. '
-    + '대표님이 현황·예약·발행결과·리드·오늘 한 일·개강일을 물으면, 아래 "실시간 현황"과 "외부 발행 결과"의 지금 숫자만 근거로 즉답하고, 필요하면 다음 행동 한두 가지를 짧게 짚어준다. 기록에 없으면 지어내지 말고 "아직 없습니다".',
+    + '너는 세 가지를 구분해서 안다 — ① 내부 예약 캐비닛(아래 "실시간 현황") ② 외부 발행 결과(과거에 실제로 SNS에 나간 이력) ③ 실제 예약 큐(발행 서버에 진짜 걸린 미래 예약). '
+    + '"내일 나가냐?"고 물으면 ③ 예약 큐를 근거로 어느 채널로 나갈 예정인지 답하라. 과거 실패(②)가 있어도 큐(③)에 잡혀 있으면 발행은 예정대로 진행된다 — 과거 결과를 미래에 그대로 외삽하지 말 것. 다만 과거 실패 원인(예: 페북 파일명)이 해결됐는지는 "실시간 현황"의 단서로 같이 짚어준다. '
+    + '대표님이 현황·예약·발행결과·리드·오늘 한 일·개강일을 물으면, 아래 숫자만 근거로 즉답하고 다음 행동 한두 가지를 짧게 짚어준다. 기록에 없으면 지어내지 말고 "아직 없습니다".',
     voiceLiveStatus(),
   ].join('\n\n');
 }
@@ -640,8 +682,9 @@ app.post(['/vapi', '/vapi/chat/completions', '/vapi/chat/completions/chat/comple
     if (allMode) {
       system = buildAllVoicePrompt(project);
     } else if (agentId === 'zenya') {
-      // ★ 음성 제니야 = 비서실장(콘텐츠 공장 두뇌). 본사 총괄·영업일기 맥락 없음 + 외부 발행 결과 포함.
-      system = buildZenyaPrompt(project) + '\n\n' + (await publishStatusText()) + VOICE_RULES;
+      // ★ 음성 제니야 = 비서실장(콘텐츠 공장 두뇌). 본사 총괄·영업일기 없음 + 외부 발행결과 + 실제 예약 큐.
+      const [pub, queue] = await Promise.all([publishStatusText(), scheduledQueueText()]);
+      system = buildZenyaPrompt(project) + '\n\n' + queue + '\n\n' + pub + VOICE_RULES;
     } else {
       system = withLiveStatus(buildSystemPrompt(agentId, project), agentId) + VOICE_RULES;
       if (switched) {
