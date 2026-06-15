@@ -290,8 +290,8 @@ app.post('/chat', async (req, res) => {
     let system;
     let isBriefing = false;   // 제니야는 더 이상 정기보고(디스코드)를 하지 않는다
     if (!agentId || agentId === 'zenya') {
-      const [pub, queue] = await Promise.all([publishStatusText(), scheduledQueueText()]);
-      system = buildZenyaPrompt(project) + '\n\n' + queue + '\n\n' + pub;
+      const [pub, conn] = await Promise.all([publishStatusText(), channelStatusText()]);
+      system = buildZenyaPrompt(project) + '\n\n' + conn + '\n\n' + pub;
       if (voice) system += VOICE_RULES;   // 음성이면 더 짧게
     } else {
       system = withLiveStatus(buildSystemPrompt(agentId, project), agentId);
@@ -493,6 +493,14 @@ function voiceLiveStatus() {
   const cdAll = schedCards();
   const cdFut = cdAll.filter((s) => s.scheduledAt && new Date(s.scheduledAt).getTime() > now);
   L.push(`· 카드뉴스: 세트 ${CARDSETS.length}개 · 게시됨 ${cdAll.length - cdFut.length} · 예약대기 ${cdFut.length}${cdFut.length ? '(다음 ' + fmtK(cdFut[0].scheduledAt) + ')' : ''} · 아직 미예약 ${pendingCardSets().length}개`);
+  // 다가오는 발송 예약(채널 포함) — "내일 ○○ 나가냐"의 직접 근거. (예약대장은 시트 백업·복원돼 신뢰 가능)
+  const chK = { instagram: '인스타', facebook: '페북', youtube: '유튜브', tiktok: '틱톡' };
+  const upFut = SCHED.filter((s) => s.campaignId === ACTIVE_ID && s.scheduledAt && new Date(s.scheduledAt).getTime() > now)
+    .sort((a, b) => String(a.scheduledAt).localeCompare(String(b.scheduledAt))).slice(0, 5);
+  if (upFut.length) {
+    L.push('· 다가오는 발송 예약(가까운 순, 채널 포함):');
+    upFut.forEach((s) => L.push(`   - ${fmtK(s.scheduledAt)} ${s.kind} → ${(s.channels || []).map((c) => chK[c] || c).join('·')}`));
+  }
   // 유튜브 리드 (명단 일부 포함)
   const hot = YTLEADS.filter((l) => /핫/.test(l.tier || '')).length;
   const warm = YTLEADS.filter((l) => /웜/.test(l.tier || '')).length;
@@ -575,32 +583,28 @@ function fbNameSafe(link) {
   return base.length <= 40 && /^[\x00-\x7F]+$/.test(base);
 }
 
-// 실제 예약 큐: Upload-Post 발행 서버에 진짜 걸린 미래 예약(내부 대장과 별개) — "내일 나가냐"의 근거.
-let _queueCache = { ts: 0, text: '' };
-async function scheduledQueueText() {
+// SNS 채널 연결 상태 — "게시 이력 0건"과 "연결 안 됨"을 모델이 혼동하지 않게. (5분 캐시)
+let _connCache = { ts: 0, text: '' };
+async function channelStatusText() {
   if (!posterReady()) return '';
-  if (Date.now() - _queueCache.ts < 30000 && _queueCache.text) return _queueCache.text;
+  if (Date.now() - _connCache.ts < 300000 && _connCache.text) return _connCache.text;
   let out = '';
   try {
-    const r = await fetch('https://api.upload-post.com/api/uploadposts/schedule', { headers: { Authorization: `Apikey ${process.env.UPLOADPOST_API_KEY}` }, signal: AbortSignal.timeout(4000) });
+    const r = await fetch('https://api.upload-post.com/api/uploadposts/users', { headers: { Authorization: `Apikey ${process.env.UPLOADPOST_API_KEY}` }, signal: AbortSignal.timeout(6000) });
     if (r.ok) {
       const data = await r.json().catch(() => ({}));
-      const chKor = { instagram: '인스타', facebook: '페북', youtube: '유튜브', tiktok: '틱톡' };
-      const posts = (data.scheduled_posts || []).slice().sort((a, b) => String(a.scheduled_date).localeCompare(String(b.scheduled_date)));
-      const lines = posts.slice(0, 6).map((p) => {
-        const sd = String(p.scheduled_date); const at = /[zZ]$/.test(sd) ? sd : (sd + 'Z');
-        const kst = new Date(new Date(at).getTime() + 9 * 3600 * 1000);
-        const label = `${kst.getUTCMonth() + 1}/${kst.getUTCDate()} ${kst.getUTCHours()}시`;
-        const kind = p.post_type === 'photo' ? '카드뉴스' : '쇼츠';
-        const chs = (p.platforms || []).map((c) => chKor[c] || c).join('·');
-        return `· ${label} ${kind} → ${chs}`;
-      });
-      if (lines.length) out = `=== 실제 예약 큐 (내부 대장 아니라 Upload-Post 발행 서버에 진짜 걸린 미래 예약 · 총 ${posts.length}건, 가까운 순) ===\n`
-        + lines.join('\n')
-        + '\n(이 큐에 채널이 들어 있으면 그 채널로 "나갈 예정"이다. 과거 발행 실패가 있어도 큐에 잡혀 있으면 발행은 예정대로 진행된다. 과거 결과와 미래 예약을 절대 혼동하지 말 것.)';
+      const prof = (data.profiles || []).find((p) => p.username === process.env.UPLOADPOST_USER) || (data.profiles || [])[0];
+      if (prof) {
+        const sa = prof.social_accounts || {}; const chKor = { instagram: '인스타', facebook: '페북', youtube: '유튜브', tiktok: '틱톡' };
+        const on = [], off = [];
+        ['instagram', 'facebook', 'youtube', 'tiktok'].forEach((k) => { const v = sa[k]; const conn = !!(v && (typeof v === 'object' ? Object.keys(v).length : String(v).length)); (conn ? on : off).push(chKor[k]); });
+        out = '=== SNS 채널 연결 상태 (발행 도구 Upload-Post) ===\n'
+          + `· 연결됨: ${on.join('·') || '없음'}  /  미연결: ${off.join('·') || '없음'}\n`
+          + '(연결된 채널은 예약 큐에 들어 있으면 발행된다. "게시 이력이 없다"와 "연결이 안 됐다"는 전혀 다른 말이니 혼동하지 말 것. 연결돼 있고 큐에 있으면 "나갈 예정"이라 답하라.)';
+      }
     }
   } catch (e) {}
-  _queueCache = { ts: Date.now(), text: out };
+  _connCache = { ts: Date.now(), text: out };
   return out;
 }
 
@@ -614,8 +618,8 @@ function buildZenyaPrompt(project) {
     '너는 오상열 대표님의 "큰아들 같은 비서실장" 제니야다. 집안 살림 = 콘텐츠 자동화 공장(쇼츠·카드뉴스·유튜브 리드·블로그 연재·팟캐스트·강의 일정)을 전부 꿰고 있다. '
     + '대표님을 늘 "대표님"이라 부르고, 중후하고 충직하게, 군더더기 없이 짧게 답한다. '
     + '너는 회사 조직을 지휘하는 "총괄"이 아니라, 대표님 곁에서 콘텐츠 공장만 챙기는 비서실장이다. 디스코드 사무실·총괄·팀장·서브에이전트·영업일기·모닝브리핑/저녁보고 같은 본사 얘기는 절대 꺼내지 않는다. '
-    + '너는 세 가지를 구분해서 안다 — ① 내부 예약 캐비닛(아래 "실시간 현황") ② 외부 발행 결과(과거에 실제로 SNS에 나간 이력) ③ 실제 예약 큐(발행 서버에 진짜 걸린 미래 예약). '
-    + '"내일 나가냐?"고 물으면 ③ 예약 큐를 근거로 어느 채널로 나갈 예정인지 답하라. 과거 실패(②)가 있어도 큐(③)에 잡혀 있으면 발행은 예정대로 진행된다 — 과거 결과를 미래에 그대로 외삽하지 말 것. 다만 과거 실패 원인(예: 페북 파일명)이 해결됐는지는 "실시간 현황"의 단서로 같이 짚어준다. '
+    + '너는 세 가지를 구분해서 안다 — ① 다가오는 발송 예약(아래 "실시간 현황"의 채널 포함 목록 = 내일 어느 채널로 나갈지) ② 외부 발행 결과(과거에 실제로 SNS에 나간 이력) ③ 채널 연결 상태(어느 SNS가 발행 도구에 연결됐나). '
+    + '"내일 나가냐?"고 물으면 ①의 예약 목록(채널 포함)을 근거로 답하라. 과거 실패(②)가 있어도 예약(①)에 잡혀 있고 채널이 연결(③)돼 있으면 발행은 예정대로 진행된다 — 과거 결과를 미래에 그대로 외삽하지 말 것. "게시 이력 0건"을 "연결 안 됨"으로 오해하지 말 것(연결 상태는 ③으로 확인). 과거 실패 원인(예: 페북 파일명)이 해결됐는지는 "실시간 현황"의 단서로 같이 짚어준다. '
     + '대표님이 현황·예약·발행결과·리드·오늘 한 일·개강일을 물으면, 아래 숫자만 근거로 즉답하고 다음 행동 한두 가지를 짧게 짚어준다. 기록에 없으면 지어내지 말고 "아직 없습니다".',
     voiceLiveStatus(),
   ].join('\n\n');
@@ -682,9 +686,9 @@ app.post(['/vapi', '/vapi/chat/completions', '/vapi/chat/completions/chat/comple
     if (allMode) {
       system = buildAllVoicePrompt(project);
     } else if (agentId === 'zenya') {
-      // ★ 음성 제니야 = 비서실장(콘텐츠 공장 두뇌). 본사 총괄·영업일기 없음 + 외부 발행결과 + 실제 예약 큐.
-      const [pub, queue] = await Promise.all([publishStatusText(), scheduledQueueText()]);
-      system = buildZenyaPrompt(project) + '\n\n' + queue + '\n\n' + pub + VOICE_RULES;
+      // ★ 음성 제니야 = 비서실장(콘텐츠 공장 두뇌). 본사 총괄·영업일기 없음 + 외부 발행결과 + 채널 연결상태.
+      const [pub, conn] = await Promise.all([publishStatusText(), channelStatusText()]);
+      system = buildZenyaPrompt(project) + '\n\n' + conn + '\n\n' + pub + VOICE_RULES;
     } else {
       system = withLiveStatus(buildSystemPrompt(agentId, project), agentId) + VOICE_RULES;
       if (switched) {
