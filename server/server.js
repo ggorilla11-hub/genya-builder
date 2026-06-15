@@ -1579,7 +1579,7 @@ app.post('/campaign/contents/delete', async (req, res) => {
 // ============================================================
 const STORAGE_BUCKET = process.env.FIREBASE_STORAGE_BUCKET || 'moneya-72fe6.firebasestorage.app';
 const MAX_UPLOAD_MB = Number(process.env.MAX_UPLOAD_MB || 300);
-const UPLOAD_KINDS = { '쇼츠': 1, '오디오': 1, '카드뉴스': 1, '텍스트': 1 };   // 파일 업로드 대상(영상·오디오·이미지·문서). 텍스트는 직접입력+파일첨부 병행
+const UPLOAD_KINDS = { '쇼츠': 1, '오디오': 1, '카드뉴스': 1, '텍스트': 1, 'bip': 1 };   // 파일 업로드 대상(영상·오디오·이미지·문서). bip=페북 빌드인퍼블릭 첨부 이미지
 let _bucket = null;
 function storageBucket() {
   if (_bucket) return _bucket;
@@ -2048,6 +2048,49 @@ app.post('/content/conversion', (req, res) => {
   CONV.updatedAt = new Date().toISOString();
   saveJson('전환.json', CONV);
   res.json({ ok: true, conversion: CONV });
+});
+
+// ── 📣 페북 빌드인퍼블릭 — 자동발행 불가(페북 정책) → 제니야가 초안 써주고 대표가 복사·게시(떠먹여주는 반자동) ──
+//    그날 콘텐츠 공장 현황 기반이라 매번 내용이 다르다. 톤=과정·솔직, 짧게, 부트캠프 니즈환기.
+app.post('/buildinpublic/draft', async (req, res) => {
+  try {
+    if (!process.env.ANTHROPIC_API_KEY) return res.status(503).json({ error: '서버에 API 키가 아직 없습니다.' });
+    const note = String((req.body || {}).note || '').slice(0, 1500);
+    let pub = ''; try { pub = await publishStatusText(); } catch (e) {}
+    const status = voiceLiveStatus();
+    const yt = youtubeCheckText();
+    const eng = engagementText();
+    const sys = [
+      '너는 오상열 대표님의 페이스북 "빌드인퍼블릭(build in public)" 글을 대신 써주는 작가다.',
+      '대표님은 비개발자(CFP 25년 재무전문가)인데 AI로 9개월째 자기 사업용 AI 비서·콘텐츠 자동화 공장을 직접 만들고 있다. 그 만드는 과정을 솔직하게 페북에 기록한다.',
+      '',
+      '=== 오늘 콘텐츠 공장 현황 (글감이 될 만한 사실만 골라 쓴다. 없는 건 절대 지어내지 말 것) ===',
+      status, pub, yt, eng,
+      note ? ('\n=== 대표님이 직접 남긴 오늘 메모 (가장 중요한 글감 — 이걸 중심으로) ===\n' + note) : '',
+      '',
+      '=== 글쓰기 규칙 ===',
+      '- 완성품 자랑 금지. "과정·솔직함"이 핵심 — 막혔던 일·좌절·헤맨 것, 그리고 그걸 어떻게 알아내고 고쳤는지를 담담하게.',
+      '- 짧고 가볍게: 3~6개 짧은 문단. 책처럼 길게 쓰지 말 것. 문단 사이를 띄워 사진 붙이기 좋게.',
+      '- 비개발자도 읽기 쉬운 말. 코드·기술 용어 최소. "클로드/API/서버" 같은 단어 대신 "AI 비서"로 쉽게.',
+      '- 1인칭("저는"), 담백·진솔한 말투. 이모지는 한두 개만.',
+      '- 끝맺음은 부트캠프 니즈환기: 직접 "수강하세요/사세요" 절대 금지. 대신 "비개발자인 나도 했으니 당신 사업에도 이런 AI 직원을 둘 수 있다"는 마음이 은근히 들게.',
+      '- 맨 끝에 해시태그 3~5개(#빌드인퍼블릭 #AI에이전트 등).',
+      '출력: 페북에 그대로 붙여넣을 글 본문만. 머리말·설명·따옴표·마크다운 없이 본문만.',
+    ].filter(Boolean).join('\n');
+    const r = await anthropic.messages.create({ model: MODEL, max_tokens: 1500, system: sys, messages: [{ role: 'user', content: '오늘치 빌드인퍼블릭 페북 글 초안을 써줘.' }] });
+    const draft = r.content.filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim();
+    res.json({ ok: true, draft });
+  } catch (e) { console.error('[buildinpublic/draft]', e.message); res.status(500).json({ error: e.message }); }
+});
+// 빌드인퍼블릭 첨부 이미지 업로드 완료(파이어베이스 링크만 발급, 콘텐츠 보관함엔 안 넣음)
+app.post('/buildinpublic/img-done', async (req, res) => {
+  try {
+    const bucket = storageBucket(); if (!bucket) return res.status(503).json({ error: '스토리지 미설정' });
+    const objectPath = String((req.body || {}).objectPath || ''); if (!objectPath) return res.status(400).json({ error: '경로 누락' });
+    const token = crypto.randomUUID();
+    await bucket.file(objectPath).setMetadata({ metadata: { firebaseStorageDownloadTokens: token } });
+    res.json({ ok: true, link: `https://firebasestorage.googleapis.com/v0/b/${STORAGE_BUCKET}/o/${encodeURIComponent(objectPath)}?alt=media&token=${token}` });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ── 대장 동기화: Upload-Post에 실제 잡힌 카드뉴스 예약을 우리 SCHED로 복구(유실 후 중복승인 방지) ──

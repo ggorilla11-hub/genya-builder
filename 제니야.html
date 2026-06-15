@@ -416,6 +416,22 @@ body{font-family:'Pretendard',-apple-system,sans-serif;font-weight:500;backgroun
 .plan-approve{background:#2f9e6b;color:#fff;border:0;border-radius:7px;font-size:12px;font-weight:700;padding:6px 12px;cursor:pointer}
 .plan-cancel{background:#fff;border:1px solid #ccc;color:#777;border-radius:7px;font-size:12px;padding:6px 12px;cursor:pointer}
 .plan-note{font-size:11px;color:#888;margin-top:6px}
+/* 📣 페북 빌드인퍼블릭 칸 */
+.bip-box{max-width:760px;margin:14px auto;padding:14px 16px;background:#fff;border:1px solid #DCE3FF;border-top:3px solid #1877F2;border-radius:12px}
+.bip-title{font-size:14px;font-weight:800;color:#1877F2}
+.bip-coach{font-size:11px;font-weight:600;color:#C2185B;margin-left:6px}
+.bip-sub{font-size:12px;color:#66736E;margin:5px 0 8px;line-height:1.5}
+.bip-note{width:100%;min-height:46px;border:1px solid #cdd6e8;border-radius:8px;padding:8px;font-family:inherit;font-size:12px;box-sizing:border-box;resize:vertical}
+.bip-draft{width:100%;min-height:220px;border:1px solid #cdd6e8;border-radius:8px;padding:10px;font-family:inherit;font-size:13px;line-height:1.65;box-sizing:border-box;margin-top:8px;resize:vertical}
+.bip-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;align-items:center}
+.bip-gen,.bip-copy{background:#1877F2;color:#fff;border:0;border-radius:8px;font-size:13px;font-weight:700;padding:8px 14px;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:5px}
+.bip-fb{background:#0b5fcc;color:#fff;border-radius:8px;font-size:13px;font-weight:700;padding:8px 14px;text-decoration:none;display:inline-flex;align-items:center;gap:5px}
+.bip-recent,.bip-upl{background:#fff;border:1px solid #9AA4A0;color:#46524D;border-radius:8px;font-size:12px;font-weight:700;padding:6px 10px;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:4px}
+.bip-attachwrap{margin-top:10px;padding:8px 10px;background:#F4F7FF;border-radius:8px}
+.bip-ah{font-size:11px;font-weight:700;color:#46524D}
+.bip-attaches{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.bip-attaches img{width:62px;height:62px;object-fit:cover;border-radius:6px;border:1px solid #ddd;display:block}
+.bip-hint{font-size:11px;color:#888;margin-top:7px}
 .plan-done{background:#e6f6ec;border-color:#9bd9b4;color:#2f7d52;font-size:13px;font-weight:700;display:flex;align-items:center;gap:6px}
 </style>
 </head>
@@ -531,6 +547,30 @@ body{font-family:'Pretendard',-apple-system,sans-serif;font-weight:500;backgroun
     <!-- C-5. 우측 도구 세트 (앰버 구역 · JS가 채움) -->
     <aside class="tools" id="tools"></aside>
 
+  </div>
+
+  <!-- 📣 페북 빌드인퍼블릭 — 자동발행 불가(페북 정책) → 제니야 초안 + 복사 + 페북 바로가기(떠먹여주는 반자동) -->
+  <div class="bip-box" id="bip-box">
+    <div class="bip-title">📣 페북 빌드인퍼블릭 <span class="bip-coach" id="bip-coach">오늘 올리실 차례예요 — 제니야가 초안 준비할게요</span></div>
+    <div class="bip-sub">자동발행은 페북 정책상 안 됩니다. 제니야가 <b>오늘 콘텐츠 공장에서 있었던 일</b>로 초안을 써드리면, 대표님은 <b>복사 → 페북 → 사진 첨부 → 발행</b>만 하시면 됩니다.</div>
+    <textarea id="bip-note" class="bip-note" placeholder="오늘 있었던 일·고생한 점 메모 (선택) — 적어주시면 제니야가 더 생생하게 녹여 씁니다. 예: 새벽에 유튜브가 엉뚱한 채널로 가서 원인 찾느라 고생함"></textarea>
+    <div class="bip-row"><button class="bip-gen" id="bip-gen"><i class="ti ti-wand"></i> 오늘 초안 만들기</button></div>
+    <div id="bip-result" style="display:none">
+      <textarea id="bip-draft" class="bip-draft"></textarea>
+      <div class="bip-attachwrap">
+        <div class="bip-ah">📎 붙일 거리 (대표님이 페북에서 직접 첨부 — 아래서 사진을 받아 두세요)</div>
+        <div class="bip-row">
+          <label class="bip-upl" id="bip-upl"><i class="ti ti-photo-up"></i> 이미지 첨부(캡처 등)<input type="file" id="bip-img" accept="image/*" multiple hidden></label>
+          <button class="bip-recent" id="bip-recent"><i class="ti ti-folder"></i> 최근 카드뉴스·쇼츠 가져오기</button>
+        </div>
+        <div id="bip-attaches" class="bip-attaches"></div>
+      </div>
+      <div class="bip-row">
+        <button class="bip-copy" id="bip-copy"><i class="ti ti-copy"></i> ① 초안 복사</button>
+        <a class="bip-fb" id="bip-fb" href="https://www.facebook.com/" target="_blank" rel="noopener"><i class="ti ti-brand-facebook"></i> ② 페북 개인계정 바로가기</a>
+      </div>
+      <div class="bip-hint">① 복사 → ② 페북 열기 → 붙여넣기(Ctrl+V) → 위 사진 첨부 → 발행 (발행은 대표님 손)</div>
+    </div>
   </div>
 
   <div class="foot">제니야 — <b>상단 프로젝트 × 좌측 에이전트 × 우측 도구</b> 교차 구조 · <span id="ver" title="배포 버전">버전 확인 중…</span></div>
@@ -2973,6 +3013,56 @@ fetch(SERVER_URL+'/version').then(function(r){return r.json();}).then(function(v
   el.textContent='최신배포 '+t+' (한국시간) · '+(v.short||'local');
   el.title='commit '+(v.commit||'local');
 }).catch(function(){ var el=document.getElementById('ver'); if(el) el.textContent='(서버 연결 안 됨)'; });
+
+// ── 📣 페북 빌드인퍼블릭 — 제니야가 오늘치 초안 써주고, 복사+페북 바로가기 (발행은 대표 손) ──
+function bipAddThumb(url,label){
+  var box=document.getElementById('bip-attaches'); if(!box) return;
+  var a=document.createElement('a'); a.href=url; a.target='_blank'; a.rel='noopener'; a.title=(label||'')+' — 클릭해 열기/저장';
+  if(/\.(jpe?g|png|webp|gif)(\?|$)/i.test(url)){ var im=document.createElement('img'); im.src=url; a.appendChild(im); }
+  else { a.className='appr gray'; a.style.padding='8px 9px'; a.textContent='▶ '+(label||'영상'); }
+  box.appendChild(a);
+}
+function bipUploadImage(file){
+  fetch(SERVER_URL+'/content/upload-url',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind:'bip',filename:file.name,contentType:file.type,size:file.size})})
+    .then(function(r){return r.json();}).then(function(d){ if(d.error){ alert(d.error); return; }
+      return fetch(d.uploadUrl,{method:'PUT',headers:{'Content-Type':d.contentType},body:file}).then(function(){
+        return fetch(SERVER_URL+'/buildinpublic/img-done',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({objectPath:d.objectPath})})
+          .then(function(r){return r.json();}).then(function(res){ if(res.link) bipAddThumb(res.link,file.name); });
+      });
+    }).catch(function(){ alert('이미지 업로드 실패'); });
+}
+function bipLoadRecent(){
+  fetch(SERVER_URL+'/cardnews/sets').then(function(r){return r.json();}).then(function(d){
+    (d.sets||[]).slice(-2).forEach(function(s){ (s.images||[]).slice(0,3).forEach(function(im){ bipAddThumb(im.url, s.setName); }); });
+  }).catch(function(){});
+  fetch(SERVER_URL+'/campaign/contents').then(function(r){return r.json();}).then(function(d){
+    (d.contents||[]).filter(function(c){return c.type==='쇼츠'&&c.link;}).slice(-3).forEach(function(c){ bipAddThumb(c.link, c.name||'쇼츠'); });
+  }).catch(function(){});
+}
+(function bipInit(){
+  var gen=document.getElementById('bip-gen'); if(!gen) return;
+  gen.onclick=function(){
+    gen.disabled=true; gen.innerHTML='<i class="ti ti-loader-2"></i> 제니야가 쓰는 중…';
+    var note=(document.getElementById('bip-note')||{}).value||'';
+    fetch(SERVER_URL+'/buildinpublic/draft',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({note:note})})
+      .then(function(r){return r.json();}).then(function(d){
+        gen.disabled=false; gen.innerHTML='<i class="ti ti-wand"></i> 다시 쓰기';
+        if(d.error){ alert('초안 실패: '+d.error); return; }
+        document.getElementById('bip-result').style.display='';
+        document.getElementById('bip-draft').value=d.draft||'';
+        document.getElementById('bip-draft').scrollIntoView({behavior:'smooth',block:'center'});
+      }).catch(function(){ gen.disabled=false; gen.innerHTML='<i class="ti ti-wand"></i> 오늘 초안 만들기'; alert('서버 연결 실패'); });
+  };
+  var copy=document.getElementById('bip-copy');
+  if(copy) copy.onclick=function(){ var t=document.getElementById('bip-draft'); if(!t) return;
+    var done=function(){ copy.innerHTML='<i class="ti ti-check"></i> 복사됨! 이제 ②페북으로'; setTimeout(function(){ copy.innerHTML='<i class="ti ti-copy"></i> ① 초안 복사'; },1800); };
+    if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(t.value).then(done).catch(function(){ t.select(); document.execCommand('copy'); done(); }); }
+    else { t.select(); try{ document.execCommand('copy'); }catch(e){} done(); }
+  };
+  var imgInput=document.getElementById('bip-img'), upl=document.getElementById('bip-upl');
+  if(upl&&imgInput){ imgInput.onchange=function(){ Array.prototype.forEach.call(imgInput.files,bipUploadImage); imgInput.value=''; }; }
+  var recent=document.getElementById('bip-recent'); if(recent) recent.onclick=function(){ bipLoadRecent(); };
+})();
 
 // 회의 중단 버튼 연결
 document.getElementById('meet-stop').onclick = function(){
