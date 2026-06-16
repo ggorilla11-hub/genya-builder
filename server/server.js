@@ -1783,6 +1783,128 @@ async function postOneToUploadPost(p, c) {
   return { ok: r.ok, status: r.status, job, body: String(body).slice(0, 300) };
 }
 
+// ============================================================
+// 🔴 PHASE 0-2: 유튜브 직접 발행 (Upload-Post 안 거치고 YouTube Data API로 직접 업로드)
+//   - 인증: OAuth2. 대표 1회 동의 → refresh_token → 시트(제니야_유튜브토큰)에 영구보관(재시작 생존).
+//   - 발행: 파이어베이스 영상 바이트를 스트림으로 받아 youtube.videos.insert.
+//   - 예약: status.publishAt(미래시각) → 비공개 업로드 후 그 시각에 자동 공개.
+//   - 검증(0-3): 업로드 응답의 영상ID를 'API로' 다시 조회해 본채널 게시를 실제 확인(success 깃발 불신).
+// ============================================================
+const YT_TOKEN_TAB = process.env.YT_TOKEN_TAB || '제니야_유튜브토큰';
+let YT_REFRESH_TOKEN = process.env.YT_REFRESH_TOKEN || '';
+const YT_REDIRECT_URI = process.env.YT_REDIRECT_URI || 'https://jenya.onrender.com/youtube/oauth2callback';
+const YT_SCOPES = ['https://www.googleapis.com/auth/youtube.upload', 'https://www.googleapis.com/auth/youtube.readonly'];
+function ytOAuthClient() {
+  const id = process.env.YT_CLIENT_ID, secret = process.env.YT_CLIENT_SECRET;
+  if (!id || !secret) return null;
+  return new google.auth.OAuth2(id, secret, YT_REDIRECT_URI);
+}
+function youtubeReady() { return !!(process.env.YT_CLIENT_ID && process.env.YT_CLIENT_SECRET && YT_REFRESH_TOKEN); }
+function ytClient() {
+  const o = ytOAuthClient(); if (!o || !YT_REFRESH_TOKEN) return null;
+  o.setCredentials({ refresh_token: YT_REFRESH_TOKEN });
+  return google.youtube({ version: 'v3', auth: o });
+}
+// refresh_token 시트 영구보관 (SCHED와 동일 패턴)
+async function saveYtTokenToSheet(tok) {
+  const sheets = sheetsClient(); if (!sheets || !RESV_SHEET_ID) return;
+  const meta = await sheets.spreadsheets.get({ spreadsheetId: RESV_SHEET_ID, fields: 'sheets.properties.title' });
+  if (!meta.data.sheets.some((s) => s.properties.title === YT_TOKEN_TAB)) {
+    await sheets.spreadsheets.batchUpdate({ spreadsheetId: RESV_SHEET_ID, requestBody: { requests: [{ addSheet: { properties: { title: YT_TOKEN_TAB } } }] } });
+  }
+  await sheets.spreadsheets.values.update({ spreadsheetId: RESV_SHEET_ID, range: `'${YT_TOKEN_TAB}'!A1`, valueInputOption: 'RAW', requestBody: { values: [['refresh_token', tok]] } });
+}
+// 부팅 시 시트에서 복원 (env에 토큰이 없을 때만)
+(async () => { if (YT_REFRESH_TOKEN) return; const sheets = sheetsClient(); if (!sheets || !RESV_SHEET_ID) return; try { const got = await sheets.spreadsheets.values.get({ spreadsheetId: RESV_SHEET_ID, range: `'${YT_TOKEN_TAB}'!A1:B1` }); const row = (got.data.values || [])[0]; if (row && row[0] === 'refresh_token' && row[1]) { YT_REFRESH_TOKEN = row[1]; console.log('▶️ 유튜브 refresh_token 시트 복원 완료'); } } catch (e) {} })();
+
+// 1회 인증 시작 — 폰에서 이 주소 열기 → 구글 로그인·동의 → 자동으로 refresh_token 저장
+app.get('/youtube/auth', (req, res) => {
+  const o = ytOAuthClient();
+  if (!o) return res.status(400).send('먼저 Render 환경변수에 YT_CLIENT_ID·YT_CLIENT_SECRET를 넣어 주세요.');
+  res.redirect(o.generateAuthUrl({ access_type: 'offline', prompt: 'consent', scope: YT_SCOPES, include_granted_scopes: true }));
+});
+app.get('/youtube/oauth2callback', async (req, res) => {
+  try {
+    const o = ytOAuthClient(); if (!o) return res.status(400).send('클라이언트 미설정');
+    if (!req.query.code) return res.status(400).send('인증 코드가 없습니다. /youtube/auth 부터 다시 시작하세요.');
+    const { tokens } = await o.getToken(req.query.code);
+    if (!tokens.refresh_token) return res.status(200).send('refresh_token이 발급되지 않았습니다. 구글계정→보안→타사 앱 연결에서 기존 권한을 삭제하고 /youtube/auth 로 다시 시도하세요.');
+    YT_REFRESH_TOKEN = tokens.refresh_token;
+    await saveYtTokenToSheet(YT_REFRESH_TOKEN).catch((e) => console.warn('⚠️ 유튜브토큰 시트저장 실패:', e.message));
+    o.setCredentials(tokens);
+    let chName = '', chId = '';
+    try { const yt = google.youtube({ version: 'v3', auth: o }); const me = await yt.channels.list({ part: ['snippet'], mine: true }); const it = (me.data.items || [])[0]; if (it) { chName = it.snippet.title; chId = it.id; } } catch (e) {}
+    const ok = chId === YT_MAIN_CHANNEL_ID;
+    res.send(`<meta charset=utf8><body style="font-family:sans-serif;padding:24px;line-height:1.7"><h2>✅ 유튜브 직접 발행 연결 완료</h2><p>연결된 채널: <b>${chName || '확인불가'}</b><br>채널ID: ${chId || '?'}</p><p style="font-size:20px">${ok ? '🟢 오상열 <b>본채널</b>이 맞습니다. 끝났습니다.' : '🔴 본채널이 <b>아닙니다.</b> 다른 구글 계정으로 로그아웃 후 /youtube/auth 로 다시 하세요.'}</p></body>`);
+  } catch (e) { res.status(500).send('인증 실패: ' + e.message); }
+});
+// 연결 상태 + 어느 채널인지 (발행 전 본채널 확인용)
+app.get('/youtube/status', async (req, res) => {
+  if (!youtubeReady()) return res.json({ ready: false, hasClient: !!(process.env.YT_CLIENT_ID && process.env.YT_CLIENT_SECRET), hasToken: !!YT_REFRESH_TOKEN, note: 'YT_CLIENT_ID·SECRET 설정 후 /youtube/auth 로 1회 동의가 필요합니다.' });
+  try {
+    const yt = ytClient();
+    const me = await yt.channels.list({ part: ['snippet', 'statistics'], mine: true });
+    const it = (me.data.items || [])[0]; const chId = it ? it.id : '';
+    res.json({ ready: true, channelId: chId, title: it ? it.snippet.title : '', subs: it ? (it.statistics || {}).subscriberCount : '', isMainChannel: chId === YT_MAIN_CHANNEL_ID, expectedChannelId: YT_MAIN_CHANNEL_ID });
+  } catch (e) { res.status(502).json({ ready: true, error: e.message, hint: '토큰 만료/취소 가능성. /youtube/auth 재동의 필요할 수 있음.' }); }
+});
+// 영상 바이트 스트림: 파이어베이스 경로 → GCS 버킷 스트림(서비스계정), 실패 시 공개URL fetch
+async function mediaStream(mediaUrl) {
+  const p = fbPathFromUrl(mediaUrl), bucket = storageBucket();
+  if (p && bucket) {
+    try { const file = bucket.file(p); const [md] = await file.getMetadata(); return { stream: file.createReadStream(), contentType: md.contentType || 'video/mp4' }; } catch (e) {}
+  }
+  const r = await fetch(mediaUrl); if (!r.ok) throw new Error('영상 다운로드 실패: HTTP ' + r.status);
+  const { Readable } = require('stream');
+  return { stream: Readable.fromWeb(r.body), contentType: r.headers.get('content-type') || 'video/mp4' };
+}
+// 유튜브 1건 직접 업로드. opts.privacy(즉시 공개수준) / opts.publishAt(미래시각이면 비공개 예약공개)
+async function postOneToYoutube(p, c, opts = {}) {
+  const yt = ytClient(); if (!yt) throw new Error('유튜브 미연결(refresh_token 없음)');
+  const caps = buildCaptions(c || {});
+  const { stream, contentType } = await mediaStream(p.mediaUrl);
+  const status = { selfDeclaredMadeForKids: false };
+  const when = opts.publishAt || p.scheduledAt;
+  if (when && new Date(when).getTime() > Date.now() + 60000) { status.privacyStatus = 'private'; status.publishAt = new Date(when).toISOString(); }
+  else status.privacyStatus = opts.privacy || 'public';
+  const tags = String((c || {}).hashtags || '').split(/[#\s,]+/).map((t) => t.trim()).filter(Boolean).slice(0, 15);
+  const r = await yt.videos.insert({
+    part: ['snippet', 'status'],
+    requestBody: { snippet: { title: caps.youtube_title, description: caps.description, tags, categoryId: '22' }, status },
+    media: { mimeType: contentType, body: stream },
+  });
+  const vid = r.data.id;
+  return { ok: true, videoId: vid, url: `https://www.youtube.com/watch?v=${vid}`, privacyStatus: status.privacyStatus, publishAt: status.publishAt || null };
+}
+// 0-3 검증: 영상ID를 API로 다시 조회 → 진짜 본채널에 존재하나(업로드상태·공개수준 포함). success 깃발 불신.
+async function verifyYoutubeVideo(videoId) {
+  const yt = ytClient(); if (!yt) return { ok: false, error: '미연결' };
+  try {
+    const r = await yt.videos.list({ part: ['snippet', 'status', 'processingDetails'], id: [videoId] });
+    const it = (r.data.items || [])[0];
+    if (!it) return { exists: false, note: '영상이 채널에 없음(업로드 실패·삭제)' };
+    const chId = it.snippet.channelId;
+    return { exists: true, videoId, channelId: chId, channelTitle: it.snippet.channelTitle, title: it.snippet.title,
+      uploadStatus: (it.status || {}).uploadStatus, privacyStatus: (it.status || {}).privacyStatus,
+      isMainChannel: chId === YT_MAIN_CHANNEL_ID, expectedChannelId: YT_MAIN_CHANNEL_ID,
+      note: chId === YT_MAIN_CHANNEL_ID ? '🟢 본채널에 실제 게시 확인' : `🔴 엉뚱한 채널(${it.snippet.channelTitle})` };
+  } catch (e) { return { ok: false, error: e.message }; }
+}
+// 🔬 0-2/0-3 검증용: 영상 1건을 지금 직접 업로드(기본 비공개) → 실제 watch URL + API 실측 검증 반환
+app.post('/youtube/test-publish', async (req, res) => {
+  if (!youtubeReady()) return res.status(400).json({ error: '유튜브 미연결. /youtube/auth 로 1회 동의가 필요합니다.' });
+  try {
+    const b = req.body || {}; const kind = b.kind || '쇼츠';
+    const item = b.contentId ? myContents().find((x) => x.id === b.contentId) : myContents().find((x) => x.type === kind && x.link);
+    if (!item) return res.status(400).json({ error: '업로드할 영상이 없습니다. 보관함에 영상(쇼츠) 링크가 있어야 합니다.' });
+    const p = { contentId: item.id, name: item.name, mediaUrl: item.link };
+    const out = await postOneToYoutube(p, CAMPAIGN || {}, { privacy: b.privacy || 'private' });   // 테스트 기본 비공개
+    await new Promise((rs) => setTimeout(rs, 3000));
+    const verify = await verifyYoutubeVideo(out.videoId);
+    res.json({ ok: true, uploaded: out, verify, 결론: verify.isMainChannel ? '🟢 직접 발행 + 본채널 게시 실측 확인' : '🔴 확인 실패/엉뚱한 채널' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // 배포 계획 + 예약 현황 (현황 = 이미 예약된 것 / 새 예약분 = 미예약 쇼츠)
 app.get('/content/plan', (req, res) => {
   const kind = req.query.kind || '쇼츠';
