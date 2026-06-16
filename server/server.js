@@ -2123,23 +2123,50 @@ async function postReelToInstagram(videoUrl, caption) {
   j = await r.json(); if (!j.id) throw new Error('게시 실패: ' + JSON.stringify(j));
   return { ok: true, mediaId: j.id };
 }
-// 캐러셀(카드뉴스, 이미지 2~10장) 1건 직접 게시
+// 컨테이너 처리완료(FINISHED) 폴링 — ERROR/EXPIRED/시간초과면 throw (성급발행 방지)
+async function igPollFinished(containerId, label) {
+  for (let i = 0; i < 13; i++) {   // 15초 × 13 ≈ 3분
+    await new Promise((s) => setTimeout(s, 15000));
+    const sj = await (await fetch(`${IG_GRAPH}/${containerId}?fields=status_code,status&access_token=${IG_ACCESS_TOKEN}`)).json();
+    if (sj.status_code === 'FINISHED') return true;
+    if (sj.status_code === 'ERROR' || sj.status_code === 'EXPIRED') throw new Error(`${label} 처리실패(${sj.status_code}): ${JSON.stringify(sj.status || sj)}`);
+  }
+  throw new Error(`${label} 처리 시간초과(3분)`);
+}
+// 캐러셀(카드뉴스, 이미지 2~10장) 1건 직접 게시 — 발행 전 URL 공개확인 + 부모 FINISHED 폴링 후 발행
 async function postCarouselToInstagram(imageUrls, caption) {
   if (!instagramReady()) throw new Error('인스타 미연결');
+  const urls = (imageUrls || []).slice(0, 10);
+  for (const u of urls) {   // 발행 전: 모든 이미지 공개 접근 확인
+    try { const r = await fetch(u, { signal: AbortSignal.timeout(12000) }); if (!r.ok) throw new Error('HTTP ' + r.status); } catch (e) { throw new Error('이미지 URL 공개접근 불가: ' + u + ' (' + e.message + ')'); }
+  }
   const childIds = [];
-  for (const u of (imageUrls || []).slice(0, 10)) {
+  for (const u of urls) {
     const cj = await (await fetch(`${IG_GRAPH}/${IG_USER_ID}/media?is_carousel_item=true&image_url=${encodeURIComponent(u)}&access_token=${IG_ACCESS_TOKEN}`, { method: 'POST' })).json();
     if (!cj.id) throw new Error('자식 이미지 생성 실패: ' + JSON.stringify(cj)); childIds.push(cj.id);
   }
-  let j = await (await fetch(`${IG_GRAPH}/${IG_USER_ID}/media?media_type=CAROUSEL&children=${childIds.join(',')}&caption=${encodeURIComponent(caption || '')}&access_token=${IG_ACCESS_TOKEN}`, { method: 'POST' })).json();
-  if (!j.id) throw new Error('캐러셀 컨테이너 실패: ' + JSON.stringify(j));
-  j = await (await fetch(`${IG_GRAPH}/${IG_USER_ID}/media_publish?creation_id=${j.id}&access_token=${IG_ACCESS_TOKEN}`, { method: 'POST' })).json();
+  const pj = await (await fetch(`${IG_GRAPH}/${IG_USER_ID}/media?media_type=CAROUSEL&children=${childIds.join(',')}&caption=${encodeURIComponent(caption || '')}&access_token=${IG_ACCESS_TOKEN}`, { method: 'POST' })).json();
+  if (!pj.id) throw new Error('캐러셀 컨테이너 실패: ' + JSON.stringify(pj));
+  await igPollFinished(pj.id, '캐러셀 컨테이너');   // ★ FINISHED 까지 폴링 후 발행(성급발행 방지)
+  const j = await (await fetch(`${IG_GRAPH}/${IG_USER_ID}/media_publish?creation_id=${pj.id}&access_token=${IG_ACCESS_TOKEN}`, { method: 'POST' })).json();
   if (!j.id) throw new Error('캐러셀 게시 실패: ' + JSON.stringify(j));
   return { ok: true, mediaId: j.id };
 }
 // 검증: 게시된 media를 API로 재조회(permalink·존재·소유). success 깃발 불신.
 async function verifyInstagramMedia(mediaId) {
   try { const j = await (await fetch(`${IG_GRAPH}/${mediaId}?fields=id,permalink,media_type,timestamp,owner&access_token=${IG_ACCESS_TOKEN}`)).json(); if (!j.id) return { exists: false, raw: j }; const ownerId = j.owner ? String(j.owner.id) : ''; return { exists: true, mediaId: j.id, permalink: j.permalink, mediaType: j.media_type, ownerId, ownerMatch: ownerId ? (ownerId === String(IG_USER_ID)) : null }; } catch (e) { return { exists: false, error: e.message }; }
+}
+// 강한 검증 — API 존재+owner + 공개 permalink 실제 렌더(og:title)까지. 게시후 삭제/미공개를 잡는다.
+async function verifyInstagramLive(mediaId) {
+  const v = await verifyInstagramMedia(mediaId);
+  if (!v.exists) return { ...v, live: false, reason: 'API에 없음(게시 후 삭제·처리실패)' };
+  if (!v.ownerMatch) return { ...v, live: false, reason: 'owner 불일치' };
+  let og = null;   // true=공개렌더 / false=미렌더 / null=네트워크실패(판정보류)
+  try { const c = await (await fetch(v.permalink, { headers: { 'Accept-Language': 'ko', 'User-Agent': 'facebookexternalhit/1.1' }, signal: AbortSignal.timeout(12000) })).text(); og = /property="og:title" content="[^"]{5,}"/.test(c); } catch (e) { og = null; }
+  let inList = null;   // {IG_USER_ID}/media 목록 포함 여부
+  try { const ml = await (await fetch(`${IG_GRAPH}/${IG_USER_ID}/media?fields=id&limit=30&access_token=${IG_ACCESS_TOKEN}`)).json(); if (Array.isArray(ml.data)) inList = ml.data.some((m) => String(m.id) === String(mediaId)); } catch (e) { inList = null; }
+  const live = v.exists && v.ownerMatch && og !== false && inList !== false;   // 명시적 false(미렌더/목록없음)면 실패. null(네트워크)은 통과.
+  return { ...v, live, publicOg: og, inMediaList: inList, reason: live ? null : (inList === false ? '미디어 목록에 없음(미게시)' : '공개 페이지 미렌더(처리실패/비공개)') };
 }
 // 읽기전용 재검증 — 이미 게시된 media의 permalink·owner 대조(토큰 미출력)
 app.get('/instagram/verify-media', async (req, res) => {
@@ -2202,14 +2229,14 @@ async function runInstagramAuto(kind, force) {
     if (kind === 'reel') {
       const item = igNextReel(); if (!item) return { skip: '올릴 쇼츠 없음' };
       const out = await postReelToInstagram(item.link, shortsCaption(CAMPAIGN || {}));
-      await new Promise((s) => setTimeout(s, 3000)); const v = await verifyInstagramMedia(out.mediaId);
-      rec = { kind: 'reel', mediaType: v.mediaType || 'REELS', igUserId: IG_USER_ID, contentId: item.id, name: item.name, mediaId: out.mediaId, permalink: v.permalink || '', ownerMatch: !!v.ownerMatch, verified: !!(v.exists && v.ownerMatch), auto: true, forced: !!force, ts: new Date().toISOString(), kstTime: new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 16).replace('T', ' ') + ' KST' };
+      await new Promise((s) => setTimeout(s, 60000)); const v = await verifyInstagramLive(out.mediaId);   // 60초 후 존재+목록+공개렌더 확인
+      rec = { kind: 'reel', mediaType: v.mediaType || 'REELS', igUserId: IG_USER_ID, contentId: item.id, name: item.name, mediaId: out.mediaId, permalink: v.permalink || '', ownerMatch: !!v.ownerMatch, live: !!v.live, inMediaList: (v.inMediaList === undefined ? null : v.inMediaList), reason: v.reason || null, verified: !!v.live, auto: true, forced: !!force, ts: new Date().toISOString(), kstTime: new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 16).replace('T', ' ') + ' KST' };
     } else {
       const set = igNextCard(); if (!set) return { skip: '올릴 카드세트 없음' };
       const urls = cardImages(set).map((im) => im.url).filter(Boolean).slice(0, 10);
       const out = await postCarouselToInstagram(urls, shortsCaption(CAMPAIGN || {}));
-      await new Promise((s) => setTimeout(s, 3000)); const v = await verifyInstagramMedia(out.mediaId);
-      rec = { kind: 'carousel', mediaType: v.mediaType || 'CAROUSEL_ALBUM', igUserId: IG_USER_ID, setId: set.setId, name: set.setName, mediaId: out.mediaId, permalink: v.permalink || '', ownerMatch: !!v.ownerMatch, verified: !!(v.exists && v.ownerMatch), auto: true, forced: !!force, ts: new Date().toISOString(), kstTime: new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 16).replace('T', ' ') + ' KST' };
+      await new Promise((s) => setTimeout(s, 60000)); const v = await verifyInstagramLive(out.mediaId);   // 60초 후 존재+목록+공개렌더 확인
+      rec = { kind: 'carousel', mediaType: v.mediaType || 'CAROUSEL_ALBUM', igUserId: IG_USER_ID, setId: set.setId, name: set.setName, mediaId: out.mediaId, permalink: v.permalink || '', ownerMatch: !!v.ownerMatch, live: !!v.live, inMediaList: (v.inMediaList === undefined ? null : v.inMediaList), reason: v.reason || null, verified: !!v.live, auto: true, forced: !!force, ts: new Date().toISOString(), kstTime: new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 16).replace('T', ' ') + ' KST' };
     }
     IGPUB.push(rec); saveIgpub();   // 성공/실패 모두 기록(중복발사·재시도 루프 방지=중단)
     try { pushNotify({ kind: 'report', title: `인스타 ${kind === 'reel' ? '릴스' : '카드뉴스'} 무인발행 ${rec.verified ? '✅' : '⚠️실패'}`, body: rec.permalink }); } catch (e) {}
