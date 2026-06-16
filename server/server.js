@@ -1986,16 +1986,16 @@ const YT_AUTO_PRIVACY = process.env.YT_AUTO_PRIVACY || 'public';
 let lastAutoYmd = '';     // 마지막 자동발행 날짜(KST) — 하루 1회 보장
 let autoBusy = false;
 function kstNow() { const d = new Date(Date.now() + 9 * 3600 * 1000); return { ymd: d.toISOString().slice(0, 10), hour: d.getUTCHours() }; }
+function kstYmdHour(ts) { try { const d = new Date(new Date(ts).getTime() + 9 * 3600 * 1000); return { ymd: d.toISOString().slice(0, 10), hour: d.getUTCHours() }; } catch (e) { return { ymd: '', hour: -1 }; } }
 async function runYoutubeAutoPublish(force) {
   if (autoBusy) return { skip: '진행중' };
   if (!youtubeReady()) return { skip: '유튜브 미연결' };
   const { ymd, hour } = kstNow();
-  const ymdOf = (ts) => { try { return new Date(new Date(ts).getTime() + 9 * 3600 * 1000).toISOString().slice(0, 10); } catch (e) { return ''; } };
-  // 하루 1회 보장 — 메모리(빠름) + 시트 영구기록 YTPUB(재시작에도 생존) 둘 다로 판정
-  const doneToday = lastAutoYmd === ymd || YTPUB.some((x) => x.auto && ymdOf(x.ts) === ymd);
+  // 하루 1회 보장 — '진짜 9시대 발행'만 카운트(9시대 + forced 제외). 새벽 강제 검증발행은 오늘분으로 안 침.
+  const doneToday = (lastAutoYmd === ymd) || YTPUB.some((x) => x.auto && !x.forced && kstYmdHour(x.ts).ymd === ymd && kstYmdHour(x.ts).hour === YT_AUTO_HOUR);
   // 9시 "정각" — 9시대(9:00~9:59)에만 발행. always-on 서버 + 60초 스케줄러 → 9:00:0x 발행. (대표 지시: 9시 이후 첫 기회 안 받음)
   if (!force) { if (hour !== YT_AUTO_HOUR) return { skip: `발행시각 아님(현재 ${hour}시, 목표 ${YT_AUTO_HOUR}시)` }; if (doneToday) return { skip: '오늘 이미 발행함' }; }
-  autoBusy = true; lastAutoYmd = ymd;     // 중복발사 방지: await 전에 날짜 선점
+  autoBusy = true; if (!force) lastAutoYmd = ymd;     // 중복발사 방지(실발행만 오늘분 선점, 강제 검증은 제외)
   try {
     const doneIds = new Set(YTPUB.map((x) => x.contentId));
     const item = myContents().find((x) => x.type === '쇼츠' && x.link && !doneIds.has(x.id));
@@ -2004,7 +2004,7 @@ async function runYoutubeAutoPublish(force) {
     await new Promise((rs) => setTimeout(rs, 3000));
     const verify = await verifyYoutubeVideo(out.videoId);
     const rec = { contentId: item.id, name: item.name, videoId: out.videoId, url: out.url, privacyStatus: out.privacyStatus,
-      channelId: verify.channelId || '', isMainChannel: !!verify.isMainChannel, verified: verify.exists === true && !!verify.isMainChannel, auto: true, ts: new Date().toISOString() };
+      channelId: verify.channelId || '', isMainChannel: !!verify.isMainChannel, verified: verify.exists === true && !!verify.isMainChannel, auto: true, forced: !!force, ts: new Date().toISOString() };
     YTPUB.push(rec); saveYtpub();
     try { pushNotify({ kind: 'report', title: rec.verified ? `유튜브 무인발행 ✅ ${item.name || ''}` : `유튜브 발행 확인필요 ⚠️ ${item.name || ''}`, body: rec.url }); } catch (e) {}
     return { published: 1, verified: rec.verified ? 1 : 0, rec };
@@ -2019,6 +2019,17 @@ app.get('/youtube/wake', async (req, res) => {
   if (force && !cronAuthed(req)) return res.status(401).json({ error: 'force 발행은 cron key 필요' });
   const r = await runYoutubeAutoPublish(force);
   res.json({ woke: true, kst: kstNow(), autoHour: YT_AUTO_HOUR, ...r });
+});
+// 검증용(읽기전용·발행 안 함) — 다음 9시가 발행할지 + 무엇을 발행할지 지금 확인
+app.get('/youtube/auto-status', (req, res) => {
+  const { ymd, hour } = kstNow();
+  const doneToday = (lastAutoYmd === ymd) || YTPUB.some((x) => x.auto && !x.forced && kstYmdHour(x.ts).ymd === ymd && kstYmdHour(x.ts).hour === YT_AUTO_HOUR);
+  const doneIds = new Set(YTPUB.map((x) => x.contentId));
+  const queue = myContents().filter((x) => x.type === '쇼츠' && x.link && !doneIds.has(x.id));
+  const next = queue[0] || null;
+  res.json({ ready: youtubeReady(), kstNow: { ymd, hour }, autoHour: YT_AUTO_HOUR, privacy: YT_AUTO_PRIVACY, doneToday,
+    nextAt9: (youtubeReady() && queue.length > 0) ? { contentId: next.id, name: next.name } : null,
+    queueRemaining: queue.length, alreadyPublished: YTPUB.length });
 });
 
 // 배포 계획 + 예약 현황 (현황 = 이미 예약된 것 / 새 예약분 = 미예약 쇼츠)
