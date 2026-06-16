@@ -2138,8 +2138,27 @@ async function postCarouselToInstagram(imageUrls, caption) {
 }
 // 검증: 게시된 media를 API로 재조회(permalink·존재·소유). success 깃발 불신.
 async function verifyInstagramMedia(mediaId) {
-  try { const j = await (await fetch(`${IG_GRAPH}/${mediaId}?fields=id,permalink,media_type,timestamp,owner&access_token=${IG_ACCESS_TOKEN}`)).json(); if (!j.id) return { exists: false, raw: j }; return { exists: true, mediaId: j.id, permalink: j.permalink, mediaType: j.media_type, ownerOk: !j.owner || j.owner.id === IG_USER_ID }; } catch (e) { return { exists: false, error: e.message }; }
+  try { const j = await (await fetch(`${IG_GRAPH}/${mediaId}?fields=id,permalink,media_type,timestamp,owner&access_token=${IG_ACCESS_TOKEN}`)).json(); if (!j.id) return { exists: false, raw: j }; const ownerId = j.owner ? String(j.owner.id) : ''; return { exists: true, mediaId: j.id, permalink: j.permalink, mediaType: j.media_type, ownerId, ownerMatch: ownerId ? (ownerId === String(IG_USER_ID)) : null }; } catch (e) { return { exists: false, error: e.message }; }
 }
+// 읽기전용 재검증 — 이미 게시된 media의 permalink·owner 대조(토큰 미출력)
+app.get('/instagram/verify-media', async (req, res) => {
+  const id = String(req.query.id || '').trim(); if (!id) return res.status(400).json({ error: 'id 필요' });
+  if (!IG_USER_ID && IG_ACCESS_TOKEN) await igDiscoverUserId();
+  res.json({ expectedOwner: IG_USER_ID, ...(await verifyInstagramMedia(id)) });
+});
+// 🔬 검증용: 카드뉴스 세트 1개를 인스타 캐러셀로 직접 게시 → permalink + owner 대조
+app.post('/instagram/test-carousel', async (req, res) => {
+  if (!instagramReady()) { if (IG_ACCESS_TOKEN) await igDiscoverUserId(); if (!instagramReady()) return res.status(400).json({ error: '인스타 미연결' }); }
+  try {
+    const set = (typeof myCardSets === 'function' ? myCardSets() : CARDSETS).find((s) => cardImages(s).length >= 2);
+    if (!set) return res.status(400).json({ error: '카드뉴스 세트(2장 이상)가 없습니다.' });
+    const urls = cardImages(set).map((im) => im.url).filter(Boolean).slice(0, 10);
+    const out = await postCarouselToInstagram(urls, shortsCaption(CAMPAIGN || {}));
+    await new Promise((s) => setTimeout(s, 3000));
+    const verify = await verifyInstagramMedia(out.mediaId);
+    res.json({ ok: true, setName: set.setName, images: urls.length, mediaId: out.mediaId, verify, 결론: (verify.exists && verify.ownerMatch !== false) ? '🟢 카드뉴스 캐러셀 실제 게시 + 검증' : '🔴 확인 필요' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 // 🔬 검증용: 쇼츠 1개를 인스타 Reels로 직접 게시 → permalink + 실측 검증
 app.post('/instagram/test-publish', async (req, res) => {
   if (!instagramReady()) return res.status(400).json({ error: '인스타 미연결. /instagram/auth 동의 필요.' });
