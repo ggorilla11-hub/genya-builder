@@ -1694,7 +1694,8 @@ function saveSched() { saveJson('배포.json', SCHED); schedChain = schedChain.c
 (async () => { const sheets = sheetsClient(); if (!sheets || !RESV_SHEET_ID) return; try { const got = await sheets.spreadsheets.values.get({ spreadsheetId: RESV_SHEET_ID, range: `'${SCHED_TAB}'!A1:B1` }); const row = (got.data.values || [])[0]; if (row && row[0] === 'sched' && row[1]) { const arr = JSON.parse(row[1]); if (Array.isArray(arr)) { SCHED = arr.filter((s) => s && s.contentId); saveJson('배포.json', SCHED); console.log(`📅 배포예약 시트 복원: ${SCHED.length}건`); } } } catch (e) {} })();
 function schedFor(kind) { return SCHED.filter((s) => s.campaignId === ACTIVE_ID && s.kind === kind); }
 // 유튜브는 우리 직접발행(runYoutubeAutoPublish)이 전담 → Upload-Post 기본채널에서 youtube 제거(중복방지)
-const DEPLOY_CHANNELS = (process.env.DEPLOY_CHANNELS || 'instagram,facebook,tiktok').split(',').map((s) => s.trim()).filter((s) => s !== 'youtube');
+// 유튜브·인스타는 우리 직접발행 전담 → Upload-Post 쇼츠 기본채널에서 둘 다 제거(이중발행 차단)
+const DEPLOY_CHANNELS = (process.env.DEPLOY_CHANNELS || 'facebook,tiktok').split(',').map((s) => s.trim()).filter((s) => s !== 'youtube' && s !== 'instagram');
 // 하루 발송 개수·시간: POST_PER_DAY(1/2…) + POST_HOURS_KST("10,18"). 1개면 POST_HOUR_KST/기본10시.
 const POST_PER_DAY = Math.max(1, Number(process.env.POST_PER_DAY || 1));
 const POST_HOURS = (process.env.POST_HOURS_KST || (POST_PER_DAY >= 2 ? '10,18' : String(process.env.POST_HOUR_KST || 10))).split(',').map((s) => Number(s.trim())).filter((n) => !isNaN(n));
@@ -2171,6 +2172,89 @@ app.post('/instagram/test-publish', async (req, res) => {
     const verify = await verifyInstagramMedia(out.mediaId);
     res.json({ ok: true, mediaId: out.mediaId, verify, 결론: verify.exists ? '🟢 인스타 직접게시 + permalink 확인' : '🔴 게시 확인 실패' });
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── 🫀 인스타 무인 자동발행: 릴스(쇼츠) IG_REEL_HOUR_KST(기본 9시) / 카루셀(카드뉴스) IG_CARD_HOUR_KST(기본 19시) 정각, 하루 1회 ──
+const IG_REEL_HOUR = Math.max(0, Math.min(23, Number(process.env.IG_REEL_HOUR_KST || 9)));
+const IG_CARD_HOUR = Math.max(0, Math.min(23, Number(process.env.IG_CARD_HOUR_KST || 19)));
+const IGPUB_TAB = process.env.IGPUB_TAB || '제니야_인스타발행';
+let IGPUB = []; let igpubChain = Promise.resolve(); let igAutoBusy = false;
+async function saveIgpubToSheet() {
+  const sheets = sheetsClient(); if (!sheets || !RESV_SHEET_ID) return;
+  const meta = await sheets.spreadsheets.get({ spreadsheetId: RESV_SHEET_ID, fields: 'sheets.properties.title' });
+  if (!meta.data.sheets.some((s) => s.properties.title === IGPUB_TAB)) { await sheets.spreadsheets.batchUpdate({ spreadsheetId: RESV_SHEET_ID, requestBody: { requests: [{ addSheet: { properties: { title: IGPUB_TAB } } }] } }); }
+  await sheets.spreadsheets.values.update({ spreadsheetId: RESV_SHEET_ID, range: `'${IGPUB_TAB}'!A1`, valueInputOption: 'RAW', requestBody: { values: [['igpub', JSON.stringify(IGPUB)]] } });
+}
+function saveIgpub() { igpubChain = igpubChain.catch(() => {}).then(() => saveIgpubToSheet()).catch((e) => console.warn('⚠️ 인스타발행 시트저장 실패:', e.message)); return igpubChain; }
+(async () => { const sheets = sheetsClient(); if (!sheets || !RESV_SHEET_ID) return; try { const got = await sheets.spreadsheets.values.get({ spreadsheetId: RESV_SHEET_ID, range: `'${IGPUB_TAB}'!A1:B1` }); const row = (got.data.values || [])[0]; if (row && row[0] === 'igpub' && row[1]) { const a = JSON.parse(row[1]); if (Array.isArray(a)) { IGPUB = a; console.log(`▶️ 인스타 발행대장 복원: ${IGPUB.length}건`); } } } catch (e) {} })();
+function igDoneToday(kind, ymd, targetHour) { return IGPUB.some((x) => x.kind === kind && !x.forced && kstYmdHour(x.ts).ymd === ymd && kstYmdHour(x.ts).hour === targetHour); }
+function igNextReel() { const done = new Set(IGPUB.filter((x) => x.kind === 'reel').map((x) => x.contentId)); return myContents().find((x) => x.type === '쇼츠' && x.link && !done.has(x.id)) || null; }
+function igNextCard() { const done = new Set(IGPUB.filter((x) => x.kind === 'carousel').map((x) => x.setId)); return (myCardSets()).find((s) => cardImages(s).length >= 2 && !done.has(s.setId)) || null; }
+async function runInstagramAuto(kind, force) {
+  if (igAutoBusy) return { skip: '진행중' };
+  if (!instagramReady()) { if (IG_ACCESS_TOKEN) await igDiscoverUserId(); if (!instagramReady()) return { skip: '인스타 미연결' }; }
+  const { ymd, hour } = kstNow();
+  const targetHour = kind === 'reel' ? IG_REEL_HOUR : IG_CARD_HOUR;
+  if (!force) { if (hour !== targetHour) return { skip: `발행시각 아님(현재 ${hour}시, 목표 ${targetHour}시)` }; if (igDoneToday(kind, ymd, targetHour)) return { skip: '오늘 이미 발행함' }; }
+  igAutoBusy = true;
+  try {
+    let rec;
+    if (kind === 'reel') {
+      const item = igNextReel(); if (!item) return { skip: '올릴 쇼츠 없음' };
+      const out = await postReelToInstagram(item.link, shortsCaption(CAMPAIGN || {}));
+      await new Promise((s) => setTimeout(s, 3000)); const v = await verifyInstagramMedia(out.mediaId);
+      rec = { kind: 'reel', mediaType: v.mediaType || 'REELS', igUserId: IG_USER_ID, contentId: item.id, name: item.name, mediaId: out.mediaId, permalink: v.permalink || '', ownerMatch: !!v.ownerMatch, verified: !!(v.exists && v.ownerMatch), auto: true, forced: !!force, ts: new Date().toISOString(), kstTime: new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 16).replace('T', ' ') + ' KST' };
+    } else {
+      const set = igNextCard(); if (!set) return { skip: '올릴 카드세트 없음' };
+      const urls = cardImages(set).map((im) => im.url).filter(Boolean).slice(0, 10);
+      const out = await postCarouselToInstagram(urls, shortsCaption(CAMPAIGN || {}));
+      await new Promise((s) => setTimeout(s, 3000)); const v = await verifyInstagramMedia(out.mediaId);
+      rec = { kind: 'carousel', mediaType: v.mediaType || 'CAROUSEL_ALBUM', igUserId: IG_USER_ID, setId: set.setId, name: set.setName, mediaId: out.mediaId, permalink: v.permalink || '', ownerMatch: !!v.ownerMatch, verified: !!(v.exists && v.ownerMatch), auto: true, forced: !!force, ts: new Date().toISOString(), kstTime: new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 16).replace('T', ' ') + ' KST' };
+    }
+    IGPUB.push(rec); saveIgpub();   // 성공/실패 모두 기록(중복발사·재시도 루프 방지=중단)
+    try { pushNotify({ kind: 'report', title: `인스타 ${kind === 'reel' ? '릴스' : '카드뉴스'} 무인발행 ${rec.verified ? '✅' : '⚠️실패'}`, body: rec.permalink }); } catch (e) {}
+    return { published: 1, verified: rec.verified, fail: rec.verified ? null : 'owner 불일치/미존재 — 실패 기록·중단(success 불신)', rec };
+  } catch (e) { return { error: e.message }; }
+  finally { igAutoBusy = false; }
+}
+// 검증용(읽기전용) — 다음 발행 대상 + 오늘 발행여부
+app.get('/instagram/auto-status', (req, res) => {
+  const { ymd, hour } = kstNow(); const reel = igNextReel(), card = igNextCard();
+  res.json({ ready: instagramReady(), kstNow: { ymd, hour }, reelHour: IG_REEL_HOUR, cardHour: IG_CARD_HOUR,
+    reel: { doneToday: igDoneToday('reel', ymd, IG_REEL_HOUR), next: reel ? { contentId: reel.id, name: reel.name } : null },
+    carousel: { doneToday: igDoneToday('carousel', ymd, IG_CARD_HOUR), next: card ? { setId: card.setId, name: card.setName } : null },
+    published: IGPUB.length });
+});
+// 강제 발행(검증용·키필요) — 시간 무시 1건
+app.post('/instagram/auto-run', async (req, res) => { if (!cronAuthed(req)) return res.status(401).json({ error: 'cron key 필요' }); const kind = (req.query.kind === 'carousel') ? 'carousel' : 'reel'; res.json(await runInstagramAuto(kind, true)); });
+app.get('/instagram/published', (req, res) => res.json({ count: IGPUB.length, items: IGPUB.slice().reverse() }));
+// 기존 수동 게시분 등록(중복방지 backfill·키필요)
+app.post('/instagram/markpub', (req, res) => { if (!cronAuthed(req)) return res.status(401).json({ error: 'cron key 필요' }); const b = req.body || {}; if (!b.kind || !b.mediaId) return res.status(400).json({ error: 'kind, mediaId 필요' }); IGPUB.push({ kind: b.kind, contentId: b.contentId || '', setId: b.setId || '', name: b.name || '', mediaId: b.mediaId, permalink: b.permalink || '', forced: true, ts: new Date().toISOString() }); saveIgpub(); res.json({ ok: true, count: IGPUB.length }); });
+// Upload-Post 인스타 비활성화(이중발행 차단) — 기존 예약에서 instagram 제거(취소→나머지 채널 재예약). 인스타=직접발행 전담.
+app.post('/content/drop-instagram', async (req, res) => {
+  if (!cronAuthed(req)) return res.status(401).json({ error: 'cron key 필요' });
+  if (!posterReady()) return res.status(400).json({ error: 'Upload-Post 미연결' });
+  const c = CAMPAIGN || {};
+  const targets = SCHED.filter((s) => Array.isArray(s.channels) && s.channels.includes('instagram'));
+  const results = [];
+  for (const s of targets) {
+    const newCh = s.channels.filter((x) => x !== 'instagram');
+    let cancelled = false, reposted = 'past';
+    if (s.job) { const cc = await cancelUploadPostJob(s.job); cancelled = !!cc.ok; }
+    if (new Date(s.scheduledAt).getTime() > Date.now() + 60000 && newCh.length) {
+      if (s.kind === '카드뉴스') {
+        const set = CARDSETS.find((x) => x.setId === s.contentId);
+        if (set) { const rp = await postCardToUploadPost({ ...set, scheduledAt: s.scheduledAt }, c); reposted = rp.ok ? 'ok' : ('fail:' + rp.status); if (rp.ok) s.job = rp.job; } else reposted = 'set없음';
+      } else {
+        const rp = await postOneToUploadPost({ channels: newCh, mediaUrl: s.link, scheduledAt: s.scheduledAt, contentId: s.contentId, name: s.name }, c); reposted = rp.ok ? 'ok' : ('fail:' + rp.status); if (rp.ok) s.job = rp.job;
+      }
+    } else if (!newCh.length) reposted = '취소만(남은채널 없음)';
+    s.channels = newCh;
+    results.push({ kind: s.kind, name: s.name, scheduledAt: s.scheduledAt, cancelled, reposted, channels: newCh });
+    await new Promise((rs) => setTimeout(rs, 300));
+  }
+  saveSched();
+  res.json({ ok: true, count: targets.length, results });
 });
 
 // 배포 계획 + 예약 현황 (현황 = 이미 예약된 것 / 새 예약분 = 미예약 쇼츠)
@@ -3089,7 +3173,8 @@ app.post('/cardnews/sets/delete', async (req, res) => {
 });
 
 // ── 카드뉴스 캐러셀 배포 (인스타·페북, 오후 6시·하루 1세트) ──
-const CARD_CHANNELS = (process.env.CARD_CHANNELS || 'instagram,facebook').split(',').map((s) => s.trim());
+// 인스타는 우리 직접발행(카루셀) 전담 → Upload-Post 카드 기본채널에서 instagram 제거(이중발행 차단)
+const CARD_CHANNELS = (process.env.CARD_CHANNELS || 'facebook').split(',').map((s) => s.trim()).filter((s) => s !== 'instagram');
 const UPLOADPHOTOS_URL = process.env.UPLOADPHOTOS_URL || 'https://api.upload-post.com/api/upload_photos';
 function cardPlanDateISO(i) {   // 시작일(기본 내일)부터 하루 1세트, 오후 6시(KST)
   const startOff = Number(process.env.CARD_START_OFFSET || 1);
@@ -3414,7 +3499,7 @@ async function runDuePromo() {
   } finally { promoTickRunning = false; }
   return { ran: true, sent };
 }
-setInterval(() => { runDuePromo().catch(() => {}); runDuePayments().catch(() => {}); runYoutubeAutoPublish(false).catch(() => {}); }, 60 * 1000);
+setInterval(() => { runDuePromo().catch(() => {}); runDuePayments().catch(() => {}); runYoutubeAutoPublish(false).catch(() => {}); runInstagramAuto('reel', false).catch(() => {}); runInstagramAuto('carousel', false).catch(() => {}); }, 60 * 1000);
 // 외부 크론(cron-job.org 등)이 아침에 깨우며 호출할 수 있는 입구 — 호출만으로 밀린 예약 발송
 app.get('/promo/tick', async (req, res) => { res.json(await runDuePromo()); });
 
