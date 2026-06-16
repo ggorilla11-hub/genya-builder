@@ -2055,7 +2055,17 @@ async function saveIgToSheet() {
   }
   await sheets.spreadsheets.values.update({ spreadsheetId: RESV_SHEET_ID, range: `'${IG_TOKEN_TAB}'!A1`, valueInputOption: 'RAW', requestBody: { values: [['ig_user_id', IG_USER_ID], ['access_token', IG_ACCESS_TOKEN]] } });
 }
-(async () => { if (IG_ACCESS_TOKEN && IG_USER_ID) return; const sheets = sheetsClient(); if (!sheets || !RESV_SHEET_ID) return; try { const got = await sheets.spreadsheets.values.get({ spreadsheetId: RESV_SHEET_ID, range: `'${IG_TOKEN_TAB}'!A1:B2` }); for (const r of (got.data.values || [])) { if (r[0] === 'ig_user_id' && r[1]) IG_USER_ID = r[1]; if (r[0] === 'access_token' && r[1]) IG_ACCESS_TOKEN = r[1]; } if (instagramReady()) console.log('▶️ 인스타 토큰 시트 복원 완료'); } catch (e) {} })();
+// IG 사용자 ID 자동조회: 토큰만 있으면 /me/accounts로 인스타 비즈니스 계정ID를 찾는다(토큰은 시트에 안 남김)
+async function igDiscoverUserId() {
+  if (!IG_ACCESS_TOKEN || IG_USER_ID) return;
+  try { const j = await (await fetch(`${IG_GRAPH}/me/accounts?fields=instagram_business_account{id}&access_token=${encodeURIComponent(IG_ACCESS_TOKEN)}`)).json(); const w = (j.data || []).find((p) => p.instagram_business_account && p.instagram_business_account.id); if (w) { IG_USER_ID = String(w.instagram_business_account.id); console.log('▶️ 인스타 사용자 ID 자동조회 완료'); } } catch (e) {}
+}
+(async () => {
+  // 토큰은 환경변수(Render) 우선 — 있으면 그걸 쓰고, 사용자ID는 토큰으로 자동조회(토큰을 시트에 안 씀)
+  if (process.env.IG_ACCESS_TOKEN) { IG_ACCESS_TOKEN = process.env.IG_ACCESS_TOKEN; if (!IG_USER_ID) await igDiscoverUserId(); return; }
+  // 환경변수에 토큰이 없을 때만 시트 복원(구 방식 호환)
+  const sheets = sheetsClient(); if (!sheets || !RESV_SHEET_ID) return;
+  try { const got = await sheets.spreadsheets.values.get({ spreadsheetId: RESV_SHEET_ID, range: `'${IG_TOKEN_TAB}'!A1:B2` }); for (const r of (got.data.values || [])) { if (r[0] === 'ig_user_id' && r[1]) IG_USER_ID = r[1]; if (r[0] === 'access_token' && r[1]) IG_ACCESS_TOKEN = r[1]; } if (instagramReady()) console.log('▶️ 인스타 토큰 시트 복원 완료'); } catch (e) {} })();
 // 1회 인증 시작 — 폰/PC에서 이 주소 → 페북 로그인·동의 → 자동 저장
 app.get('/instagram/auth', (req, res) => {
   if (!igConfigured()) return res.status(400).send('먼저 Render 환경변수에 IG_APP_ID·IG_APP_SECRET를 넣어 주세요.');
@@ -2082,20 +2092,17 @@ app.get('/instagram/status', async (req, res) => {
   if (!instagramReady()) return res.json({ ready: false, hasApp: igConfigured(), hasToken: !!IG_ACCESS_TOKEN, hasUserId: !!IG_USER_ID, note: 'IG_APP_ID·SECRET 설정 후 /instagram/auth 동의 필요' });
   try { const r = await fetch(`${IG_GRAPH}/${IG_USER_ID}?fields=username,name,followers_count,media_count&access_token=${IG_ACCESS_TOKEN}`); const j = await r.json(); res.json({ ready: true, igUserId: IG_USER_ID, ...j }); } catch (e) { res.status(502).json({ ready: true, error: e.message }); }
 });
-// ★ 가장 단순·확실 연결: 만료 없는 'System User 토큰' 1개를 붙여넣으면 끝(OAuth·리디렉션 설정 불필요).
-//   서버가 페이지→인스타 비즈니스 계정ID를 자동으로 찾아 저장. 토큰 만료 없음 = 9시 발행 영구 안정.
-app.get('/instagram/connect', async (req, res) => {
-  const tok = String(req.query.token || '').trim();
-  if (!tok) return res.status(400).send('?token= 뒤에 System User 토큰을 붙여 주세요. 예: /instagram/connect?token=EAAB...');
+// 🔒 안전 점검(읽기전용) — 토큰 값은 절대 출력 안 함. 토큰 로딩 O/X + IG 사용자ID 조회 O/X만 보고.
+app.get('/instagram/check', async (req, res) => {
+  if (!IG_ACCESS_TOKEN) return res.json({ tokenLoaded: false, igUserIdFound: false, note: 'Render 환경변수 IG_ACCESS_TOKEN 미설정(또는 재배포 전)' });
   try {
-    const j = await (await fetch(`${IG_GRAPH}/me/accounts?fields=name,instagram_business_account{id,username}&access_token=${encodeURIComponent(tok)}`)).json();
-    if (j.error) return res.status(400).send('토큰 오류: ' + JSON.stringify(j.error));
-    const withIg = (j.data || []).find((p) => p.instagram_business_account && p.instagram_business_account.id);
-    if (!withIg) return res.send(`<meta charset=utf8><body style="font-family:sans-serif;padding:24px"><h2>🔴 인스타 비즈니스 계정이 연결된 페이지를 못 찾음</h2><p>이 토큰으로 보이는 페이지: ${(j.data || []).map((p) => p.name).join(', ') || '없음'}</p><p>System User에 <b>금융집짓기 페이지</b> 자산이 할당됐는지, 토큰 권한에 <b>instagram_basic·instagram_content_publish·pages_show_list</b>가 있는지 확인하세요.</p></body>`);
-    IG_USER_ID = String(withIg.instagram_business_account.id); IG_ACCESS_TOKEN = tok;
-    await saveIgToSheet().catch((e) => console.warn('⚠️ 인스타 토큰 저장 실패:', e.message));
-    res.send(`<meta charset=utf8><body style="font-family:sans-serif;padding:24px;line-height:1.7"><h2>✅ 인스타 연결 완료 (만료 없는 토큰)</h2><p>인스타: <b>@${withIg.instagram_business_account.username || ''}</b> (id ${IG_USER_ID})<br>페이지: <b>${withIg.name}</b></p><p style="font-size:18px">이 인스타가 <b>oh_want</b>면 끝. 60일 만료 걱정 없습니다.</p></body>`);
-  } catch (e) { res.status(500).send('연결 실패: ' + e.message); }
+    const j = await (await fetch(`${IG_GRAPH}/me/accounts?fields=name,instagram_business_account{id,username}&access_token=${encodeURIComponent(IG_ACCESS_TOKEN)}`)).json();
+    if (j.error) return res.json({ tokenLoaded: true, igUserIdFound: false, error: (j.error.message || '토큰 유효성/권한 오류') });
+    const w = (j.data || []).find((p) => p.instagram_business_account && p.instagram_business_account.id);
+    if (!w) return res.json({ tokenLoaded: true, igUserIdFound: false, pages: (j.data || []).map((p) => p.name), note: '인스타 비즈니스 계정 연결 페이지 없음 또는 권한 부족' });
+    IG_USER_ID = String(w.instagram_business_account.id);   // 발행에 쓰도록 메모리 적재(토큰은 env 그대로)
+    res.json({ tokenLoaded: true, igUserIdFound: true, igUserId: IG_USER_ID, igUsername: w.instagram_business_account.username || '', page: w.name });
+  } catch (e) { res.json({ tokenLoaded: true, igUserIdFound: false, error: e.message }); }
 });
 // Reels(쇼츠) 1건 직접 게시 (공개 mp4 URL)
 async function postReelToInstagram(videoUrl, caption) {
