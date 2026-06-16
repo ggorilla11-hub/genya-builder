@@ -1993,7 +1993,8 @@ async function runYoutubeAutoPublish(force) {
   const ymdOf = (ts) => { try { return new Date(new Date(ts).getTime() + 9 * 3600 * 1000).toISOString().slice(0, 10); } catch (e) { return ''; } };
   // 하루 1회 보장 — 메모리(빠름) + 시트 영구기록 YTPUB(재시작에도 생존) 둘 다로 판정
   const doneToday = lastAutoYmd === ymd || YTPUB.some((x) => x.auto && ymdOf(x.ts) === ymd);
-  if (!force) { if (hour < YT_AUTO_HOUR) return { skip: `발행시각 전(${hour}시<${YT_AUTO_HOUR}시)` }; if (doneToday) return { skip: '오늘 이미 발행함' }; }
+  // 9시 "정각" — 9시대(9:00~9:59)에만 발행. always-on 서버 + 60초 스케줄러 → 9:00:0x 발행. (대표 지시: 9시 이후 첫 기회 안 받음)
+  if (!force) { if (hour !== YT_AUTO_HOUR) return { skip: `발행시각 아님(현재 ${hour}시, 목표 ${YT_AUTO_HOUR}시)` }; if (doneToday) return { skip: '오늘 이미 발행함' }; }
   autoBusy = true; lastAutoYmd = ymd;     // 중복발사 방지: await 전에 날짜 선점
   try {
     const doneIds = new Set(YTPUB.map((x) => x.contentId));
