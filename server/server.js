@@ -2033,17 +2033,16 @@ app.get('/youtube/auto-status', (req, res) => {
 });
 
 // ============================================================
-// 🔴 인스타그램 직접 발행 (Instagram API with Instagram Login — Upload-Post 대체)
-//   ★ 페이스북 페이지 불필요(메타 공식): 인스타 프로페셔널 계정만으로 직접 게시.
-//   인증: 인스타 로그인 OAuth → 장기(60일) 인스타 토큰 + IG user_id, 시트 영구보관.
-//   Reels(쇼츠) + 캐러셀(카드뉴스) 직접 게시 + 실측 검증(permalink 재조회). 엔드포인트=graph.instagram.com.
-//   조건: oh_want=프로페셔널(비즈니스/크리에이터) + 메타 앱에 Instagram 제품(인스타 로그인) 설정.
+// 🔴 인스타그램 직접 발행 (Instagram Graph API — Upload-Post 대체, 유튜브와 동일 방식)
+//   인증: 페이스북 로그인 OAuth → 장기 페이지토큰(비만료) + IG 비즈니스 계정ID, 시트 영구보관.
+//   Reels(쇼츠) + 캐러셀(카드뉴스) 직접 게시 + 실측 검증(permalink 재조회).
+//   조건: oh_want=프로페셔널(비즈니스/크리에이터) + 페북 페이지 연결 + 메타 앱(대표 admin).
 // ============================================================
 const IG_API_VER = process.env.IG_API_VER || 'v21.0';
-const IG_GRAPH = `https://graph.instagram.com/${IG_API_VER}`;   // 게시·조회 (페북 페이지 불필요)
+const IG_GRAPH = `https://graph.facebook.com/${IG_API_VER}`;
 const IG_REDIRECT_URI = process.env.IG_REDIRECT_URI || 'https://jenya.onrender.com/instagram/oauth2callback';
 const IG_TOKEN_TAB = process.env.IG_TOKEN_TAB || '제니야_인스타토큰';
-const IG_SCOPES = 'instagram_business_basic,instagram_business_content_publish';   // 2025 신 scope(구 business_* 폐기)
+const IG_SCOPES = 'instagram_basic,instagram_content_publish,pages_show_list,pages_read_engagement,business_management';
 let IG_ACCESS_TOKEN = process.env.IG_ACCESS_TOKEN || '';
 let IG_USER_ID = process.env.IG_USER_ID || '';
 function igConfigured() { return !!(process.env.IG_APP_ID && process.env.IG_APP_SECRET); }
@@ -2059,31 +2058,29 @@ async function saveIgToSheet() {
 (async () => { if (IG_ACCESS_TOKEN && IG_USER_ID) return; const sheets = sheetsClient(); if (!sheets || !RESV_SHEET_ID) return; try { const got = await sheets.spreadsheets.values.get({ spreadsheetId: RESV_SHEET_ID, range: `'${IG_TOKEN_TAB}'!A1:B2` }); for (const r of (got.data.values || [])) { if (r[0] === 'ig_user_id' && r[1]) IG_USER_ID = r[1]; if (r[0] === 'access_token' && r[1]) IG_ACCESS_TOKEN = r[1]; } if (instagramReady()) console.log('▶️ 인스타 토큰 시트 복원 완료'); } catch (e) {} })();
 // 1회 인증 시작 — 폰/PC에서 이 주소 → 페북 로그인·동의 → 자동 저장
 app.get('/instagram/auth', (req, res) => {
-  if (!igConfigured()) return res.status(400).send('먼저 Render 환경변수에 IG_APP_ID·IG_APP_SECRET(인스타그램 앱ID·시크릿)를 넣어 주세요.');
-  res.redirect(`https://www.instagram.com/oauth/authorize?client_id=${process.env.IG_APP_ID}&redirect_uri=${encodeURIComponent(IG_REDIRECT_URI)}&response_type=code&scope=${encodeURIComponent(IG_SCOPES)}`);
+  if (!igConfigured()) return res.status(400).send('먼저 Render 환경변수에 IG_APP_ID·IG_APP_SECRET를 넣어 주세요.');
+  res.redirect(`https://www.facebook.com/${IG_API_VER}/dialog/oauth?client_id=${process.env.IG_APP_ID}&redirect_uri=${encodeURIComponent(IG_REDIRECT_URI)}&scope=${encodeURIComponent(IG_SCOPES)}&response_type=code`);
 });
 app.get('/instagram/oauth2callback', async (req, res) => {
   try {
     if (!igConfigured()) return res.status(400).send('앱 미설정');
     if (!req.query.code) return res.status(400).send('인증 코드 없음. /instagram/auth 부터 다시.');
-    // 1) code → 단기 토큰(+user_id): api.instagram.com (form POST)
-    const form = new URLSearchParams({ client_id: process.env.IG_APP_ID, client_secret: process.env.IG_APP_SECRET, grant_type: 'authorization_code', redirect_uri: IG_REDIRECT_URI, code: String(req.query.code).replace(/#_$/, '') });
-    let j = await (await fetch('https://api.instagram.com/oauth/access_token', { method: 'POST', body: form })).json();
-    if (!j.access_token) return res.status(500).send('토큰 교환 실패: ' + JSON.stringify(j));
-    const shortTok = j.access_token, userId = j.user_id;
-    // 2) 단기 → 장기(60일) 인스타 토큰
-    j = await (await fetch(`https://graph.instagram.com/access_token?grant_type=ig_exchange_token&client_secret=${process.env.IG_APP_SECRET}&access_token=${shortTok}`)).json();
-    IG_ACCESS_TOKEN = j.access_token || shortTok; IG_USER_ID = String(userId || '');
-    // 3) 계정 확인
-    const me = await (await fetch(`${IG_GRAPH}/${IG_USER_ID}?fields=user_id,username&access_token=${IG_ACCESS_TOKEN}`)).json();
-    if (me.user_id) IG_USER_ID = String(me.user_id);
+    let r = await fetch(`${IG_GRAPH}/oauth/access_token?client_id=${process.env.IG_APP_ID}&client_secret=${process.env.IG_APP_SECRET}&redirect_uri=${encodeURIComponent(IG_REDIRECT_URI)}&code=${encodeURIComponent(req.query.code)}`);
+    let j = await r.json(); if (!j.access_token) return res.status(500).send('토큰 교환 실패: ' + JSON.stringify(j));
+    r = await fetch(`${IG_GRAPH}/oauth/access_token?grant_type=fb_exchange_token&client_id=${process.env.IG_APP_ID}&client_secret=${process.env.IG_APP_SECRET}&fb_exchange_token=${j.access_token}`);
+    j = await r.json(); const llTok = j.access_token;
+    r = await fetch(`${IG_GRAPH}/me/accounts?fields=name,access_token,instagram_business_account{id,username}&access_token=${llTok}`);
+    j = await r.json(); const pages = j.data || [];
+    const withIg = pages.find((p) => p.instagram_business_account && p.instagram_business_account.id);
+    if (!withIg) return res.send(`<meta charset=utf8><body style="font-family:sans-serif;padding:24px;line-height:1.7"><h2>🔴 인스타 비즈니스 계정이 연결된 페이지가 없습니다.</h2><p>oh_want 인스타를 <b>프로페셔널(비즈니스/크리에이터)</b>로 전환하고 <b>페이스북 페이지에 연결</b>한 뒤 다시 시도하세요.</p><p>찾은 페이지: ${pages.map((p) => p.name).join(', ') || '없음'}</p></body>`);
+    IG_USER_ID = withIg.instagram_business_account.id; IG_ACCESS_TOKEN = withIg.access_token;
     await saveIgToSheet().catch((e) => console.warn('⚠️ 인스타 토큰 저장 실패:', e.message));
-    res.send(`<meta charset=utf8><body style="font-family:sans-serif;padding:24px;line-height:1.7"><h2>✅ 인스타그램 직접발행 연결 완료</h2><p>인스타: <b>@${me.username || '?'}</b> (id ${IG_USER_ID})</p><p style="font-size:18px">이 인스타가 <b>oh_want</b>가 맞으면 끝입니다. <span style="color:#888">(페이스북 페이지 불필요)</span></p></body>`);
+    res.send(`<meta charset=utf8><body style="font-family:sans-serif;padding:24px;line-height:1.7"><h2>✅ 인스타그램 직접발행 연결 완료</h2><p>페이지: <b>${withIg.name}</b><br>인스타: <b>@${withIg.instagram_business_account.username || ''}</b> (id ${IG_USER_ID})</p><p style="font-size:18px">이 인스타가 <b>oh_want</b>가 맞으면 끝입니다.</p></body>`);
   } catch (e) { res.status(500).send('인증 실패: ' + e.message); }
 });
 app.get('/instagram/status', async (req, res) => {
   if (!instagramReady()) return res.json({ ready: false, hasApp: igConfigured(), hasToken: !!IG_ACCESS_TOKEN, hasUserId: !!IG_USER_ID, note: 'IG_APP_ID·SECRET 설정 후 /instagram/auth 동의 필요' });
-  try { const r = await fetch(`${IG_GRAPH}/${IG_USER_ID}?fields=user_id,username,account_type,media_count&access_token=${IG_ACCESS_TOKEN}`); const j = await r.json(); res.json({ ready: true, igUserId: IG_USER_ID, ...j }); } catch (e) { res.status(502).json({ ready: true, error: e.message }); }
+  try { const r = await fetch(`${IG_GRAPH}/${IG_USER_ID}?fields=username,name,followers_count,media_count&access_token=${IG_ACCESS_TOKEN}`); const j = await r.json(); res.json({ ready: true, igUserId: IG_USER_ID, ...j }); } catch (e) { res.status(502).json({ ready: true, error: e.message }); }
 });
 // Reels(쇼츠) 1건 직접 게시 (공개 mp4 URL)
 async function postReelToInstagram(videoUrl, caption) {
@@ -2119,7 +2116,7 @@ async function postCarouselToInstagram(imageUrls, caption) {
 }
 // 검증: 게시된 media를 API로 재조회(permalink·존재·소유). success 깃발 불신.
 async function verifyInstagramMedia(mediaId) {
-  try { const j = await (await fetch(`${IG_GRAPH}/${mediaId}?fields=id,permalink,media_type,timestamp&access_token=${IG_ACCESS_TOKEN}`)).json(); if (!j.id) return { exists: false, raw: j }; return { exists: true, mediaId: j.id, permalink: j.permalink, mediaType: j.media_type }; } catch (e) { return { exists: false, error: e.message }; }
+  try { const j = await (await fetch(`${IG_GRAPH}/${mediaId}?fields=id,permalink,media_type,timestamp,owner&access_token=${IG_ACCESS_TOKEN}`)).json(); if (!j.id) return { exists: false, raw: j }; return { exists: true, mediaId: j.id, permalink: j.permalink, mediaType: j.media_type, ownerOk: !j.owner || j.owner.id === IG_USER_ID }; } catch (e) { return { exists: false, error: e.message }; }
 }
 // 🔬 검증용: 쇼츠 1개를 인스타 Reels로 직접 게시 → permalink + 실측 검증
 app.post('/instagram/test-publish', async (req, res) => {
