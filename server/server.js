@@ -1908,6 +1908,8 @@ app.post('/youtube/test-publish', async (req, res) => {
 // ── 유튜브 직접발행 대장(중복방지·대표확인용) — 무인 발사가 올린 영상 기록 ──
 const YTPUB_TAB = process.env.YTPUB_TAB || '제니야_유튜브발행';
 let YTPUB = []; let ytpubChain = Promise.resolve();
+// 호출 도달 진단 로그(최근 30건, 메모리) — 클라우드 트리거가 서버에 실제 도달했는지 격리용
+let CRONLOG = [];
 async function saveYtpubToSheet() {
   const sheets = sheetsClient(); if (!sheets || !RESV_SHEET_ID) return;
   const meta = await sheets.spreadsheets.get({ spreadsheetId: RESV_SHEET_ID, fields: 'sheets.properties.title' });
@@ -1923,6 +1925,8 @@ function cronAuthed(req) { const k = process.env.CRON_KEY; if (!k) return true; 
 
 // 🤖 무인 발사 — 아직 안 올린 쇼츠 중 count개를 유튜브 직접발행 + 실측검증 + 기록. (Claude Routine이 정시 호출)
 app.post('/youtube/publish-next', async (req, res) => {
+  // ① 도달 기록(키검증 전) — 클라우드 트리거가 서버에 닿았는지 격리 관측
+  try { CRONLOG.push({ ts: new Date().toISOString(), ua: (req.get('user-agent') || '').slice(0, 100), ip: (req.get('x-forwarded-for') || req.ip || '').slice(0, 60), hadKey: !!(req.query.key || req.get('x-cron-key')), keyOk: cronAuthed(req) }); if (CRONLOG.length > 30) CRONLOG.shift(); } catch (e) {}
   if (!cronAuthed(req)) return res.status(401).json({ error: 'cron key 불일치' });
   if (!youtubeReady()) return res.status(400).json({ error: '유튜브 미연결. /youtube/auth 로 1회 동의가 필요합니다.' });
   const b = req.body || {};
@@ -1948,6 +1952,8 @@ app.post('/youtube/publish-next', async (req, res) => {
 });
 // 대표 확인용 — 무인발행이 실제 올린 영상 목록(실제 URL + 본채널 O/X)
 app.get('/youtube/published', (req, res) => res.json({ count: YTPUB.length, items: YTPUB.slice().reverse() }));
+// 진단용 — 발행창구에 도달한 호출 기록(클라우드 트리거 도달 여부 격리). 키 불필요(읽기전용)
+app.get('/youtube/cron-log', (req, res) => res.json({ count: CRONLOG.length, hits: CRONLOG.slice().reverse() }));
 
 // 배포 계획 + 예약 현황 (현황 = 이미 예약된 것 / 새 예약분 = 미예약 쇼츠)
 app.get('/content/plan', (req, res) => {
