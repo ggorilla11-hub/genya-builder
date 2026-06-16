@@ -1955,6 +1955,44 @@ app.get('/youtube/published', (req, res) => res.json({ count: YTPUB.length, item
 // 진단용 — 발행창구에 도달한 호출 기록(클라우드 트리거 도달 여부 격리). 키 불필요(읽기전용)
 app.get('/youtube/cron-log', (req, res) => res.json({ count: CRONLOG.length, hits: CRONLOG.slice().reverse() }));
 
+// ── 🫀 무인 심장(서버 내부): 매일 YT_AUTO_HOUR_KST(기본 9시) 이후 첫 기회에 쇼츠 1개 자동발행(하루 1회) ──
+//    외부(GitHub)는 9시에 서버를 '깨우기만'(공개 GET /youtube/wake) → 발행 결정·업로드·검증은 전부 서버 안에서.
+//    키·OAuth가 이미 서버에 있으니 외부에 비밀키를 줄 필요가 없다(시크릿 의존 제거).
+const YT_AUTO_HOUR = Math.max(0, Math.min(23, Number(process.env.YT_AUTO_HOUR_KST || 9)));
+const YT_AUTO_PRIVACY = process.env.YT_AUTO_PRIVACY || 'public';
+let lastAutoYmd = '';     // 마지막 자동발행 날짜(KST) — 하루 1회 보장
+let autoBusy = false;
+function kstNow() { const d = new Date(Date.now() + 9 * 3600 * 1000); return { ymd: d.toISOString().slice(0, 10), hour: d.getUTCHours() }; }
+async function runYoutubeAutoPublish(force) {
+  if (autoBusy) return { skip: '진행중' };
+  if (!youtubeReady()) return { skip: '유튜브 미연결' };
+  const { ymd, hour } = kstNow();
+  if (!force) { if (hour < YT_AUTO_HOUR) return { skip: `발행시각 전(${hour}시<${YT_AUTO_HOUR}시)` }; if (lastAutoYmd === ymd) return { skip: '오늘 이미 발행함' }; }
+  autoBusy = true; lastAutoYmd = ymd;     // 중복발사 방지: await 전에 날짜 선점
+  try {
+    const doneIds = new Set(YTPUB.map((x) => x.contentId));
+    const item = myContents().find((x) => x.type === '쇼츠' && x.link && !doneIds.has(x.id));
+    if (!item) return { skip: '올릴 쇼츠 없음', total: YTPUB.length };
+    const out = await postOneToYoutube({ contentId: item.id, name: item.name, mediaUrl: item.link }, CAMPAIGN || {}, { privacy: YT_AUTO_PRIVACY });
+    await new Promise((rs) => setTimeout(rs, 3000));
+    const verify = await verifyYoutubeVideo(out.videoId);
+    const rec = { contentId: item.id, name: item.name, videoId: out.videoId, url: out.url, privacyStatus: out.privacyStatus,
+      channelId: verify.channelId || '', isMainChannel: !!verify.isMainChannel, verified: verify.exists === true && !!verify.isMainChannel, auto: true, ts: new Date().toISOString() };
+    YTPUB.push(rec); saveYtpub();
+    try { pushNotify({ kind: 'report', title: rec.verified ? `유튜브 무인발행 ✅ ${item.name || ''}` : `유튜브 발행 확인필요 ⚠️ ${item.name || ''}`, body: rec.url }); } catch (e) {}
+    return { published: 1, verified: rec.verified ? 1 : 0, rec };
+  } catch (e) { return { error: e.message }; }
+  finally { autoBusy = false; }
+}
+// 깨우기 겸 자동발행 트리거. 공개(GET, 키 불필요): 서버 시계로 9시 이후면 하루 1회만 발행, 아니면 그냥 깨우고 끝.
+//   ?force=1 = 시간 무시 강제발행 → 남용 방지 위해 cron key 필요(진단·검증 전용).
+app.get('/youtube/wake', async (req, res) => {
+  const force = !!req.query.force;
+  if (force && !cronAuthed(req)) return res.status(401).json({ error: 'force 발행은 cron key 필요' });
+  const r = await runYoutubeAutoPublish(force);
+  res.json({ woke: true, kst: kstNow(), autoHour: YT_AUTO_HOUR, ...r });
+});
+
 // 배포 계획 + 예약 현황 (현황 = 이미 예약된 것 / 새 예약분 = 미예약 쇼츠)
 app.get('/content/plan', (req, res) => {
   const kind = req.query.kind || '쇼츠';
@@ -3196,7 +3234,7 @@ async function runDuePromo() {
   } finally { promoTickRunning = false; }
   return { ran: true, sent };
 }
-setInterval(() => { runDuePromo().catch(() => {}); runDuePayments().catch(() => {}); }, 60 * 1000);
+setInterval(() => { runDuePromo().catch(() => {}); runDuePayments().catch(() => {}); runYoutubeAutoPublish(false).catch(() => {}); }, 60 * 1000);
 // 외부 크론(cron-job.org 등)이 아침에 깨우며 호출할 수 있는 입구 — 호출만으로 밀린 예약 발송
 app.get('/promo/tick', async (req, res) => { res.json(await runDuePromo()); });
 

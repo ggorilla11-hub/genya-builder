@@ -1,36 +1,31 @@
-name: 유튜브 무인 자동발행 (매일 9시 KST)
+name: 유튜브 무인 자동발행 깨우기 (매일 9시 KST)
 
-# 무인 심장: GitHub 클라우드가 정시에 jenya 서버의 발행창구를 호출.
-#   - 매일 00:00 UTC = 09:00 KST 자동
-#   - workflow_dispatch: GitHub 화면 "Run workflow" 버튼으로 수동 실행
-#   - push(자기파일): 이 워크플로 파일을 수정·푸시하면 1회 자동실행(자가검증용)
-# CRON_KEY는 깃허브 저장소 Secrets(Settings→Secrets and variables→Actions)에 등록 필요.
+# 무인 심장: GitHub 클라우드가 매일 9시 KST에 jenya 서버를 '깨우기만' 한다(비밀키 불필요).
+#   서버가 깨면 서버 내부 스케줄러가 9시 이후 첫 기회에 쇼츠 1개를 직접발행·검증한다.
+#   발행 결정·업로드·검증·키·OAuth는 전부 서버 안에 있으므로 GitHub엔 시크릿이 필요 없다.
+#   - 9:00·9:05·9:10 KST 세 번 깨움(무료 Render 콜드스타트 흡수)
+#   - workflow_dispatch: 수동 실행 버튼
+#   - push(자기파일): 이 파일 수정·푸시 시 1회 자동실행(자가검증)
 on:
   schedule:
     - cron: '0 0 * * *'
+    - cron: '5 0 * * *'
+    - cron: '10 0 * * *'
   workflow_dispatch: {}
   push:
     paths:
       - '.github/workflows/youtube-auto-publish.yml'
 
 jobs:
-  publish:
+  wake:
     runs-on: ubuntu-latest
     steps:
-      - name: 다음 쇼츠 1개 유튜브 직접발행 + 0-3 검증
-        env:
-          CRON_KEY: ${{ secrets.CRON_KEY }}
+      - name: jenya 서버 깨우기 (3회 재시도로 콜드스타트 흡수)
         run: |
-          for i in 1 2 3; do
-            echo "=== 시도 $i ==="
-            RESP=$(curl -sS -X POST 'https://jenya.onrender.com/youtube/publish-next' \
-              -H "x-cron-key: ${CRON_KEY}" \
-              -H 'Content-Type: application/json' \
-              -d '{"count":1,"privacy":"public"}' \
-              --max-time 180 || true)
+          for i in 1 2 3 4; do
+            echo "=== 깨우기 시도 $i ==="
+            RESP=$(curl -sS 'https://jenya.onrender.com/youtube/wake' --max-time 180 || true)
             echo "응답: $RESP"
-            if echo "$RESP" | grep -q '"verified":1'; then echo "✅ 발행+검증 성공"; exit 0; fi
-            if echo "$RESP" | grep -q '"published":0'; then echo "ℹ️ 올릴 쇼츠 없음(정상)"; exit 0; fi
+            echo "$RESP" | grep -q '"woke":true' && { echo "✅ 서버 깨어남"; break; }
             sleep 30
           done
-          echo "❌ 실패 — 확인 필요 (CRON_KEY 시크릿 등록 여부·서버 상태 확인)"; exit 1
