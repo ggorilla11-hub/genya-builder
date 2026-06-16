@@ -1905,6 +1905,50 @@ app.post('/youtube/test-publish', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── 유튜브 직접발행 대장(중복방지·대표확인용) — 무인 발사가 올린 영상 기록 ──
+const YTPUB_TAB = process.env.YTPUB_TAB || '제니야_유튜브발행';
+let YTPUB = []; let ytpubChain = Promise.resolve();
+async function saveYtpubToSheet() {
+  const sheets = sheetsClient(); if (!sheets || !RESV_SHEET_ID) return;
+  const meta = await sheets.spreadsheets.get({ spreadsheetId: RESV_SHEET_ID, fields: 'sheets.properties.title' });
+  if (!meta.data.sheets.some((s) => s.properties.title === YTPUB_TAB)) {
+    await sheets.spreadsheets.batchUpdate({ spreadsheetId: RESV_SHEET_ID, requestBody: { requests: [{ addSheet: { properties: { title: YTPUB_TAB } } }] } });
+  }
+  await sheets.spreadsheets.values.update({ spreadsheetId: RESV_SHEET_ID, range: `'${YTPUB_TAB}'!A1`, valueInputOption: 'RAW', requestBody: { values: [['ytpub', JSON.stringify(YTPUB)]] } });
+}
+function saveYtpub() { ytpubChain = ytpubChain.catch(() => {}).then(() => saveYtpubToSheet()).catch((e) => console.warn('⚠️ 유튜브발행 시트저장 실패:', e.message)); return ytpubChain; }
+(async () => { const sheets = sheetsClient(); if (!sheets || !RESV_SHEET_ID) return; try { const got = await sheets.spreadsheets.values.get({ spreadsheetId: RESV_SHEET_ID, range: `'${YTPUB_TAB}'!A1:B1` }); const row = (got.data.values || [])[0]; if (row && row[0] === 'ytpub' && row[1]) { const arr = JSON.parse(row[1]); if (Array.isArray(arr)) { YTPUB = arr; console.log(`▶️ 유튜브 직접발행 대장 복원: ${YTPUB.length}건`); } } } catch (e) {} })();
+// 무인 발사용 보안키: CRON_KEY가 설정돼 있으면 ?key= 또는 헤더 x-cron-key 일치해야 호출 가능
+function cronAuthed(req) { const k = process.env.CRON_KEY; if (!k) return true; return (req.query.key === k) || (req.get('x-cron-key') === k); }
+
+// 🤖 무인 발사 — 아직 안 올린 쇼츠 중 count개를 유튜브 직접발행 + 실측검증 + 기록. (Claude Routine이 정시 호출)
+app.post('/youtube/publish-next', async (req, res) => {
+  if (!cronAuthed(req)) return res.status(401).json({ error: 'cron key 불일치' });
+  if (!youtubeReady()) return res.status(400).json({ error: '유튜브 미연결. /youtube/auth 로 1회 동의가 필요합니다.' });
+  const b = req.body || {};
+  const count = Math.min(Math.max(Number(b.count) || Number(req.query.count) || 1, 1), 5);
+  const privacy = b.privacy || req.query.privacy || 'public';
+  const doneIds = new Set(YTPUB.map((x) => x.contentId));
+  const queue = myContents().filter((x) => x.type === '쇼츠' && x.link && !doneIds.has(x.id)).slice(0, count);
+  if (!queue.length) return res.json({ ok: true, published: 0, note: '새로 올릴 쇼츠가 없습니다(모두 발행됨 또는 없음).', total: YTPUB.length });
+  const results = [];
+  for (const item of queue) {
+    try {
+      const out = await postOneToYoutube({ contentId: item.id, name: item.name, mediaUrl: item.link }, CAMPAIGN || {}, { privacy });
+      await new Promise((rs) => setTimeout(rs, 3000));
+      const verify = await verifyYoutubeVideo(out.videoId);
+      const rec = { contentId: item.id, name: item.name, videoId: out.videoId, url: out.url, privacyStatus: out.privacyStatus,
+        channelId: verify.channelId || '', isMainChannel: !!verify.isMainChannel, verified: verify.exists === true && !!verify.isMainChannel, ts: new Date().toISOString() };
+      YTPUB.push(rec); results.push(rec);
+      try { pushNotify({ kind: 'report', title: rec.verified ? `유튜브 무인발행 ✅ ${item.name || ''}` : `유튜브 발행 확인필요 ⚠️ ${item.name || ''}`, body: rec.url }); } catch (e) {}
+    } catch (e) { results.push({ contentId: item.id, name: item.name, error: e.message }); }
+  }
+  saveYtpub();
+  res.json({ ok: true, published: results.filter((r) => r.videoId).length, verified: results.filter((r) => r.verified).length, results, total: YTPUB.length });
+});
+// 대표 확인용 — 무인발행이 실제 올린 영상 목록(실제 URL + 본채널 O/X)
+app.get('/youtube/published', (req, res) => res.json({ count: YTPUB.length, items: YTPUB.slice().reverse() }));
+
 // 배포 계획 + 예약 현황 (현황 = 이미 예약된 것 / 새 예약분 = 미예약 쇼츠)
 app.get('/content/plan', (req, res) => {
   const kind = req.query.kind || '쇼츠';
