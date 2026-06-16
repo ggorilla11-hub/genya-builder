@@ -1967,7 +1967,10 @@ async function runYoutubeAutoPublish(force) {
   if (autoBusy) return { skip: '진행중' };
   if (!youtubeReady()) return { skip: '유튜브 미연결' };
   const { ymd, hour } = kstNow();
-  if (!force) { if (hour < YT_AUTO_HOUR) return { skip: `발행시각 전(${hour}시<${YT_AUTO_HOUR}시)` }; if (lastAutoYmd === ymd) return { skip: '오늘 이미 발행함' }; }
+  const ymdOf = (ts) => { try { return new Date(new Date(ts).getTime() + 9 * 3600 * 1000).toISOString().slice(0, 10); } catch (e) { return ''; } };
+  // 하루 1회 보장 — 메모리(빠름) + 시트 영구기록 YTPUB(재시작에도 생존) 둘 다로 판정
+  const doneToday = lastAutoYmd === ymd || YTPUB.some((x) => x.auto && ymdOf(x.ts) === ymd);
+  if (!force) { if (hour < YT_AUTO_HOUR) return { skip: `발행시각 전(${hour}시<${YT_AUTO_HOUR}시)` }; if (doneToday) return { skip: '오늘 이미 발행함' }; }
   autoBusy = true; lastAutoYmd = ymd;     // 중복발사 방지: await 전에 날짜 선점
   try {
     const doneIds = new Set(YTPUB.map((x) => x.contentId));
@@ -1988,6 +1991,7 @@ async function runYoutubeAutoPublish(force) {
 //   ?force=1 = 시간 무시 강제발행 → 남용 방지 위해 cron key 필요(진단·검증 전용).
 app.get('/youtube/wake', async (req, res) => {
   const force = !!req.query.force;
+  try { CRONLOG.push({ ts: new Date().toISOString(), ua: (req.get('user-agent') || '').slice(0, 100), ip: (req.get('x-forwarded-for') || req.ip || '').slice(0, 60), path: 'wake', force }); if (CRONLOG.length > 30) CRONLOG.shift(); } catch (e) {}
   if (force && !cronAuthed(req)) return res.status(401).json({ error: 'force 발행은 cron key 필요' });
   const r = await runYoutubeAutoPublish(force);
   res.json({ woke: true, kst: kstNow(), autoHour: YT_AUTO_HOUR, ...r });
