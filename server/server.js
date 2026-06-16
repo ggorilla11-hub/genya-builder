@@ -1693,7 +1693,8 @@ function saveSched() { saveJson('배포.json', SCHED); schedChain = schedChain.c
 // 서버 시작 시: 시트에서 배포예약 복원 (재시작으로 로컬이 비어도 시트가 살린다)
 (async () => { const sheets = sheetsClient(); if (!sheets || !RESV_SHEET_ID) return; try { const got = await sheets.spreadsheets.values.get({ spreadsheetId: RESV_SHEET_ID, range: `'${SCHED_TAB}'!A1:B1` }); const row = (got.data.values || [])[0]; if (row && row[0] === 'sched' && row[1]) { const arr = JSON.parse(row[1]); if (Array.isArray(arr)) { SCHED = arr.filter((s) => s && s.contentId); saveJson('배포.json', SCHED); console.log(`📅 배포예약 시트 복원: ${SCHED.length}건`); } } } catch (e) {} })();
 function schedFor(kind) { return SCHED.filter((s) => s.campaignId === ACTIVE_ID && s.kind === kind); }
-const DEPLOY_CHANNELS = (process.env.DEPLOY_CHANNELS || 'instagram,facebook,youtube,tiktok').split(',').map((s) => s.trim());
+// 유튜브는 우리 직접발행(runYoutubeAutoPublish)이 전담 → Upload-Post 기본채널에서 youtube 제거(중복방지)
+const DEPLOY_CHANNELS = (process.env.DEPLOY_CHANNELS || 'instagram,facebook,tiktok').split(',').map((s) => s.trim()).filter((s) => s !== 'youtube');
 // 하루 발송 개수·시간: POST_PER_DAY(1/2…) + POST_HOURS_KST("10,18"). 1개면 POST_HOUR_KST/기본10시.
 const POST_PER_DAY = Math.max(1, Number(process.env.POST_PER_DAY || 1));
 const POST_HOURS = (process.env.POST_HOURS_KST || (POST_PER_DAY >= 2 ? '10,18' : String(process.env.POST_HOUR_KST || 10))).split(',').map((s) => Number(s.trim())).filter((n) => !isNaN(n));
@@ -1952,6 +1953,28 @@ app.post('/youtube/publish-next', async (req, res) => {
 });
 // 대표 확인용 — 무인발행이 실제 올린 영상 목록(실제 URL + 본채널 O/X)
 app.get('/youtube/published', (req, res) => res.json({ count: YTPUB.length, items: YTPUB.slice().reverse() }));
+// 충돌 정리 — 기존 Upload-Post 쇼츠 예약에서 youtube만 제거(취소 후 insta/fb 재예약). 유튜브=직접발행 전담.
+app.post('/content/shorts/drop-youtube', async (req, res) => {
+  if (!cronAuthed(req)) return res.status(401).json({ error: 'cron key 필요' });
+  if (!posterReady()) return res.status(400).json({ error: 'Upload-Post 미연결' });
+  const c = CAMPAIGN || {};
+  const newChannels = (DEPLOY_CHANNELS || ['instagram', 'facebook']).filter((x) => x !== 'youtube');
+  const targets = SCHED.filter((s) => s.kind === '쇼츠' && Array.isArray(s.channels) && s.channels.includes('youtube'));
+  const results = [];
+  for (const s of targets) {
+    let cancelled = false, reposted = 'past';
+    if (s.job) { const cc = await cancelUploadPostJob(s.job); cancelled = !!cc.ok; }
+    if (new Date(s.scheduledAt).getTime() > Date.now() + 60000) {
+      const rp = await postOneToUploadPost({ channels: newChannels, mediaUrl: s.link, scheduledAt: s.scheduledAt, contentId: s.contentId, name: s.name }, c);
+      reposted = rp.ok ? 'ok' : ('fail:' + rp.status); if (rp.ok) s.job = rp.job;
+    }
+    s.channels = newChannels;
+    results.push({ name: s.name, scheduledAt: s.scheduledAt, cancelled, reposted, channels: newChannels });
+    await new Promise((rs) => setTimeout(rs, 400));
+  }
+  saveSched();
+  res.json({ ok: true, count: targets.length, newChannels, results });
+});
 // 진단용 — 발행창구에 도달한 호출 기록(클라우드 트리거 도달 여부 격리). 키 불필요(읽기전용)
 app.get('/youtube/cron-log', (req, res) => res.json({ count: CRONLOG.length, hits: CRONLOG.slice().reverse() }));
 
