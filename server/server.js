@@ -2032,6 +2032,106 @@ app.get('/youtube/auto-status', (req, res) => {
     queueRemaining: queue.length, alreadyPublished: YTPUB.length });
 });
 
+// ============================================================
+// 🔴 인스타그램 직접 발행 (Instagram Graph API — Upload-Post 대체, 유튜브와 동일 방식)
+//   인증: 페이스북 로그인 OAuth → 장기 페이지토큰(비만료) + IG 비즈니스 계정ID, 시트 영구보관.
+//   Reels(쇼츠) + 캐러셀(카드뉴스) 직접 게시 + 실측 검증(permalink 재조회).
+//   조건: oh_want=프로페셔널(비즈니스/크리에이터) + 페북 페이지 연결 + 메타 앱(대표 admin).
+// ============================================================
+const IG_API_VER = process.env.IG_API_VER || 'v21.0';
+const IG_GRAPH = `https://graph.facebook.com/${IG_API_VER}`;
+const IG_REDIRECT_URI = process.env.IG_REDIRECT_URI || 'https://jenya.onrender.com/instagram/oauth2callback';
+const IG_TOKEN_TAB = process.env.IG_TOKEN_TAB || '제니야_인스타토큰';
+const IG_SCOPES = 'instagram_basic,instagram_content_publish,pages_show_list,pages_read_engagement,business_management';
+let IG_ACCESS_TOKEN = process.env.IG_ACCESS_TOKEN || '';
+let IG_USER_ID = process.env.IG_USER_ID || '';
+function igConfigured() { return !!(process.env.IG_APP_ID && process.env.IG_APP_SECRET); }
+function instagramReady() { return !!(IG_ACCESS_TOKEN && IG_USER_ID); }
+async function saveIgToSheet() {
+  const sheets = sheetsClient(); if (!sheets || !RESV_SHEET_ID) return;
+  const meta = await sheets.spreadsheets.get({ spreadsheetId: RESV_SHEET_ID, fields: 'sheets.properties.title' });
+  if (!meta.data.sheets.some((s) => s.properties.title === IG_TOKEN_TAB)) {
+    await sheets.spreadsheets.batchUpdate({ spreadsheetId: RESV_SHEET_ID, requestBody: { requests: [{ addSheet: { properties: { title: IG_TOKEN_TAB } } }] } });
+  }
+  await sheets.spreadsheets.values.update({ spreadsheetId: RESV_SHEET_ID, range: `'${IG_TOKEN_TAB}'!A1`, valueInputOption: 'RAW', requestBody: { values: [['ig_user_id', IG_USER_ID], ['access_token', IG_ACCESS_TOKEN]] } });
+}
+(async () => { if (IG_ACCESS_TOKEN && IG_USER_ID) return; const sheets = sheetsClient(); if (!sheets || !RESV_SHEET_ID) return; try { const got = await sheets.spreadsheets.values.get({ spreadsheetId: RESV_SHEET_ID, range: `'${IG_TOKEN_TAB}'!A1:B2` }); for (const r of (got.data.values || [])) { if (r[0] === 'ig_user_id' && r[1]) IG_USER_ID = r[1]; if (r[0] === 'access_token' && r[1]) IG_ACCESS_TOKEN = r[1]; } if (instagramReady()) console.log('▶️ 인스타 토큰 시트 복원 완료'); } catch (e) {} })();
+// 1회 인증 시작 — 폰/PC에서 이 주소 → 페북 로그인·동의 → 자동 저장
+app.get('/instagram/auth', (req, res) => {
+  if (!igConfigured()) return res.status(400).send('먼저 Render 환경변수에 IG_APP_ID·IG_APP_SECRET를 넣어 주세요.');
+  res.redirect(`https://www.facebook.com/${IG_API_VER}/dialog/oauth?client_id=${process.env.IG_APP_ID}&redirect_uri=${encodeURIComponent(IG_REDIRECT_URI)}&scope=${encodeURIComponent(IG_SCOPES)}&response_type=code`);
+});
+app.get('/instagram/oauth2callback', async (req, res) => {
+  try {
+    if (!igConfigured()) return res.status(400).send('앱 미설정');
+    if (!req.query.code) return res.status(400).send('인증 코드 없음. /instagram/auth 부터 다시.');
+    let r = await fetch(`${IG_GRAPH}/oauth/access_token?client_id=${process.env.IG_APP_ID}&client_secret=${process.env.IG_APP_SECRET}&redirect_uri=${encodeURIComponent(IG_REDIRECT_URI)}&code=${encodeURIComponent(req.query.code)}`);
+    let j = await r.json(); if (!j.access_token) return res.status(500).send('토큰 교환 실패: ' + JSON.stringify(j));
+    r = await fetch(`${IG_GRAPH}/oauth/access_token?grant_type=fb_exchange_token&client_id=${process.env.IG_APP_ID}&client_secret=${process.env.IG_APP_SECRET}&fb_exchange_token=${j.access_token}`);
+    j = await r.json(); const llTok = j.access_token;
+    r = await fetch(`${IG_GRAPH}/me/accounts?fields=name,access_token,instagram_business_account{id,username}&access_token=${llTok}`);
+    j = await r.json(); const pages = j.data || [];
+    const withIg = pages.find((p) => p.instagram_business_account && p.instagram_business_account.id);
+    if (!withIg) return res.send(`<meta charset=utf8><body style="font-family:sans-serif;padding:24px;line-height:1.7"><h2>🔴 인스타 비즈니스 계정이 연결된 페이지가 없습니다.</h2><p>oh_want 인스타를 <b>프로페셔널(비즈니스/크리에이터)</b>로 전환하고 <b>페이스북 페이지에 연결</b>한 뒤 다시 시도하세요.</p><p>찾은 페이지: ${pages.map((p) => p.name).join(', ') || '없음'}</p></body>`);
+    IG_USER_ID = withIg.instagram_business_account.id; IG_ACCESS_TOKEN = withIg.access_token;
+    await saveIgToSheet().catch((e) => console.warn('⚠️ 인스타 토큰 저장 실패:', e.message));
+    res.send(`<meta charset=utf8><body style="font-family:sans-serif;padding:24px;line-height:1.7"><h2>✅ 인스타그램 직접발행 연결 완료</h2><p>페이지: <b>${withIg.name}</b><br>인스타: <b>@${withIg.instagram_business_account.username || ''}</b> (id ${IG_USER_ID})</p><p style="font-size:18px">이 인스타가 <b>oh_want</b>가 맞으면 끝입니다.</p></body>`);
+  } catch (e) { res.status(500).send('인증 실패: ' + e.message); }
+});
+app.get('/instagram/status', async (req, res) => {
+  if (!instagramReady()) return res.json({ ready: false, hasApp: igConfigured(), hasToken: !!IG_ACCESS_TOKEN, hasUserId: !!IG_USER_ID, note: 'IG_APP_ID·SECRET 설정 후 /instagram/auth 동의 필요' });
+  try { const r = await fetch(`${IG_GRAPH}/${IG_USER_ID}?fields=username,name,followers_count,media_count&access_token=${IG_ACCESS_TOKEN}`); const j = await r.json(); res.json({ ready: true, igUserId: IG_USER_ID, ...j }); } catch (e) { res.status(502).json({ ready: true, error: e.message }); }
+});
+// Reels(쇼츠) 1건 직접 게시 (공개 mp4 URL)
+async function postReelToInstagram(videoUrl, caption) {
+  if (!instagramReady()) throw new Error('인스타 미연결');
+  let r = await fetch(`${IG_GRAPH}/${IG_USER_ID}/media?media_type=REELS&video_url=${encodeURIComponent(videoUrl)}&caption=${encodeURIComponent(caption || '')}&access_token=${IG_ACCESS_TOKEN}`, { method: 'POST' });
+  let j = await r.json(); if (!j.id) throw new Error('컨테이너 생성 실패: ' + JSON.stringify(j));
+  const creationId = j.id;
+  let fin = false;
+  for (let i = 0; i < 30; i++) {
+    await new Promise((s) => setTimeout(s, 4000));
+    const sj = await (await fetch(`${IG_GRAPH}/${creationId}?fields=status_code&access_token=${IG_ACCESS_TOKEN}`)).json();
+    if (sj.status_code === 'FINISHED') { fin = true; break; }
+    if (sj.status_code === 'ERROR') throw new Error('인코딩 실패: ' + JSON.stringify(sj));
+  }
+  if (!fin) throw new Error('인코딩 시간초과(2분)');
+  r = await fetch(`${IG_GRAPH}/${IG_USER_ID}/media_publish?creation_id=${creationId}&access_token=${IG_ACCESS_TOKEN}`, { method: 'POST' });
+  j = await r.json(); if (!j.id) throw new Error('게시 실패: ' + JSON.stringify(j));
+  return { ok: true, mediaId: j.id };
+}
+// 캐러셀(카드뉴스, 이미지 2~10장) 1건 직접 게시
+async function postCarouselToInstagram(imageUrls, caption) {
+  if (!instagramReady()) throw new Error('인스타 미연결');
+  const childIds = [];
+  for (const u of (imageUrls || []).slice(0, 10)) {
+    const cj = await (await fetch(`${IG_GRAPH}/${IG_USER_ID}/media?is_carousel_item=true&image_url=${encodeURIComponent(u)}&access_token=${IG_ACCESS_TOKEN}`, { method: 'POST' })).json();
+    if (!cj.id) throw new Error('자식 이미지 생성 실패: ' + JSON.stringify(cj)); childIds.push(cj.id);
+  }
+  let j = await (await fetch(`${IG_GRAPH}/${IG_USER_ID}/media?media_type=CAROUSEL&children=${childIds.join(',')}&caption=${encodeURIComponent(caption || '')}&access_token=${IG_ACCESS_TOKEN}`, { method: 'POST' })).json();
+  if (!j.id) throw new Error('캐러셀 컨테이너 실패: ' + JSON.stringify(j));
+  j = await (await fetch(`${IG_GRAPH}/${IG_USER_ID}/media_publish?creation_id=${j.id}&access_token=${IG_ACCESS_TOKEN}`, { method: 'POST' })).json();
+  if (!j.id) throw new Error('캐러셀 게시 실패: ' + JSON.stringify(j));
+  return { ok: true, mediaId: j.id };
+}
+// 검증: 게시된 media를 API로 재조회(permalink·존재·소유). success 깃발 불신.
+async function verifyInstagramMedia(mediaId) {
+  try { const j = await (await fetch(`${IG_GRAPH}/${mediaId}?fields=id,permalink,media_type,timestamp,owner&access_token=${IG_ACCESS_TOKEN}`)).json(); if (!j.id) return { exists: false, raw: j }; return { exists: true, mediaId: j.id, permalink: j.permalink, mediaType: j.media_type, ownerOk: !j.owner || j.owner.id === IG_USER_ID }; } catch (e) { return { exists: false, error: e.message }; }
+}
+// 🔬 검증용: 쇼츠 1개를 인스타 Reels로 직접 게시 → permalink + 실측 검증
+app.post('/instagram/test-publish', async (req, res) => {
+  if (!instagramReady()) return res.status(400).json({ error: '인스타 미연결. /instagram/auth 동의 필요.' });
+  try {
+    const b = req.body || {};
+    const item = b.contentId ? myContents().find((x) => x.id === b.contentId) : myContents().find((x) => x.type === '쇼츠' && x.link);
+    if (!item) return res.status(400).json({ error: '게시할 쇼츠가 없습니다.' });
+    const out = await postReelToInstagram(item.link, shortsCaption(CAMPAIGN || {}));
+    await new Promise((s) => setTimeout(s, 3000));
+    const verify = await verifyInstagramMedia(out.mediaId);
+    res.json({ ok: true, mediaId: out.mediaId, verify, 결론: verify.exists ? '🟢 인스타 직접게시 + permalink 확인' : '🔴 게시 확인 실패' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // 배포 계획 + 예약 현황 (현황 = 이미 예약된 것 / 새 예약분 = 미예약 쇼츠)
 app.get('/content/plan', (req, res) => {
   const kind = req.query.kind || '쇼츠';
