@@ -1,0 +1,16 @@
+name: (임시) GitHub 예약 발사 실측 탐침
+# GitHub의 schedule 트리거가 이 repo에서 정시에 실제로 도는지 측정용(검증 후 삭제).
+# 17:00/17:05/17:10 UTC = 02:00/02:05/02:10 KST 에 /youtube/wake 를 친다 → cron-log에 시각이 찍힌다.
+on:
+  schedule:
+    - cron: '0 17 * * *'
+    - cron: '5 17 * * *'
+    - cron: '10 17 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 탐침 깨우기
+        run: curl -sS 'https://jenya.onrender.com/youtube/wake?probe=sched' --max-time 120 || true
