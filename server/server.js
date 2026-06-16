@@ -2082,6 +2082,21 @@ app.get('/instagram/status', async (req, res) => {
   if (!instagramReady()) return res.json({ ready: false, hasApp: igConfigured(), hasToken: !!IG_ACCESS_TOKEN, hasUserId: !!IG_USER_ID, note: 'IG_APP_ID·SECRET 설정 후 /instagram/auth 동의 필요' });
   try { const r = await fetch(`${IG_GRAPH}/${IG_USER_ID}?fields=username,name,followers_count,media_count&access_token=${IG_ACCESS_TOKEN}`); const j = await r.json(); res.json({ ready: true, igUserId: IG_USER_ID, ...j }); } catch (e) { res.status(502).json({ ready: true, error: e.message }); }
 });
+// ★ 가장 단순·확실 연결: 만료 없는 'System User 토큰' 1개를 붙여넣으면 끝(OAuth·리디렉션 설정 불필요).
+//   서버가 페이지→인스타 비즈니스 계정ID를 자동으로 찾아 저장. 토큰 만료 없음 = 9시 발행 영구 안정.
+app.get('/instagram/connect', async (req, res) => {
+  const tok = String(req.query.token || '').trim();
+  if (!tok) return res.status(400).send('?token= 뒤에 System User 토큰을 붙여 주세요. 예: /instagram/connect?token=EAAB...');
+  try {
+    const j = await (await fetch(`${IG_GRAPH}/me/accounts?fields=name,instagram_business_account{id,username}&access_token=${encodeURIComponent(tok)}`)).json();
+    if (j.error) return res.status(400).send('토큰 오류: ' + JSON.stringify(j.error));
+    const withIg = (j.data || []).find((p) => p.instagram_business_account && p.instagram_business_account.id);
+    if (!withIg) return res.send(`<meta charset=utf8><body style="font-family:sans-serif;padding:24px"><h2>🔴 인스타 비즈니스 계정이 연결된 페이지를 못 찾음</h2><p>이 토큰으로 보이는 페이지: ${(j.data || []).map((p) => p.name).join(', ') || '없음'}</p><p>System User에 <b>금융집짓기 페이지</b> 자산이 할당됐는지, 토큰 권한에 <b>instagram_basic·instagram_content_publish·pages_show_list</b>가 있는지 확인하세요.</p></body>`);
+    IG_USER_ID = String(withIg.instagram_business_account.id); IG_ACCESS_TOKEN = tok;
+    await saveIgToSheet().catch((e) => console.warn('⚠️ 인스타 토큰 저장 실패:', e.message));
+    res.send(`<meta charset=utf8><body style="font-family:sans-serif;padding:24px;line-height:1.7"><h2>✅ 인스타 연결 완료 (만료 없는 토큰)</h2><p>인스타: <b>@${withIg.instagram_business_account.username || ''}</b> (id ${IG_USER_ID})<br>페이지: <b>${withIg.name}</b></p><p style="font-size:18px">이 인스타가 <b>oh_want</b>면 끝. 60일 만료 걱정 없습니다.</p></body>`);
+  } catch (e) { res.status(500).send('연결 실패: ' + e.message); }
+});
 // Reels(쇼츠) 1건 직접 게시 (공개 mp4 URL)
 async function postReelToInstagram(videoUrl, caption) {
   if (!instagramReady()) throw new Error('인스타 미연결');
