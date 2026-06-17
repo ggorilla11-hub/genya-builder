@@ -2257,6 +2257,36 @@ app.get('/orchestrator/plan', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── PHASE 1-3: 발견·분류 서브에이전트 dispatch (수집·분류·명단·기록만 / 발송·발행 0) ──────────
+//   제니야 plan의 "발견·분류" 제안을 실제 실행으로 잇는 첫 다리. 기존 리드 수집·분류 함수만 호출.
+//   ★발송·댓글·DM·발행·결제 절대 0. 발행 함수·60초 스케줄러·발행대장(YTPUB/IGPUB) 무관·쓰기 0.
+//   기존 open 수집창구(/leads·/ytleads collect)와 동일하게 열림 + 동시실행 방지·60초 쿨다운(레이트리밋).
+//   부팅 시 실행코드 없음(핸들러 try/catch) → 부팅 crash 0.
+let _leadsBusy = false; let _leadsLast = 0;
+app.post('/orchestrator/dispatch/leads', async (req, res) => {
+  try {
+    if (_leadsBusy) return res.status(429).json({ error: '발견·분류 진행 중' });
+    if (Date.now() - _leadsLast < 60000) return res.status(429).json({ error: '쿨다운(60초) — 잠시 후 다시' });
+    _leadsBusy = true;
+    const ytBefore = YTLEADS.length, leadBefore = Array.isArray(LEADS) ? LEADS.length : 0;
+    // 서브에이전트 실행 = 읽기(유튜브 댓글·검색·네이버)+LLM분류+명단기록만. 발송/발행 호출 없음.
+    const yt = await runYtLeadCollect({}).catch((e) => ({ error: e.message }));
+    const naver = await runLeadCollect().catch((e) => ({ error: e.message }));
+    const ytAfter = YTLEADS.length, leadAfter = Array.isArray(LEADS) ? LEADS.length : 0;
+    const summary = {
+      youtube: { added: (yt && yt.added) || 0, hot: (yt && yt.hot) || 0, candidates: (yt && yt.candidates) || 0, total: ytAfter, error: (yt && yt.error) || null },
+      naver: { added: (naver && naver.added) || 0, total: leadAfter, error: (naver && naver.error) || null },
+      delta: { youtubeLeads: ytAfter - ytBefore, interest: leadAfter - leadBefore },
+    };
+    // 영업일기 1줄(구글시트 영속, PHASE 1-2) — 오케스트레이터가 다음 plan에서 관측
+    const line = `[발견·분류 서브에이전트] 유튜브 +${summary.youtube.added}명(🔥${summary.youtube.hot}, 후보 ${summary.youtube.candidates}) / 네이버·검색 관심자 +${summary.naver.added}명. 누적 유튜브 ${ytAfter}·관심자 ${leadAfter}`;
+    try { appendDiary({ ts: new Date().toISOString(), agentId: 'lead', agentName: (AGENT_DOCS.lead && AGENT_DOCS.lead.name) || '고객발굴', project: (CAMPAIGN && CAMPAIGN.title) || '일반', kind: 'agent', entry: line }); } catch (e) {}
+    _leadsLast = Date.now();
+    res.json({ ok: true, dispatched: 'leads', note: '수집·분류·명단·기록만 (발송·발행 0)', summary, logged: line });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+  finally { _leadsBusy = false; }
+});
+
 // 강제 발행(검증용·키필요) — 시간 무시 1건
 app.post('/instagram/auto-run', async (req, res) => { if (!cronAuthed(req)) return res.status(401).json({ error: 'cron key 필요' }); const kind = (req.query.kind === 'carousel') ? 'carousel' : 'reel'; res.json(await runInstagramAuto(kind, true)); });
 app.get('/instagram/published', (req, res) => res.json({ count: IGPUB.length, items: IGPUB.slice().reverse() }));
