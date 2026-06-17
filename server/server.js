@@ -3303,6 +3303,38 @@ async function autoLeadsTimer() {
 }
 setInterval(() => { autoLeadsTimer().catch(() => {}); }, ORCH_TIMER_MIN * 60 * 1000);   // ★ 발행 60초 루프와 별개 타이머(off 기본)
 
+// ── AI 손 부팅 실측 (Render에서 헤드리스 크롬이 실제 뜨나) — 일회성 진단, 읽기전용, 발행 무관 ──
+//   playwright를 lazy require(부팅 무영향). 크롬 launch 시도 → 실패 시 런타임 설치 후 재시도 → 정확한 결과 보고.
+//   발송·게시·로그인 0(중립 example.com만). 발행 함수·60초 스케줄러 무접촉.
+let _aihandBusy = false;
+app.get('/aihand/boot-test', async (req, res) => {
+  if (_aihandBusy) return res.status(429).json({ error: '진행중' });
+  _aihandBusy = true;
+  const out = { ok: false, step: 'start' };
+  try {
+    let chromium;
+    try { ({ chromium } = require('playwright')); out.step = 'require-ok'; }
+    catch (e) { out.error = 'require 실패: ' + String(e.message).slice(0, 300); return res.json(out); }
+    let browser;
+    try { browser = await chromium.launch({ headless: true }); out.step = 'launch-ok'; }
+    catch (e1) {
+      out.launch1 = String(e1.message).slice(0, 400);
+      try { require('child_process').execSync('npx playwright install chromium', { timeout: 180000, stdio: 'pipe' }); out.runtimeInstall = 'tried'; }
+      catch (e2) { out.installError = String(e2.message).slice(0, 250); }
+      try { browser = await chromium.launch({ headless: true }); out.step = 'launch-ok-after-install'; }
+      catch (e3) { out.step = 'launch-fail'; out.error = String(e3.message).slice(0, 500); return res.json(out); }
+    }
+    const page = await browser.newPage();
+    await page.goto('https://example.com', { timeout: 20000 });
+    out.title = await page.title();
+    out.browserVersion = browser.version();
+    await browser.close();
+    out.ok = true; out.step = 'done';
+    res.json(out);
+  } catch (e) { out.error = String(e.message).slice(0, 500); res.json(out); }
+  finally { _aihandBusy = false; }
+});
+
 // 외부 크론(cron-job.org 등)이 아침에 깨우며 호출할 수 있는 입구 — 호출만으로 밀린 예약 발송
 app.get('/promo/tick', async (req, res) => { res.json(await runDuePromo()); });
 
