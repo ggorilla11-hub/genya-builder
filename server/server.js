@@ -3275,6 +3275,34 @@ async function runDuePromo() {
   return { ran: true, sent };
 }
 setInterval(() => { runDuePromo().catch(() => {}); runDuePayments().catch(() => {}); runYoutubeAutoPublish(false).catch(() => {}); runInstagramAuto('reel', false).catch(() => {}); runInstagramAuto('carousel', false).catch(() => {}); }, 60 * 1000);
+
+// ── PHASE 2-1: 무인 심장 — 별도 타이머가 발견·분류 tick을 정기 자동 호출 (off 기본) ──────────
+//   ★ 위 60초 발행 setInterval과 *완전히 별개*의 타이머. 그 줄은 한 글자도 안 건드림.
+//   ORCH_AUTO=on 일 때만 작동(off=완전 no-op). 게이트(6h 쿨다운·busy)·allowlist=['leads'] 그대로 적용 → 발송·발행 자동 절대 불가.
+//   발행 함수·발행대장 무접촉. 독립 try/catch(예외가 발행에 전파 0).
+const ORCH_TIMER_MIN = Math.max(5, Number(process.env.ORCH_TIMER_MIN || 30));   // 폴링 주기(분), 기본 30
+async function autoLeadsTimer() {
+  if (String(process.env.ORCH_AUTO || 'off').toLowerCase() !== 'on') return;     // ★안전스위치: off면 아무것도 안 함(no-op)
+  if (!AUTO_DISPATCHABLE.includes('leads')) return;                              // allowlist — 발송·발행은 자동 불가
+  if (_leadsBusy) return;                                                        // 중복실행 방지
+  const cooldownH = Math.max(1, Number(process.env.ORCH_LEADS_COOLDOWN_H || 6));
+  const lastTs = lastLeadsDispatchTs();
+  const sinceH = lastTs ? (Date.now() - new Date(lastTs).getTime()) / 3600000 : 9999;
+  if (sinceH < cooldownH) return;                                                // 6h 쿨다운 미경과 → skip
+  _leadsBusy = true;
+  try {
+    const yt = await runYtLeadCollect({}).catch((e) => ({ error: e.message }));
+    const naver = await runLeadCollect().catch((e) => ({ error: e.message }));
+    const ytAfter = YTLEADS.length, leadAfter = Array.isArray(LEADS) ? LEADS.length : 0;
+    const logged = `[발견·분류 무인타이머] 유튜브 +${(yt && yt.added) || 0}명(🔥${(yt && yt.hot) || 0}) / 관심자 +${(naver && naver.added) || 0}명. 누적 유튜브 ${ytAfter}·관심자 ${leadAfter} (쿨다운 ${Math.round(sinceH)}/${cooldownH}h)`;
+    try { appendDiary({ ts: new Date().toISOString(), agentId: 'lead', agentName: (AGENT_DOCS.lead && AGENT_DOCS.lead.name) || '고객발굴', project: (CAMPAIGN && CAMPAIGN.title) || '일반', kind: 'agent', entry: logged }); } catch (e) {}
+    _leadsLast = Date.now();
+    console.log('🫀 무인 발견·분류 타이머 실행:', logged);
+  } catch (e) { console.warn('⚠️ 무인 타이머 오류:', e.message); }
+  finally { _leadsBusy = false; }
+}
+setInterval(() => { autoLeadsTimer().catch(() => {}); }, ORCH_TIMER_MIN * 60 * 1000);   // ★ 발행 60초 루프와 별개 타이머(off 기본)
+
 // 외부 크론(cron-job.org 등)이 아침에 깨우며 호출할 수 있는 입구 — 호출만으로 밀린 예약 발송
 app.get('/promo/tick', async (req, res) => { res.json(await runDuePromo()); });
 
