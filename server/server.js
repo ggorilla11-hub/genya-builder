@@ -297,8 +297,7 @@ app.post('/chat', async (req, res) => {
     let system;
     let isBriefing = false;   // 제니야는 더 이상 정기보고(디스코드)를 하지 않는다
     if (!agentId || agentId === 'zenya') {
-      const [pub, conn] = await Promise.all([publishStatusText(), channelStatusText()]);
-      system = buildZenyaPrompt(project) + '\n\n' + conn + '\n\n' + pub + '\n\n' + youtubeCheckText() + '\n\n' + engagementText();
+      system = buildZenyaPrompt(project);
       if (voice) system += VOICE_RULES;   // 음성이면 더 짧게
     } else {
       system = withLiveStatus(buildSystemPrompt(agentId, project), agentId);
@@ -545,60 +544,9 @@ const ZENYA_RULES = [
   '대표님이 가족과 저녁 먹는 시간을 되찾는 것. 모든 일의 최종 목적.',
 ].join('\n');
 
-// 발행 이력 전체 수집(페이지네이션) — 기본 limit이 작아 유튜브 행이 잘리는 문제 해결.
-//   limit=50 시도 후 거부되면 기본값으로 폴백, 페이지를 넘기며 모은다.
-async function fetchAllHistory(maxItems) {
-  maxItems = maxItems || 120;
-  const all = []; let perPage = 50;
-  for (let page = 1; page <= 12 && all.length < maxItems; page++) {
-    let rows = null;
-    try {
-      let r = await fetch(`https://api.upload-post.com/api/uploadposts/history?limit=${perPage}&page=${page}`, { headers: { Authorization: `Apikey ${process.env.UPLOADPOST_API_KEY}` }, signal: AbortSignal.timeout(8000) });
-      if (!r.ok && page === 1) { perPage = 10; r = await fetch(`https://api.upload-post.com/api/uploadposts/history?page=${page}`, { headers: { Authorization: `Apikey ${process.env.UPLOADPOST_API_KEY}` }, signal: AbortSignal.timeout(8000) }); }
-      if (r.ok) { const d = await r.json().catch(() => null); rows = (d && Array.isArray(d.history)) ? d.history : []; }
-    } catch (e) {}
-    if (!rows || !rows.length) break;
-    all.push(...rows);
-    if (rows.length < perPage) break;   // 마지막 페이지
-  }
-  return all;
-}
+// (외부 발행이력 수집 제거됨 — 발행은 유튜브·인스타 직접발행으로 전환, 대장은 YTPUB/IGPUB)
 
-// 외부 발행 결과: Upload-Post 실제 게시 이력(/content/jobs)을 요약해 두뇌에 넣는다 (30초 캐시).
-let _pubCache = { ts: 0, text: '' };
-async function publishStatusText() {
-  if (!posterReady()) return '';
-  if (Date.now() - _pubCache.ts < 30000 && _pubCache.text) return _pubCache.text;
-  let out = '';
-  try {
-    const hist = await fetchAllHistory(120);
-    if (hist.length) {
-      const chKor = { instagram: '인스타', facebook: '페북', youtube: '유튜브', tiktok: '틱톡' };
-      const g = {};
-      hist.forEach((h) => {
-        const day = String(h.upload_timestamp || '').slice(0, 10); if (!day) return;
-        const kind = h.media_type === 'photo' ? '카드뉴스' : '쇼츠';
-        const gk = day + '|' + kind; g[gk] = g[gk] || {};
-        const ch = chKor[h.platform] || h.platform;
-        const c = (g[gk][ch] = g[gk][ch] || { ok: 0, fail: 0, err: '' });
-        if (h.success) c.ok++; else { c.fail++; if (!c.err && h.error_message) c.err = String(h.error_message).split('.')[0].slice(0, 40); }
-      });
-      const keys = Object.keys(g).sort().reverse().slice(0, 6);
-      const lines = keys.map((k) => {
-        const [day, kind] = k.split('|');
-        const parts = Object.keys(g[k]).map((ch) => { const c = g[k][ch];
-          if (c.ok && !c.fail) return `${ch} ${c.ok}성공`;
-          if (!c.ok && c.fail) return `${ch} ${c.fail}실패(${c.err || '원인미상'})`;
-          return `${ch} ${c.ok}성공·${c.fail}실패`; });
-        return `· ${day.slice(5)} ${kind}: ${parts.join(' / ')}`;
-      });
-      if (lines.length) out = '=== 외부 발행 결과 (Upload-Post 실제 SNS 게시 이력 — "진짜 나갔나?"는 오직 이것만 근거) ===\n'
-        + lines.join('\n') + '\n(이력에 안 보이는 채널은 "아직 게시 이력 없음"이라 답하라. 내부 예약과 실제 발행은 다르다.)';
-    }
-  } catch (e) {}
-  _pubCache = { ts: Date.now(), text: out };
-  return out;
-}
+// (외부 발행결과 두뇌주입 제거됨 — 발행 실측은 YTPUB/IGPUB 대장 + 직접발행 검증으로 대체)
 
 // 페북 파일명 안전성: 짧은 아스키 파일명이면 페북 통과(어제 실패 원인=긴 한글 파일명)
 function fbNameSafe(link) {
@@ -608,30 +556,7 @@ function fbNameSafe(link) {
   return base.length <= 40 && /^[\x00-\x7F]+$/.test(base);
 }
 
-// SNS 채널 연결 상태 — "게시 이력 0건"과 "연결 안 됨"을 모델이 혼동하지 않게. (5분 캐시)
-let _connCache = { ts: 0, text: '' };
-async function channelStatusText() {
-  if (!posterReady()) return '';
-  if (Date.now() - _connCache.ts < 300000 && _connCache.text) return _connCache.text;
-  let out = '';
-  try {
-    const r = await fetch('https://api.upload-post.com/api/uploadposts/users', { headers: { Authorization: `Apikey ${process.env.UPLOADPOST_API_KEY}` }, signal: AbortSignal.timeout(6000) });
-    if (r.ok) {
-      const data = await r.json().catch(() => ({}));
-      const prof = (data.profiles || []).find((p) => p.username === process.env.UPLOADPOST_USER) || (data.profiles || [])[0];
-      if (prof) {
-        const sa = prof.social_accounts || {}; const chKor = { instagram: '인스타', facebook: '페북', youtube: '유튜브', tiktok: '틱톡' };
-        const on = [], off = [];
-        ['instagram', 'facebook', 'youtube', 'tiktok'].forEach((k) => { const v = sa[k]; const conn = !!(v && (typeof v === 'object' ? Object.keys(v).length : String(v).length)); (conn ? on : off).push(chKor[k]); });
-        out = '=== SNS 채널 연결 상태 (발행 도구 Upload-Post) ===\n'
-          + `· 연결됨: ${on.join('·') || '없음'}  /  미연결: ${off.join('·') || '없음'}\n`
-          + '(연결된 채널은 예약 큐에 들어 있으면 발행된다. "게시 이력이 없다"와 "연결이 안 됐다"는 전혀 다른 말이니 혼동하지 말 것. 연결돼 있고 큐에 있으면 "나갈 예정"이라 답하라.)';
-      }
-    }
-  } catch (e) {}
-  _connCache = { ts: Date.now(), text: out };
-  return out;
-}
+// (SNS 채널 연결상태 두뇌주입 제거됨 — 인스타=IG Graph 직접발행, 유튜브=YouTube API 직접발행)
 
 // 제니야(비서실장) 두뇌 — 텍스트·음성 공용. 디스코드 본사 맥락 없이 콘텐츠 공장 캐비닛만.
 function buildZenyaPrompt(project) {
@@ -713,8 +638,7 @@ app.post(['/vapi', '/vapi/chat/completions', '/vapi/chat/completions/chat/comple
       system = buildAllVoicePrompt(project);
     } else if (agentId === 'zenya') {
       // ★ 음성 제니야 = 비서실장(콘텐츠 공장 두뇌). 본사 총괄·영업일기 없음 + 외부 발행결과 + 채널 연결상태 + 반응 분석.
-      const [pub, conn] = await Promise.all([publishStatusText(), channelStatusText()]);
-      system = buildZenyaPrompt(project) + '\n\n' + conn + '\n\n' + pub + '\n\n' + youtubeCheckText() + '\n\n' + engagementText() + VOICE_RULES;
+      system = buildZenyaPrompt(project) + VOICE_RULES;
     } else {
       system = withLiveStatus(buildSystemPrompt(agentId, project), agentId) + VOICE_RULES;
       if (switched) {
@@ -1693,9 +1617,7 @@ function saveSched() { saveJson('배포.json', SCHED); schedChain = schedChain.c
 // 서버 시작 시: 시트에서 배포예약 복원 (재시작으로 로컬이 비어도 시트가 살린다)
 (async () => { const sheets = sheetsClient(); if (!sheets || !RESV_SHEET_ID) return; try { const got = await sheets.spreadsheets.values.get({ spreadsheetId: RESV_SHEET_ID, range: `'${SCHED_TAB}'!A1:B1` }); const row = (got.data.values || [])[0]; if (row && row[0] === 'sched' && row[1]) { const arr = JSON.parse(row[1]); if (Array.isArray(arr)) { SCHED = arr.filter((s) => s && s.contentId); saveJson('배포.json', SCHED); console.log(`📅 배포예약 시트 복원: ${SCHED.length}건`); } } } catch (e) {} })();
 function schedFor(kind) { return SCHED.filter((s) => s.campaignId === ACTIVE_ID && s.kind === kind); }
-// 유튜브는 우리 직접발행(runYoutubeAutoPublish)이 전담 → Upload-Post 기본채널에서 youtube 제거(중복방지)
-// 유튜브·인스타는 우리 직접발행 전담 → Upload-Post 쇼츠 기본채널에서 둘 다 제거(이중발행 차단)
-const DEPLOY_CHANNELS = (process.env.DEPLOY_CHANNELS || 'facebook,tiktok').split(',').map((s) => s.trim()).filter((s) => s !== 'youtube' && s !== 'instagram');
+// (쇼츠 외부발행 채널 라우팅 제거됨 — 쇼츠 = 유튜브 직접발행 + 인스타 릴스 직접발행 전담)
 // 하루 발송 개수·시간: POST_PER_DAY(1/2…) + POST_HOURS_KST("10,18"). 1개면 POST_HOUR_KST/기본10시.
 const POST_PER_DAY = Math.max(1, Number(process.env.POST_PER_DAY || 1));
 const POST_HOURS = (process.env.POST_HOURS_KST || (POST_PER_DAY >= 2 ? '10,18' : String(process.env.POST_HOUR_KST || 10))).split(',').map((s) => Number(s.trim())).filter((n) => !isNaN(n));
@@ -1758,35 +1680,13 @@ function pendingShortsPlan(kind) {
   const base = schedFor(kind).length;
   return items.map((s, j) => ({
     contentId: s.id, name: s.name || '', mediaUrl: s.link, scheduledAt: planDateISO(base + j),
-    channels: DEPLOY_CHANNELS, caption: shortsCaption(c),
+    channels: [], caption: shortsCaption(c),
   }));
 }
-// ── 발행 도구 = Upload-Post (API 하나로 인스타·페북·유튜브·틱톡 직접 예약. Make·Buffer 불필요) ──
-//   대표님 1회: upload-post.com 가입 → 프로필에 내 SNS 연결 → API 키. 그 뒤는 제니야가 코드로 예약.
-const UPLOADPOST_URL = process.env.UPLOADPOST_URL || 'https://api.upload-post.com/api/upload';
-function posterReady() { return !!(process.env.UPLOADPOST_API_KEY && process.env.UPLOADPOST_USER); }
-async function postOneToUploadPost(p, c) {
-  const caps = buildCaptions(c);
-  const form = new FormData();
-  form.append('user', process.env.UPLOADPOST_USER);
-  (p.channels || DEPLOY_CHANNELS).forEach((ch) => form.append('platform[]', ch));
-  form.append('video', p.mediaUrl);              // 공개 URL 허용(파이어베이스 링크)
-  form.append('title', caps.title);              // 안전한 짧은 제목(≤90) — 유튜브 100자 제한 충족
-  form.append('description', caps.description);  // 유튜브·페북 설명(설명 중심)
-  form.append('youtube_title', caps.youtube_title);
-  form.append('instagram_title', caps.instagram_title);   // 인스타: 해시태그 많이
-  form.append('facebook_title', caps.facebook_title);
-  form.append('tiktok_title', caps.tiktok_title);
-  if (p.scheduledAt) { form.append('scheduled_date', p.scheduledAt); form.append('timezone', 'Asia/Seoul'); }
-  form.append('async_upload', 'true');
-  const r = await fetch(UPLOADPOST_URL, { method: 'POST', headers: { Authorization: `Apikey ${process.env.UPLOADPOST_API_KEY}` }, body: form });
-  const body = await r.text().catch(() => '');
-  let job = ''; try { const j = JSON.parse(body); job = j.job_id || j.id || ''; } catch (e) {}
-  return { ok: r.ok, status: r.status, job, body: String(body).slice(0, 300) };
-}
+// (외부 발행도구 호출 제거됨 — 쇼츠 영상은 유튜브·인스타 직접발행 경로로만 나간다)
 
 // ============================================================
-// 🔴 PHASE 0-2: 유튜브 직접 발행 (Upload-Post 안 거치고 YouTube Data API로 직접 업로드)
+// 🔴 PHASE 0-2: 유튜브 직접 발행 (YouTube Data API로 직접 업로드)
 //   - 인증: OAuth2. 대표 1회 동의 → refresh_token → 시트(제니야_유튜브토큰)에 영구보관(재시작 생존).
 //   - 발행: 파이어베이스 영상 바이트를 스트림으로 받아 youtube.videos.insert.
 //   - 예약: status.publishAt(미래시각) → 비공개 업로드 후 그 시각에 자동 공개.
@@ -1954,28 +1854,7 @@ app.post('/youtube/publish-next', async (req, res) => {
 });
 // 대표 확인용 — 무인발행이 실제 올린 영상 목록(실제 URL + 본채널 O/X)
 app.get('/youtube/published', (req, res) => res.json({ count: YTPUB.length, items: YTPUB.slice().reverse() }));
-// 충돌 정리 — 기존 Upload-Post 쇼츠 예약에서 youtube만 제거(취소 후 insta/fb 재예약). 유튜브=직접발행 전담.
-app.post('/content/shorts/drop-youtube', async (req, res) => {
-  if (!cronAuthed(req)) return res.status(401).json({ error: 'cron key 필요' });
-  if (!posterReady()) return res.status(400).json({ error: 'Upload-Post 미연결' });
-  const c = CAMPAIGN || {};
-  const newChannels = (DEPLOY_CHANNELS || ['instagram', 'facebook']).filter((x) => x !== 'youtube');
-  const targets = SCHED.filter((s) => s.kind === '쇼츠' && Array.isArray(s.channels) && s.channels.includes('youtube'));
-  const results = [];
-  for (const s of targets) {
-    let cancelled = false, reposted = 'past';
-    if (s.job) { const cc = await cancelUploadPostJob(s.job); cancelled = !!cc.ok; }
-    if (new Date(s.scheduledAt).getTime() > Date.now() + 60000) {
-      const rp = await postOneToUploadPost({ channels: newChannels, mediaUrl: s.link, scheduledAt: s.scheduledAt, contentId: s.contentId, name: s.name }, c);
-      reposted = rp.ok ? 'ok' : ('fail:' + rp.status); if (rp.ok) s.job = rp.job;
-    }
-    s.channels = newChannels;
-    results.push({ name: s.name, scheduledAt: s.scheduledAt, cancelled, reposted, channels: newChannels });
-    await new Promise((rs) => setTimeout(rs, 400));
-  }
-  saveSched();
-  res.json({ ok: true, count: targets.length, newChannels, results });
-});
+// (쇼츠 youtube 채널 분리 엔드포인트 제거됨 — 유튜브는 직접발행 전담)
 // 진단용 — 발행창구에 도달한 호출 기록(클라우드 트리거 도달 여부 격리). 키 불필요(읽기전용)
 app.get('/youtube/cron-log', (req, res) => res.json({ count: CRONLOG.length, hits: CRONLOG.slice().reverse() }));
 
@@ -2034,7 +1913,7 @@ app.get('/youtube/auto-status', (req, res) => {
 });
 
 // ============================================================
-// 🔴 인스타그램 직접 발행 (Instagram Graph API — Upload-Post 대체, 유튜브와 동일 방식)
+// 🔴 인스타그램 직접 발행 (Instagram Graph API · 유튜브와 동일 방식)
 //   인증: 페이스북 로그인 OAuth → 장기 페이지토큰(비만료) + IG 비즈니스 계정ID, 시트 영구보관.
 //   Reels(쇼츠) + 캐러셀(카드뉴스) 직접 게시 + 실측 검증(permalink 재조회).
 //   조건: oh_want=프로페셔널(비즈니스/크리에이터) + 페북 페이지 연결 + 메타 앱(대표 admin).
@@ -2257,164 +2136,21 @@ app.post('/instagram/auto-run', async (req, res) => { if (!cronAuthed(req)) retu
 app.get('/instagram/published', (req, res) => res.json({ count: IGPUB.length, items: IGPUB.slice().reverse() }));
 // 기존 수동 게시분 등록(중복방지 backfill·키필요)
 app.post('/instagram/markpub', (req, res) => { if (!cronAuthed(req)) return res.status(401).json({ error: 'cron key 필요' }); const b = req.body || {}; if (!b.kind || !b.mediaId) return res.status(400).json({ error: 'kind, mediaId 필요' }); IGPUB.push({ kind: b.kind, contentId: b.contentId || '', setId: b.setId || '', name: b.name || '', mediaId: b.mediaId, permalink: b.permalink || '', forced: true, ts: new Date().toISOString() }); saveIgpub(); res.json({ ok: true, count: IGPUB.length }); });
-// Upload-Post 인스타 비활성화(이중발행 차단) — 기존 예약에서 instagram 제거(취소→나머지 채널 재예약). 인스타=직접발행 전담.
-app.post('/content/drop-instagram', async (req, res) => {
-  if (!cronAuthed(req)) return res.status(401).json({ error: 'cron key 필요' });
-  if (!posterReady()) return res.status(400).json({ error: 'Upload-Post 미연결' });
-  const c = CAMPAIGN || {};
-  const targets = SCHED.filter((s) => Array.isArray(s.channels) && s.channels.includes('instagram'));
-  const results = [];
-  for (const s of targets) {
-    const newCh = s.channels.filter((x) => x !== 'instagram');
-    let cancelled = false, reposted = 'past';
-    if (s.job) { const cc = await cancelUploadPostJob(s.job); cancelled = !!cc.ok; }
-    if (new Date(s.scheduledAt).getTime() > Date.now() + 60000 && newCh.length) {
-      if (s.kind === '카드뉴스') {
-        const set = CARDSETS.find((x) => x.setId === s.contentId);
-        if (set) { const rp = await postCardToUploadPost({ ...set, scheduledAt: s.scheduledAt }, c); reposted = rp.ok ? 'ok' : ('fail:' + rp.status); if (rp.ok) s.job = rp.job; } else reposted = 'set없음';
-      } else {
-        const rp = await postOneToUploadPost({ channels: newCh, mediaUrl: s.link, scheduledAt: s.scheduledAt, contentId: s.contentId, name: s.name }, c); reposted = rp.ok ? 'ok' : ('fail:' + rp.status); if (rp.ok) s.job = rp.job;
-      }
-    } else if (!newCh.length) reposted = '취소만(남은채널 없음)';
-    s.channels = newCh;
-    results.push({ kind: s.kind, name: s.name, scheduledAt: s.scheduledAt, cancelled, reposted, channels: newCh });
-    await new Promise((rs) => setTimeout(rs, 300));
-  }
-  saveSched();
-  res.json({ ok: true, count: targets.length, results });
-});
+// (인스타 외부발행 분리 엔드포인트 제거됨 — 인스타는 IG Graph 직접발행 전담)
 
-// 배포 계획 + 예약 현황 (현황 = 이미 예약된 것 / 새 예약분 = 미예약 쇼츠)
-app.get('/content/plan', (req, res) => {
-  const kind = req.query.kind || '쇼츠';
-  const pending = pendingShortsPlan(kind);
-  const now = Date.now();
-  const scheduled = schedFor(kind).slice().sort((a, b) => String(a.scheduledAt).localeCompare(String(b.scheduledAt)))
-    .map((s) => ({ contentId: s.contentId, job: s.job || '', name: s.name, scheduledAt: s.scheduledAt, channels: s.channels || DEPLOY_CHANNELS, status: (new Date(s.scheduledAt).getTime() < now ? '게시됨' : '예약됨') }));
-  res.json({ posterConfigured: posterReady(), perDay: Math.min(POST_PER_DAY, POST_HOURS.length || 1), times: POST_HOURS, scheduled, pending });
-});
-// 승인 → 미예약 쇼츠만 Upload-Post로 예약(기존 뒤에 이어서) + 상세 기록 저장
-app.post('/content/plan/approve', async (req, res) => {
-  try {
-    const kind = (req.body || {}).kind || '쇼츠';
-    if (!posterReady()) return res.status(400).json({ error: '발행 도구가 아직 연결되지 않았습니다. Render에 UPLOADPOST_API_KEY·UPLOADPOST_USER를 넣어 주세요.' });
-    const allPending = pendingShortsPlan(kind);
-    if (!allPending.length) return res.status(400).json({ error: '새로 예약할 ' + kind + '가 없습니다(모두 예약됨 또는 업로드 없음).' });
-    const lim = Number((req.body || {}).limit);
-    const pending = (lim && lim > 0) ? allPending.slice(0, lim) : allPending;   // limit이 있으면 그만큼만(테스트용)
-    const c = CAMPAIGN || {};
-    let added = 0; const fails = [];
-    for (let i = 0; i < pending.length; i++) {
-      const p = pending[i];
-      const out = await postOneToUploadPost(p, c);
-      if (out.ok) { SCHED.push({ campaignId: ACTIVE_ID, kind, contentId: p.contentId, name: p.name, link: p.mediaUrl, scheduledAt: p.scheduledAt, channels: p.channels, job: out.job, ts: new Date().toISOString() }); added++; }
-      else fails.push({ name: p.name, status: out.status, body: out.body });
-      if (i < pending.length - 1) await new Promise((rs) => setTimeout(rs, 400));
-    }
-    if (added) saveSched();
-    if (!added) return res.status(502).json({ error: '발행 도구가 모두 거부했습니다.', fails });
-    try { pushNotify({ kind: 'report', title: `쇼츠 ${added}건 SNS 예약 완료`, body: c.name || '' }); } catch (e) {}
-    res.json({ ok: true, added, failed: fails.length, fails, total: schedFor(kind).length });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
+// (쇼츠 외부발행 계획·승인 엔드포인트 제거됨 — 쇼츠는 유튜브·인스타 직접발행 무인 스케줄러가 전담)
 
-// ── 발행 이력 조회 (재업로드 없이 job_id·채널별 상태 확인) ──
-app.get('/content/jobs', async (req, res) => {
-  if (!posterReady()) return res.status(400).json({ error: '발행 도구 미연결' });
-  try {
-    const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 100);
-    const page = Math.max(Number(req.query.page) || 1, 1);
-    const r = await fetch(`https://api.upload-post.com/api/uploadposts/history?limit=${limit}&page=${page}`, { headers: { Authorization: `Apikey ${process.env.UPLOADPOST_API_KEY}` } });
-    const text = await r.text().catch(() => '');
-    let data; try { data = JSON.parse(text); } catch (e) { data = String(text).slice(0, 2000); }
-    res.status(r.ok ? 200 : 502).json({ status: r.status, count: (data && data.history) ? data.history.length : 0, data });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
+// (외부 발행이력 조회 엔드포인트 제거됨 — 발행 실측은 /youtube/published · /instagram/published)
 
-// ── Upload-Post 예약 1건 취소(job_id) ──
-async function cancelUploadPostJob(jobId) {
-  if (!jobId) return { ok: false, skipped: true };
-  try {
-    const r = await fetch(`https://api.upload-post.com/api/uploadposts/schedule/${encodeURIComponent(jobId)}`, { method: 'DELETE', headers: { Authorization: `Apikey ${process.env.UPLOADPOST_API_KEY}` } });
-    return { ok: r.ok, status: r.status };
-  } catch (e) { return { ok: false, error: e.message }; }
-}
+// (외부 발행도구 예약취소·계정연결·요금제 진단 엔드포인트 제거됨)
 
-// ── 진단: 채널 연결 상태 (토큰 끊김 여부 — 어느 SNS가 실제 연결됐나) ──
-app.get('/content/accounts', async (req, res) => {
-  if (!posterReady()) return res.status(400).json({ error: '발행 도구 미연결' });
-  try {
-    const r = await fetch('https://api.upload-post.com/api/uploadposts/users', { headers: { Authorization: `Apikey ${process.env.UPLOADPOST_API_KEY}` } });
-    const text = await r.text().catch(() => ''); let data; try { data = JSON.parse(text); } catch (e) { data = String(text).slice(0, 1500); }
-    let connected = null;
-    try {
-      const prof = (data.profiles || []).find((p) => p.username === process.env.UPLOADPOST_USER) || (data.profiles || [])[0];
-      if (prof) { const sa = prof.social_accounts || {}; connected = {}; ['instagram', 'facebook', 'youtube', 'tiktok'].forEach((k) => { const v = sa[k]; connected[k] = !!(v && (typeof v === 'object' ? Object.keys(v).length : String(v).length)); }); }
-    } catch (e) {}
-    res.status(r.ok ? 200 : 502).json({ status: r.status, user: process.env.UPLOADPOST_USER, connected, raw: data });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// ── 진단: 요금제/계정 (유료 활성 여부) ──
-app.get('/content/account-plan', async (req, res) => {
-  if (!posterReady()) return res.status(400).json({ error: '발행 도구 미연결' });
-  try {
-    const r = await fetch('https://api.upload-post.com/api/uploadposts/me', { headers: { Authorization: `Apikey ${process.env.UPLOADPOST_API_KEY}` } });
-    const text = await r.text().catch(() => ''); let data; try { data = JSON.parse(text); } catch (e) { data = String(text).slice(0, 1500); }
-    res.status(r.ok ? 200 : 502).json({ status: r.status, data });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// ── Upload-Post에 실제 잡힌 예약 목록 (유실분 포함, 옛 쇼츠 정리용) ──
-app.get('/content/scheduled', async (req, res) => {
-  if (!posterReady()) return res.status(400).json({ error: '발행 도구 미연결' });
-  try {
-    const r = await fetch('https://api.upload-post.com/api/uploadposts/schedule', { headers: { Authorization: `Apikey ${process.env.UPLOADPOST_API_KEY}` } });
-    const text = await r.text().catch(() => ''); let data; try { data = JSON.parse(text); } catch (e) { data = String(text).slice(0, 3000); }
-    res.status(r.ok ? 200 : 502).json({ status: r.status, data });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// ── Upload-Post 예약 직접 취소(job_id) — 우리 대장에 없는 유실분도 정리 가능 ──
-app.post('/content/scheduled/cancel', async (req, res) => {
-  if (!posterReady()) return res.status(400).json({ error: '발행 도구 미연결' });
-  const jobId = (req.body || {}).jobId || (req.body || {}).job_id;
-  if (!jobId) return res.status(400).json({ error: 'jobId(취소할 예약 번호) 필요' });
-  const c = await cancelUploadPostJob(jobId);
-  res.status(c.ok ? 200 : 502).json(c);
-});
-
-// ── 게시물별 반응 분석 (조회·좋아요·댓글·도달 등) — Upload-Post post-analytics ──
-app.get('/content/post-analytics', async (req, res) => {
-  if (!posterReady()) return res.status(400).json({ error: '발행 도구 미연결' });
-  const rid = req.query.requestId || req.query.request_id;
-  const ppid = req.query.platformPostId, plat = req.query.platform;
-  try {
-    let url;
-    if (rid) { url = `https://api.upload-post.com/api/uploadposts/post-analytics/${encodeURIComponent(rid)}`; if (plat) url += `?platform=${encodeURIComponent(plat)}`; }
-    else if (ppid && plat) { url = `https://api.upload-post.com/api/uploadposts/post-analytics?platform_post_id=${encodeURIComponent(ppid)}&platform=${encodeURIComponent(plat)}&user=${encodeURIComponent(process.env.UPLOADPOST_USER)}`; }
-    else return res.status(400).json({ error: 'requestId 또는 (platformPostId+platform) 필요' });
-    const r = await fetch(url, { headers: { Authorization: `Apikey ${process.env.UPLOADPOST_API_KEY}` } });
-    const text = await r.text().catch(() => ''); let data; try { data = JSON.parse(text); } catch (e) { data = String(text).slice(0, 2000); }
-    res.status(r.ok ? 200 : 502).json({ status: r.status, data });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-// ── 계정 단위 분석 (팔로워·조회·도달 시계열) — Upload-Post analytics ──
-app.get('/content/analytics-account', async (req, res) => {
-  if (!posterReady()) return res.status(400).json({ error: '발행 도구 미연결' });
-  const platforms = req.query.platforms || 'instagram,facebook,youtube';
-  try {
-    const r = await fetch(`https://api.upload-post.com/api/uploadposts/analytics/${encodeURIComponent(process.env.UPLOADPOST_USER)}?platforms=${encodeURIComponent(platforms)}`, { headers: { Authorization: `Apikey ${process.env.UPLOADPOST_API_KEY}` } });
-    const text = await r.text().catch(() => ''); let data; try { data = JSON.parse(text); } catch (e) { data = String(text).slice(0, 2000); }
-    res.status(r.ok ? 200 : 502).json({ status: r.status, data });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
+// (외부 발행도구 예약목록·취소·반응분석 엔드포인트 제거됨 — 인스타 반응은 향후 IG Graph 직접조회로 대체)
 
 // ── 📊 결과분석 대시보드 집계 (틀은 항상, 데이터는 들어오는 대로) ──
 //    발행현황(채널별 성공/실패, 유튜브 포함) + 인스타 반응(자동) + 주제별 순위·광고후보 + 건강검진 + 전환(수동)
 const HKEY = (h) => `${h.platform}|${h.upload_timestamp}|${h.platform_post_id || h.request_id || ''}`;
 // ── 유튜브 실제 게시 검증 — "success=true"를 믿지 말고 실제 영상 URL을 열어 어느 채널인지 확인 ──
-//    Upload-Post는 채널 지정이 안 되고 연결된 채널로만 올라간다. 대표 본채널이 아니면 "엉뚱한 채널" 경보.
+//    대표 본채널이 아니면 "엉뚱한 채널" 경보.
 const YT_MAIN_CHANNEL_ID = process.env.YT_MAIN_CHANNEL_ID || 'UCQxyqyUyMpNzHZvK0V_mOGQ';   // 오상열 @OhSangRyul (4.63만)
 const YT_MAIN_HANDLE = process.env.YT_MAIN_HANDLE || '@OhSangRyul';
 async function youtubeVideoChannel(videoId) {
@@ -2441,105 +2177,10 @@ async function verifyYoutubePublish(history) {
   const isMain = ch.channelId === YT_MAIN_CHANNEL_ID;
   return { status: isMain ? 'main' : 'wrong', videoId: vid, url, channelId: ch.channelId, handle: ch.handle,
     expectedChannelId: YT_MAIN_CHANNEL_ID, expectedHandle: YT_MAIN_HANDLE, isMainChannel: isMain,
-    note: isMain ? '대표 본채널에 정상 게시됨' : `엉뚱한 채널(${ch.handle || ch.channelId})에 게시됨 — 본채널(${YT_MAIN_HANDLE}) 아님. Upload-Post 유튜브 재연결 필요` };
+    note: isMain ? '대표 본채널에 정상 게시됨' : `엉뚱한 채널(${ch.handle || ch.channelId})에 게시됨 — 본채널(${YT_MAIN_HANDLE}) 아님. 유튜브 재연결 필요` };
 }
-let _resultsCache = { ts: 0, data: null };
-async function buildResults() {
-  if (Date.now() - _resultsCache.ts < 300000 && _resultsCache.data) return _resultsCache.data;
-  const out = {
-    generatedAt: new Date().toISOString(),
-    publish: { byChannel: {}, recent: [], total: 0, success: 0, fail: 0 },
-    engagement: { instagram: [], note: '인스타는 자동 수집(조회·도달·좋아요). 유튜브·페북 게시물별 수치는 권한 막힘 → 플랫폼에서 직접 확인.' },
-    topics: [], adCandidates: [],
-    health: {},
-    conversion: { applyClicks: null, applySubmits: null, kakaoFriends: null, note: '신청 폼 클릭·신청 수, 카톡 친구 수는 자동 수집 불가 → 수동 입력 또는 플랫폼 직접 확인.' },
-  };
-  // 1) 발행 이력 (페이지네이션 → 유튜브 포함 전부)
-  const history = await fetchAllHistory(150);
-  history.forEach((h) => {
-    const ch = h.platform; const c = (out.publish.byChannel[ch] = out.publish.byChannel[ch] || { ok: 0, fail: 0 });
-    if (h.success) { c.ok++; out.publish.success++; } else { c.fail++; out.publish.fail++; }
-    out.publish.total++;
-  });
-  out.publish.recent = history.slice(0, 24).map((h) => ({
-    ts: h.upload_timestamp, ch: h.platform, kind: h.media_type === 'photo' ? '카드뉴스' : '쇼츠',
-    ok: !!h.success, err: h.success ? '' : String(h.error_message || '').split('.')[0].slice(0, 50),
-    url: h.post_url || '', title: String(h.post_title || '').split('\n')[0].replace(/^💰\s*/, '').slice(0, 30),
-  }));
-  // 2) 인스타 반응(자동) — 성공한 인스타 게시물 request_id로 per-post 분석 (최근 20개, 캐시로 보호)
-  const igReqs = [...new Map(history.filter((h) => h.platform === 'instagram' && h.success && h.request_id).map((h) => [h.request_id, h])).values()].slice(0, 20);
-  for (const h of igReqs) {
-    try {
-      const r = await fetch(`https://api.upload-post.com/api/uploadposts/post-analytics/${h.request_id}?platform=instagram`, { headers: { Authorization: `Apikey ${process.env.UPLOADPOST_API_KEY}` }, signal: AbortSignal.timeout(6000) });
-      if (!r.ok) continue;
-      const d = await r.json().catch(() => ({}));
-      const m = (((d.platforms || {}).instagram || {}).post_metrics) || null;
-      if (m) out.engagement.instagram.push({
-        title: String(h.post_title || '').split('\n')[0].replace(/^💰\s*/, '').slice(0, 30),
-        kind: h.media_type === 'photo' ? '카드뉴스' : '쇼츠',
-        views: m.views || 0, reach: m.reach || 0, likes: m.likes || 0, comments: m.comments || 0, saves: m.saves || 0, shares: m.shares || 0,
-        url: h.post_url || '', ts: h.upload_timestamp,
-      });
-    } catch (e) {}
-  }
-  // 주제별 비교(반응순) + 광고 후보(상위 = 도달 대비 좋아요·저장 좋은 것)
-  out.topics = out.engagement.instagram.slice().sort((a, b) => b.views - a.views);
-  out.adCandidates = out.topics.filter((t) => t.views > 0).slice(0, 3)
-    .map((t) => ({ title: t.title, kind: t.kind, views: t.views, reach: t.reach, likes: t.likes, saves: t.saves, url: t.url,
-      engageRate: t.reach ? Math.round((t.likes + t.saves + t.shares) / t.reach * 1000) / 10 : 0 }));
-  // 3) 건강검진 — 채널 연결 + 요금제 + 페북 파일명 안전 + 유튜브 큐 포함
-  const now = Date.now();
-  const futShorts = SCHED.filter((s) => s.campaignId === ACTIVE_ID && s.kind === '쇼츠' && s.scheduledAt && new Date(s.scheduledAt).getTime() > now);
-  out.health = {
-    connected: null, plan: null,
-    fbFilename: futShorts.length ? { total: futShorts.length, unsafe: futShorts.filter((s) => !fbNameSafe(s.link)).length } : null,
-    youtubeQueued: futShorts.length ? { total: futShorts.length, withYoutube: futShorts.filter((s) => (s.channels || []).includes('youtube')).length } : null,
-    upcoming: SCHED.filter((s) => s.campaignId === ACTIVE_ID && s.scheduledAt && new Date(s.scheduledAt).getTime() > now)
-      .sort((a, b) => String(a.scheduledAt).localeCompare(String(b.scheduledAt))).slice(0, 5)
-      .map((s) => ({ at: s.scheduledAt, kind: s.kind, channels: s.channels || [] })),
-  };
-  try {
-    const r = await fetch('https://api.upload-post.com/api/uploadposts/users', { headers: { Authorization: `Apikey ${process.env.UPLOADPOST_API_KEY}` }, signal: AbortSignal.timeout(6000) });
-    if (r.ok) { const d = await r.json().catch(() => ({})); const prof = (d.profiles || []).find((p) => p.username === process.env.UPLOADPOST_USER) || (d.profiles || [])[0];
-      if (prof) { const sa = prof.social_accounts || {}; out.health.connected = {}; ['instagram', 'facebook', 'youtube', 'tiktok'].forEach((k) => { const v = sa[k]; out.health.connected[k] = !!(v && (typeof v === 'object' ? Object.keys(v).length : String(v).length)); }); } }
-  } catch (e) {}
-  try {
-    const r = await fetch('https://api.upload-post.com/api/uploadposts/me', { headers: { Authorization: `Apikey ${process.env.UPLOADPOST_API_KEY}` }, signal: AbortSignal.timeout(5000) });
-    if (r.ok) { const d = await r.json().catch(() => ({})); out.health.plan = d.plan || null; }
-  } catch (e) {}
-  // ★ 유튜브 실제 게시 검증 (success=true를 믿지 말고 실제 영상 채널 확인)
-  out.health.youtubePublish = await verifyYoutubePublish(history);
-  _resultsCache = { ts: Date.now(), data: out };
-  return out;
-}
-app.get('/content/results', async (req, res) => {
-  if (!posterReady()) return res.status(400).json({ error: '발행 도구 미연결' });
-  try { res.json(await buildResults()); } catch (e) { res.status(500).json({ error: e.message }); }
-});
-// 두뇌용 반응 요약 — 무거운 집계는 안 돌리고 이미 데워진 캐시만 읽는다(채팅 지연 방지).
-function engagementText() {
-  const data = _resultsCache.data; if (!data) return '';
-  const top = (data.topics || []).filter((t) => t.views > 0).slice(0, 5);
-  if (!top.length) return '';
-  const lines = top.map((t, i) => `${i + 1}. [${t.kind}] ${t.title} — 조회 ${t.views}·도달 ${t.reach}·좋아요 ${t.likes}·저장 ${t.saves}`);
-  let out = '=== SNS 반응 분석 (인스타 자동 수집 — "요즘 뭐가 반응 좋아"의 근거) ===\n' + lines.join('\n');
-  const a = (data.adCandidates || [])[0];
-  if (a) out += `\n· 광고 후보 1순위: "${a.title}" (조회 ${a.views}·반응률 ${a.engageRate}%). "광고 뭘 밀까" 물으면 이걸 근거로 "이거 광고 밀까요?" 제안하라(실행은 대표 승인).`;
-  out += '\n(유튜브·페북 게시물별 수치는 권한 막힘 → "플랫폼에서 직접 확인"으로 안내. 반응 비교·광고 제안은 인스타 수치만 근거로 한다.)';
-  return out;
-}
-// 유튜브 실제 게시 검증을 두뇌에 — "success"만 믿지 말고 실제 채널 확인 결과로 답하게.
-function youtubeCheckText() {
-  const yp = _resultsCache.data && _resultsCache.data.health && _resultsCache.data.health.youtubePublish;
-  if (!yp || yp.status === 'none') return '';
-  if (yp.status === 'main') return '=== 유튜브 실제 게시 검증 ===\n✅ 유튜브 최근 영상이 대표 본채널에 정상 게시됨 확인.';
-  if (yp.status === 'wrong') return `=== 유튜브 실제 게시 검증 (★중요) ===\n⚠️ 유튜브 업로드는 "성공"으로 뜨지만 실제 영상은 ${yp.handle || '엉뚱한 채널'}(${yp.channelId})에 올라가 있고 대표님 본채널(${yp.expectedHandle})이 아니다. Upload-Post 유튜브 연결이 잘못된 채널에 걸려 있다. 절대 "유튜브 나갔다/성공"이라고 보고하지 말고, "유튜브는 엉뚱한 부채널에 올라가서 본채널엔 안 떴다 — 재연결이 필요하다"고 정확히 답하라.`;
-  if (yp.status === 'missing') return '=== 유튜브 실제 게시 검증 (★중요) ===\n⚠️ 유튜브는 success로 떠도 실제 영상이 존재하지 않는다(미게시·삭제·비공개). "유튜브 나갔다"고 보고하지 말 것.';
-  return '';
-}
-// 집계 캐시를 주기적으로 데워둔다(서버 깬 뒤 8초, 이후 5분마다) → 두뇌가 즉시 반응 데이터를 갖게.
-setTimeout(() => { if (posterReady()) buildResults().catch(() => {}); }, 8000);
-setInterval(() => { if (posterReady()) buildResults().catch(() => {}); }, 300000);
+// (구 결과분석 집계·결과 엔드포인트 제거됨 — 외부 발행도구 이력/반응 의존. 발행 실측은 YTPUB/IGPUB 대장)
+// (구 두뇌용 반응요약·유튜브검증 텍스트·집계 워머 제거됨 — 외부 발행도구 의존)
 // 전환 지표 수동 입력(신청 수·카톡 친구 수) — 자동 못 가져오는 값 보관
 let CONV = loadJson('전환.json'); if (!CONV || typeof CONV !== 'object' || Array.isArray(CONV)) CONV = {};
 app.get('/content/conversion', (req, res) => res.json(CONV));
@@ -2587,10 +2228,7 @@ app.post('/buildinpublic/draft', async (req, res) => {
   try {
     if (!process.env.ANTHROPIC_API_KEY) return res.status(503).json({ error: '서버에 API 키가 아직 없습니다.' });
     const note = String((req.body || {}).note || '').slice(0, 1500);
-    let pub = ''; try { pub = await publishStatusText(); } catch (e) {}
     const status = voiceLiveStatus();
-    const yt = youtubeCheckText();
-    const eng = engagementText();
     const episode = (BIP.count || 0) + 1;     // 이번에 올릴 회차(아직 미발행)
     const dateStr = bipKstDate();
     const sys = [
@@ -2599,7 +2237,7 @@ app.post('/buildinpublic/draft', async (req, res) => {
       '대표님은 비개발자(CFP 25년 재무전문가)인데 AI로 9개월째 자기 사업용 AI 비서·콘텐츠 자동화 공장을 직접 만들고 있다. 그 만드는 과정을 솔직하게 페북에 기록한다.',
       '',
       '=== 오늘 콘텐츠 공장 현황 (글감이 될 만한 사실만 골라 쓴다. 없는 건 절대 지어내지 말 것) ===',
-      status, pub, yt, eng,
+      status,
       note ? ('\n=== 대표님이 직접 남긴 오늘 메모 (가장 중요한 글감 — 이걸 중심으로) ===\n' + note) : '',
       '',
       '=== 글쓰기 규칙 ===',
@@ -2637,35 +2275,9 @@ app.post('/buildinpublic/img-done', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ── 대장 동기화: Upload-Post에 실제 잡힌 카드뉴스 예약을 우리 SCHED로 복구(유실 후 중복승인 방지) ──
-//    카드뉴스는 세트 업로드 순서 = 예약 날짜 순서라 순서로 정확히 짝지을 수 있다.
-app.post('/cardnews/reconcile', async (req, res) => {
-  try {
-    if (!posterReady()) return res.status(400).json({ error: '발행 도구 미연결' });
-    const r = await fetch('https://api.upload-post.com/api/uploadposts/schedule', { headers: { Authorization: `Apikey ${process.env.UPLOADPOST_API_KEY}` } });
-    const data = await r.json().catch(() => ({}));
-    const photos = (data.scheduled_posts || []).filter((p) => p.post_type === 'photo')
-      .sort((a, b) => String(a.scheduled_date).localeCompare(String(b.scheduled_date)));
-    const sets = myCardSets();                                  // 업로드 순서 = 원래 예약 순서
-    const skip = Math.max(0, sets.length - photos.length);      // 이미 게시돼 큐에서 빠진 앞쪽 세트 수
-    SCHED = SCHED.filter((s) => !(s.campaignId === ACTIVE_ID && s.kind === '카드뉴스'));   // 카드뉴스분 비우고 재구성
-    let added = 0;
-    for (let i = 0; i < skip && i < sets.length; i++) {         // 이미 게시된 세트 → 게시됨으로 표시(중복승인 방지)
-      SCHED.push({ campaignId: ACTIVE_ID, kind: '카드뉴스', contentId: sets[i].setId, name: sets[i].setName, scheduledAt: new Date(Date.now() - 86400000).toISOString(), channels: CARD_CHANNELS, job: '', ts: new Date().toISOString(), reconciled: true, fired: true });
-    }
-    for (let i = 0; i < photos.length; i++) {                   // 미래 예약분 → 실제 job_id와 함께 복구
-      const set = sets[i + skip]; if (!set) break;
-      const sd = String(photos[i].scheduled_date);
-      const at = /[zZ]|[+\-]\d\d:?\d\d$/.test(sd) ? sd : (sd + 'Z');
-      SCHED.push({ campaignId: ACTIVE_ID, kind: '카드뉴스', contentId: set.setId, name: set.setName, scheduledAt: new Date(at).toISOString(), channels: CARD_CHANNELS, job: photos[i].job_id, ts: new Date().toISOString(), reconciled: true });
-      added++;
-    }
-    await saveSched();
-    res.json({ ok: true, scheduledPhotos: photos.length, sets: sets.length, skip, futureRestored: added });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
+// (카드뉴스 외부발행 예약 동기화(reconcile) 엔드포인트 제거됨 — 카루셀은 IG 직접발행 무인 스케줄러 전담)
 
-// ── 예약 삭제/취소: 우리 예약대장에서 제거 + (미래 예약+job_id면) Upload-Post에서도 취소 ──
+// ── 예약 삭제/취소: 우리 예약대장에서 제거 ──
 //    body: { kind, contentId } 또는 { kind, contentIds:[...] } 또는 { kind, all:true }
 app.post('/content/sched/delete', async (req, res) => {
   try {
@@ -2677,11 +2289,7 @@ app.post('/content/sched/delete', async (req, res) => {
     const now = Date.now();
     const target = SCHED.filter((s) => s.campaignId === ACTIVE_ID && s.kind === kind && (all || ids.includes(s.contentId)));
     if (!target.length) return res.status(404).json({ error: '지울 예약을 찾지 못했습니다(이미 비었을 수 있음).' });
-    const canceled = [];
-    for (const s of target) {
-      const future = s.scheduledAt && new Date(s.scheduledAt).getTime() > now;   // 이미 게시된 건 취소 불가
-      if (future && s.job) { const c = await cancelUploadPostJob(s.job); canceled.push({ name: s.name, job: s.job, ok: c.ok, status: c.status }); }
-    }
+    const canceled = [];   // 외부 발행도구 예약취소 제거됨 — 예약대장에서만 제거
     const remove = new Set(target);
     const before = SCHED.length;
     SCHED = SCHED.filter((s) => !remove.has(s));
@@ -3189,20 +2797,16 @@ app.post('/cardnews/sets/delete', async (req, res) => {
     // 2) 세트 제거
     CARDSETS = CARDSETS.filter((s) => s !== set);
     await saveCardSets();
-    // 3) 이 세트로 잡힌 예약도 정리(미래면 Upload-Post 취소)
-    const now = Date.now();
+    // 3) 이 세트로 잡힌 예약 대장 정리 (외부 발행도구 취소 제거됨)
     const sched = SCHED.filter((s) => s.campaignId === ACTIVE_ID && s.kind === '카드뉴스' && s.contentId === setId);
     const canceled = [];
-    for (const s of sched) { if (s.scheduledAt && new Date(s.scheduledAt).getTime() > now && s.job) { const c = await cancelUploadPostJob(s.job); canceled.push({ job: s.job, ok: c.ok }); } }
     if (sched.length) { const rm = new Set(sched); SCHED = SCHED.filter((s) => !rm.has(s)); await saveSched(); }
     res.json({ ok: true, schedRemoved: sched.length, canceled });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ── 카드뉴스 캐러셀 배포 (인스타·페북, 오후 6시·하루 1세트) ──
-// 인스타는 우리 직접발행(카루셀) 전담 → Upload-Post 카드 기본채널에서 instagram 제거(이중발행 차단)
-const CARD_CHANNELS = (process.env.CARD_CHANNELS || 'facebook').split(',').map((s) => s.trim()).filter((s) => s !== 'instagram');
-const UPLOADPHOTOS_URL = process.env.UPLOADPHOTOS_URL || 'https://api.upload-post.com/api/upload_photos';
+// ── 카드뉴스 캐러셀 (인스타 직접발행 무인 스케줄러 전담, 매일 19시 KST) ──
+// (외부발행 채널 라우팅·사진업로드 URL 제거됨 — 카루셀은 IG Graph 직접발행만)
 function cardPlanDateISO(i) {   // 시작일(기본 내일)부터 하루 1세트, 오후 6시(KST)
   const startOff = Number(process.env.CARD_START_OFFSET || 1);
   const hour = Number(process.env.CARD_HOUR_KST || 18);
@@ -3214,90 +2818,14 @@ function pendingCardSets() {
   const done = new Set(schedCards().map((s) => s.contentId));
   const sets = myCardSets().filter((s) => !done.has(s.setId));
   const base = schedCards().length;
-  return sets.map((s, j) => ({ setId: s.setId, setName: s.setName, images: s.images || [], scheduledAt: cardPlanDateISO(base + j), channels: CARD_CHANNELS }));
+  return sets.map((s, j) => ({ setId: s.setId, setName: s.setName, images: s.images || [], scheduledAt: cardPlanDateISO(base + j), channels: [] }));
 }
 // 미리보기/합본 이미지(가로로 넓어 인스타 비율 위반) 제외 → 낱장만 캐러셀로
 const CARD_EXCLUDE = new RegExp(process.env.CARD_EXCLUDE_PATTERN || '미리보기|합본|preview|montage|썸네일|thumb|전체|모음', 'i');
 function cardImages(set) { const imgs = (set.images || []).filter((im) => !CARD_EXCLUDE.test(im.name || '')); return imgs.length ? imgs : (set.images || []); }
-async function postCardToUploadPost(set, c) {
-  const caps = buildCaptions(c);
-  const cap = shortsCaption(c);   // 카드뉴스 캡션(쇼츠/릴스 태그 없이, 신청링크+카톡 포함)
-  const form = new FormData();
-  form.append('user', process.env.UPLOADPOST_USER);
-  CARD_CHANNELS.forEach((ch) => form.append('platform[]', ch));
-  const imgs = cardImages(set);   // 미리보기 제외 낱장만
-  // 먼저 다 받아서 비율 검사 → 인스타 허용범위(4:5≈0.8 ~ 1.91:1) 벗어난 장은 자동 제외. 단, 전부 탈락하면 그대로 보냄(아예 0장 방지).
-  const fetched = [];
-  for (let i = 0; i < imgs.length; i++) {
-    const im = imgs[i];
-    let r; try { r = await fetch(im.url); } catch (e) { continue; }
-    if (!r.ok) continue;
-    const buf = Buffer.from(await r.arrayBuffer());
-    const isPng = /\.png(\?|$)/i.test(im.name || '') || /\.png(\?|$)/i.test(im.url || '');
-    const d = imageDims(buf);
-    const ratio = (d && d.w && d.h) ? d.w / d.h : null;
-    fetched.push({ buf, isPng, name: im.name || ('card' + (i + 1) + (isPng ? '.png' : '.jpg')), ratio });
-  }
-  const okRatio = fetched.filter((f) => f.ratio == null || (f.ratio >= 0.8 && f.ratio <= 1.91));
-  const use = okRatio.length ? okRatio : fetched;   // 전부 비율 위반이면 어쩔 수 없이 전부 보냄
-  const skipped = fetched.length - use.length;
-  if (skipped) console.warn(`⚠️ 카드뉴스 "${set.setName}" 비율위반 ${skipped}장 제외(인스타 4:5~1.91:1)`);
-  use.forEach((f) => form.append('photos[]', new Blob([f.buf], { type: f.isPng ? 'image/png' : 'image/jpeg' }), f.name));
-  form.append('title', caps.title);
-  form.append('caption', cap);
-  form.append('instagram_title', cap);
-  form.append('facebook_title', cap);
-  if (set.scheduledAt) { form.append('scheduled_date', set.scheduledAt); form.append('timezone', 'Asia/Seoul'); }
-  form.append('async_upload', 'true');
-  const r2 = await fetch(UPLOADPHOTOS_URL, { method: 'POST', headers: { Authorization: `Apikey ${process.env.UPLOADPOST_API_KEY}` }, body: form });
-  const body = await r2.text().catch(() => ''); let job = ''; try { job = (JSON.parse(body).job_id) || ''; } catch (e) {}
-  return { ok: r2.ok, status: r2.status, job, body: String(body).slice(0, 300) };
-}
-app.get('/cardnews/plan', (req, res) => {
-  const now = Date.now();
-  const scheduled = schedCards().slice().sort((a, b) => String(a.scheduledAt).localeCompare(String(b.scheduledAt)))
-    .map((s) => ({ contentId: s.contentId, job: s.job || '', name: s.name, scheduledAt: s.scheduledAt, channels: s.channels || CARD_CHANNELS, status: (new Date(s.scheduledAt).getTime() < now ? '게시됨' : '예약됨') }));
-  const pending = pendingCardSets().map((p) => ({ setId: p.setId, setName: p.setName, scheduledAt: p.scheduledAt, channels: p.channels, count: cardImages(p).length }));
-  res.json({ posterConfigured: posterReady(), hour: Number(process.env.CARD_HOUR_KST || 18), scheduled, pending });
-});
-app.post('/cardnews/approve', async (req, res) => {
-  try {
-    if (!posterReady()) return res.status(400).json({ error: '발행 도구가 연결되지 않았습니다(UPLOADPOST_API_KEY·UPLOADPOST_USER).' });
-    const all = pendingCardSets();
-    if (!all.length) return res.status(400).json({ error: '새로 예약할 카드뉴스 세트가 없습니다(모두 예약됨 또는 업로드 없음).' });
-    const lim = Number((req.body || {}).limit);
-    const immediate = !!(req.body || {}).immediate;   // true=예약시각 없이 즉시 발행
-    const todo = (lim && lim > 0) ? all.slice(0, lim) : all;
-    const c = CAMPAIGN || {}; let added = 0; const fails = []; const results = [];
-    for (let i = 0; i < todo.length; i++) {
-      const p = todo[i]; const wasSched = p.scheduledAt;
-      if (immediate) p.scheduledAt = '';   // scheduled_date 안 보냄 → 바로 게시
-      const out = await postCardToUploadPost(p, c);
-      if (out.ok) {
-        SCHED.push({ campaignId: ACTIVE_ID, kind: '카드뉴스', contentId: p.setId, name: p.setName, scheduledAt: immediate ? new Date().toISOString() : wasSched, channels: p.channels, job: out.job, ts: new Date().toISOString(), immediate });
-        added++; results.push({ name: p.setName, ok: true, photos: cardImages(p).length, body: out.body });
-      } else fails.push({ name: p.setName, status: out.status, body: out.body });
-      if (i < todo.length - 1) await new Promise((rs) => setTimeout(rs, 500));
-    }
-    if (added) saveSched();
-    if (!added) return res.status(502).json({ error: '발행 도구가 모두 거부했습니다.', fails });
-    try { pushNotify({ kind: 'report', title: `카드뉴스 ${added}세트 ${immediate ? '즉시 발행' : 'SNS 예약'}`, body: c.name || '' }); } catch (e) {}
-    res.json({ ok: true, added, immediate, failed: fails.length, fails, results, total: schedCards().length });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
+// (카드뉴스 외부발행 함수·계획·승인 엔드포인트 제거됨 — 카루셀은 IG 직접발행 무인 스케줄러(19시) + /instagram/auto-status·/instagram/published 전담)
 
-// ── 진단: 발행 도구(Upload-Post) 연결 상태 (키는 가려서) ──
-app.get('/content/webhook-check', (req, res) => {
-  const key = process.env.UPLOADPOST_API_KEY || '';
-  res.json({
-    posterReady: posterReady(),
-    provider: 'upload-post',
-    apiKeySet: !!key, apiKeyTail: key ? key.slice(-4) : '',
-    user: process.env.UPLOADPOST_USER || '(미설정)',
-    endpoint: UPLOADPOST_URL,
-    channels: DEPLOY_CHANNELS,
-  });
-});
+// (외부 발행도구 연결진단 엔드포인트 제거됨)
 
 // ── /promo/status: CRM 손 상태 + 비용 예상 ───────────────────
 app.get('/promo/status', async (req, res) => {
