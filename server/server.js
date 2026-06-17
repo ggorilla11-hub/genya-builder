@@ -3335,6 +3335,47 @@ app.get('/aihand/boot-test', async (req, res) => {
   finally { _aihandBusy = false; }
 });
 
+// ── AI 손: browse-research (읽기전용 공개조사) — 첫 연결, 수동·off 기본 ──────────────────────
+//   ★ allowlist = 읽기 프리미티브만(openPublic·screenshot·extractText). 로그인·fill·게시·발송 함수는 *코드에 없음*(구조적 차단).
+//   공개(로그아웃) http(s) URL만 → 자격증명 0·계정 못 날림. 결과를 영업일기 1줄 기록. 발행 함수·60초 스케줄러 무접촉.
+//   자율 타이머 연결 안 함(수동 트리거 먼저). 발송·연락은 휴먼인루프(이 손은 조사·준비까지만).
+let _chromiumReady = false;
+async function ensureChromium() {
+  const { chromium } = require('playwright');
+  if (_chromiumReady) return chromium;
+  try { const b = await chromium.launch({ headless: true }); await b.close(); }
+  catch (e) { require('child_process').execSync('npx playwright install chromium', { timeout: 180000, stdio: 'pipe' }); }
+  _chromiumReady = true; return chromium;
+}
+// 읽기전용 조사: 공개 URL 열기 → 제목·본문텍스트·스크린샷(크기)만. 클릭·입력·전송·로그인 없음.
+async function browseResearch(url, goal) {
+  if (!/^https?:\/\//i.test(String(url || ''))) throw new Error('공개 http(s) URL만 허용(로그인 페이지·자격증명 불가)');
+  const chromium = await ensureChromium();
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage({ viewport: { width: 1000, height: 800 } });
+    await page.goto(url, { waitUntil: 'load', timeout: 30000 });            // openPublic (읽기)
+    const title = await page.title();                                       // extractText
+    const text = String(await page.locator('body').innerText().catch(() => '')).replace(/\s+/g, ' ').trim();
+    const shot = await page.screenshot();                                   // screenshot (메모리, 게시 안 함)
+    return { url, finalUrl: page.url(), title, textPreview: text.slice(0, 600), textLen: text.length, screenshotBytes: shot.length, goal: goal || '' };
+  } finally { await browser.close(); }
+}
+app.post('/orchestrator/dispatch/research', async (req, res) => {
+  const b = req.body || {};
+  const url = b.url || req.query.url, goal = b.goal || req.query.goal || '';
+  if (!url) return res.status(400).json({ error: '공개 url 필요' });
+  if (_aihandBusy) return res.status(429).json({ error: 'AI손 진행중' });
+  _aihandBusy = true;
+  try {
+    const r = await browseResearch(url, goal);
+    const logged = `[AI손 조사] ${(r.title || r.url).slice(0, 60)} — ${r.textPreview.slice(0, 120)} (본문 ${r.textLen}자·스샷 ${r.screenshotBytes}B)${goal ? ' [목표:' + goal + ']' : ''}`;
+    try { appendDiary({ ts: new Date().toISOString(), agentId: 'lead', agentName: 'AI손(조사)', project: (CAMPAIGN && CAMPAIGN.title) || '일반', kind: 'research', entry: logged }); } catch (e) {}
+    res.json({ ok: true, action: 'browse-research', note: '읽기전용 공개조사 (로그인·게시·발송 0, 휴먼인루프)', result: r, logged });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+  finally { _aihandBusy = false; }
+});
+
 // 외부 크론(cron-job.org 등)이 아침에 깨우며 호출할 수 있는 입구 — 호출만으로 밀린 예약 발송
 app.get('/promo/tick', async (req, res) => { res.json(await runDuePromo()); });
 
