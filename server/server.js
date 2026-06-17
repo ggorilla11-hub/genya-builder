@@ -843,6 +843,33 @@ app.get('/calendar/upcoming', async (req, res) => {
   res.json({ configured: calendarReady(), events: await calendarUpcoming(Number(req.query.n) || 10) });
 });
 
+// ── 구글 드라이브 읽기 (공유 폴더 자료) — readonly·쓰기/삭제/공유/발송 0 ──────────────────────
+//   기존 서비스계정 재사용 + drive.readonly 스코프만(OAuth 0). 대표가 폴더를 SA 이메일
+//   (jenya-server@moneya-72fe6.iam.gserviceaccount.com)에 공유 + 환경변수 DRIVE_FOLDER_ID 설정 + GCP Drive API 활성화해야 읽힘.
+//   ★읽기 전용: files.list만 노출. files.create/update/delete·공유설정·발송 함수는 코드에 없음(구조적 차단). 발행 무관.
+const DRIVE_FOLDER_ID = process.env.DRIVE_FOLDER_ID || '';   // 읽을 공유 폴더 ID. 비면 미설정.
+function driveReady() { return !!(googleCreds() && DRIVE_FOLDER_ID); }
+function driveClient() {
+  const creds = googleCreds(); if (!creds) return null;
+  const auth = new google.auth.GoogleAuth({ credentials: creds, scopes: ['https://www.googleapis.com/auth/drive.readonly'] });
+  return google.drive({ version: 'v3', auth });
+}
+async function driveFiles(maxN) {
+  if (!driveReady()) return [];
+  try {
+    const drv = driveClient(); if (!drv) return [];
+    const r = await drv.files.list({
+      q: `'${DRIVE_FOLDER_ID}' in parents and trashed=false`,
+      fields: 'files(name,mimeType,modifiedTime,size)',
+      pageSize: Math.min(maxN || 20, 50), orderBy: 'modifiedTime desc',
+    });
+    return (r.data.files || []).map((f) => ({ name: f.name || '(이름없음)', type: f.mimeType || '', modified: f.modifiedTime || '', size: f.size || '' }));
+  } catch (e) { return [{ error: String(e.message).slice(0, 140) }]; }
+}
+app.get('/drive/files', async (req, res) => {
+  res.json({ configured: driveReady(), files: await driveFiles(Number(req.query.n) || 20) });
+});
+
 // Solapi(문자/카톡) — 키가 있을 때만 켜진다
 const solapi = (process.env.SOLAPI_API_KEY && process.env.SOLAPI_API_SECRET)
   ? new SolapiMessageService(process.env.SOLAPI_API_KEY, process.env.SOLAPI_API_SECRET)
