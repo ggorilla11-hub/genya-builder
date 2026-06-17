@@ -2287,6 +2287,70 @@ app.post('/orchestrator/dispatch/leads', async (req, res) => {
   finally { _leadsBusy = false; }
 });
 
+// ── PHASE 1-3: 자동 트리거 tick (발견·분류만 자동 / 발송·발행은 코드 allowlist가 거부) ──────────
+//   제니야가 "지금 발견·분류할 때인가" 판단(하드게이트+소프트 LLM) → 통과 시 dispatch/leads 자동 실행 → 영업일기 → 다음 관측(폐루프).
+//   ★ AUTO_DISPATCHABLE=['leads']뿐. 발송·발행·결제는 자동 불가(코드가 거부 — LLM이 제안해도). 60초 발행 setInterval 무접촉. 타이머 미연결(수동 호출).
+//   ORCH_AUTO=off 기본(off=판단만/실행 안 함). 실행: ORCH_AUTO=on 이거나 ?run=1. ?force=1=쿨다운 무시 1회 수동실행(운영자). 하드 쿨다운 ORCH_LEADS_COOLDOWN_H(기본 6h).
+//   부팅 실행코드 없음(핸들러 try/catch) → 부팅 crash 0.
+const AUTO_DISPATCHABLE = ['leads'];   // ★ 자동 트리거가 부를 수 있는 것 = 발견·분류뿐. 발송·발행·결제는 없음(자동 불가).
+function lastLeadsDispatchTs() {        // 영업일기(시트영속)의 마지막 발견·분류 기록 = 재시작에도 살아있는 기준
+  let t = _leadsLast ? new Date(_leadsLast).toISOString() : '';
+  for (let i = DIARY.length - 1; i >= 0; i--) { const d = DIARY[i]; if (d.agentId === 'lead' && d.kind === 'agent') { if (!t || d.ts > t) t = d.ts; break; } }
+  return t;
+}
+app.post('/orchestrator/tick', async (req, res) => {
+  try {
+    const autoOn = String(process.env.ORCH_AUTO || 'off').toLowerCase() === 'on';
+    const cooldownH = Math.max(1, Number(process.env.ORCH_LEADS_COOLDOWN_H || 6));
+    const force = req.query.force === '1';
+    const agent = 'leads';   // 이번 단계 자동 대상 = 발견·분류만
+    // ① allowlist 안전틀 — 발송·발행이면 즉시 거부(여기선 leads라 통과)
+    if (!AUTO_DISPATCHABLE.includes(agent)) {
+      return res.json({ ok: true, executed: false, decision: { agent, shouldRun: false, reason: 'allowlist 차단(발송·발행·결제는 자동 불가)' } });
+    }
+    // ② 하드 게이트(결정적, 싸다): 쿨다운 경과 + 동시실행 아님 (force면 쿨다운 무시)
+    const lastTs = lastLeadsDispatchTs();
+    const sinceH = lastTs ? (Date.now() - new Date(lastTs).getTime()) / 3600000 : 9999;
+    const gatePass = !_leadsBusy && (sinceH >= cooldownH || force);
+    // ③ 소프트 판단(LLM) — 게이트 통과 시에만 호출(비용 최소). force면 운영자 의지로 LLM veto 생략
+    let llm = null;
+    if (gatePass && !force) {
+      try {
+        const ytN = YTLEADS.length, intN = Array.isArray(LEADS) ? LEADS.length : 0;
+        const j = await anthropic.messages.create({ model: MODEL, max_tokens: 150,
+          system: '너는 리드 "발견·분류" 운영 판단기다. 마지막 수집 이후 시간과 누적치를 보고 "지금 새로 발견·분류를 돌릴 가치가 있나"만 판단한다. 발송·연락은 절대 판단 대상이 아니다(수집·분류만). 오직 JSON {"run":true|false,"reason":"짧게"}만 출력.',
+          messages: [{ role: 'user', content: `마지막 발견·분류 ${Math.round(sinceH)}시간 전, 누적 유튜브리드 ${ytN}·관심자 ${intN}, 쿨다운 ${cooldownH}h. 지금 돌릴까?` }] });
+        const txt = j.content.filter((b) => b.type === 'text').map((b) => b.text).join('');
+        const m = txt.match(/\{[\s\S]*\}/); llm = m ? JSON.parse(m[0]) : { run: true, reason: '판단 파싱 실패→기본 실행' };
+      } catch (e) { llm = { run: true, reason: 'LLM 장애→하드게이트만으로 진행' }; }
+    }
+    const shouldRun = gatePass && (force || !!(llm && llm.run));
+    const reason = !gatePass ? (`쿨다운 미경과(${Math.round(sinceH)}/${cooldownH}h)` + (_leadsBusy ? '·진행중' : '')) : (force ? '운영자 강제(force)' : (llm && llm.reason) || '');
+    const decision = { agent, shouldRun, reason, sinceLastH: Math.round(sinceH), cooldownH, llm };
+    // ④ 실행 권한: off 기본 → 판단만. ORCH_AUTO=on 또는 ?run=1 또는 ?force=1 일 때만 실제 실행
+    const allowExec = force || autoOn || req.query.run === '1';
+    if (!shouldRun || !allowExec) {
+      return res.json({ ok: true, autoEnabled: autoOn, executed: false, dryRun: !allowExec, decision,
+        note: !allowExec ? 'ORCH_AUTO=off → 판단만(실행 안 함). 실행하려면 ?run=1' : '게이트/판단 미통과 → skip' });
+    }
+    // ⑤ 실행 = 발견·분류 서브에이전트(수집·분류·명단·기록만). 발송·발행 호출 0.
+    if (_leadsBusy) return res.json({ ok: true, executed: false, decision, note: '진행중' });
+    _leadsBusy = true;
+    let summary, logged;
+    try {
+      const ytBefore = YTLEADS.length, leadBefore = Array.isArray(LEADS) ? LEADS.length : 0;
+      const yt = await runYtLeadCollect({}).catch((e) => ({ error: e.message }));
+      const naver = await runLeadCollect().catch((e) => ({ error: e.message }));
+      const ytAfter = YTLEADS.length, leadAfter = Array.isArray(LEADS) ? LEADS.length : 0;
+      summary = { youtube: { added: (yt && yt.added) || 0, hot: (yt && yt.hot) || 0, total: ytAfter }, naver: { added: (naver && naver.added) || 0, total: leadAfter }, delta: { youtubeLeads: ytAfter - ytBefore, interest: leadAfter - leadBefore } };
+      logged = `[발견·분류 자동트리거] 유튜브 +${summary.youtube.added}명(🔥${summary.youtube.hot}) / 관심자 +${summary.naver.added}명. 누적 유튜브 ${ytAfter}·관심자 ${leadAfter} (판단: ${reason})`;
+      try { appendDiary({ ts: new Date().toISOString(), agentId: 'lead', agentName: (AGENT_DOCS.lead && AGENT_DOCS.lead.name) || '고객발굴', project: (CAMPAIGN && CAMPAIGN.title) || '일반', kind: 'agent', entry: logged }); } catch (e) {}
+      _leadsLast = Date.now();
+    } finally { _leadsBusy = false; }
+    res.json({ ok: true, autoEnabled: autoOn, executed: true, decision, summary, logged });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // 강제 발행(검증용·키필요) — 시간 무시 1건
 app.post('/instagram/auto-run', async (req, res) => { if (!cronAuthed(req)) return res.status(401).json({ error: 'cron key 필요' }); const kind = (req.query.kind === 'carousel') ? 'carousel' : 'reel'; res.json(await runInstagramAuto(kind, true)); });
 app.get('/instagram/published', (req, res) => res.json({ count: IGPUB.length, items: IGPUB.slice().reverse() }));
