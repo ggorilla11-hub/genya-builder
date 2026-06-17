@@ -1108,6 +1108,7 @@ const RESV_TAB      = process.env.RESV_TAB || '제니야_예약저장';
 // ── PHASE 1-2: 대화기록·영업일기 시트 영속화 (재배포 생존) ──
 //   발행대장과 "같은 스프레드시트(RESV_SHEET_ID)·같은 서비스계정"을 재사용한다(새 자격증명·새 시트 없음).
 //   행 단위 append(컬럼 보존) + 부팅 시 시트→배열 복원. 발행 기능과 무관(PROTECT).
+//   재배포 생존 실측 통과: 2026-06-18 (시트가 진짜 원본 — 로컬 휘발돼도 기억 유지).
 const HIST_TAB  = process.env.HIST_TAB  || '제니야_대화기록';
 const DIARY_TAB = process.env.DIARY_TAB || '제니야_영업일기';
 const HIST_HEADER  = ['ts', 'who', 'project', 'text'];
