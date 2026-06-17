@@ -820,6 +820,29 @@ function sheetsClient() {
   return google.sheets({ version: 'v4', auth });
 }
 
+// ── 구글 캘린더 읽기 (강의 일정·상담·마감) — readonly·쓰기/발송/외부초대 0 ──────────────────
+//   기존 서비스계정 재사용 + calendar.readonly 스코프만(OAuth 0). 대표가 캘린더를 SA 이메일
+//   (jenya-server@moneya-72fe6.iam.gserviceaccount.com)에 공유 + 환경변수 GCAL_ID 설정해야 읽힘.
+//   ★읽기 전용: events.list만 노출. events.insert/update/delete·초대·발송 함수는 코드에 없음(구조적 차단). 발행 무관.
+const GCAL_ID = process.env.GCAL_ID || '';   // 읽을 캘린더 ID(대표 캘린더 id=대표 gmail 또는 특정 캘린더). 비면 미설정.
+function calendarReady() { return !!(googleCreds() && GCAL_ID); }
+function calendarClient() {
+  const creds = googleCreds(); if (!creds) return null;
+  const auth = new google.auth.GoogleAuth({ credentials: creds, scopes: ['https://www.googleapis.com/auth/calendar.readonly'] });
+  return google.calendar({ version: 'v3', auth });
+}
+async function calendarUpcoming(maxN) {
+  if (!calendarReady()) return [];
+  try {
+    const cal = calendarClient(); if (!cal) return [];
+    const r = await cal.events.list({ calendarId: GCAL_ID, timeMin: new Date().toISOString(), maxResults: Math.min(maxN || 10, 25), singleEvents: true, orderBy: 'startTime' });
+    return (r.data.items || []).map((e) => ({ summary: e.summary || '(제목없음)', start: (e.start && (e.start.dateTime || e.start.date)) || '', end: (e.end && (e.end.dateTime || e.end.date)) || '', location: e.location || '' }));
+  } catch (e) { return [{ error: String(e.message).slice(0, 140) }]; }
+}
+app.get('/calendar/upcoming', async (req, res) => {
+  res.json({ configured: calendarReady(), events: await calendarUpcoming(Number(req.query.n) || 10) });
+});
+
 // Solapi(문자/카톡) — 키가 있을 때만 켜진다
 const solapi = (process.env.SOLAPI_API_KEY && process.env.SOLAPI_API_SECRET)
   ? new SolapiMessageService(process.env.SOLAPI_API_KEY, process.env.SOLAPI_API_SECRET)
@@ -2231,9 +2254,10 @@ app.get('/orchestrator/plan', async (req, res) => {
       carousel: { doneToday: igDoneToday('carousel', ymd, IG_CARD_HOUR), next: card ? card.setName : null },
       published: IGPUB.length };
     const leads = { youtubeLeads: YTLEADS.length, youtubeHot: YTLEADS.filter((l) => /핫/.test(l.tier || '')).length, youtubeWarm: YTLEADS.filter((l) => /웜/.test(l.tier || '')).length, interest: Array.isArray(LEADS) ? LEADS.length : 0 };
+    const calendar = await calendarUpcoming(6).catch(() => []);   // 다가오는 강의·상담·마감(읽기전용)
     const diaryCtx = recentDiary('zenya');
     const recentChat = HISTORY.slice(-6).map((m) => `[${m.who}] ${String(m.text || '').replace(/\s+/g, ' ').slice(0, 120)}`).join('\n') || '(최근 대화 없음)';
-    const state = { kstNow: { ymd, hour }, youtube, instagram, leads, memory: { historyCount: HISTORY.length, diaryCount: DIARY.length } };
+    const state = { kstNow: { ymd, hour }, youtube, instagram, leads, calendar, memory: { historyCount: HISTORY.length, diaryCount: DIARY.length } };
     // ── 제니야 LLM 판단(텍스트만, 실행 0) ──
     const stateText = [
       `[현재 KST] ${ymd} ${hour}시`,
@@ -2241,6 +2265,7 @@ app.get('/orchestrator/plan', async (req, res) => {
       `[인스타 릴스] 오늘발행=${instagram.reel.doneToday} / 다음: ${instagram.reel.next || '없음'} (정시 ${instagram.reelHour}시)`,
       `[인스타 카루셀] 오늘발행=${instagram.carousel.doneToday} / 다음: ${instagram.carousel.next || '없음'} (정시 ${instagram.cardHour}시) / 인스타 누적 ${instagram.published}건`,
       `[리드] 유튜브 ${leads.youtubeLeads}명(핫 ${leads.youtubeHot}·웜 ${leads.youtubeWarm}) / 관심자 ${leads.interest}명`,
+      `[다가오는 일정] ${Array.isArray(calendar) && calendar.length ? calendar.map((e) => `${String(e.start || '').slice(0, 16)} ${e.summary || ''}`).join(' / ') : '(없음/캘린더 미설정)'}`,
       `[영속기억] 대화 ${state.memory.historyCount}건·영업일기 ${state.memory.diaryCount}건(구글시트 영속)`,
       `[최근 영업일기(48h)]\n${diaryCtx}`,
       `[최근 대화]\n${recentChat}`,
