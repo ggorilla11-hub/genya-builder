@@ -2207,6 +2207,56 @@ app.get('/instagram/auto-status', (req, res) => {
     carousel: { doneToday: igDoneToday('carousel', ymd, IG_CARD_HOUR), next: card ? { setId: card.setId, name: card.setName } : null },
     published: IGPUB.length });
 });
+
+// ── PHASE 1-3: 제니야 오케스트레이터(관측·지휘) — 읽기 전용 ──────────────────────
+//   영속기억(대화기록·영업일기) + 발행대장(YTPUB/IGPUB) + auto-status + 리드를 "읽어"
+//   하나의 상태 컨텍스트로 조립 → 제니야 LLM이 "현황 한 줄 + 다음 액션 제안"을 텍스트로 반환.
+//   ★읽기 전용: 발행·발송·결제·대장쓰기·실행 절대 0. 60초 스케줄러와 무관. on-demand + 60초 캐시(레이트리밋).
+//   부팅 시 실행 코드 없음(핸들러 try/catch) → 부팅 crash 위험 0.
+let _orchCache = { ts: 0, data: null };
+app.get('/orchestrator/plan', async (req, res) => {
+  try {
+    if (!process.env.ANTHROPIC_API_KEY) return res.status(503).json({ error: '두뇌 API 키가 없습니다.' });
+    const fresh = req.query.fresh === '1';
+    if (!fresh && _orchCache.data && Date.now() - _orchCache.ts < 60000) return res.json({ ...(_orchCache.data), cached: true });
+    // ── 상태 읽기(전부 읽기 전용, auto-status와 동일 계산) ──
+    const { ymd, hour } = kstNow();
+    const ytDone = (lastAutoYmd === ymd) || YTPUB.some((x) => x.auto && !x.forced && kstYmdHour(x.ts).ymd === ymd && kstYmdHour(x.ts).hour === YT_AUTO_HOUR);
+    const ytDoneIds = new Set(YTPUB.map((x) => x.contentId));
+    const ytQueue = myContents().filter((x) => x.type === '쇼츠' && x.link && !ytDoneIds.has(x.id));
+    const youtube = { ready: youtubeReady(), autoHour: YT_AUTO_HOUR, doneToday: ytDone, queueRemaining: ytQueue.length, next: ytQueue[0] ? ytQueue[0].name : null, published: YTPUB.length };
+    const reel = igNextReel(), card = igNextCard();
+    const instagram = { ready: instagramReady(), reelHour: IG_REEL_HOUR, cardHour: IG_CARD_HOUR,
+      reel: { doneToday: igDoneToday('reel', ymd, IG_REEL_HOUR), next: reel ? reel.name : null },
+      carousel: { doneToday: igDoneToday('carousel', ymd, IG_CARD_HOUR), next: card ? card.setName : null },
+      published: IGPUB.length };
+    const leads = { youtubeLeads: YTLEADS.length, youtubeHot: YTLEADS.filter((l) => /핫/.test(l.tier || '')).length, youtubeWarm: YTLEADS.filter((l) => /웜/.test(l.tier || '')).length, interest: Array.isArray(LEADS) ? LEADS.length : 0 };
+    const diaryCtx = recentDiary('zenya');
+    const recentChat = HISTORY.slice(-6).map((m) => `[${m.who}] ${String(m.text || '').replace(/\s+/g, ' ').slice(0, 120)}`).join('\n') || '(최근 대화 없음)';
+    const state = { kstNow: { ymd, hour }, youtube, instagram, leads, memory: { historyCount: HISTORY.length, diaryCount: DIARY.length } };
+    // ── 제니야 LLM 판단(텍스트만, 실행 0) ──
+    const stateText = [
+      `[현재 KST] ${ymd} ${hour}시`,
+      `[유튜브 무인발행] 준비=${youtube.ready} / 오늘발행=${youtube.doneToday} / 큐 ${youtube.queueRemaining}개(다음: ${youtube.next || '없음'}) / 누적 ${youtube.published}건 (정시 ${youtube.autoHour}시)`,
+      `[인스타 릴스] 오늘발행=${instagram.reel.doneToday} / 다음: ${instagram.reel.next || '없음'} (정시 ${instagram.reelHour}시)`,
+      `[인스타 카루셀] 오늘발행=${instagram.carousel.doneToday} / 다음: ${instagram.carousel.next || '없음'} (정시 ${instagram.cardHour}시) / 인스타 누적 ${instagram.published}건`,
+      `[리드] 유튜브 ${leads.youtubeLeads}명(핫 ${leads.youtubeHot}·웜 ${leads.youtubeWarm}) / 관심자 ${leads.interest}명`,
+      `[영속기억] 대화 ${state.memory.historyCount}건·영업일기 ${state.memory.diaryCount}건(구글시트 영속)`,
+      `[최근 영업일기(48h)]\n${diaryCtx}`,
+      `[최근 대화]\n${recentChat}`,
+    ].join('\n');
+    const sys = buildZenyaPrompt(req.query.project || '부트캠프')
+      + '\n\n=== 오케스트레이터 모드 (관측·지휘 / 읽기 전용) ===\n'
+      + '너는 지금 상태를 읽고 "오늘 무엇을 해야 하는지"를 판단하는 지휘관이다. 아래 실제 상태값만 근거로 답하라:\n'
+      + '① 현황을 딱 한 줄로 요약. ② 다음 액션 2~4개 제안 — 각각 [담당 서브에이전트: 발행/발견·분류(리드)/고객관리/마케팅 등], [무엇을], [대표 승인 필요 O/X]를 붙인다. '
+      + '③ 너는 제안만 한다 — 실제 실행·발행은 절대 안 한다(지금은 관측·지휘 단계). 숫자는 위 상태값만 쓰고 절대 지어내지 마라. 표·헤더 없이 짧은 대화체.';
+    const r = await anthropic.messages.create({ model: MODEL, max_tokens: 1200, system: sys, messages: [{ role: 'user', content: stateText + '\n\n지금 상태 기준으로 "현황 한 줄 + 다음 액션 제안"을 해줘.' }] });
+    const plan = r.content.filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim();
+    _orchCache = { ts: Date.now(), data: { ok: true, state, plan } };
+    res.json({ ok: true, state, plan, cached: false });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // 강제 발행(검증용·키필요) — 시간 무시 1건
 app.post('/instagram/auto-run', async (req, res) => { if (!cronAuthed(req)) return res.status(401).json({ error: 'cron key 필요' }); const kind = (req.query.kind === 'carousel') ? 'carousel' : 'reel'; res.json(await runInstagramAuto(kind, true)); });
 app.get('/instagram/published', (req, res) => res.json({ count: IGPUB.length, items: IGPUB.slice().reverse() }));
