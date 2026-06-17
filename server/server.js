@@ -89,11 +89,13 @@ console.log(`💾 저장소 로딩 — 대화 ${HISTORY.length}건, 영업일기
 
 function appendHistory(msg) {
   HISTORY.push(msg);
-  saveJson('대화기록.json', HISTORY);
+  saveJson('대화기록.json', HISTORY);   // 로컬 캐시
+  saveHistRow(msg);                      // 시트 영속(재배포 생존) — PHASE 1-2
 }
 function appendDiary(entry) {
   DIARY.push(entry);
-  saveJson('영업일기.json', DIARY);
+  saveJson('영업일기.json', DIARY);      // 로컬 캐시
+  saveDiaryRow(entry);                   // 시트 영속(재배포 생존) — PHASE 1-2
 }
 
 // ── 알림함 (대표님이 꼭 봐야 할 것 모음) ──────────────────────
@@ -1102,6 +1104,79 @@ function enforceAdRules(text) {
 //     Render 무료 플랜은 재시작 시 디스크가 초기화되므로, 시트가 진짜 원본이다.
 const RESV_SHEET_ID = process.env.RESV_SHEET_ID || CRM_SHEET_ID;   // 기본: CRM 시트(쓰기 권한 있음)
 const RESV_TAB      = process.env.RESV_TAB || '제니야_예약저장';
+
+// ── PHASE 1-2: 대화기록·영업일기 시트 영속화 (재배포 생존) ──
+//   발행대장과 "같은 스프레드시트(RESV_SHEET_ID)·같은 서비스계정"을 재사용한다(새 자격증명·새 시트 없음).
+//   행 단위 append(컬럼 보존) + 부팅 시 시트→배열 복원. 발행 기능과 무관(PROTECT).
+const HIST_TAB  = process.env.HIST_TAB  || '제니야_대화기록';
+const DIARY_TAB = process.env.DIARY_TAB || '제니야_영업일기';
+const HIST_HEADER  = ['ts', 'who', 'project', 'text'];
+const DIARY_HEADER = ['ts', 'agentId', 'agentName', 'project', 'kind', 'entry'];
+let histChain = Promise.resolve();
+let diaryChain = Promise.resolve();
+let _logTabsReady = false;
+async function ensureSheetTab(sheets, title, header) {
+  const meta = await sheets.spreadsheets.get({ spreadsheetId: RESV_SHEET_ID, fields: 'sheets.properties.title' });
+  if (!meta.data.sheets.some((s) => s.properties.title === title)) {
+    await sheets.spreadsheets.batchUpdate({ spreadsheetId: RESV_SHEET_ID, requestBody: { requests: [{ addSheet: { properties: { title } } }] } });
+    await sheets.spreadsheets.values.update({ spreadsheetId: RESV_SHEET_ID, range: `'${title}'!A1`, valueInputOption: 'RAW', requestBody: { values: [header] } });
+  }
+}
+async function ensureLogTabs(sheets) {
+  if (_logTabsReady) return;
+  await ensureSheetTab(sheets, HIST_TAB, HIST_HEADER);
+  await ensureSheetTab(sheets, DIARY_TAB, DIARY_HEADER);
+  _logTabsReady = true;
+}
+async function appendRows(tab, header, rows) {
+  const sheets = sheetsClient(); if (!sheets || !RESV_SHEET_ID || !rows.length) return;
+  await ensureLogTabs(sheets);
+  await sheets.spreadsheets.values.append({ spreadsheetId: RESV_SHEET_ID, range: `'${tab}'!A1`, valueInputOption: 'RAW', insertDataOption: 'INSERT_ROWS', requestBody: { values: rows } });
+}
+const histRow  = (m) => [m.ts || '', m.who || '', m.project || '', String(m.text || '')];
+const diaryRow = (e) => [e.ts || '', e.agentId || '', e.agentName || '', e.project || '', e.kind || '', String(e.entry || '')];
+// 쓰기: 직렬화 체인(쓰기 충돌 방지). 한 건씩 append하되 인접 호출은 순서대로 흘려보낸다.
+function saveHistRow(m) { histChain = histChain.catch(() => {}).then(() => appendRows(HIST_TAB, HIST_HEADER, [histRow(m)])).catch((e) => console.warn('⚠️ 대화기록 시트저장 실패:', e.message)); return histChain; }
+function saveDiaryRow(e) { diaryChain = diaryChain.catch(() => {}).then(() => appendRows(DIARY_TAB, DIARY_HEADER, [diaryRow(e)])).catch((er) => console.warn('⚠️ 영업일기 시트저장 실패:', er.message)); return diaryChain; }
+// 읽기: 서버 시작 시 시트→배열 복원(재배포 후에도 기억 유지). 시트가 진짜 원본.
+(async () => {
+  const sheets = sheetsClient(); if (!sheets || !RESV_SHEET_ID) return;
+  try {
+    const got = await sheets.spreadsheets.values.get({ spreadsheetId: RESV_SHEET_ID, range: `'${HIST_TAB}'!A2:D` });
+    const rows = got.data.values || [];
+    if (rows.length) { HISTORY.length = 0; rows.forEach((r) => HISTORY.push({ ts: r[0] || '', who: r[1] || '', project: r[2] || '', text: r[3] || '' })); console.log(`💬 대화기록 시트복원: ${HISTORY.length}건`); }
+  } catch (e) {}
+  try {
+    const got = await sheets.spreadsheets.values.get({ spreadsheetId: RESV_SHEET_ID, range: `'${DIARY_TAB}'!A2:F` });
+    const rows = got.data.values || [];
+    if (rows.length) { DIARY.length = 0; rows.forEach((r) => DIARY.push({ ts: r[0] || '', agentId: r[1] || '', agentName: r[2] || '', project: r[3] || '', kind: r[4] || '', entry: r[5] || '' })); console.log(`📔 영업일기 시트복원: ${DIARY.length}건`); }
+  } catch (e) {}
+})();
+// 백필(소멸 전 보존, 1회용·키필요) — 로컬 JSON 등에서 받은 과거 기록을 시트로. 복합키(ts|역할|앞20자) 중복 방지.
+const histKey  = (m) => `${m.ts}|${m.who}|${String(m.text || '').slice(0, 20)}`;
+const diaryKey = (e) => `${e.ts}|${e.agentId}|${String(e.entry || '').slice(0, 20)}`;
+app.post('/admin/logs-backfill', async (req, res) => {
+  if (!cronAuthed(req)) return res.status(401).json({ error: 'cron key 필요' });
+  const sheets = sheetsClient(); if (!sheets || !RESV_SHEET_ID) return res.status(503).json({ error: '시트 미설정' });
+  try {
+    await ensureLogTabs(sheets);
+    const hist = Array.isArray((req.body || {}).history) ? req.body.history : [];
+    const diary = Array.isArray((req.body || {}).diary) ? req.body.diary : [];
+    const exH = new Set(((await sheets.spreadsheets.values.get({ spreadsheetId: RESV_SHEET_ID, range: `'${HIST_TAB}'!A2:D` })).data.values || []).map((r) => `${r[0]}|${r[1]}|${String(r[3] || '').slice(0, 20)}`));
+    const exD = new Set(((await sheets.spreadsheets.values.get({ spreadsheetId: RESV_SHEET_ID, range: `'${DIARY_TAB}'!A2:F` })).data.values || []).map((r) => `${r[0]}|${r[1]}|${String(r[5] || '').slice(0, 20)}`));
+    const hRows = hist.filter((m) => m && m.ts && !exH.has(histKey(m))).map(histRow);
+    const dRows = diary.filter((e) => e && e.ts && !exD.has(diaryKey(e))).map(diaryRow);
+    if (hRows.length) await appendRows(HIST_TAB, HIST_HEADER, hRows);
+    if (dRows.length) await appendRows(DIARY_TAB, DIARY_HEADER, dRows);
+    res.json({ ok: true, historyAdded: hRows.length, diaryAdded: dRows.length, historyTotalIn: hist.length, diaryTotalIn: diary.length });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// 검증용(읽기전용) — 재배포 생존 확인: 현재 메모리(=부팅 시 시트복원) 건수·최근 샘플.
+app.get('/admin/logs-status', (req, res) => res.json({
+  history: HISTORY.length, diary: DIARY.length,
+  sampleHistory: HISTORY.slice(-3).map((m) => ({ ts: m.ts, who: m.who, text: String(m.text || '').slice(0, 40) })),
+  sampleDiary: DIARY.slice(-3).map((e) => ({ ts: e.ts, agentId: e.agentId, kind: e.kind, entry: String(e.entry || '').slice(0, 40) })),
+}));
 
 let PROMO = loadJson('홍보대기.json');
 
