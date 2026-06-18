@@ -3494,6 +3494,15 @@ async function watchdogTimer() {
   } catch (e) { console.warn('⚠️ 감시병 시계 오류:', e.message); }
 }
 setInterval(() => { watchdogTimer().catch(() => {}); }, WD_AUTO_MIN * 60 * 1000);   // ★ 발행·다른 타이머와 별개. 감지·알림만(조치·외부발송 0)
+// 감시병 상태(읽기전용) — 켜짐 여부·주기·임계 확인용. ★부작용 0(감지·발송·조치 안 함).
+app.get('/watchdog/status', (req, res) => {
+  res.json({
+    autoEnabled: String(process.env.WD_AUTO || 'off').toLowerCase() === 'on',   // ★ WD_AUTO=on일 때만 시계 작동(off 기본)
+    주기분: WD_AUTO_MIN,
+    임계: { 핫리드급증: WD_HOT_SURGE, 승인적체: WD_PEND_MANY, 승인방치시간: WD_PEND_OLD_H },
+    안내: '감지·알림만(조치·외부발송 0). 무인 켜기=Render env WD_AUTO=on. 끄기=off.',
+  });
+});
 
 // ── OCR 문서인식 (Claude 비전) — 이미지→텍스트+연락처 추출. 추출만, 발송·외부전송 0 ──────────────
 //   ★ 읽기·추출만: anthropic 이미지 블록으로 텍스트·연락처(JSON) 추출 → 호출자에 반환 + 영업일기엔 *비PII 마커만*.
