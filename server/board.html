@@ -17,6 +17,8 @@
   .lead{font-size:13px;padding:2px 0}
   button{background:#2563eb;color:#fff;border:0;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:14px}
   button:disabled{background:#374151;cursor:default}
+  button.sm{padding:4px 10px;font-size:12px;background:#334155}
+  a{text-decoration:none}
   .note{font-size:12px;color:#6b7280;margin-top:16px;line-height:1.6}
 </style>
 </head>
@@ -38,6 +40,7 @@
 var esc=function(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});};
 var mask=function(p){p=String(p||'').replace(/[^0-9]/g,'');return p.length>=4?'***-****-'+p.slice(-4):'***';};
 var ox=function(b){return b?'<span class="ok">O</span>':'<span class="no">X</span>';};
+var tbtn=function(key,on){return '<button class="sm" onclick="setToggle(\''+key+'\',\''+(on?'off':'on')+'\')">'+(on?'끄기':'켜기')+'</button>';};
 async function load(){
   var d=await fetch('/dashboard/all').then(function(r){return r.json();}).catch(function(){return null;});
   if(!d){document.getElementById('cards').innerHTML='<div class="card">데이터를 불러오지 못했습니다.</div>';return;}
@@ -55,11 +58,11 @@ async function load(){
     ((d.다가오는일정||[]).map(function(x){return '<div class="lead">· '+esc(x)+'</div>';}).join('')||'<div class="muted">없음</div>')+'</div>');
   cards.push('<div class="card"><h2>🚨 이상징후</h2>'+
     (an.건수?('<div class="big warn">'+an.건수+'건</div>'+(an.목록||[]).map(function(x){return '<div class="lead">· '+esc(x)+'</div>';}).join('')):'<div class="ok">이상 없음</div>')+'</div>');
-  cards.push('<div class="card"><h2>⚙️ 설정 상태</h2>'+
-    '<div class="row"><span>무인 감시병</span>'+ox(set.감시병_무인)+'</div>'+
-    '<div class="row"><span>모닝브리핑 자동</span>'+ox(set.모닝브리핑_자동)+'</div>'+
-    '<div class="row"><span>Gmail 연결</span>'+ox(set.Gmail연결)+'</div>'+
-    '<div class="muted" style="font-size:12px;margin-top:6px">토글 버튼은 4-3 단계</div></div>');
+  cards.push('<div class="card"><h2>⚙️ 설정 <span class="muted" style="font-size:11px">(누르는 건 대표님)</span></h2>'+
+    '<div class="row"><span>무인 감시병</span><span>'+ox(set.감시병_무인)+' '+tbtn('WD_AUTO',set.감시병_무인)+'</span></div>'+
+    '<div class="row"><span>모닝브리핑 자동</span><span>'+ox(set.모닝브리핑_자동)+' '+tbtn('MORNING_BRIEF',set.모닝브리핑_자동)+'</span></div>'+
+    '<div class="row"><span>Gmail 연결</span><span>'+ox(set.Gmail연결)+' '+(set.Gmail연결?'':'<a href="/gmail/auth"><button class="sm">연결</button></a>')+'</span></div>'+
+    '<div class="muted" style="font-size:11px;margin-top:6px">★감지·보고 스위치만. 발송·발행 자동 토글 없음 — 그건 영영 사람 승인.</div></div>');
   cards.push('<div class="card"><h2>💰 매출·전환</h2>'+
     (rev.값==null?('<div class="muted">'+esc(rev.상태||'출처 연결 예정(4-2)')+'</div>'):('<div class="big">'+esc(rev.값)+'</div>'))+'</div>');
   document.getElementById('cards').innerHTML=cards.join('');
@@ -71,6 +74,12 @@ async function load(){
       '<span class="muted" style="font-size:12px">'+esc((p.text||'').slice(0,40))+'</span></span>'+
       '<button onclick="approve(\''+esc(p.id)+'\',\''+esc(p.name||'')+'\')">승인</button></div>';
   }).join(''):'<div class="muted">대기 없음</div>';
+}
+async function setToggle(key,value){
+  if(!confirm(key+' 를 '+value.toUpperCase()+' 하시겠습니까? (감지·보고 스위치 — 발송·발행 아님, 대표님 직접)'))return;
+  var r=await fetch('/settings/toggle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:key,value:value})}).then(function(r){return r.json();}).catch(function(e){return {error:String(e)};});
+  alert(r.error?('실패: '+r.error):(key+' = '+value+' 완료'));
+  load();
 }
 async function approve(id,name){
   if(!confirm('['+name+'] 발송을 승인하시겠습니까? (대표님 직접 승인 — 휴먼인루프)'))return;

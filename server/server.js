@@ -3535,13 +3535,54 @@ app.get('/profile', (req, res) => res.json(genyaProfile()));
 //   ★ 인증=유튜브와 같은 OAuth(대표 1회 동의 → refresh_token). 미설정이면 graceful("연결 안 됨").
 //   ★ send·답장·삭제·초안(draft) 함수 영영 미노출 = 구조적 차단(messages.list/get '읽기'만 호출). 발송은 영영 사람 승인.
 //   ★ 본문·snippet 미포함(원문 미저장) — 발신자·제목·날짜 마커만. 영업일기·알림함에도 안 씀(첫 변경=반환만). AI머니야·발행 무관.
-function gmailReady() { return !!((process.env.GMAIL_CLIENT_ID || process.env.YT_CLIENT_ID) && (process.env.GMAIL_CLIENT_SECRET || process.env.YT_CLIENT_SECRET) && process.env.GMAIL_REFRESH_TOKEN); }
+// PHASE 4-3c: Gmail OAuth 연결(유튜브 패턴) — refresh_token 시트 영속·부팅복원. ★gmail.readonly(읽기)만, send 없음.
+const GMAIL_SCOPES = ['https://www.googleapis.com/auth/gmail.readonly'];
+const GMAIL_REDIRECT_URI = process.env.GMAIL_REDIRECT_URI || 'https://jenya.onrender.com/gmail/oauth2callback';
+const GMAIL_TOKEN_TAB = process.env.GMAIL_TOKEN_TAB || '제니야_Gmail토큰';
+let GMAIL_REFRESH_TOKEN_VAL = process.env.GMAIL_REFRESH_TOKEN || '';
+function gmailOAuthClient() {
+  const id = process.env.GMAIL_CLIENT_ID || process.env.YT_CLIENT_ID;
+  const secret = process.env.GMAIL_CLIENT_SECRET || process.env.YT_CLIENT_SECRET;
+  if (!id || !secret) return null;
+  return new google.auth.OAuth2(id, secret, GMAIL_REDIRECT_URI);
+}
+function gmailReady() { return !!(gmailOAuthClient() && (GMAIL_REFRESH_TOKEN_VAL || process.env.GMAIL_REFRESH_TOKEN)); }
 function gmailClient() {
-  if (!gmailReady()) return null;
-  const o = new google.auth.OAuth2(process.env.GMAIL_CLIENT_ID || process.env.YT_CLIENT_ID, process.env.GMAIL_CLIENT_SECRET || process.env.YT_CLIENT_SECRET);
-  o.setCredentials({ refresh_token: process.env.GMAIL_REFRESH_TOKEN });   // gmail.readonly scope는 동의 때 묶임
+  const o = gmailOAuthClient(); if (!o || !(GMAIL_REFRESH_TOKEN_VAL || process.env.GMAIL_REFRESH_TOKEN)) return null;
+  o.setCredentials({ refresh_token: GMAIL_REFRESH_TOKEN_VAL || process.env.GMAIL_REFRESH_TOKEN });   // gmail.readonly scope는 동의 때 묶임
   return google.gmail({ version: 'v1', auth: o });
 }
+async function saveGmailTokenToSheet(tok) {
+  const sheets = sheetsClient(); if (!sheets || !RESV_SHEET_ID) return;
+  try {
+    const meta = await sheets.spreadsheets.get({ spreadsheetId: RESV_SHEET_ID });
+    const exists = (meta.data.sheets || []).some((s) => s.properties.title === GMAIL_TOKEN_TAB);
+    if (!exists) await sheets.spreadsheets.batchUpdate({ spreadsheetId: RESV_SHEET_ID, requestBody: { requests: [{ addSheet: { properties: { title: GMAIL_TOKEN_TAB } } }] } });
+    await sheets.spreadsheets.values.update({ spreadsheetId: RESV_SHEET_ID, range: `'${GMAIL_TOKEN_TAB}'!A1`, valueInputOption: 'RAW', requestBody: { values: [['refresh_token', tok]] } });
+  } catch (e) { console.warn('⚠️ Gmail토큰 시트저장 실패:', e.message); }
+}
+(async () => {   // 부팅복원(재배포 생존) — 토큰값은 메모리 변수에만, 로그/응답에 노출 0
+  if (GMAIL_REFRESH_TOKEN_VAL) return;
+  const sheets = sheetsClient(); if (!sheets || !RESV_SHEET_ID) return;
+  try { const got = await sheets.spreadsheets.values.get({ spreadsheetId: RESV_SHEET_ID, range: `'${GMAIL_TOKEN_TAB}'!A1:B1` }); const row = (got.data.values || [])[0]; if (row && row[0] === 'refresh_token' && row[1]) { GMAIL_REFRESH_TOKEN_VAL = row[1]; console.log('▶️ Gmail refresh_token 시트 복원'); } } catch (e) {}
+})();
+// 1회 동의 시작 — /board [연결] 버튼이 이 주소로. 구글 동의 → refresh_token 자동 저장
+app.get('/gmail/auth', (req, res) => {
+  const o = gmailOAuthClient();
+  if (!o) return res.status(400).send('<meta charset=utf8><body style="font-family:sans-serif;padding:24px;line-height:1.7"><h2>Gmail 연결 준비 필요</h2><p>Render 환경변수에 <b>GMAIL_CLIENT_ID·GMAIL_CLIENT_SECRET</b>(또는 유튜브와 같은 키 재사용)를 넣고, Google Cloud 콘솔 승인된 리디렉션 URI에 <b>' + GMAIL_REDIRECT_URI + '</b>를 추가해 주세요. ★gmail.readonly(읽기)만 — send 없음.</p></body>');
+  res.redirect(o.generateAuthUrl({ access_type: 'offline', prompt: 'consent', scope: GMAIL_SCOPES, include_granted_scopes: true }));
+});
+app.get('/gmail/oauth2callback', async (req, res) => {
+  try {
+    const o = gmailOAuthClient(); if (!o) return res.status(400).send('클라이언트 미설정');
+    if (!req.query.code) return res.status(400).send('인증 코드 없음. /gmail/auth 부터 다시 시작하세요.');
+    const { tokens } = await o.getToken(req.query.code);
+    if (!tokens.refresh_token) return res.status(200).send('refresh_token 미발급. 구글계정→보안→타사 앱 연결에서 기존 권한 삭제 후 /gmail/auth 재시도.');
+    GMAIL_REFRESH_TOKEN_VAL = tokens.refresh_token;
+    await saveGmailTokenToSheet(GMAIL_REFRESH_TOKEN_VAL).catch(() => {});
+    res.send('<meta charset=utf8><body style="font-family:sans-serif;padding:24px;line-height:1.7"><h2>✅ Gmail 읽기 연결 완료</h2><p>이제 최근 메일(발신자·제목·날짜)을 읽습니다. ★읽기 전용 — send·답장·삭제 없음, 본문 원문 미저장.</p></body>');
+  } catch (e) { res.status(500).send('인증 실패: ' + e.message); }
+});
 app.get('/gmail/recent', async (req, res) => {
   try {
     const gm = gmailClient();
