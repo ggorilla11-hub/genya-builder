@@ -3440,14 +3440,18 @@ async function morningBriefing() {
   const cal = await calendarUpcoming(6).catch(() => []);
   const calOk = Array.isArray(cal) && cal.length && !cal[0].error;
   const night = diaryDigest('모닝브리핑');   // 밤사이 영업일기 텍스트
+  const wd = await anomalyScan().catch(() => ({ anomalies: [] }));   // 밤사이 시스템 이상 점검(읽기만, 감지·보고용)
+  const wdN = (wd.anomalies || []).length;
+  const wdLine = `[밤사이 시스템 점검] 이상 ${wdN}건${wdN ? ': ' + wd.anomalies.map((a) => a.msg).join(' / ') : ' (이상 없음)'}`;
   const stateText = [
     `[밤사이 핫 가망고객] ${hot.length}명${hot.length ? ': ' + hot.map((l) => l.author).filter(Boolean).slice(0, 6).join(', ') : ''}`,
     `[다가오는 일정] ${calOk ? cal.map((e) => `${String(e.start || '').slice(0, 16)} ${e.summary || ''}`).join(' / ') : '(없음/캘린더 미설정)'}`,
     `[밤사이 한 일(영업일기)]\n${night}`,
+    wdLine,
   ].join('\n');
   const sys = buildZenyaPrompt('부트캠프')
     + '\n\n=== 모닝브리핑 모드 (대표님 본인 아침 보고, 정보성) ===\n'
-    + '아래 밤사이 결과를 대표님께 아침 보고로 정리하라: ① 밤사이 찾은 핫 가망고객 요약 ② 오늘 다가오는 일정 ③ 오늘 할 일 제안 2~3개(각 [대표 승인 필요 O/X]). '
+    + '아래 밤사이 결과를 대표님께 아침 보고로 정리하라: ① 밤사이 찾은 핫 가망고객 요약 ② 오늘 다가오는 일정 ③ 오늘 할 일 제안 2~3개(각 [대표 승인 필요 O/X]) ④ 밤사이 시스템 점검에 이상이 있으면 한 줄 경고(없으면 "시스템 이상 없음"). '
     + '짧고 또렷하게(표·헤더 없이 6~10줄). 외부 고객 발송·연락은 "실행"이 아니라 "준비/승인 대기"로만 표현. 숫자는 위 값만, 지어내지 마라.';
   const r = await anthropic.messages.create({ model: MODEL, max_tokens: 900, system: sys, messages: [{ role: 'user', content: stateText + '\n\n오늘 아침 모닝브리핑을 써줘.' }] });
   const brief = r.content.filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim();
@@ -3477,6 +3481,19 @@ async function morningBriefTimer() {
   finally { _briefBusy = false; }
 }
 setInterval(() => { morningBriefTimer().catch(() => {}); }, 30 * 60 * 1000);   // ★ 발행 60초 루프와 별개 타이머(off 기본)
+
+// ── Hooks(D) 4단계: 감시병 시계 — 주기적으로 스스로 점검 → 이상이면 알림함에만 기록(dedup=하루1회) ──
+//   ★ WD_AUTO=off 기본(안전스위치 — 대표가 Render env로 켤 때만). 켜도 감지·알림만 — 조치·외부발송 0(watchdogReport가 pushNotify만).
+//   ★ 발행 60초 setInterval·무인타이머·모닝브리핑과 완전 별개(독립 try/catch). 발행함수 무접촉.
+const WD_AUTO_MIN = Math.max(5, Number(process.env.WD_AUTO_MIN || 30));   // 점검 주기(분), 기본 30
+async function watchdogTimer() {
+  if (String(process.env.WD_AUTO || 'off').toLowerCase() !== 'on') return;   // off 기본 = 완전 no-op
+  try {
+    const r = await watchdogReport();   // 감지+알림함(내부)만. 외부발송·조치 0
+    if (r && r.신규알림) console.log(`🛡️ 감시병: 새 이상징후 ${r.신규알림}건 알림함 기록(${(r.알린코드 || []).join(',')})`);
+  } catch (e) { console.warn('⚠️ 감시병 시계 오류:', e.message); }
+}
+setInterval(() => { watchdogTimer().catch(() => {}); }, WD_AUTO_MIN * 60 * 1000);   // ★ 발행·다른 타이머와 별개. 감지·알림만(조치·외부발송 0)
 
 // ── OCR 문서인식 (Claude 비전) — 이미지→텍스트+연락처 추출. 추출만, 발송·외부전송 0 ──────────────
 //   ★ 읽기·추출만: anthropic 이미지 블록으로 텍스트·연락처(JSON) 추출 → 호출자에 반환 + 영업일기엔 *비PII 마커만*.
