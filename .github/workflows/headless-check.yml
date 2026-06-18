@@ -1,0 +1,31 @@
+name: headless-check
+# Headless(-p) 무인 실행 — 엄마(Claude Code)를 GitHub 러너에서 1회 비대화형 실행 (대표 PC 안 켜도).
+# ★ 읽기·조사만. 코드변경·발행·발송·git push 0. API키는 GitHub 시크릿(ANTHROPIC_API_KEY)로만(노출 0).
+on:
+  workflow_dispatch: {}          # 수동 트리거(대표가 Actions 탭 → Run workflow). 정시 무인은 아래 schedule 주석 해제 시.
+  # schedule:
+  #   - cron: '0 22 * * *'       # 예: 매일 07:00 KST (22:00 UTC) — 활성화는 대표 판단
+permissions:
+  contents: read                 # ★ 읽기만 — 코드 커밋·푸시 권한 없음(발행/코드변경 구조적 불가)
+jobs:
+  headless:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Claude Code 설치
+        run: npm install -g @anthropic-ai/claude-code
+      - name: Headless 자율상태 점검 (읽기·조사만)
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          claude -p "jenya 자율루프 상태를 읽기 전용으로 점검·보고하라. curl로 https://jenya.onrender.com/orchestrator/plan?fresh=1 와 /youtube/auto-status 와 /instagram/auto-status 를 읽어, 발행 여부·큐·핫리드·다가오는 일정을 5줄로 요약하라. ★코드 변경·발행·발송·git push 절대 금지(읽기·조사만)." \
+            --allowedTools "Bash(curl:*)" \
+            --max-turns 10 \
+            > headless_report.md 2>&1 || true
+          echo "===== Headless 보고 ====="
+          cat headless_report.md
+      - name: 보고 아티팩트 업로드
+        uses: actions/upload-artifact@v4
+        with:
+          name: headless-report
+          path: headless_report.md
