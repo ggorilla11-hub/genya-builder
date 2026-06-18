@@ -3559,6 +3559,34 @@ app.post('/rag/ask', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── 폰 지휘(Remote Control B): 한 화면 통합 요약 — 읽기 전용, 발송·발행 0 ──────────────────────
+//   대표가 폰에서 현황·핫리드·일정·승인대기·모닝브리핑을 한눈에. ★승인·발송은 기존 /care/pending·/care/approve(대표 승인)만.
+//   발행 함수·60초 스케줄러·발행대장 무접촉(전부 읽기만). 자율은 발견·분류까지, 발송·발행은 폰에서도 사람 승인.
+app.get('/phone/digest', async (req, res) => {
+  try {
+    const { ymd, hour } = kstNow();
+    const ytDone = (lastAutoYmd === ymd) || YTPUB.some((x) => x.auto && !x.forced && kstYmdHour(x.ts).ymd === ymd && kstYmdHour(x.ts).hour === YT_AUTO_HOUR);
+    const ytDoneIds = new Set(YTPUB.map((y) => y.contentId));
+    const ytQueue = myContents().filter((x) => x.type === '쇼츠' && x.link && !ytDoneIds.has(x.id));
+    const hot = YTLEADS.filter((l) => /핫/.test(l.tier || ''));
+    const cal = await calendarUpcoming(5).catch(() => []);
+    const calOk = Array.isArray(cal) && cal.length && !cal[0].error;
+    const pendingN = Array.isArray(PENDING) ? PENDING.filter((p) => p.status === '대기').length : 0;
+    const unread = NOTIFY.filter((n) => !n.read).length;
+    const lastBrief = [...DIARY].reverse().find((d) => d.kind === 'brief');
+    res.json({
+      ok: true, kstNow: { ymd, hour },
+      발행: { 유튜브오늘: ytDone, 쇼츠큐: ytQueue.length, 릴스오늘: igDoneToday('reel', ymd, IG_REEL_HOUR), 카루셀오늘: igDoneToday('carousel', ymd, IG_CARD_HOUR) },
+      밤사이핫리드: { 수: hot.length, 명단: hot.slice(-6).map((l) => l.author).filter(Boolean) },
+      다가오는일정: calOk ? cal.map((e) => `${String(e.start || '').slice(0, 16)} ${e.summary || ''}`) : [],
+      승인대기_발송: pendingN,
+      알림함_안읽음: unread,
+      최근모닝브리핑: lastBrief ? lastBrief.entry : null,
+      안내: '발송·발행은 여기서 안 나감 — /care/pending 확인 후 /care/approve(대표 승인)로만. 자율은 발견·분류까지.',
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // 외부 크론(cron-job.org 등)이 아침에 깨우며 호출할 수 있는 입구 — 호출만으로 밀린 예약 발송
 app.get('/promo/tick', async (req, res) => { res.json(await runDuePromo()); });
 
