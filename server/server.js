@@ -3593,7 +3593,7 @@ async function dashboardData() {
     안내: '읽기 전용 계기판. 발송·발행·설정변경 0(보기만). 승인=/care/approve(대표 승인), 설정 토글·화면(HTML)·매출연결은 다음 단계.',
   };
 }
-app.get('/dashboard', async (req, res) => {
+app.get('/dashboard/all', async (req, res) => {   // ★ 기존 /dashboard(팀 활동표, line 698)와 충돌 피해 별 경로
   try { res.json(await dashboardData()); } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
