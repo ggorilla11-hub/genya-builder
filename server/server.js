@@ -3648,6 +3648,28 @@ app.get('/watchdog/scan', async (req, res) => {
   try { res.json(await anomalyScan()); } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── 감시병 2단계: 감지 결과를 '알림함에만' 자동 기록(내부). ★외부발송 0·조치 0 ────────────────
+//   ★ 여전히 pushNotify(내부 알림함)만 — Solapi·발송·발행·조치 함수 0. 같은 징후 하루 1회(dedup)=알림 폭주 방지.
+//   ★ 시계 자동연결은 다음 단계(3단계 모닝브리핑·4단계 setInterval). 지금은 수동 트리거.
+async function watchdogReport() {
+  const scan = await anomalyScan();            // 읽기(감지)
+  const { ymd } = kstNow();
+  const newly = [];
+  for (const a of (scan.anomalies || [])) {
+    // 하루 1회: 오늘(KST) 같은 code로 이미 올린 알림이 있으면 건너뜀(알림 폭주 방지)
+    const dup = NOTIFY.some((n) => n.kind === 'watchdog' && typeof n.body === 'string' && n.body.includes('[' + a.code + ']') && kstYmdHour(n.ts).ymd === ymd);
+    if (dup) continue;
+    pushNotify({ kind: 'watchdog', title: '[이상징후] ' + a.msg, body: '[' + a.code + '] ' + a.level + ' — 감지·보고만(조치는 대표님 승인 필요). 외부발송 없음.', agentId: 'zenya' });
+    newly.push(a.code);
+  }
+  const total = (scan.anomalies || []).length;
+  return { ok: scan.ok, kstNow: scan.kstNow, 이상건수: total, 신규알림: newly.length, 알린코드: newly, dedup건너뜀: total - newly.length, anomalies: scan.anomalies, 안내: '알림함에만(내부). 외부발송·조치 0. 같은 징후 하루 1회.' };
+}
+// 감지+알림함 기록(쓰기). ★알림함에만 — 외부발송·조치 0. 시계 자동연결은 다음 단계.
+app.post('/watchdog/report', async (req, res) => {
+  try { res.json(await watchdogReport()); } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // 외부 크론(cron-job.org 등)이 아침에 깨우며 호출할 수 있는 입구 — 호출만으로 밀린 예약 발송
 app.get('/promo/tick', async (req, res) => { res.json(await runDuePromo()); });
 
