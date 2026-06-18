@@ -3609,6 +3609,45 @@ async function autonomousStateText() {
   } catch (e) { return ''; }
 }
 
+// ── 감시병(watchdog) 이상징후 감지 — 읽기 전용. 감지·반환만(알림함·시계·발행·발송 0) ──────────
+//   ★ 조치 함수(재발행·발송·설정변경·재시작) 미노출 = 구조적으로 못 건드림. 발행대장·auto-status·리드·승인대기는 '읽기'만.
+//   ★ Hooks 1단계 = JSON 반환만(알림함 pushNotify 미호출·시계 미연결). 알림 얹기·모닝브리핑 합류·시계연결은 다음 단계.
+const WD_HOT_SURGE = Math.max(1, Number(process.env.WD_HOT_SURGE || 8));     // 핫리드 급증 임계(명)
+const WD_PEND_MANY = Math.max(1, Number(process.env.WD_PEND_MANY || 5));     // 승인 적체 임계(건)
+const WD_PEND_OLD_H = Math.max(1, Number(process.env.WD_PEND_OLD_H || 24));  // 승인 방치 임계(시간)
+async function anomalyScan() {
+  const out = [];
+  const add = (level, code, msg) => out.push({ level, code, msg });
+  try {
+    const { ymd, hour } = kstNow();
+    // ① 발행 실패/누락 — 정시 지났는데 오늘 발행 흔적 없음(읽기만: lastAutoYmd·YTPUB·IGPUB)
+    const ytDone = (lastAutoYmd === ymd) || YTPUB.some((x) => x.auto && !x.forced && kstYmdHour(x.ts).ymd === ymd && kstYmdHour(x.ts).hour === YT_AUTO_HOUR);
+    if (hour >= YT_AUTO_HOUR && !ytDone) add('warn', 'YT_NOT_PUBLISHED', `유튜브 정시(${YT_AUTO_HOUR}시) 지났는데 오늘 발행 흔적 없음`);
+    if (hour >= IG_REEL_HOUR && !igDoneToday('reel', ymd, IG_REEL_HOUR)) add('warn', 'IG_REEL_NOT_PUBLISHED', `인스타 릴스 정시(${IG_REEL_HOUR}시) 지났는데 오늘 발행 흔적 없음`);
+    if (hour >= IG_CARD_HOUR && !igDoneToday('carousel', ymd, IG_CARD_HOUR)) add('warn', 'IG_CARD_NOT_PUBLISHED', `인스타 카루셀 정시(${IG_CARD_HOUR}시) 지났는데 오늘 발행 흔적 없음`);
+    // ② 핫리드 급증/급감 — 임계 기반(평소 대비 baseline은 다음 단계)
+    const hot = Array.isArray(YTLEADS) ? YTLEADS.filter((l) => /핫/.test(l.tier || '')).length : 0;
+    if (hot === 0) add('info', 'HOT_ZERO', '밤사이 핫 가망고객 0명 — 채널/수집 점검 필요할 수 있음');
+    else if (hot >= WD_HOT_SURGE) add('info', 'HOT_SURGE', `핫 가망고객 급증 ${hot}명(임계 ${WD_HOT_SURGE}) — 기회, 빠른 응대 검토`);
+    // ③ 승인 적체 — 대기 건수/경과시간(읽기만, PENDING)
+    const waiting = Array.isArray(PENDING) ? PENDING.filter((p) => p.status === '대기') : [];
+    if (waiting.length >= WD_PEND_MANY) add('warn', 'APPROVAL_BACKLOG', `발송 승인 대기 ${waiting.length}건(임계 ${WD_PEND_MANY}) — 대표님 확인 필요`);
+    const now = Date.now();
+    const oldest = waiting.map((p) => Number(p.ts) || 0).filter((t) => t > 0).sort((a, b) => a - b)[0];
+    if (oldest && (now - oldest) > WD_PEND_OLD_H * 3600 * 1000) add('warn', 'APPROVAL_STALE', `승인 대기 중 ${WD_PEND_OLD_H}시간 넘은 건 있음 — 방치 점검`);
+    // ④ 시스템 이상 — 캘린더 연결 점검(읽기). 외부의존 정밀점검은 다음 단계
+    try {
+      const cal = await calendarUpcoming(4);
+      if (Array.isArray(cal) && cal[0] && cal[0].error) add('info', 'CALENDAR_ERR', '캘린더 연결 이상(일정 읽기 실패) — 설정 점검');
+    } catch (e) { add('info', 'CALENDAR_ERR', '캘린더 연결 이상(일정 읽기 실패) — 설정 점검'); }
+    return { ok: true, kstNow: { ymd, hour }, 점검항목: ['발행누락', '핫리드급증급감', '승인적체', '시스템이상(캘린더)'], 이상건수: out.length, anomalies: out, 안내: '감지·보고만. 조치(재발행·발송·재시작·설정변경)는 대표님 승인으로만 — 감시병은 조치 함수를 쥐지 않음.' };
+  } catch (e) { return { ok: false, error: e.message, anomalies: out }; }
+}
+// 감시병 점검 결과 JSON 반환(읽기). ★알림함에 안 쓰고 시계에 안 붙임(1단계).
+app.get('/watchdog/scan', async (req, res) => {
+  try { res.json(await anomalyScan()); } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // 외부 크론(cron-job.org 등)이 아침에 깨우며 호출할 수 있는 입구 — 호출만으로 밀린 예약 발송
 app.get('/promo/tick', async (req, res) => { res.json(await runDuePromo()); });
 
