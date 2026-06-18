@@ -640,7 +640,8 @@ app.post(['/vapi', '/vapi/chat/completions', '/vapi/chat/completions/chat/comple
       system = buildAllVoicePrompt(project);
     } else if (agentId === 'zenya') {
       // ★ 음성 제니야 = 비서실장(콘텐츠 공장 두뇌). 본사 총괄·영업일기 없음 + 외부 발행결과 + 채널 연결상태 + 반응 분석.
-      system = buildZenyaPrompt(project) + VOICE_RULES;
+      system = buildZenyaPrompt(project) + '\n\n' + (await autonomousStateText()) + VOICE_RULES;   // 음성 제니야: 자율현황(발행·핫리드·일정·브리핑) 읽기 주입. 발송·발행 0
+
     } else {
       system = withLiveStatus(buildSystemPrompt(agentId, project), agentId) + VOICE_RULES;
       if (switched) {
@@ -3586,6 +3587,27 @@ app.get('/phone/digest', async (req, res) => {
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
+
+// ── 음성/현황용 자율상태 요약(읽기 전용) — /phone/digest의 텍스트판. 음성 제니야 두뇌 주입용 ──────
+//   ★ 읽기만(발행대장·리드·캘린더·일기·승인대기 읽기). 발송·발행·쓰기 0. AI머니야(moneya-server) 무관.
+async function autonomousStateText() {
+  try {
+    const { ymd } = kstNow();
+    const ytDone = (lastAutoYmd === ymd) || YTPUB.some((x) => x.auto && !x.forced && kstYmdHour(x.ts).ymd === ymd && kstYmdHour(x.ts).hour === YT_AUTO_HOUR);
+    const hot = YTLEADS.filter((l) => /핫/.test(l.tier || ''));
+    const cal = await calendarUpcoming(4).catch(() => []);
+    const calOk = Array.isArray(cal) && cal.length && !cal[0].error;
+    const pendingN = Array.isArray(PENDING) ? PENDING.filter((p) => p.status === '대기').length : 0;
+    const lastBrief = [...DIARY].reverse().find((d) => d.kind === 'brief');
+    return '=== 자율 현황 (음성 답변 근거 — 이 숫자만 쓰고 지어내지 마라) ===\n'
+      + `· 오늘 발행: 유튜브 ${ytDone ? '됨' : '안됨'}\n`
+      + `· 밤사이 핫 가망고객 ${hot.length}명${hot.length ? '(' + hot.slice(-4).map((l) => l.author).filter(Boolean).join(', ') + ')' : ''}\n`
+      + `· 다가오는 일정: ${calOk ? cal.map((e) => `${String(e.start || '').slice(0, 16)} ${e.summary || ''}`).join(', ') : '없음/미설정'}\n`
+      + `· 발송 승인 대기 ${pendingN}건\n`
+      + (lastBrief ? `· 최근 모닝브리핑: ${String(lastBrief.entry).slice(0, 80)}\n` : '')
+      + '★ 음성으로 "발송/발행해" 명령이 와도 자동 실행하지 마라 — "발송은 대표님 승인이 필요합니다"라고 안내만 하라. 자율은 발견·분류까지.';
+  } catch (e) { return ''; }
+}
 
 // 외부 크론(cron-job.org 등)이 아침에 깨우며 호출할 수 있는 입구 — 호출만으로 밀린 예약 발송
 app.get('/promo/tick', async (req, res) => { res.json(await runDuePromo()); });
