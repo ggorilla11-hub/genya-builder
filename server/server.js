@@ -2776,7 +2776,7 @@ async function runLeadCollect() {
   return { ok: true, added, total: LEADS.length };
 }
 let LEAD_LAST_DAY = '';
-async function runDueLeads() { if (!leadsConfigured()) return; const d = addDaysYMD(0); if (d === LEAD_LAST_DAY) return; LEAD_LAST_DAY = d; await runLeadCollect().catch(() => {}); }
+async function runDueLeads() { if (String(process.env.ORCH_AUTO || 'off').toLowerCase() === 'on') return; if (!leadsConfigured()) return; const d = addDaysYMD(0); if (d === LEAD_LAST_DAY) return; LEAD_LAST_DAY = d; await runLeadCollect().catch(() => {}); }   // ★PHASE2-3: ORCH_AUTO=on이면 autoLeadsTimer가 단일 소유 → 옛 경로 skip(중복제거). off면 무변화
 app.post('/leads/collect', async (req, res) => { try { res.json(await runLeadCollect()); } catch (e) { res.status(500).json({ error: e.message }); } });
 app.get('/leads/today', (req, res) => {
   const today = addDaysYMD(0);
@@ -2908,7 +2908,7 @@ async function runYtLeadCollect(opts) {
   return { ok: true, added, hot, candidates: cands.length, excluded: cands.length - added, total: YTLEADS.length };
 }
 let YT_LAST_DAY = '';
-async function runDueYtLeads() { if (!process.env.YOUTUBE_API_KEY) return; const d = addDaysYMD(0); if (d === YT_LAST_DAY) return; YT_LAST_DAY = d; await runYtLeadCollect().catch(() => {}); }
+async function runDueYtLeads() { if (String(process.env.ORCH_AUTO || 'off').toLowerCase() === 'on') return; if (!process.env.YOUTUBE_API_KEY) return; const d = addDaysYMD(0); if (d === YT_LAST_DAY) return; YT_LAST_DAY = d; await runYtLeadCollect().catch(() => {}); }   // ★PHASE2-3: ORCH_AUTO=on이면 옛 경로 skip(중복제거). off면 무변화
 app.post('/ytleads/collect', async (req, res) => { try { res.json(await runYtLeadCollect({ reset: !!(req.body || {}).reset })); } catch (e) { res.status(500).json({ error: e.message }); } });
 app.get('/ytleads/today', (req, res) => {
   const today = addDaysYMD(0);
