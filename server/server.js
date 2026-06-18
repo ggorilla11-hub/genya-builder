@@ -3477,6 +3477,49 @@ async function morningBriefTimer() {
 }
 setInterval(() => { morningBriefTimer().catch(() => {}); }, 30 * 60 * 1000);   // ★ 발행 60초 루프와 별개 타이머(off 기본)
 
+// ── OCR 문서인식 (Claude 비전) — 이미지→텍스트+연락처 추출. 추출만, 발송·외부전송 0 ──────────────
+//   ★ 읽기·추출만: anthropic 이미지 블록으로 텍스트·연락처(JSON) 추출 → 호출자에 반환 + 영업일기엔 *비PII 마커만*.
+//   발송·외부전송·명단화(LEADS 추가) 함수 미노출(구조적 차단). 개인정보(명함)는 일기·로그에 원문 안 남김(건수·여부만). 발행 무관·수동.
+let _ocrBusy = false;
+function ocrMediaType(url, ct) {
+  const u = String(url || '').toLowerCase(); ct = String(ct || '').toLowerCase();
+  if (/\.png(\?|$)/.test(u) || ct.includes('png')) return 'image/png';
+  if (/\.webp(\?|$)/.test(u) || ct.includes('webp')) return 'image/webp';
+  if (/\.gif(\?|$)/.test(u) || ct.includes('gif')) return 'image/gif';
+  return 'image/jpeg';
+}
+app.post('/ocr/read', async (req, res) => {
+  try {
+    if (!process.env.ANTHROPIC_API_KEY) return res.status(503).json({ error: '두뇌 API 키 없음' });
+    const url = (req.body || {}).url || req.query.url;
+    if (!/^https?:\/\//i.test(String(url || ''))) return res.status(400).json({ error: '공개 http(s) 이미지 URL 필요' });
+    if (_ocrBusy) return res.status(429).json({ error: 'OCR 진행중' });
+    _ocrBusy = true;
+    try {
+      const r = await fetch(url, { signal: AbortSignal.timeout(20000) });
+      if (!r.ok) throw new Error('이미지 접근 불가 HTTP ' + r.status);
+      const buf = Buffer.from(await r.arrayBuffer());
+      if (buf.length > 8 * 1024 * 1024) throw new Error('이미지 8MB 초과');
+      const mediaType = ocrMediaType(url, r.headers.get('content-type'));
+      const resp = await anthropic.messages.create({
+        model: MODEL, max_tokens: 1500,
+        messages: [{ role: 'user', content: [
+          { type: 'image', source: { type: 'base64', media_type: mediaType, data: buf.toString('base64') } },
+          { type: 'text', text: '이 이미지의 모든 텍스트를 정확히 그대로 추출하라(번역·요약·창작 금지). 명함/연락처가 보이면 추출 텍스트 뒤에 한 줄로 JSON을 덧붙여라: {"name":"","phone":"","email":"","company":"","title":""} (없는 값은 빈문자열). 명함이 아니면 JSON 생략. 출력 형식: 추출텍스트, 그다음(있으면) JSON.' },
+        ] }],
+      });
+      const outText = resp.content.filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim();
+      let contact = null;
+      const m = outText.match(/\{[\s\S]*?"(?:name|phone|email|company|title)"[\s\S]*?\}/);
+      if (m) { try { contact = JSON.parse(m[0]); } catch (e) {} }
+      const text = m ? outText.slice(0, outText.indexOf(m[0])).trim() : outText;
+      // ★ 영업일기엔 개인정보 원문 없이 건수·여부만 (로그 노출 0)
+      try { appendDiary({ ts: new Date().toISOString(), agentId: 'lead', agentName: 'AI손(OCR)', project: (CAMPAIGN && CAMPAIGN.title) || '일반', kind: 'ocr', entry: `[OCR 문서인식] 이미지 1장 읽음 — 텍스트 ${text.length}자, 연락처추출 ${contact ? 'O' : 'X'}` }); } catch (e) {}
+      res.json({ ok: true, note: '읽기·추출만 (발송·외부전송 0, 명단화 별도). 개인정보 원문은 일기·로그에 미기록', textLen: text.length, text, contact });
+    } finally { _ocrBusy = false; }
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // 외부 크론(cron-job.org 등)이 아침에 깨우며 호출할 수 있는 입구 — 호출만으로 밀린 예약 발송
 app.get('/promo/tick', async (req, res) => { res.json(await runDuePromo()); });
 
