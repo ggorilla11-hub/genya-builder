@@ -3428,6 +3428,55 @@ app.post('/orchestrator/dispatch/research', async (req, res) => {
   finally { _aihandBusy = false; }
 });
 
+// ── PHASE 2-2: 모닝브리핑 (대표 본인 아침 보고) — 알림함에만, 외부 발송 0 ──────────────────────
+//   밤사이 핫리드 + 다가오는 일정(캘린더) + 밤사이 영업일기를 LLM으로 묶어 아침 8시 정시에 알림함(pushNotify)에 올린다.
+//   ★ 외부 발송 0(Solapi 미사용). 대표 본인 알림(정보성)만. 별도 타이머(60초 발행 setInterval과 완전 별개). MORNING_BRIEF=off 기본. 하루 1회 dedup.
+const MORNING_BRIEF_HOUR = Math.max(0, Math.min(23, Number(process.env.MORNING_BRIEF_HOUR || 8)));
+let _briefBusy = false;
+function briefDoneToday(ymd) { return DIARY.some((d) => d.kind === 'brief' && kstYmdHour(d.ts).ymd === ymd); }
+async function morningBriefing() {
+  const hot = YTLEADS.filter((l) => /핫/.test(l.tier || ''));
+  const cal = await calendarUpcoming(6).catch(() => []);
+  const calOk = Array.isArray(cal) && cal.length && !cal[0].error;
+  const night = diaryDigest('모닝브리핑');   // 밤사이 영업일기 텍스트
+  const stateText = [
+    `[밤사이 핫 가망고객] ${hot.length}명${hot.length ? ': ' + hot.map((l) => l.author).filter(Boolean).slice(0, 6).join(', ') : ''}`,
+    `[다가오는 일정] ${calOk ? cal.map((e) => `${String(e.start || '').slice(0, 16)} ${e.summary || ''}`).join(' / ') : '(없음/캘린더 미설정)'}`,
+    `[밤사이 한 일(영업일기)]\n${night}`,
+  ].join('\n');
+  const sys = buildZenyaPrompt('부트캠프')
+    + '\n\n=== 모닝브리핑 모드 (대표님 본인 아침 보고, 정보성) ===\n'
+    + '아래 밤사이 결과를 대표님께 아침 보고로 정리하라: ① 밤사이 찾은 핫 가망고객 요약 ② 오늘 다가오는 일정 ③ 오늘 할 일 제안 2~3개(각 [대표 승인 필요 O/X]). '
+    + '짧고 또렷하게(표·헤더 없이 6~10줄). 외부 고객 발송·연락은 "실행"이 아니라 "준비/승인 대기"로만 표현. 숫자는 위 값만, 지어내지 마라.';
+  const r = await anthropic.messages.create({ model: MODEL, max_tokens: 900, system: sys, messages: [{ role: 'user', content: stateText + '\n\n오늘 아침 모닝브리핑을 써줘.' }] });
+  const brief = r.content.filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim();
+  try { pushNotify({ kind: 'report', agentId: 'zenya', title: '☀️ 모닝브리핑', body: brief.slice(0, 400) }); } catch (e) {}   // ★ 알림함에만(외부 발송 0)
+  try { appendDiary({ ts: new Date().toISOString(), agentId: 'zenya', agentName: '제니야', project: '부트캠프', kind: 'brief', entry: `[모닝브리핑] 핫 ${hot.length}명·일정 ${calOk ? cal.length : 0}건` }); } catch (e) {}   // 영속·dedup
+  return { hotCount: hot.length, calendarCount: calOk ? cal.length : 0, brief };
+}
+// 검증·수동: ?force=1=시간/하루1회 무시 1회 생성. 평소는 게이트 존중.
+app.post('/orchestrator/morning-brief', async (req, res) => {
+  try {
+    const force = req.query.force === '1';
+    const { ymd } = kstNow();
+    if (!force && briefDoneToday(ymd)) return res.json({ ok: true, executed: false, reason: '오늘 이미 브리핑함' });
+    if (_briefBusy) return res.status(429).json({ error: '진행중' });
+    _briefBusy = true;
+    let out; try { out = await morningBriefing(); } finally { _briefBusy = false; }
+    res.json({ ok: true, executed: true, note: '알림함에만 기록 (외부 발송 0, Solapi 미사용)', ...out });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// 별도 8시 타이머 (★ 60초 발행 setInterval과 완전 별개). MORNING_BRIEF=on 일 때만, 8시대·하루1회.
+async function morningBriefTimer() {
+  if (String(process.env.MORNING_BRIEF || 'off').toLowerCase() !== 'on') return;   // off 기본 = no-op
+  const { ymd, hour } = kstNow();
+  if (hour !== MORNING_BRIEF_HOUR || _briefBusy || briefDoneToday(ymd)) return;
+  _briefBusy = true;
+  try { await morningBriefing(); } catch (e) { console.warn('⚠️ 모닝브리핑 오류:', e.message); }
+  finally { _briefBusy = false; }
+}
+setInterval(() => { morningBriefTimer().catch(() => {}); }, 30 * 60 * 1000);   // ★ 발행 60초 루프와 별개 타이머(off 기본)
+
 // 외부 크론(cron-job.org 등)이 아침에 깨우며 호출할 수 있는 입구 — 호출만으로 밀린 예약 발송
 app.get('/promo/tick', async (req, res) => { res.json(await runDuePromo()); });
 
