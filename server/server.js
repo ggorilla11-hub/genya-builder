@@ -3596,6 +3596,9 @@ async function dashboardData() {
 app.get('/dashboard/all', async (req, res) => {   // ★ 기존 /dashboard(팀 활동표, line 698)와 충돌 피해 별 경로
   try { res.json(await dashboardData()); } catch (e) { res.status(500).json({ error: e.message }); }
 });
+// PHASE 4-1: 계기판 화면(읽기·승인 전용). ★자동 발송·발행 버튼 없음 — 발행은 보기만, 승인은 사람이 누를 때만(/care/approve).
+//   기존 제니야 페이지·/dashboard(팀표)와 별 경로(/board). board.html이 /dashboard/all·/care/pending을 읽어 카드+승인버튼만.
+app.get('/board', (req, res) => res.sendFile('board.html', { root: __dirname }));
 
 // ── OCR 문서인식 (Claude 비전) — 이미지→텍스트+연락처 추출. 추출만, 발송·외부전송 0 ──────────────
 //   ★ 읽기·추출만: anthropic 이미지 블록으로 텍스트·연락처(JSON) 추출 → 호출자에 반환 + 영업일기엔 *비PII 마커만*.

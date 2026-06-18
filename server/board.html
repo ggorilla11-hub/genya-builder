@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>제니야 계기판</title>
+<style>
+  body{font-family:-apple-system,'Malgun Gothic',sans-serif;margin:0;background:#0f1115;color:#e8eaed;padding:16px}
+  h1{font-size:20px;margin:8px 0 4px}
+  .sub{font-size:12px;color:#6b7280;margin-bottom:16px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+  .card{background:#1a1d24;border-radius:14px;padding:16px;border:1px solid #262a33}
+  .card h2{font-size:14px;margin:0 0 10px;color:#9aa0aa}
+  .big{font-size:22px;font-weight:700}
+  .ok{color:#4ade80}.no{color:#f87171}.muted{color:#6b7280}.warn{color:#fbbf24}
+  .row{display:flex;justify-content:space-between;padding:4px 0;font-size:14px}
+  .lead{font-size:13px;padding:2px 0}
+  button{background:#2563eb;color:#fff;border:0;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:14px}
+  button:disabled{background:#374151;cursor:default}
+  .note{font-size:12px;color:#6b7280;margin-top:16px;line-height:1.6}
+</style>
+</head>
+<body>
+<h1>📊 제니야 계기판 <span class="muted" id="time"></span></h1>
+<div class="sub">읽기·승인 전용 — 발송·발행은 대표님이 직접 승인할 때만(휴먼인루프). 자동 발송·발행 버튼 없음.</div>
+<div class="grid" id="cards"></div>
+<div class="card" style="margin-top:12px">
+  <h2>📨 승인 대기 — 대표님이 [승인]을 누를 때만 발송됩니다</h2>
+  <div id="approve"></div>
+</div>
+<div class="note">
+  ★ 발행은 <b>보기만</b>(O/X) — 발행 버튼 없음.<br>
+  ★ 발송은 <b>승인 버튼(사람)</b>으로만 — 자동 발송 없음.<br>
+  ★ 토큰·메일 본문·개인정보 미표시(전화번호 마스킹).<br>
+  ⚙️ 설정 토글(무인 감시병·모닝브리핑·Gmail 연결)은 4-3 단계에서 버튼으로.
+</div>
+<script>
+var esc=function(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});};
+var mask=function(p){p=String(p||'').replace(/[^0-9]/g,'');return p.length>=4?'***-****-'+p.slice(-4):'***';};
+var ox=function(b){return b?'<span class="ok">O</span>':'<span class="no">X</span>';};
+async function load(){
+  var d=await fetch('/dashboard/all').then(function(r){return r.json();}).catch(function(){return null;});
+  if(!d){document.getElementById('cards').innerHTML='<div class="card">데이터를 불러오지 못했습니다.</div>';return;}
+  document.getElementById('time').textContent=d.kstNow?(d.kstNow.ymd+' '+d.kstNow.hour+'시'):'';
+  var pub=d.발행||{},lead=d.핫리드||{},set=d.설정||{},an=d.이상징후||{},rev=d.매출||{};
+  var cards=[];
+  cards.push('<div class="card"><h2>📤 발행</h2>'+
+    '<div class="row"><span>유튜브 오늘</span>'+ox(pub.유튜브오늘)+'</div>'+
+    '<div class="row"><span>릴스 오늘</span>'+ox(pub.릴스오늘)+'</div>'+
+    '<div class="row"><span>카루셀 오늘</span>'+ox(pub.카루셀오늘)+'</div>'+
+    '<div class="row muted"><span>누적</span><span>YT '+(pub.유튜브누적||0)+' · IG '+(pub.인스타누적||0)+'</span></div></div>');
+  cards.push('<div class="card"><h2>🔥 밤사이 핫리드</h2><div class="big">'+(lead.수||0)+'명</div>'+
+    ((lead.명단||[]).map(function(x){return '<div class="lead">· '+esc(x)+'</div>';}).join('')||'<div class="muted">없음</div>')+'</div>');
+  cards.push('<div class="card"><h2>📅 다가오는 일정</h2>'+
+    ((d.다가오는일정||[]).map(function(x){return '<div class="lead">· '+esc(x)+'</div>';}).join('')||'<div class="muted">없음</div>')+'</div>');
+  cards.push('<div class="card"><h2>🚨 이상징후</h2>'+
+    (an.건수?('<div class="big warn">'+an.건수+'건</div>'+(an.목록||[]).map(function(x){return '<div class="lead">· '+esc(x)+'</div>';}).join('')):'<div class="ok">이상 없음</div>')+'</div>');
+  cards.push('<div class="card"><h2>⚙️ 설정 상태</h2>'+
+    '<div class="row"><span>무인 감시병</span>'+ox(set.감시병_무인)+'</div>'+
+    '<div class="row"><span>모닝브리핑 자동</span>'+ox(set.모닝브리핑_자동)+'</div>'+
+    '<div class="row"><span>Gmail 연결</span>'+ox(set.Gmail연결)+'</div>'+
+    '<div class="muted" style="font-size:12px;margin-top:6px">토글 버튼은 4-3 단계</div></div>');
+  cards.push('<div class="card"><h2>💰 매출·전환</h2>'+
+    (rev.값==null?('<div class="muted">'+esc(rev.상태||'출처 연결 예정(4-2)')+'</div>'):('<div class="big">'+esc(rev.값)+'</div>'))+'</div>');
+  document.getElementById('cards').innerHTML=cards.join('');
+  var pend=await fetch('/care/pending').then(function(r){return r.json();}).catch(function(){return {pending:[]};});
+  var list=pend.pending||[];
+  document.getElementById('approve').innerHTML=list.length?list.map(function(p){
+    return '<div class="row" style="align-items:center;border-bottom:1px solid #262a33;padding:8px 0">'+
+      '<span>'+esc(p.name||'고객')+' <span class="muted">('+mask(p.phone)+')</span><br>'+
+      '<span class="muted" style="font-size:12px">'+esc((p.text||'').slice(0,40))+'</span></span>'+
+      '<button onclick="approve(\''+esc(p.id)+'\',\''+esc(p.name||'')+'\')">승인</button></div>';
+  }).join(''):'<div class="muted">대기 없음</div>';
+}
+async function approve(id,name){
+  if(!confirm('['+name+'] 발송을 승인하시겠습니까? (대표님 직접 승인 — 휴먼인루프)'))return;
+  var r=await fetch('/care/approve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids:[id]})}).then(function(r){return r.json();}).catch(function(e){return {error:String(e)};});
+  alert(r.error?('실패: '+r.error):'승인 완료');
+  load();
+}
+load();
+setInterval(load,60000);
+</script>
+</body>
+</html>
