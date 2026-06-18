@@ -3520,6 +3520,45 @@ app.post('/ocr/read', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── 제니야 ← AI머니야 RAG 참조 (읽기 전용 호출) — moneya-server /api/rag-search ──────────────
+//   ★ AI머니야 PROTECT: moneya-server를 *호출(읽기)*만, 코드·데이터 무수정. 발송·발행 무관(검색만). on-demand+10분 캐시.
+//   ★ moneya 다운/지연 시 graceful([] 반환) → 제니야 안 깨짐. RAG_URL='' 로 끄면 미사용. 발행 60초 스케줄러·발행함수 무접촉.
+const RAG_URL = (process.env.RAG_URL !== undefined ? process.env.RAG_URL : 'https://moneya-server.onrender.com');
+const _ragCache = new Map();   // query → { ts, results }
+async function ragSearch(query) {
+  if (!RAG_URL || !query) return [];
+  const key = String(query).slice(0, 120);
+  const c = _ragCache.get(key); if (c && Date.now() - c.ts < 600000) return c.results;   // 10분 캐시(moneya 부하 완화)
+  try {
+    const r = await fetch(`${RAG_URL}/api/rag-search`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' },
+      body: JSON.stringify({ query: String(query) }), signal: AbortSignal.timeout(12000),
+    });
+    if (!r.ok) return [];
+    const j = await r.json().catch(() => ({}));
+    const results = (j && j.success && Array.isArray(j.results)) ? j.results : [];
+    _ragCache.set(key, { ts: Date.now(), results });
+    if (_ragCache.size > 200) _ragCache.clear();
+    return results;
+  } catch (e) { return []; }   // ★ moneya 다운/타임아웃 → graceful, 제니야 안 깨짐
+}
+app.post('/rag/ask', async (req, res) => {
+  try {
+    const query = (req.body || {}).query || req.query.query;
+    if (!query) return res.status(400).json({ error: 'query(질문) 필요' });
+    const knowledge = await ragSearch(query);   // 읽기 호출(moneya 무수정)
+    let answer = null;
+    if (req.query.synth === '1' && knowledge.length && process.env.ANTHROPIC_API_KEY) {
+      const kb = knowledge.map((k, i) => `[${i + 1}] ${k.title || ''}\n${k.content || ''}`).join('\n\n');
+      const rr = await anthropic.messages.create({ model: MODEL, max_tokens: 700,
+        system: buildZenyaPrompt('상담') + '\n\n=== 참고 금융지식(AI머니야 RAG) ===\n' + kb + '\n\n위 지식만 근거로 짧고 정확히 답하라(지어내기 금지·없으면 "자료 없음"). 발송·실행 아니라 답변 초안만.',
+        messages: [{ role: 'user', content: String(query) }] });
+      answer = rr.content.filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim();
+    }
+    res.json({ ok: true, note: 'AI머니야 RAG 읽기 참조 (moneya 무수정·발송·발행 0·다운 시 graceful)', ragEnabled: !!RAG_URL, query, ragCount: knowledge.length, knowledge, answer });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // 외부 크론(cron-job.org 등)이 아침에 깨우며 호출할 수 있는 입구 — 호출만으로 밀린 예약 발송
 app.get('/promo/tick', async (req, res) => { res.json(await runDuePromo()); });
 
