@@ -3519,8 +3519,8 @@ function genyaProfile() {
       유튜브키_설정됨: !!process.env.YOUTUBE_API_KEY,
       인스타토큰_설정됨: !!process.env.IG_ACCESS_TOKEN,
     },
-    저장소: { 구글시트_설정됨: !!process.env.RESV_SHEET_ID },
-    지식RAG: { 기본: 'moneya-server', url_설정됨: !!process.env.RAG_URL },
+    저장소: { 구글시트_설정됨: !!RESV_SHEET_ID },                          // ★보정: raw env 아닌 실제 사용 상수 기준(기본=CRM 시트)
+    지식RAG: { 기본: 'moneya-server', url_설정됨: !!RAG_URL },              // ★보정: 상수 기준(RAG_URL 기본=moneya-server)
     운영노브: {
       유튜브정시: YT_AUTO_HOUR, 인스타릴스정시: IG_REEL_HOUR, 인스타카루셀정시: IG_CARD_HOUR,
       감시병_핫리드급증임계: WD_HOT_SURGE, 감시병_승인적체임계: WD_PEND_MANY,
@@ -3530,6 +3530,35 @@ function genyaProfile() {
 }
 // 이 지니야의 정체(프로필) 보기 — 읽기전용. ★토큰·키 값 0 노출, 동작 변경 0.
 app.get('/profile', (req, res) => res.json(genyaProfile()));
+
+// ── F 1단계: Gmail 읽기(읽기전용) — 최근 메일 발신자·제목·날짜만. ★본문 원문 미저장 ─────────────────
+//   ★ 인증=유튜브와 같은 OAuth(대표 1회 동의 → refresh_token). 미설정이면 graceful("연결 안 됨").
+//   ★ send·답장·삭제·초안(draft) 함수 영영 미노출 = 구조적 차단(messages.list/get '읽기'만 호출). 발송은 영영 사람 승인.
+//   ★ 본문·snippet 미포함(원문 미저장) — 발신자·제목·날짜 마커만. 영업일기·알림함에도 안 씀(첫 변경=반환만). AI머니야·발행 무관.
+function gmailReady() { return !!((process.env.GMAIL_CLIENT_ID || process.env.YT_CLIENT_ID) && (process.env.GMAIL_CLIENT_SECRET || process.env.YT_CLIENT_SECRET) && process.env.GMAIL_REFRESH_TOKEN); }
+function gmailClient() {
+  if (!gmailReady()) return null;
+  const o = new google.auth.OAuth2(process.env.GMAIL_CLIENT_ID || process.env.YT_CLIENT_ID, process.env.GMAIL_CLIENT_SECRET || process.env.YT_CLIENT_SECRET);
+  o.setCredentials({ refresh_token: process.env.GMAIL_REFRESH_TOKEN });   // gmail.readonly scope는 동의 때 묶임
+  return google.gmail({ version: 'v1', auth: o });
+}
+app.get('/gmail/recent', async (req, res) => {
+  try {
+    const gm = gmailClient();
+    if (!gm) return res.json({ ok: false, connected: false, 안내: 'Gmail OAuth 미설정 — 대표님 1회 동의 + GMAIL_REFRESH_TOKEN 필요(유튜브와 같은 방식). 읽기 전용·send 없음.' });
+    const n = Math.max(1, Math.min(20, Number(req.query.n) || 10));
+    const list = await gm.users.messages.list({ userId: 'me', maxResults: n, q: req.query.q || 'in:inbox' });
+    const ids = list.data.messages || [];
+    const mail = [];
+    for (const m of ids) {
+      const d = await gm.users.messages.get({ userId: 'me', id: m.id, format: 'metadata', metadataHeaders: ['From', 'Subject', 'Date'] });
+      const h = (d.data.payload && d.data.payload.headers) || [];
+      const hv = (name) => (h.find((x) => x.name === name) || {}).value || '';
+      mail.push({ from: hv('From'), subject: hv('Subject'), date: hv('Date') });   // ★ 본문·snippet 미포함(원문 미저장)
+    }
+    res.json({ ok: true, connected: true, 건수: mail.length, 메일: mail, 안내: '읽기 전용(발신자·제목·날짜만, 본문 원문 미저장). 발송·답장·삭제·초안 함수 없음 — send는 영영 사람 승인. 발행 무관.' });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
 
 // ── OCR 문서인식 (Claude 비전) — 이미지→텍스트+연락처 추출. 추출만, 발송·외부전송 0 ──────────────
 //   ★ 읽기·추출만: anthropic 이미지 블록으로 텍스트·연락처(JSON) 추출 → 호출자에 반환 + 영업일기엔 *비PII 마커만*.
