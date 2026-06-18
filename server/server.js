@@ -3560,6 +3560,43 @@ app.get('/gmail/recent', async (req, res) => {
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
+// ── PHASE 4-0: 계기판(대시보드) 종합 데이터 — 기존 읽기 창구를 한 번에 모아 반환. ★읽기 전용 ──────────
+//   ★ 새 데이터 0(조립만): 발행·핫리드·일정·승인대기·알림·이상징후·설정상태·프로필·Gmail연결 한 곳에.
+//   ★ 발송·발행·설정변경 0(보기만). 승인은 기존 /care/approve, 설정 토글·화면(HTML)·매출은 다음 단계.
+//   ★ 발행 PROTECT: 발행대장·60초 시계 '읽기'만(수정 0). 개인정보(메일·매출)는 마커·요약만.
+async function dashboardData() {
+  const { ymd, hour } = kstNow();
+  const ytDone = (lastAutoYmd === ymd) || YTPUB.some((x) => x.auto && !x.forced && kstYmdHour(x.ts).ymd === ymd && kstYmdHour(x.ts).hour === YT_AUTO_HOUR);
+  const hot = Array.isArray(YTLEADS) ? YTLEADS.filter((l) => /핫/.test(l.tier || '')) : [];
+  const cal = await calendarUpcoming(4).catch(() => []);
+  const calOk = Array.isArray(cal) && cal.length && !cal[0].error;
+  const waiting = Array.isArray(PENDING) ? PENDING.filter((p) => p.status === '대기') : [];
+  const unread = Array.isArray(NOTIFY) ? NOTIFY.filter((n) => !n.read).length : 0;
+  const wd = await anomalyScan().catch(() => ({ anomalies: [] }));
+  const lastBrief = [...(DIARY || [])].reverse().find((d) => d.kind === 'brief');
+  return {
+    ok: true, kstNow: { ymd, hour },
+    발행: { 유튜브오늘: ytDone, 릴스오늘: igDoneToday('reel', ymd, IG_REEL_HOUR), 카루셀오늘: igDoneToday('carousel', ymd, IG_CARD_HOUR), 유튜브누적: YTPUB.length, 인스타누적: IGPUB.length },
+    핫리드: { 수: hot.length, 명단: hot.slice(-6).map((l) => l.author).filter(Boolean) },
+    다가오는일정: calOk ? cal.map((e) => `${String(e.start || '').slice(0, 16)} ${e.summary || ''}`) : [],
+    승인대기: waiting.length,
+    알림함_안읽음: unread,
+    이상징후: { 건수: (wd.anomalies || []).length, 목록: (wd.anomalies || []).map((a) => a.msg) },
+    설정: {
+      감시병_무인: String(process.env.WD_AUTO || 'off').toLowerCase() === 'on',
+      모닝브리핑_자동: String(process.env.MORNING_BRIEF || 'off').toLowerCase() === 'on',
+      Gmail연결: gmailReady(),
+    },
+    매출: { 상태: '출처 연결 전(4-2 단계) — 페이플 결제 데이터 미연결', 값: null },   // ★ 정직: 아직 미연결
+    최근모닝브리핑: lastBrief ? lastBrief.entry : '',
+    프로필: genyaProfile(),
+    안내: '읽기 전용 계기판. 발송·발행·설정변경 0(보기만). 승인=/care/approve(대표 승인), 설정 토글·화면(HTML)·매출연결은 다음 단계.',
+  };
+}
+app.get('/dashboard', async (req, res) => {
+  try { res.json(await dashboardData()); } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── OCR 문서인식 (Claude 비전) — 이미지→텍스트+연락처 추출. 추출만, 발송·외부전송 0 ──────────────
 //   ★ 읽기·추출만: anthropic 이미지 블록으로 텍스트·연락처(JSON) 추출 → 호출자에 반환 + 영업일기엔 *비PII 마커만*.
 //   발송·외부전송·명단화(LEADS 추가) 함수 미노출(구조적 차단). 개인정보(명함)는 일기·로그에 원문 안 남김(건수·여부만). 발행 무관·수동.
