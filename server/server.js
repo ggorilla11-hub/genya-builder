@@ -3531,6 +3531,29 @@ function genyaProfile() {
 // 이 지니야의 정체(프로필) 보기 — 읽기전용. ★토큰·키 값 0 노출, 동작 변경 0.
 app.get('/profile', (req, res) => res.json(genyaProfile()));
 
+// ── 도킹 단계1: capability 플래그 (demo/real 자동분기의 단일 출처) — 읽기전용 ─────────────────
+//   ★ UI는 이 플래그로 real/demo 라벨·동작을 자동 분기(하드코딩 금지, 명세 PART A-④/E).
+//   ★ true = 실연결(엔진에 진짜 창구 있음) / false = UI 데모 유지. 토큰·키 값 0 노출(존재 여부만 반영).
+//   ★ 정직: 지금 진짜 도는 것 = chat·approve·campaignStats 3개뿐. 나머지(15직업·자가수리·단체카톡 등)는 데모.
+//   ★ 부작용 0(읽기만). 발송·발행·60초 시계 0접촉.
+app.get('/capabilities', (req, res) => res.json({
+  chat:          !!process.env.ANTHROPIC_API_KEY,   // /chat 대화(말만) 실연결
+  approve:       !!(solapi && SOLAPI_SENDER),        // /care/approve 승인→발송 실연결(키 있을 때만)
+  campaignStats: !!googleCreds(),                     // /campaign/stats(매출·KPI) 실연결
+  multiJob15:    false,   // 15직업 실프로필 (false=대표 1명만 실데이터, 나머지는 UI 데모 프로필)
+  diary:         false,   // 하루일기→모닝브리핑 실연결
+  hotLead:       false,   // 핫리드 실시간
+  publish:       false,   // 콘텐츠 발행
+  review:        false,   // 후기→SNS 홍보
+  bulkKakao:     false,   // 단체카톡(반자동)
+  selfHeal:      false,   // 자가수리(ClaudeCode 샌드박스)
+  claim:         false,   // 보험금 청구
+  analysis:      false,   // 보험 분석
+  newsletter:    false,   // 정기 뉴스레터
+  seed:          false, copilot: false, guard: false,
+  lifecycle:     false, attribution: false, market: false,
+}));
+
 // ── F 1단계: Gmail 읽기(읽기전용) — 최근 메일 발신자·제목·날짜만. ★본문 원문 미저장 ─────────────────
 //   ★ 인증=유튜브와 같은 OAuth(대표 1회 동의 → refresh_token). 미설정이면 graceful("연결 안 됨").
 //   ★ send·답장·삭제·초안(draft) 함수 영영 미노출 = 구조적 차단(messages.list/get '읽기'만 호출). 발송은 영영 사람 승인.
@@ -4218,6 +4241,12 @@ app.get('/campaign/stats', async (req, res) => {
       keyword: mine.filter((c) => c.type === '키워드').length,
       audio: mine.filter((c) => c.type === '오디오').length,
     };
+    // ── 도킹 단계2(명세 PART A-③): 명세 필드명 별칭 — 기존 필드 삭제·개명 0(순수 가산).
+    //   UI 어댑터가 매핑하지만, 흔한 별칭은 엔진도 가산 제공해 둠. revenue·contentCount는 명세와 동명(별칭 불필요).
+    out.applications   = out.apply;                            // 신청
+    out.payments       = out.paid;                             // 결제건수
+    out.conversionRate = out.convRate;                         // 전환율
+    out.uploadCount    = out.uploads ? out.uploads.total : 0;  // 업로드수
     res.json(out);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
