@@ -3541,7 +3541,7 @@ app.get('/capabilities', (req, res) => res.json({
   approve:       !!(solapi && SOLAPI_SENDER),        // /care/approve 승인→발송 실연결(키 있을 때만)
   campaignStats: !!googleCreds(),                     // /campaign/stats(매출·KPI) 실연결
   multiJob15:    false,   // 15직업 실프로필 (false=대표 1명만 실데이터, 나머지는 UI 데모 프로필)
-  diary:         false,   // 하루일기→모닝브리핑 실연결
+  diary:         !!RESV_SHEET_ID,   // 하루일기→모닝브리핑 실연결 (GET /diary + 모닝브리핑/알림함 이미 노출)
   hotLead:       false,   // 핫리드 실시간
   publish:       false,   // 콘텐츠 발행
   review:        false,   // 후기→SNS 홍보
@@ -3553,6 +3553,21 @@ app.get('/capabilities', (req, res) => res.json({
   seed:          false, copilot: false, guard: false,
   lifecycle:     false, attribution: false, market: false,
 }));
+
+// ── 도킹: diary capability — 영업일기 읽기전용 1개 (/history·/notify 패턴 복제) ─────────────────
+//   ★ DIARY 최근 N건 반환만. 맥락(밤사이 피드/제안/승인) 분류는 UI 책임(변환).
+//   ★ 시트 영속(제니야_영업일기)은 이미 부팅복원됨(PHASE 1-2). 새 자격증명·새 시트 0.
+//   ★ 발행함수·60초 시계·자동발송 0접촉(읽기만). 모닝브리핑 최신은 /dashboard/all·/notify에 이미 노출.
+app.get('/diary', (req, res) => {
+  const days    = Math.max(1, Math.min(30, Number(req.query.days) || 2));
+  const n       = Math.max(1, Math.min(200, Number(req.query.n) || 50));
+  const agentId = req.query.agentId || '';
+  const from    = Date.now() - days * 24 * 3600 * 1000;
+  let entries = (Array.isArray(DIARY) ? DIARY : []).filter((d) => new Date(d.ts).getTime() >= from);
+  if (agentId) entries = entries.filter((d) => d.agentId === agentId);
+  entries = entries.slice(-n).reverse();   // 최신순
+  res.json({ count: entries.length, days, entries, 안내: '읽기 전용 영업일기(최근 N건). 발송·발행·자동발송 0접촉.' });
+});
 
 // ── F 1단계: Gmail 읽기(읽기전용) — 최근 메일 발신자·제목·날짜만. ★본문 원문 미저장 ─────────────────
 //   ★ 인증=유튜브와 같은 OAuth(대표 1회 동의 → refresh_token). 미설정이면 graceful("연결 안 됨").
