@@ -3542,7 +3542,7 @@ app.get('/capabilities', (req, res) => res.json({
   campaignStats: !!googleCreds(),                     // /campaign/stats(매출·KPI) 실연결
   multiJob15:    false,   // 15직업 실프로필 (false=대표 1명만 실데이터, 나머지는 UI 데모 프로필)
   diary:         !!RESV_SHEET_ID,   // 하루일기→모닝브리핑 실연결 (GET /diary + 모닝브리핑/알림함 이미 노출)
-  hotLead:       false,   // 핫리드 실시간
+  hotLead:       !!process.env.YOUTUBE_API_KEY,   // 핫리드 실시간 (기존 GET /ytleads/today 노출, 데이터 소스=YT 리드수집 키)
   publish:       false,   // 콘텐츠 발행
   review:        false,   // 후기→SNS 홍보
   bulkKakao:     false,   // 단체카톡(반자동)
