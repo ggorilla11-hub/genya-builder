@@ -257,7 +257,7 @@ if (!process.env.ANTHROPIC_API_KEY) {
 
 const anthropic = new Anthropic();        // 키는 환경변수에서 자동으로 읽는다
 const app = express();
-app.use(cors());                          // 화면(파일로 연 제니야.html)에서의 요청 허용
+app.use(cors({ origin: true, credentials: true }));   // 출처 echo + 쿠키 허용(5a 로그인 세션). ★파일럿용 origin:true — 5b에서 허용 출처 화이트리스트로 좁힘. B1 공개 읽기는 그대로 작동(여전히 모든 출처).
 app.use(express.json());
 
 // ── 제니야 화면 내보내기 ───────────────────────────────────
@@ -3540,6 +3540,7 @@ app.get('/capabilities', (req, res) => res.json({
   chat:          !!process.env.ANTHROPIC_API_KEY,   // /chat 대화(말만) 실연결
   approve:       !!(solapi && SOLAPI_SENDER),        // /care/approve 승인→발송 실연결(키 있을 때만)
   campaignStats: !!googleCreds(),                     // /campaign/stats(매출·KPI) 실연결
+  login:         !!(loginOAuthClient() && SESSION_SECRET),   // 5a 구글 로그인+세션 준비(신원 전용, 파일럿)
   multiJob15:    false,   // 15직업 실프로필 (false=대표 1명만 실데이터, 나머지는 UI 데모 프로필)
   diary:         !!RESV_SHEET_ID,   // 하루일기→모닝브리핑 실연결 (GET /diary + 모닝브리핑/알림함 이미 노출)
   hotLead:       !!process.env.YOUTUBE_API_KEY,   // 핫리드 실시간 (기존 GET /ytleads/today 노출, 데이터 소스=YT 리드수집 키)
@@ -3568,6 +3569,119 @@ app.get('/diary', (req, res) => {
   entries = entries.slice(-n).reverse();   // 최신순
   res.json({ count: entries.length, days, entries, 안내: '읽기 전용 영업일기(최근 N건). 발송·발행·자동발송 0접촉.' });
 });
+
+// ════════════════════════════════════════════════════════════════════════════
+// PHASE 5a — 교육생 로그인(구글 OAuth 신원 전용) + 세션(httpOnly 쿠키) + tenant_id 발급·바인딩
+//   ★ 경계: 5a는 '인증·세션·계정생성·tenant_id 발급·세션 바인딩'까지만. 데이터 격리(미들웨어·누수테스트)는 5b/B3.
+//     이 단계는 기존 엔드포인트를 게이팅하지 않는다(회귀 0 — 기존 동작 그대로).
+//   ★ 로그인 OAuth=신원 전용: scope openid/email/profile, access_type online, refresh_token 저장 0
+//     (기존 youtube/gmail OAuth=데이터 접근 위임과 별개. 데이터 접근 scope 금지).
+//   ★ 세션=crypto HMAC 서명 토큰(무신규 의존성·무상태) in httpOnly+Secure+SameSite=None 쿠키. 시트 보관 X.
+//     계정(email→tenant_id)만 시트 영속(재배포 생존). SESSION_SECRET env(값 노출 0).
+//   ★ 발행 PROTECT: 발행함수·60초 시계·setInterval·solapi.send 0접촉(로그인 라우트·쿠키·계정시트만 추가).
+// ════════════════════════════════════════════════════════════════════════════
+const SESSION_SECRET     = process.env.SESSION_SECRET || '';
+const SESSION_COOKIE     = process.env.SESSION_COOKIE || 'genya_session';
+const SESSION_MAX_AGE    = 30 * 24 * 3600 * 1000;   // 30일
+const LOGIN_REDIRECT_URI = process.env.LOGIN_REDIRECT_URI || 'https://jenya.onrender.com/auth/google/callback';
+const LOGIN_SCOPES       = ['openid', 'email', 'profile'];
+function loginClientId() { return process.env.LOGIN_CLIENT_ID || process.env.GMAIL_CLIENT_ID || process.env.YT_CLIENT_ID; }
+function loginOAuthClient() {
+  const id = loginClientId();
+  const secret = process.env.LOGIN_CLIENT_SECRET || process.env.GMAIL_CLIENT_SECRET || process.env.YT_CLIENT_SECRET;
+  if (!id || !secret) return null;
+  return new google.auth.OAuth2(id, secret, LOGIN_REDIRECT_URI);
+}
+// ── 세션 서명/검증 (crypto HMAC — 무신규 의존성, 무상태) ──
+function signSession(payload) {
+  const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const sig  = crypto.createHmac('sha256', SESSION_SECRET).update(body).digest('base64url');
+  return body + '.' + sig;
+}
+function verifySession(token) {
+  if (!token || !SESSION_SECRET) return null;
+  const i = String(token).lastIndexOf('.');
+  if (i < 1) return null;
+  const body = token.slice(0, i), sig = token.slice(i + 1);
+  const expect = crypto.createHmac('sha256', SESSION_SECRET).update(body).digest('base64url');
+  const a = Buffer.from(sig), b = Buffer.from(expect);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;   // 위조·변조 거부
+  try {
+    const p = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));
+    if (p.iat && (Date.now() - p.iat) > SESSION_MAX_AGE) return null;        // 만료
+    return p;
+  } catch (e) { return null; }
+}
+function setSessionCookie(res, payload) {
+  const token = signSession({ ...payload, iat: Date.now() });
+  res.cookie(SESSION_COOKIE, token, { httpOnly: true, secure: true, sameSite: 'none', maxAge: SESSION_MAX_AGE, path: '/' });
+}
+function clearSessionCookie(res) {
+  res.clearCookie(SESSION_COOKIE, { httpOnly: true, secure: true, sameSite: 'none', path: '/' });
+}
+function readSession(req) {   // 쿠키 수동 파싱(cookie-parser 무의존)
+  const raw = req.headers.cookie || '';
+  const hit = raw.split(';').map((s) => s.trim()).find((s) => s.startsWith(SESSION_COOKIE + '='));
+  if (!hit) return null;
+  return verifySession(decodeURIComponent(hit.slice(SESSION_COOKIE.length + 1)));
+}
+// ── 계정·tenant 저장소 (email→tenant_id, 시트 영속·재배포 생존) ──
+const ACCOUNTS_TAB    = process.env.ACCOUNTS_TAB || '지니야_계정';
+const ACCOUNTS_HEADER = ['email', 'tenant_id', 'name', 'created'];
+let ACCOUNTS = [];
+let _acctChain = Promise.resolve();
+(async () => {   // 부팅복원
+  const sheets = sheetsClient(); if (!sheets || !RESV_SHEET_ID) return;
+  try {
+    await ensureSheetTab(sheets, ACCOUNTS_TAB, ACCOUNTS_HEADER);
+    const got = await sheets.spreadsheets.values.get({ spreadsheetId: RESV_SHEET_ID, range: `'${ACCOUNTS_TAB}'!A2:D` });
+    (got.data.values || []).forEach((r) => ACCOUNTS.push({ email: (r[0] || '').toLowerCase(), tenant_id: r[1] || '', name: r[2] || '', created: r[3] || '' }));
+    if (ACCOUNTS.length) console.log(`👤 계정 시트복원: ${ACCOUNTS.length}명`);
+  } catch (e) {}
+})();
+async function getOrCreateTenant(email, name) {
+  const hit = ACCOUNTS.find((a) => a.email === email);
+  if (hit) return hit.tenant_id;
+  const tenant_id = 't_' + crypto.randomBytes(8).toString('hex');
+  const rec = { email, tenant_id, name: name || '', created: new Date().toISOString() };
+  ACCOUNTS.push(rec);
+  _acctChain = _acctChain.catch(() => {}).then(async () => {
+    const sheets = sheetsClient(); if (!sheets || !RESV_SHEET_ID) return;
+    await ensureSheetTab(sheets, ACCOUNTS_TAB, ACCOUNTS_HEADER);
+    await sheets.spreadsheets.values.append({ spreadsheetId: RESV_SHEET_ID, range: `'${ACCOUNTS_TAB}'!A1`, valueInputOption: 'RAW', insertDataOption: 'INSERT_ROWS', requestBody: { values: [[email, tenant_id, rec.name, rec.created]] } });
+  }).catch((e) => console.warn('⚠️ 계정 시트저장 실패:', e.message));
+  return tenant_id;
+}
+// ── 로그인 라우트 (신원 전용) ──
+app.get('/auth/google', (req, res) => {
+  const o = loginOAuthClient();
+  if (!o) return res.status(400).send('<meta charset=utf8><body style="font-family:sans-serif;padding:24px;line-height:1.7"><h2>로그인 준비 필요</h2><p>Render 환경변수 <b>LOGIN_CLIENT_ID·LOGIN_CLIENT_SECRET</b>(또는 youtube/gmail 키 재사용)·<b>SESSION_SECRET</b>을 넣고, Google Console 승인된 리디렉션 URI에 <b>' + LOGIN_REDIRECT_URI + '</b>를 추가하세요. ★신원 전용(openid/email/profile) — 데이터 접근 없음.</p></body>');
+  if (!SESSION_SECRET) return res.status(400).send('SESSION_SECRET 미설정 — 세션 서명 키가 필요합니다.');
+  res.redirect(o.generateAuthUrl({ access_type: 'online', scope: LOGIN_SCOPES, prompt: 'select_account' }));
+});
+app.get('/auth/google/callback', async (req, res) => {
+  try {
+    const o = loginOAuthClient(); if (!o) return res.status(400).send('클라이언트 미설정');
+    if (!req.query.code) return res.status(400).send('인증 코드 없음. /auth/google 부터 다시 시작하세요.');
+    const { tokens } = await o.getToken(req.query.code);   // online — refresh_token 저장 0
+    if (!tokens.id_token) return res.status(400).send('id_token 미발급. 다시 시도하세요.');
+    const ticket = await o.verifyIdToken({ idToken: tokens.id_token, audience: loginClientId() });
+    const p = ticket.getPayload() || {};
+    const email = String(p.email || '').toLowerCase();
+    if (!email || p.email_verified === false) return res.status(400).send('이메일 미확인 구글 계정입니다.');
+    const name = p.name || '';
+    const tenant = await getOrCreateTenant(email, name);
+    setSessionCookie(res, { email, name, tenant });
+    res.send('<meta charset=utf8><body style="font-family:sans-serif;padding:24px;line-height:1.7"><h2>✅ 로그인 완료</h2><p><b>' + (name || email) + '</b> 님 환영합니다.</p><p style="color:#888">지니야빌더로 돌아가세요. (세션=httpOnly 쿠키, 화면에 토큰 노출 없음)</p></body>');
+  } catch (e) { res.status(500).send('로그인 실패: ' + e.message); }
+});
+// ── 세션 조회 / 로그아웃 (UI 로그인 상태 확인) ──
+app.get('/me', (req, res) => {
+  const s = readSession(req);
+  if (!s) return res.json({ loggedIn: false });
+  res.json({ loggedIn: true, email: s.email, name: s.name, tenant: s.tenant });   // ★ 토큰·서명 미노출(신원 필드만)
+});
+app.get('/auth/logout', (req, res) => { clearSessionCookie(res); res.json({ ok: true, loggedOut: true }); });
 
 // ── F 1단계: Gmail 읽기(읽기전용) — 최근 메일 발신자·제목·날짜만. ★본문 원문 미저장 ─────────────────
 //   ★ 인증=유튜브와 같은 OAuth(대표 1회 동의 → refresh_token). 미설정이면 graceful("연결 안 됨").
