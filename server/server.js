@@ -3543,7 +3543,7 @@ app.get('/capabilities', (req, res) => res.json({
   multiJob15:    false,   // 15직업 실프로필 (false=대표 1명만 실데이터, 나머지는 UI 데모 프로필)
   diary:         !!RESV_SHEET_ID,   // 하루일기→모닝브리핑 실연결 (GET /diary + 모닝브리핑/알림함 이미 노출)
   hotLead:       !!process.env.YOUTUBE_API_KEY,   // 핫리드 실시간 (기존 GET /ytleads/today 노출, 데이터 소스=YT 리드수집 키)
-  publish:       false,   // 콘텐츠 발행
+  publish:       !!(process.env.IG_ACCESS_TOKEN || process.env.YOUTUBE_API_KEY),   // ★발행 '상태 조회'만 real(읽기 전용). 발행 트리거·실행 버튼 영영 미노출 — 발행 PROTECT 최후 보루. UI는 /dashboard/all 발행블록·/youtube|instagram/auto-status·/youtube|instagram/published 조회만.
   review:        false,   // 후기→SNS 홍보
   bulkKakao:     false,   // 단체카톡(반자동)
   selfHeal:      false,   // 자가수리(ClaudeCode 샌드박스)
