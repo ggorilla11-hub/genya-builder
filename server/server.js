@@ -3487,6 +3487,66 @@ app.post('/orchestrator/dispatch/research', async (req, res) => {
   finally { _aihandBusy = false; }
 });
 
+// ── AI손 L2 골격: 자율 리서치 감사로그 + 실패 감지 + 대상목록 (★이 단계 타이머 미연결 = 자동 0) ──────
+//   읽기만(browseResearch 재사용)·발행/solapi 0접촉·OWNER 전용(gateEmpty). 검증된 시트 패턴(ensureSheetTab) 재사용.
+const AIHAND_AUDIT_TAB     = process.env.AIHAND_AUDIT_TAB     || '제니야_AI손감사';
+const AIHAND_AUDIT_HEADER  = ['ts', 'target', 'status', 'textLen', 'reason'];
+const AIHAND_TARGETS_TAB   = process.env.AIHAND_TARGETS_TAB   || '제니야_AI손대상';
+const AIHAND_TARGETS_HEADER = ['url', 'purpose', 'active', 'lastRunAt'];
+let auditChain = Promise.resolve();
+async function appendAudit(rec) {
+  const sheets = sheetsClient(); if (!sheets || !RESV_SHEET_ID) return;
+  await ensureSheetTab(sheets, AIHAND_AUDIT_TAB, AIHAND_AUDIT_HEADER);
+  const row = [rec.ts || new Date().toISOString(), String(rec.target || ''), rec.status || '', String(rec.textLen ?? ''), String(rec.reason || '')];
+  await sheets.spreadsheets.values.append({ spreadsheetId: RESV_SHEET_ID, range: `'${AIHAND_AUDIT_TAB}'!A1`, valueInputOption: 'RAW', insertDataOption: 'INSERT_ROWS', requestBody: { values: [row] } });
+}
+function saveAudit(rec) { auditChain = auditChain.catch(() => {}).then(() => appendAudit(rec)).catch((e) => console.warn('⚠️ AI손 감사로그 저장 실패:', e.message)); return auditChain; }
+// 실패 감지: 읽기 신호만. 캡차·로그인튐·차단·빈본문이면 멈춤 신호(★재시도·우회·캡차풀기 0 — 호출측이 멈추고 사람 부름).
+function detectBlocked(r) {
+  const t = String((r && r.textPreview) || '').toLowerCase();
+  const fin = String((r && r.finalUrl) || '').toLowerCase();
+  const len = (r && typeof r.textLen === 'number') ? r.textLen : 0;
+  if (/captcha|recaptcha|로봇이 아닙니다|verify you are human|are you a robot|자동입력 방지/.test(t)) return { blocked: true, reason: 'captcha' };
+  if (/\/login|\/signin|\/sign_in|accounts\.google|oauth|로그인/.test(fin)) return { blocked: true, reason: 'login-redirect' };
+  if (/access denied|forbidden|차단되었습니다|too many requests|rate limit|일시적으로 차단/.test(t)) return { blocked: true, reason: 'access-denied' };
+  if (len < 50) return { blocked: true, reason: 'empty-or-blocked-body' };
+  return { blocked: false, reason: '' };
+}
+// 대상목록 읽기: OWNER가 시트에서 편집. ★공개 http(s)만·active=on만 사용. URL 생성·자동탐색 0(목록 안에서만).
+async function readAihandTargets() {
+  const sheets = sheetsClient(); if (!sheets || !RESV_SHEET_ID) return [];
+  await ensureSheetTab(sheets, AIHAND_TARGETS_TAB, AIHAND_TARGETS_HEADER);
+  const got = await sheets.spreadsheets.values.get({ spreadsheetId: RESV_SHEET_ID, range: `'${AIHAND_TARGETS_TAB}'!A2:D` });
+  return (got.data.values || [])
+    .map((r, i) => ({ row: i + 2, url: r[0] || '', purpose: r[1] || '', active: String(r[2] || '').toLowerCase(), lastRunAt: r[3] || '' }))
+    .filter((t) => /^https?:\/\//i.test(t.url));   // 공개 http(s)만(로그인·자격증명 URL 자체가 배제)
+}
+function pickNextTarget(targets) {   // active=on 중 가장 오래 안 본 1건. ★목록 밖 생성 불가.
+  const usable = (targets || []).filter((t) => t.active === 'on');
+  if (!usable.length) return null;
+  usable.sort((a, b) => String(a.lastRunAt || '').localeCompare(String(b.lastRunAt || '')));
+  return usable[0];
+}
+// 읽기전용 창구 (OWNER 전용 — 비-OWNER 빈뷰). 토큰·시크릿 0노출.
+app.get('/aihand/audit', async (req, res) => {
+  if (gateEmpty(req)) return res.json({ tab: AIHAND_AUDIT_TAB, total: 0, rows: [], gated: true });
+  const sheets = sheetsClient(); if (!sheets || !RESV_SHEET_ID) return res.json({ tab: AIHAND_AUDIT_TAB, total: 0, rows: [], note: '시트 미설정' });
+  try {
+    await ensureSheetTab(sheets, AIHAND_AUDIT_TAB, AIHAND_AUDIT_HEADER);
+    const got = await sheets.spreadsheets.values.get({ spreadsheetId: RESV_SHEET_ID, range: `'${AIHAND_AUDIT_TAB}'!A2:E` });
+    const all = (got.data.values || []).map((r) => ({ ts: r[0] || '', target: r[1] || '', status: r[2] || '', textLen: r[3] || '', reason: r[4] || '' }));
+    const limit = Math.max(1, Math.min(200, Number(req.query.limit || 50)));
+    res.json({ tab: AIHAND_AUDIT_TAB, total: all.length, rows: all.slice(-limit).reverse(), note: 'AI손 자율 리서치 감사로그(읽기전용)' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.get('/aihand/targets', async (req, res) => {
+  if (gateEmpty(req)) return res.json({ tab: AIHAND_TARGETS_TAB, count: 0, targets: [], gated: true });
+  try {
+    const t = await readAihandTargets();
+    res.json({ tab: AIHAND_TARGETS_TAB, count: t.length, activeCount: t.filter((x) => x.active === 'on').length, next: pickNextTarget(t), targets: t, note: '자율 리서치 대상(OWNER가 시트에서 편집). 공개 http(s)·active=on만 사용. URL 생성 불가.' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── PHASE 2-2: 모닝브리핑 (대표 본인 아침 보고) — 알림함에만, 외부 발송 0 ──────────────────────
 //   밤사이 핫리드 + 다가오는 일정(캘린더) + 밤사이 영업일기를 LLM으로 묶어 아침 8시 정시에 알림함(pushNotify)에 올린다.
 //   ★ 외부 발송 0(Solapi 미사용). 대표 본인 알림(정보성)만. 별도 타이머(60초 발행 setInterval과 완전 별개). MORNING_BRIEF=off 기본. 하루 1회 dedup.
