@@ -337,7 +337,7 @@ function decToken(b64) {
 }
 const GTOKEN_KIND = '구글토큰';
 const GTOKEN_HEADER = ['service', 'enc', 'scopes', 'connectedAt'];
-const GOOGLE_SERVICES = ['calendar', 'drive', 'gmail', 'sheets'];   // 점진 동의 순서(코치: 캘린더→드라이브→Gmail→시트)
+const GOOGLE_SERVICES = ['calendar', 'drive', 'gmail', 'sheets', 'drive_upload'];   // 점진 동의(캘린더→드라이브→Gmail→시트) + 5d 업로드 전용
 async function gtokenRows(tenant) {   // raw [[service,enc,scopes,connectedAt],...] — ★enc는 암호문(평문 토큰 어디에도 안 남김)
   if (!tenant) return [];
   const sheets = sheetsClient(); if (!sheets || !RESV_SHEET_ID) return [];
@@ -3959,11 +3959,12 @@ app.get('/auth/google/callback', async (req, res) => {
 //   ★ 신원 로그인(/auth/google, online)과 *별개 흐름*: 같은 client_id/secret + 다른 콜백(/me/google/oauth2callback).
 //   ★ 최소권한: 서비스당 readonly 스코프 하나씩(점진). 쓰기·발송 스코프 미요청 = 구조적 차단. 발행 0접촉.
 const MEGOOGLE_REDIRECT_URI = process.env.MEGOOGLE_REDIRECT_URI || 'https://jenya.onrender.com/me/google/oauth2callback';
-const ME_SCOPES = {   // ★전부 readonly·최소권한. 쓰기·발송·생성 스코프 영영 미요청(구조적 차단).
-  calendar: ['https://www.googleapis.com/auth/calendar.readonly'],
-  drive:    ['https://www.googleapis.com/auth/drive.metadata.readonly'],   // 파일 목록·메타만(다운로드 X)
-  gmail:    ['https://www.googleapis.com/auth/gmail.readonly'],            // 읽기만 — ★send 영영 미요청
-  sheets:   ['https://www.googleapis.com/auth/spreadsheets.readonly'],     // 본인 시트 읽기(쓰기 X)
+const ME_SCOPES = {   // ★연결 4종 readonly + 업로드 전용 drive.file(앱이 만든 파일만). 발송 스코프 영영 미요청.
+  calendar:     ['https://www.googleapis.com/auth/calendar.readonly'],
+  drive:        ['https://www.googleapis.com/auth/drive.metadata.readonly'],   // 파일 목록·메타만(다운로드 X)
+  gmail:        ['https://www.googleapis.com/auth/gmail.readonly'],            // 읽기만 — ★send 영영 미요청
+  sheets:       ['https://www.googleapis.com/auth/spreadsheets.readonly'],     // 본인 시트 읽기(쓰기 X)
+  drive_upload: ['https://www.googleapis.com/auth/drive.file'],                // ★5d 업로드 전용: 앱이 만든 파일만(기존 Drive 못 봄). 본인 Drive에 본인 자료.
 };
 function meScopeOf(svc) { return Object.prototype.hasOwnProperty.call(ME_SCOPES, svc) ? ME_SCOPES[svc] : null; }   // ★proto 오염 차단
 function dataOAuthClient() {   // 로그인 클라이언트 재사용 + 데이터연결 콜백
@@ -4057,6 +4058,37 @@ app.get('/me/sheets', async (req, res) => {
     const r = await sh.spreadsheets.values.get({ spreadsheetId: id, range: String(req.query.range || 'A1:E10') });
     res.json({ connected: true, rows: (r.data.values || []).length, values: r.data.values || [], note: '본인 시트 읽기(readonly). 쓰기 0.' });
   } catch (e) { res.json({ connected: false, values: [], error: '읽기 실패(권한/ID 확인 또는 재동의)', detail: String(e.message).slice(0, 80) }); }
+});
+
+// ── 5d (B4 완결): 본인 자료 브라우저 직행 업로드 — ★바이트 서버 미경유(엔진=단기토큰 발급 + fileId 기록만) ──
+//   흐름: 프론트가 단기 access_token 요청 → 브라우저가 본인 Drive에 resumable PUT 직행 → fileId만 엔진 기록.
+//   ★refresh_token은 서버 밖으로 안 나감. drive.file(앱생성 파일만)·짧은 만료·HTTPS. 서버엔 create/업로드 코드 0(실제 PUT=브라우저). 발행 0접촉.
+const JARYO_HEADER = ['fileId', 'name', 'mimeType', 'ts'];
+app.post('/me/drive/upload-token', async (req, res) => {   // 단기 업로드 토큰(★access_token만 — refresh_token 서버 밖 안나감)
+  if (!req.tenant) return res.status(401).json({ error: '로그인 필요' });
+  let rt; try { rt = await gtokenGet(req.tenant, 'drive_upload'); } catch (e) { rt = null; }
+  if (!rt) return res.status(400).json({ error: '업로드 미연결 — /me/google/connect?svc=drive_upload' });
+  const o = dataOAuthClient(); if (!o) return res.status(400).json({ error: 'OAuth 클라이언트 미설정' });
+  o.setCredentials({ refresh_token: rt });
+  try {
+    const t = await o.getAccessToken();
+    const token = (t && t.token) || null; if (!token) return res.status(400).json({ error: '토큰 발급 실패 — 재동의 필요' });
+    res.json({ ok: true, access_token: token, expiry: (o.credentials && o.credentials.expiry_date) || null, scope: 'drive.file', note: '단기 업로드 토큰(브라우저→Drive resumable PUT 직행용). refresh_token 서버 밖 안나감·HTTPS만·1회성.' });
+  } catch (e) { res.status(400).json({ error: '토큰 발급 실패(만료/철회 가능)', detail: String(e.message).slice(0, 80) }); }
+});
+app.post('/me/drive/record', async (req, res) => {   // 업로드 완료 후 fileId만 기록 (★원본 바이트 서버 미저장)
+  if (!req.tenant) return res.status(401).json({ error: '로그인 필요' });
+  const b = req.body || {};
+  const fileId = String(b.fileId || '').trim(); if (!fileId) return res.status(400).json({ error: 'fileId 필요' });
+  const row = [fileId, String(b.name || '').slice(0, 200), String(b.mimeType || '').slice(0, 100), new Date().toISOString()];
+  try { await tenantAppend(req.tenant, '자료', JARYO_HEADER, row); res.json({ ok: true, recorded: { fileId, name: row[1], mimeType: row[2] }, note: '참조 ID만 기록(원본 바이트 서버 미저장·본인 Drive에만).' }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.get('/me/files', async (req, res) => {   // 본인 업로드 자료 목록(참조 ID만) — 읽기전용
+  if (!req.tenant) return res.json({ loggedIn: false, files: [] });
+  let rows; try { rows = await tenantRead(req.tenant, '자료', JARYO_HEADER); } catch (e) { rows = []; }
+  const files = (rows || []).map((r) => ({ fileId: r[0] || '', name: r[1] || '', mimeType: r[2] || '', ts: r[3] || '' }));
+  res.json({ count: files.length, files, note: '본인 업로드 자료 참조(원본은 본인 Drive에만·서버 미저장).' });
 });
 
 // ── 세션 조회 / 로그아웃 (UI 로그인 상태 확인) ──
