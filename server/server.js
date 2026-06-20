@@ -3682,6 +3682,15 @@ app.get('/me', (req, res) => {
   res.json({ loggedIn: true, email: s.email, name: s.name, tenant: s.tenant });   // ★ 토큰·서명 미노출(신원 필드만)
 });
 app.get('/auth/logout', (req, res) => { clearSessionCookie(res); res.json({ ok: true, loggedOut: true }); });
+// ── 5a 검증용: 계정 발급 카운트 (★PII-safe — 이메일·이름·tenant_id 값 미노출, 건수·최근 발급일만) ──
+//   ★ 로그인 후 tenant_id 발급 여부를 서버측에서 확인하는 용도. 개인정보·식별자 0 노출.
+app.get('/auth/stats', (req, res) => {
+  res.json({
+    accountCount: ACCOUNTS.length,
+    lastCreated: ACCOUNTS.length ? ACCOUNTS[ACCOUNTS.length - 1].created : null,
+    안내: 'PII 미노출(건수·최근 발급일만). email·name·tenant_id 값 없음.',
+  });
+});
 
 // ── F 1단계: Gmail 읽기(읽기전용) — 최근 메일 발신자·제목·날짜만. ★본문 원문 미저장 ─────────────────
 //   ★ 인증=유튜브와 같은 OAuth(대표 1회 동의 → refresh_token). 미설정이면 graceful("연결 안 됨").
