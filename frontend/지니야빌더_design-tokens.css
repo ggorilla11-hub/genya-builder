@@ -1,0 +1,117 @@
+/* ───────────────────────────────────────────────────────────────
+   지니야빌더 디자인 토큰 (전역) — 트랙B R&D
+   참고 시안: 지니야빌더_RnD_화면시안.html 그대로
+   원칙: Pretendard 전용 · Trust Navy + Genya Teal + Cloud Gray · 라운드/약한 그림자/넉넉한 여백 · 이모지 최소(Tabler 아이콘)
+   ─────────────────────────────────────────────────────────────── */
+
+/* 폰트: Pretendard 전용(제목·본문·숫자 전부). JetBrains Mono 기각 · Noto Serif 금지. */
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+
+:root {
+  /* Trust Navy */
+  --navy-ink: #0B1F3A;
+  --navy:     #16335C;
+  --navy-mid: #1F4E8C;
+  --navy-br:  #3B82C4;
+  --navy-bg:  #E6F1FB;
+
+  /* Genya Teal */
+  --teal-dk:  #06564A;
+  --teal:     #0F8A6E;
+  --teal-br:  #1DB088;
+  --teal-bg:  #E1F5EE;
+
+  /* Cloud Gray */
+  --ink:    #1A1C1E;   /* 제목·강조 텍스트 */
+  --body:   #5F6368;   /* 본문 */
+  --border: #DADCE0;
+  --bg:     #F8F9FB;
+
+  /* 형태 */
+  --radius:      8px;    /* 기본 라운드 */
+  --radius-card: 14px;   /* 카드 */
+  --radius-btn:  14px;   /* 버튼(pill 형) */
+  --radius-pill: 9999px;
+  --border-w:    0.5px;  /* 경계 0.5px */
+  --shadow:      0 1px 3px rgba(11, 31, 58, 0.06), 0 1px 2px rgba(11, 31, 58, 0.04); /* 그림자 약하게 */
+  --shadow-card: 0 2px 8px rgba(11, 31, 58, 0.05);
+
+  /* 여백(넉넉) */
+  --sp-1: 4px;  --sp-2: 8px;  --sp-3: 12px; --sp-4: 16px;
+  --sp-5: 24px; --sp-6: 32px; --sp-7: 48px;
+
+  /* 폰트 패밀리 */
+  --font: 'Pretendard', 'Pretendard Variable', -apple-system, system-ui, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+}
+
+/* 전역 기본 — 제목·본문·숫자 전부 Pretendard */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  font-family: var(--font);
+  color: var(--ink);
+  background: var(--bg);
+  font-size: 15px;
+  line-height: 1.6;
+  letter-spacing: -0.2px;
+  -webkit-font-smoothing: antialiased;
+}
+p, li, td, label, input, textarea, button, select { font-family: var(--font); color: var(--body); }
+h1, h2, h3, h4, h5, h6 { font-family: var(--font); color: var(--ink); letter-spacing: -0.4px; line-height: 1.35; margin: 0 0 var(--sp-3); }
+
+/* 숫자: 700 · 자간 -0.5px (지표·금액·통계) */
+.num, .stat, .metric, .amount {
+  font-family: var(--font);
+  font-weight: 700;
+  letter-spacing: -0.5px;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+  color: var(--ink);
+}
+
+/* 카드 */
+.card {
+  background: #fff;
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  padding: var(--sp-5);
+}
+
+/* 버튼 공통 — pill, 넉넉한 여백, 이모지 최소(텍스트/Tabler 아이콘) */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-2);
+  font-family: var(--font); font-weight: 600; font-size: 15px; letter-spacing: -0.3px;
+  padding: 10px 20px;
+  border-radius: var(--radius-btn);
+  border: var(--border-w) solid transparent;
+  cursor: pointer; transition: filter .15s ease, background .15s ease;
+}
+.btn:hover { filter: brightness(0.97); }
+.btn:active { filter: brightness(0.94); }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.btn.pill { border-radius: var(--radius-pill); }
+
+/* 버튼 3종 */
+.btn-yes  { background: var(--teal-br); color: #fff; }          /* 긍정/실행(teal-br·흰글씨) */
+.btn-navy { background: var(--navy);    color: #fff; }          /* 주요(navy) */
+.btn-sub  { background: #fff; color: var(--body); border: var(--border-w) solid var(--border); } /* 보조(흰배경·회색·경계) */
+
+/* 입력 */
+input, textarea, select {
+  font-size: 15px; color: var(--ink);
+  background: #fff;
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+}
+input:focus, textarea:focus, select:focus { outline: none; border-color: var(--navy-br); box-shadow: 0 0 0 3px var(--navy-bg); }
+
+/* 보조 유틸 */
+.muted { color: var(--body); }
+.divider { height: var(--border-w); background: var(--border); border: 0; margin: var(--sp-4) 0; }
+.badge { display: inline-block; padding: 2px 10px; border-radius: var(--radius-pill); font-size: 12px; font-weight: 600; }
+.badge-teal { background: var(--teal-bg); color: var(--teal-dk); }
+.badge-navy { background: var(--navy-bg); color: var(--navy); }
+
+/* 아이콘: Tabler Icons 사용 권장(이모지 최소). 예) <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont/dist/tabler-icons.min.css"> */
