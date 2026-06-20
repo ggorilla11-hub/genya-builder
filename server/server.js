@@ -312,6 +312,53 @@ async function tenantAppend(tenant, kind, header, row) {
   } catch (e) { console.warn('⚠️ tenant 저장 실패:', e.message); }
 }
 
+// ── 5c-1: 교육생 본인 구글 연동 — 암호화 토큰 저장 골격 + 연결상태 (★이 단계 OAuth 흐름 미연결=연결 0) ──────
+//   대원칙: 본인 계정 OAuth·본인 데이터·서버 미저장(refresh_token만 AES-256-GCM 암호화 보관)·점진 동의·최소권한·발행 0접촉.
+//   ★ 신원 로그인(5a online)과 데이터 연결(여기·offline·refresh 암호화)은 흐름 분리. tenant=req.tenant(서명세션)만.
+const GOOGLE_TOKEN_KEY = process.env.GOOGLE_TOKEN_KEY || '';   // 32바이트 키(hex64 또는 base64). 미설정이면 데이터연결 비활성(로그인·기존기능 무관).
+function tokenKeyBuf() {
+  if (!GOOGLE_TOKEN_KEY) return null;
+  try { const k = GOOGLE_TOKEN_KEY.length === 64 ? Buffer.from(GOOGLE_TOKEN_KEY, 'hex') : Buffer.from(GOOGLE_TOKEN_KEY, 'base64'); return k.length === 32 ? k : null; }
+  catch (e) { return null; }
+}
+function encToken(plain) {   // AES-256-GCM: base64(iv12 + tag16 + ct)
+  const key = tokenKeyBuf(); if (!key) throw new Error('GOOGLE_TOKEN_KEY 미설정/형식오류');
+  const iv = crypto.randomBytes(12);
+  const c = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const ct = Buffer.concat([c.update(String(plain), 'utf8'), c.final()]);
+  return Buffer.concat([iv, c.getAuthTag(), ct]).toString('base64');
+}
+function decToken(b64) {
+  const key = tokenKeyBuf(); if (!key) throw new Error('GOOGLE_TOKEN_KEY 미설정');
+  const raw = Buffer.from(String(b64), 'base64');
+  const d = crypto.createDecipheriv('aes-256-gcm', key, raw.slice(0, 12));
+  d.setAuthTag(raw.slice(12, 28));
+  return Buffer.concat([d.update(raw.slice(28)), d.final()]).toString('utf8');
+}
+const GTOKEN_KIND = '구글토큰';
+const GTOKEN_HEADER = ['service', 'enc', 'scopes', 'connectedAt'];
+const GOOGLE_SERVICES = ['calendar', 'drive', 'gmail', 'sheets'];   // 점진 동의 순서(코치: 캘린더→드라이브→Gmail→시트)
+async function gtokenRows(tenant) {   // raw [[service,enc,scopes,connectedAt],...] — ★enc는 암호문(평문 토큰 어디에도 안 남김)
+  if (!tenant) return [];
+  const sheets = sheetsClient(); if (!sheets || !RESV_SHEET_ID) return [];
+  try {
+    await ensureSheetTab(sheets, tenantTab(tenant, GTOKEN_KIND), GTOKEN_HEADER);
+    const got = await sheets.spreadsheets.values.get({ spreadsheetId: RESV_SHEET_ID, range: `'${tenantTab(tenant, GTOKEN_KIND)}'!A2:D` });
+    return got.data.values || [];
+  } catch (e) { return []; }
+}
+async function gtokenStatus(tenant) {   // service → {scopes, connectedAt} ★토큰값 0노출
+  const out = {}; for (const r of await gtokenRows(tenant)) if (r[0]) out[r[0]] = { scopes: r[2] || '', connectedAt: r[3] || '' }; return out;
+}
+// 본인 연동 상태(읽기전용·토큰값 0노출). 로그인(tenant) 필수 — 비로그인=빈. ★발행·발송 0.
+app.get('/me/google/status', async (req, res) => {
+  if (!req.tenant) return res.json({ loggedIn: false, services: {} });
+  const st = await gtokenStatus(req.tenant).catch(() => ({}));
+  const services = {};
+  for (const s of GOOGLE_SERVICES) services[s] = st[s] ? { connected: true, scopes: st[s].scopes, connectedAt: st[s].connectedAt } : { connected: false };
+  res.json({ loggedIn: true, tenant: req.tenant, keyReady: !!tokenKeyBuf(), services, note: '본인 계정 연동 상태(토큰값 0노출). 연결=점진 동의 후. 본인 Drive only·서버 미저장·발행/발송 0.' });
+});
+
 // ── 제니야 화면 내보내기 ───────────────────────────────────
 // 배포(Render)에서는 이 서버 하나가 화면+두뇌를 모두 담당한다.
 // 주소(/)로 들어오면 제니야.html을 보여준다. (다른 폴더는 노출하지 않음)
