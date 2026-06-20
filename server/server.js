@@ -4215,6 +4215,30 @@ app.get('/bulk/audit', async (req, res) => {
   const limit = Math.max(1, Math.min(200, Number(req.query.limit || 50)));
   res.json({ tab: BULK_AUDIT_TAB, total: all.length, rows: all.slice(-limit).reverse(), note: '단체발송 감사로그(읽기·발송 0)' });
 });
+// ── 단체카톡 골격 3: POST /bulk/result — 로컬 도구의 건별 결과 회신 → 감사로그 + 이상신호 집계 (★발송 0) ──
+//   ★엔진은 결과를 *기록만* 한다. 실제 발송·즉시중단(킬스위치)은 로컬. 이상신호(실패 급증) 시 알림함 경고(자동 우회 0).
+app.post('/bulk/result', async (req, res) => {
+  if (gateEmpty(req)) return res.status(403).json({ error: 'OWNER 전용(단체발송 결과)' });
+  const b = req.body || {};
+  const planId = String(b.planId || '').trim();
+  const results = Array.isArray(b.results) ? b.results : null;
+  if (!planId) return res.status(400).json({ error: 'planId 필요' });
+  if (!results) return res.status(400).json({ error: 'results 배열 필요([{status:sent|skipped|failed, reason}])' });
+  const tally = { sent: 0, skipped: 0, failed: 0, other: 0 };
+  for (const r of results) {
+    const s = String((r && r.status) || '').toLowerCase();
+    if (s === 'sent') tally.sent++;
+    else if (s === 'skipped') tally.skipped++;
+    else if (s === 'failed') tally.failed++;
+    else tally.other++;
+  }
+  const total = results.length;
+  const failRate = total ? Math.round((tally.failed / total) * 100) : 0;
+  const anomaly = tally.failed >= 5 && failRate >= 30;   // 이상신호 임계(실패 급증 → 점검·중단 권고)
+  saveBulkAudit({ planId, event: 'result', count: tally.sent, note: `결과 sent${tally.sent}·skip${tally.skipped}·fail${tally.failed}(실패율${failRate}%)${anomaly ? ' ★이상신호' : ''}` });
+  if (anomaly) { try { pushNotify({ kind: 'report', agentId: 'zenya', title: '🛑 단체발송 이상신호', body: `plan ${planId}: 실패 ${tally.failed}건(${failRate}%) — 즉시 점검·중단 권고(자동 우회 안 함).` }); } catch (e) {} }
+  res.json({ ok: true, planId, total, tally, failRate, anomaly, note: '★발송 0 — 로컬 결과 회신을 감사로그에 기록만. 이상신호 시 알림(자동 우회 0). 실제 중단=로컬 킬스위치.' });
+});
 
 // ── 세션 조회 / 로그아웃 (UI 로그인 상태 확인) ──
 app.get('/me', (req, res) => {
