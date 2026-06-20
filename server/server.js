@@ -3585,6 +3585,14 @@ const SESSION_COOKIE     = process.env.SESSION_COOKIE || 'genya_session';
 const SESSION_MAX_AGE    = 30 * 24 * 3600 * 1000;   // 30일
 const LOGIN_REDIRECT_URI = process.env.LOGIN_REDIRECT_URI || 'https://jenya.onrender.com/auth/google/callback';
 const LOGIN_SCOPES       = ['openid', 'email', 'profile'];
+// ★ 오픈리다이렉트 방지: return URL은 화이트리스트(허용 UI 출처) + https만 통과. 미통과면 null(기존 완료화면).
+const RETURN_WHITELIST = (process.env.LOGIN_RETURN_WHITELIST || '').split(',').map((s) => s.trim()).filter(Boolean);
+function safeReturnUrl(raw) {
+  if (!raw) return null;
+  let u; try { u = new URL(String(raw)); } catch (e) { return null; }
+  if (u.protocol !== 'https:') return null;                       // https만 (javascript:/http 다운그레이드 차단)
+  return RETURN_WHITELIST.includes(u.origin) ? u.toString() : null;   // 허용 출처만
+}
 function loginClientId() { return process.env.LOGIN_CLIENT_ID || process.env.GMAIL_CLIENT_ID || process.env.YT_CLIENT_ID; }
 function loginOAuthClient() {
   const id = loginClientId();
@@ -3657,7 +3665,10 @@ app.get('/auth/google', (req, res) => {
   const o = loginOAuthClient();
   if (!o) return res.status(400).send('<meta charset=utf8><body style="font-family:sans-serif;padding:24px;line-height:1.7"><h2>로그인 준비 필요</h2><p>Render 환경변수 <b>LOGIN_CLIENT_ID·LOGIN_CLIENT_SECRET</b>(또는 youtube/gmail 키 재사용)·<b>SESSION_SECRET</b>을 넣고, Google Console 승인된 리디렉션 URI에 <b>' + LOGIN_REDIRECT_URI + '</b>를 추가하세요. ★신원 전용(openid/email/profile) — 데이터 접근 없음.</p></body>');
   if (!SESSION_SECRET) return res.status(400).send('SESSION_SECRET 미설정 — 세션 서명 키가 필요합니다.');
-  res.redirect(o.generateAuthUrl({ access_type: 'online', scope: LOGIN_SCOPES, prompt: 'select_account' }));
+  const ret = safeReturnUrl(req.query.return);   // 화이트리스트 통과한 것만 state로 운반
+  const authOpts = { access_type: 'online', scope: LOGIN_SCOPES, prompt: 'select_account' };
+  if (ret) authOpts.state = ret;
+  res.redirect(o.generateAuthUrl(authOpts));
 });
 app.get('/auth/google/callback', async (req, res) => {
   try {
@@ -3672,6 +3683,8 @@ app.get('/auth/google/callback', async (req, res) => {
     const name = p.name || '';
     const tenant = await getOrCreateTenant(email, name);
     setSessionCookie(res, { email, name, tenant });
+    const ret = safeReturnUrl(req.query.state);   // ★콜백서 재검증(오픈리다이렉트 방지) — 통과한 UI 출처만
+    if (ret) return res.redirect(ret);
     res.send('<meta charset=utf8><body style="font-family:sans-serif;padding:24px;line-height:1.7"><h2>✅ 로그인 완료</h2><p><b>' + (name || email) + '</b> 님 환영합니다.</p><p style="color:#888">지니야빌더로 돌아가세요. (세션=httpOnly 쿠키, 화면에 토큰 노출 없음)</p></body>');
   } catch (e) { res.status(500).send('로그인 실패: ' + e.message); }
 });
