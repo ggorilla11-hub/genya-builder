@@ -276,6 +276,11 @@ app.use((req, res, next) => {
   } catch (e) { req.session = null; req.tenant = null; req.isOwner = false; }
   next();
 });
+// ── 5b-2: 읽기 게이팅 판정 — OWNER_EMAIL 설정(게이팅 활성) AND 비-OWNER면 빈뷰 ──────────────────────
+//   ★ OWNER_EMAIL 미설정(gatingReady=false)이면 항상 false=현행 유지(회귀 0). OWNER(대표)=전체(#15).
+//   ★ 교육생(비-OWNER)은 본인 tenant 데이터만 — 5b-3(per-tenant 저장) 전엔 데이터 없음 = 빈뷰.
+//   ★ 판정은 req.isOwner(미들웨어가 서명세션서 도출)만 신뢰 — 파라미터·쿼리 무시(위조 차단).
+function gateEmpty(req) { return !!OWNER_EMAIL && !req.isOwner; }
 
 // ── 제니야 화면 내보내기 ───────────────────────────────────
 // 배포(Render)에서는 이 서버 하나가 화면+두뇌를 모두 담당한다.
@@ -741,6 +746,7 @@ function dayKey(ts) {
 // GET /history?date=YYYY-MM-DD → 그 날짜의 대화만. date 없으면 오늘 대화만.
 // (날짜가 바뀌면 오늘은 자연히 빈 화면, 어제까지는 그 날짜로 보관되어 그대로 남는다)
 app.get('/history', (req, res) => {
+  if (gateEmpty(req)) return res.json({ messages: [], date: req.query.date || dayKey(), today: dayKey(), gated: true });
   const date = req.query.date || dayKey();
   const messages = HISTORY.filter((m) => dayKey(m.ts) === date);
   res.json({ messages, date, today: dayKey() });
@@ -767,6 +773,7 @@ app.post('/history', (req, res) => {
 // POST /notify/read   → 확인 처리 ({id} 한 개 또는 {all:true} 전체) → 빨간점이 사라진다
 // POST /notify        → 외부/수동 알림 등록 입구 (결제 웹훅·수신거부 연동이 나중에 여기로 꽂는다)
 app.get('/notify', (req, res) => {
+  if (gateEmpty(req)) return res.json({ list: [], unread: 0, gated: true });   // 비-OWNER는 대표 알림·예약 트리거 0
   if (typeof runDuePromo === 'function') runDuePromo().catch(() => {});       // 앱 폴링이 서버를 깨우면 밀린 예약도 확인
   if (typeof runDuePayments === 'function') runDuePayments().catch(() => {}); // 밀린 결제 처리도 확인
   const list = NOTIFY.slice(-100).reverse();           // 최신순, 최대 100개
@@ -1060,12 +1067,14 @@ app.post('/care/draft', async (req, res) => {
 
 // ── /care/pending: 승인 대기 목록 ────────────────────────────
 app.get('/care/pending', (req, res) => {
+  if (gateEmpty(req)) return res.json({ pending: [], gated: true });
   res.json({ pending: PENDING.filter((p) => p.status === '대기') });
 });
 
 // ── /care/approve: 대표님 승인 → Solapi 발송 → 시트에 기록 ──
 // 받는 것: { ids: ['p123_2', ...] }  (휴먼인더루프 — 이 창구 없이는 절대 발송 안 됨)
 app.post('/care/approve', async (req, res) => {
+  if (gateEmpty(req)) return res.status(403).json({ error: '권한 없음(본인 범위 외) — 발송 승인은 OWNER만.' });   // #11 누수 차단
   console.log('📨 /care/approve 요청 도착 —', new Date().toLocaleString('ko-KR'), '/ 항목', ((req.body || {}).ids || []).length, '건');
   try {
     const ids = (req.body || {}).ids;
@@ -2797,6 +2806,7 @@ let LEAD_LAST_DAY = '';
 async function runDueLeads() { if (String(process.env.ORCH_AUTO || 'off').toLowerCase() === 'on') return; if (!leadsConfigured()) return; const d = addDaysYMD(0); if (d === LEAD_LAST_DAY) return; LEAD_LAST_DAY = d; await runLeadCollect().catch(() => {}); }   // ★PHASE2-3: ORCH_AUTO=on이면 autoLeadsTimer가 단일 소유 → 옛 경로 skip(중복제거). off면 무변화
 app.post('/leads/collect', async (req, res) => { try { res.json(await runLeadCollect()); } catch (e) { res.status(500).json({ error: e.message }); } });
 app.get('/leads/today', (req, res) => {
+  if (gateEmpty(req)) return res.json({ configured: leadsConfigured(), todayCount: 0, total: 0, leads: [], gated: true });
   const today = addDaysYMD(0);
   const mine = LEADS.filter((l) => !l.campaignId || l.campaignId === ACTIVE_ID);
   const todayList = mine.filter((l) => String(l.ts).slice(0, 10) === today);
@@ -2929,6 +2939,7 @@ let YT_LAST_DAY = '';
 async function runDueYtLeads() { if (String(process.env.ORCH_AUTO || 'off').toLowerCase() === 'on') return; if (!process.env.YOUTUBE_API_KEY) return; const d = addDaysYMD(0); if (d === YT_LAST_DAY) return; YT_LAST_DAY = d; await runYtLeadCollect().catch(() => {}); }   // ★PHASE2-3: ORCH_AUTO=on이면 옛 경로 skip(중복제거). off면 무변화
 app.post('/ytleads/collect', async (req, res) => { try { res.json(await runYtLeadCollect({ reset: !!(req.body || {}).reset })); } catch (e) { res.status(500).json({ error: e.message }); } });
 app.get('/ytleads/today', (req, res) => {
+  if (gateEmpty(req)) return res.json({ configured: !!process.env.YOUTUBE_API_KEY, handle: '@' + YT_HANDLE, todayCount: 0, total: 0, hot: 0, leads: [], gated: true });
   const today = addDaysYMD(0);
   const todayList = YTLEADS.filter((l) => String(l.ts).slice(0, 10) === today);
   const show = (todayList.length ? todayList : YTLEADS).slice();
@@ -3577,6 +3588,7 @@ app.get('/capabilities', (req, res) => res.json({
 //   ★ 시트 영속(제니야_영업일기)은 이미 부팅복원됨(PHASE 1-2). 새 자격증명·새 시트 0.
 //   ★ 발행함수·60초 시계·자동발송 0접촉(읽기만). 모닝브리핑 최신은 /dashboard/all·/notify에 이미 노출.
 app.get('/diary', (req, res) => {
+  if (gateEmpty(req)) return res.json({ count: 0, days: Math.max(1, Math.min(30, Number(req.query.days) || 2)), entries: [], gated: true });
   const days    = Math.max(1, Math.min(30, Number(req.query.days) || 2));
   const n       = Math.max(1, Math.min(200, Number(req.query.n) || 50));
   const agentId = req.query.agentId || '';
@@ -3834,6 +3846,7 @@ async function dashboardData() {
   };
 }
 app.get('/dashboard/all', async (req, res) => {   // ★ 기존 /dashboard(팀 활동표, line 698)와 충돌 피해 별 경로
+  if (gateEmpty(req)) return res.json({ ok: true, gated: true, kstNow: kstNow(), 발행: { 유튜브오늘: false, 릴스오늘: false, 카루셀오늘: false, 유튜브누적: 0, 인스타누적: 0 }, 핫리드: { 수: 0, 명단: [] }, 다가오는일정: [], 승인대기: 0, 알림함_안읽음: 0, 이상징후: { 건수: 0, 목록: [] }, 설정: { 감시병_무인: false, 모닝브리핑_자동: false, Gmail연결: false }, 매출: { 상태: '본인 데이터 없음(격리)', 값: null }, 최근모닝브리핑: '', 프로필: null, 안내: '로그인 필요 또는 본인 데이터 없음(테넌트 격리).' });   // ★프로필 null = 대표 정체성 누수 0
   try { res.json(await dashboardData()); } catch (e) { res.status(500).json({ error: e.message }); }
 });
 // PHASE 4-1: 계기판 화면(읽기·승인 전용). ★자동 발송·발행 버튼 없음 — 발행은 보기만, 승인은 사람이 누를 때만(/care/approve).
@@ -4391,6 +4404,7 @@ app.get('/pay/tick', async (req, res) => { res.json(await runDuePayments()); });
 
 // ── /campaign/stats: 모집현황 (신청 N · 결제 N · 매출 N · 전환율) ──
 app.get('/campaign/stats', async (req, res) => {
+  if (gateEmpty(req)) return res.json({ apply: 0, paid: 0, revenue: 0, byCourse: [], convRate: null, contentCount: 0, uploads: { total: 0 }, applications: 0, payments: 0, conversionRate: null, uploadCount: 0, gated: true });
   try {
     const out = {};
     const leadId  = CAMPAIGN.leadSheetId  || LEAD_SHEET_ID;
