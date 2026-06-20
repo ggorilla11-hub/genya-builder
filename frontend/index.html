@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>지니야빌더 R&D</title>
+<link rel="stylesheet" href="지니야빌더_design-tokens.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.47.0/tabler-icons.min.css">
+<style>
+  body { background: #EDEFF3; }
+  .wrap { max-width: 560px; margin: 0 auto; padding: var(--sp-5) 16px 60px; }
+  .brand { display: flex; align-items: center; gap: 9px; padding: var(--sp-3) 0 var(--sp-4); }
+  .brand .logo-box { width: 30px; height: 30px; border-radius: 8px; background: var(--navy); display: flex; align-items: center; justify-content: center; }
+  .brand .logo-box .ti { color: var(--teal-br); font-size: 18px; }
+  .brand b { font-weight: 800; letter-spacing: -0.5px; color: var(--navy-ink); font-size: 16px; }
+  .enter { display: flex; gap: 8px; margin-bottom: var(--sp-6); }
+  .enter a { flex: 1; text-decoration: none; }
+  .enter .btn { width: 100%; justify-content: center; font-weight: 500; padding: 14px; }
+  .sec-head { margin: 28px 0 6px; padding-bottom: 8px; border-bottom: 2px solid var(--navy); }
+  .sec-head h2 { font-size: 17px; font-weight: 700; color: var(--navy-ink); }
+  .sec-head .n { font-size: 12px; color: var(--teal); font-weight: 500; }
+  .note { font-size: 13px; color: var(--body); margin: 10px 0 14px; background: var(--teal-bg); padding: 10px 14px; border-radius: 10px; }
+  .panel { background: var(--bg); border-radius: 14px; padding: 18px; }
+  .yescard { background: #fff; border: var(--border-w) solid var(--border); border-radius: 16px; padding: 18px 20px; }
+  .yescard p { font-size: 15px; color: var(--navy-ink); font-weight: 500; margin-bottom: 14px; }
+  .yescard .n { font-weight: 700; letter-spacing: -0.5px; color: var(--teal); }
+  .yescard .row { display: flex; gap: 8px; } .yescard .row .btn { flex: 1; justify-content: center; font-weight: 500; }
+  .g2 { display: grid; grid-template-columns: repeat(2,1fr); gap: 8px; }
+  .kc { border: var(--border-w) solid var(--border); border-radius: 14px; overflow: hidden; background: #fff; }
+  .kc .tag { padding: 5px 12px; font-size: 11px; font-weight: 500; }
+  .kc .body { padding: 18px 14px; text-align: center; }
+  .kc .body .h { font-size: 15px; font-weight: 700; color: #fff; line-height: 1.4; }
+  .kc .body .s { font-size: 11px; margin-top: 7px; }
+  .snsrow { display: flex; align-items: center; gap: 12px; padding: 11px 0; border-bottom: var(--border-w) solid var(--border); }
+  .snsrow:last-child { border-bottom: 0; }
+  .snsrow .ic { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; }
+  .snsrow .ti { font-size: 24px; }
+  .snsrow .mid { flex: 1; } .snsrow .mid .t { font-size: 14px; font-weight: 500; color: var(--ink); } .snsrow .mid .d { font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand"><span class="logo-box"><i class="ti ti-hexagon"></i></span><b>GENYABUILDER</b> <span style="font-size:12px;color:var(--body)">R&amp;D</span></div>
+
+  <!-- 진입: 온보딩 / 메인 -->
+  <div class="enter">
+    <a href="지니야빌더_온보딩.html"><button class="btn btn-navy">온보딩 시작</button></a>
+    <a href="지니야빌더_메인.html"><button class="btn btn-yes">메인 화면 보기</button></a>
+  </div>
+
+  <!-- 1-3 최소에너지 -->
+  <div class="sec-head"><span class="n">1-3</span><h2>최소에너지 모드</h2></div>
+  <div class="note">"당신은 YES만 누르면 됩니다" · 하루 2번(오전8시·오후6시) · 질문 1개 + 큰 YES.</div>
+  <div class="panel">
+    <div style="text-align:center;margin-bottom:16px"><span style="display:inline-flex;align-items:center;gap:7px;background:var(--navy);color:#fff;padding:8px 18px;border-radius:20px"><i class="ti ti-bolt" style="color:var(--teal-br)"></i><span style="font-size:14px;font-weight:500">최소에너지 모드</span></span></div>
+    <div class="yescard">
+      <p>대표님, 오늘 고객 <span class="n">10</span>명 발굴됐습니다 — 보낼까요?</p>
+      <div class="row"><button class="btn btn-yes">YES</button><button class="btn btn-sub">나중에</button></div>
+    </div>
+  </div>
+
+  <!-- 4-1 카톡 4카피 -->
+  <div class="sec-head"><span class="n">4-1</span><h2>카톡 링크 카드 — 4가지 카피</h2></div>
+  <div class="note">전 카드 공통: AI · AI비서 · 지니야 포함. 채널 온도별 골라 발송(★사람 승인 후).</div>
+  <div class="g2">
+    <div class="kc"><div class="tag" style="background:var(--navy-bg);color:var(--navy)">A 감성형</div><div class="body" style="background:var(--navy-ink)"><p class="h">저녁이 있는 삶을<br>돌려드립니다</p><p class="s" style="color:#85B7EB">사장님 전담 AI비서, 지니야</p></div></div>
+    <div class="kc"><div class="tag" style="background:var(--teal-bg);color:var(--teal-dk)">B 혜택형</div><div class="body" style="background:var(--teal-dk)"><p class="h">고객을 대신<br>찾아드립니다</p><p class="s" style="color:#9FE1CB">지니야 AI비서가 밤새 발굴</p></div></div>
+    <div class="kc"><div class="tag" style="background:#FAEEDA;color:#854F0B">C 호기심형</div><div class="body" style="background:var(--navy-mid)"><p class="h">제가 잘 때<br>AI가 일한다고?</p><p class="s" style="color:#B5D4F4">밤새 일하는 지니야 AI비서</p></div></div>
+    <div class="kc"><div class="tag" style="background:#FCEBEB;color:#A32D2D">D 공감형</div><div class="body" style="background:var(--navy)"><p class="h">혼자 다 하느라<br>지치셨죠?</p><p class="s" style="color:#85B7EB">이제 지니야 AI비서에게 맡기세요</p></div></div>
+  </div>
+
+  <!-- 4-2 SNS 연결 -->
+  <div class="sec-head"><span class="n">4-2</span><h2>SNS 연결</h2></div>
+  <div class="note">유튜브·인스타 연결됨 / 페북·블로그 연결 버튼 / 발행은 사장님 YES 후만.</div>
+  <div class="panel" style="background:#fff;border:var(--border-w) solid var(--border)">
+    <div class="snsrow"><span class="ic" style="background:#FCEBEB"><i class="ti ti-brand-youtube" style="color:#E24B4A"></i></span><div class="mid"><p class="t">유튜브</p><p class="d" style="color:var(--teal)">@OhSangRyul · 연결됨</p></div><span class="badge badge-teal">연결</span></div>
+    <div class="snsrow"><span class="ic" style="background:#FBEAF0"><i class="ti ti-brand-instagram" style="color:#D4537E"></i></span><div class="mid"><p class="t">인스타그램</p><p class="d" style="color:var(--teal)">oh_want · 연결됨</p></div><span class="badge badge-teal">연결</span></div>
+    <div class="snsrow"><span class="ic" style="background:var(--navy-bg)"><i class="ti ti-brand-facebook" style="color:#378ADD"></i></span><div class="mid"><p class="t">페이스북</p><p class="d" style="color:var(--body)">연결하면 발행할 수 있어요</p></div><span class="badge badge-navy">연결</span></div>
+    <div class="snsrow"><span class="ic" style="background:#EAF3DE"><i class="ti ti-brand-blogger" style="color:#639922"></i></span><div class="mid"><p class="t">네이버 블로그</p><p class="d" style="color:var(--body)">연결하면 발행할 수 있어요</p></div><span class="badge badge-navy">연결</span></div>
+  </div>
+
+  <p style="text-align:center;margin-top:32px;color:var(--body);font-size:12px">지니야빌더 R&amp;D 프론트 · 디자인 토큰(Pretendard·Navy+Teal) · 값은 데모(실데이터는 엔진 도킹 후)</p>
+</div>
+</body>
+</html>

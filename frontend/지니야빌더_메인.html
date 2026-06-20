@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>지니야빌더 — 메인</title>
+<link rel="stylesheet" href="지니야빌더_design-tokens.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.47.0/tabler-icons.min.css">
+<style>
+  body { background: #EDEFF3; }
+  .wrap { max-width: 560px; margin: 0 auto; padding: var(--sp-5) 16px 60px; }
+  .brand { display: flex; align-items: center; gap: 9px; padding: var(--sp-3) 0 var(--sp-5); }
+  .brand .logo-box { width: 30px; height: 30px; border-radius: 8px; background: var(--navy); display: flex; align-items: center; justify-content: center; }
+  .brand .logo-box .ti { color: var(--teal-br); font-size: 18px; }
+  .brand b { font-weight: 800; letter-spacing: -0.5px; color: var(--navy-ink); font-size: 16px; }
+  /* 1-4 메인 */
+  .hello { text-align: center; margin-bottom: var(--sp-5); }
+  .hello .s { font-size: 13px; color: var(--body); }
+  .hello .b { font-size: 19px; font-weight: 600; color: var(--navy-ink); margin-top: 6px; }
+  .hello .b .t { color: var(--teal); }
+  .todo { background: #fff; border: var(--border-w) solid var(--border); border-radius: 16px; padding: 18px 20px; margin-bottom: 10px; }
+  .todo .t1 { font-size: 15px; font-weight: 600; color: var(--navy-ink); }
+  .todo .t1 .n { font-weight: 700; letter-spacing: -0.5px; color: var(--teal); }
+  .todo .t2 { font-size: 13px; color: var(--body); margin: 3px 0 14px; }
+  .todo .row { display: flex; gap: 8px; }
+  .todo .row .btn { flex: 1; justify-content: center; font-weight: 500; }
+  .stats { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; margin: 16px 0; }
+  .stat-c { background: #fff; border: var(--border-w) solid var(--border); border-radius: 12px; padding: 14px; text-align: center; }
+  .stat-c.hot { background: var(--teal-bg); border: 0; }
+  .stat-c p { font-size: 11px; color: var(--body); }
+  .stat-c.hot p { color: var(--teal); }
+  .stat-c .v { font-weight: 700; letter-spacing: -0.5px; color: var(--navy-ink); font-size: 20px; font-variant-numeric: tabular-nums; }
+  .stat-c.hot .v { color: var(--teal-dk); }
+  .tabbar { display: flex; justify-content: center; gap: 22px; border-top: var(--border-w) solid var(--border); padding-top: 14px; }
+  .tabbar a { text-align: center; text-decoration: none; }
+  .tabbar .ti { color: var(--body); font-size: 20px; }
+  .tabbar p { font-size: 11px; color: var(--body); margin-top: 2px; }
+  /* 3-3 비전 */
+  .vision { background: var(--navy-ink); border-radius: 16px; padding: 28px 22px; text-align: center; margin: 24px 0 16px; }
+  .vision .vbox { width: 44px; height: 44px; border-radius: 12px; background: var(--navy); display: inline-flex; align-items: center; justify-content: center; margin-bottom: 12px; }
+  .vision .vbox .ti { color: var(--teal-br); font-size: 26px; }
+  .vision .gn { font-size: 13px; color: #85B7EB; }
+  .vision .l1, .vision .l2 { font-size: 18px; font-weight: 500; color: #fff; }
+  .vision .rotw { height: 30px; overflow: hidden; margin: 2px 0; }
+  .vision .rotw p { height: 30px; line-height: 30px; font-size: 21px; font-weight: 700; color: var(--teal-br); margin: 0; }
+  .after { background: var(--teal-bg); border-radius: 16px; padding: 20px 22px; }
+  .after .h { font-size: 12px; color: var(--teal); font-weight: 600; margin-bottom: 8px; }
+  .after .q { font-size: 15px; color: var(--teal-dk); font-weight: 500; line-height: 1.65; }
+  /* 3-2 푸터 */
+  .footer { background: var(--navy-ink); border-radius: 14px; padding: 26px 22px; margin-top: 24px; }
+  .footer .frow { display: flex; align-items: center; gap: 9px; margin-bottom: 16px; }
+  .footer .fbox { width: 30px; height: 30px; border-radius: 8px; background: var(--navy); display: flex; align-items: center; justify-content: center; }
+  .footer .fbox .ti { color: var(--teal-br); font-size: 18px; }
+  .footer .fbrand { font-size: 15px; font-weight: 700; color: #fff; }
+  .footer .links { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
+  .footer .links span { font-size: 13px; color: #85B7EB; }
+  .footer .co { border-top: var(--border-w) solid var(--navy-mid); padding-top: 16px; }
+  .footer .co .name { font-size: 13px; color: #fff; font-weight: 500; margin-bottom: 7px; }
+  .footer .co .info { font-size: 12px; color: #85B7EB; line-height: 1.7; }
+  .footer .ai { font-size: 11px; color: #5F7A9C; line-height: 1.6; margin-top: 14px; border-top: var(--border-w) solid var(--navy-mid); padding-top: 12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand"><span class="logo-box"><i class="ti ti-hexagon"></i></span><b>GENYABUILDER</b></div>
+
+  <!-- 1-4 메인: 오늘 할 일 + 핵심 3지표 (값은 R&D 데모 — 실데이터는 엔진 도킹 후) -->
+  <div class="hello">
+    <p class="s">좋은 아침이에요, 오상열 대표님</p>
+    <p class="b">오늘 할 일은 <span class="t">2가지</span>예요</p>
+  </div>
+  <div class="todo">
+    <p class="t1">고객 <span class="n">10</span>명에게 안내 보내기</p>
+    <p class="t2">맞춤 메시지 준비됨 · 발송은 대표님 승인 후</p>
+    <div class="row"><button class="btn btn-yes">YES</button><button class="btn btn-sub">나중에</button></div>
+  </div>
+  <div class="stats">
+    <div class="stat-c"><p>이번 달 매출</p><p class="v">620<span style="font-size:13px;color:var(--body)">만</span></p></div>
+    <div class="stat-c hot"><p>핫리드</p><p class="v">3</p></div>
+    <div class="stat-c"><p>목표</p><p class="v">62<span style="font-size:13px;color:var(--body)">%</span></p></div>
+  </div>
+  <div class="tabbar">
+    <a href="#"><i class="ti ti-users"></i><p>내 팀</p></a>
+    <a href="#"><i class="ti ti-database"></i><p>데이터</p></a>
+    <a href="#"><i class="ti ti-sparkles"></i><p>기능</p></a>
+    <a href="#"><i class="ti ti-message"></i><p>지니야</p></a>
+  </div>
+
+  <!-- 3-3 비전 회전 배너 + 1년 후 -->
+  <div class="vision">
+    <span class="vbox"><i class="ti ti-hexagon"></i></span>
+    <p class="gn">GENYABUILDER</p>
+    <p class="l1" style="margin-top:14px">사장님께</p>
+    <div class="rotw"><div id="rot">
+      <p>저녁이 있는 삶</p><p>주말이 있는 삶</p><p>휴가가 있는 삶</p><p>대출이 없는 삶</p><p>저녁이 있는 삶</p>
+    </div></div>
+    <p class="l2">을 돌려드립니다</p>
+  </div>
+  <div class="after">
+    <p class="h">1년 후, 사장님의 모습</p>
+    <p class="q">"고객 획득도 운영도 저희 AI비서들이 알아서 합니다. 사장님께서는 저녁이 있고, 주말이 있고, 휴가가 있고, 대출 걱정에서 벗어나셨습니다."</p>
+  </div>
+
+  <!-- 3-2 푸터 -->
+  <div class="footer">
+    <div class="frow"><span class="fbox"><i class="ti ti-hexagon"></i></span><span class="fbrand">GENYABUILDER</span></div>
+    <div class="links"><span>이용약관</span><span>개인정보처리방침</span><span>AI 운용 고지</span><span>고객지원</span></div>
+    <div class="co">
+      <p class="name">오원트금융연구소</p>
+      <p class="info">대표자 오상열 · 사업자등록번호 220-09-78255<br>통신판매업 제2014-서울강남-01282호<br>서울시 강남구 테헤란로 327 빅토리아빌딩 1702호<br>문의 ggorilla11@gmail.com · 010-5424-5332 · 평일 10:00~18:00</p>
+    </div>
+    <p class="ai">본 서비스는 AI를 활용해 업무를 보조합니다. 모든 발송·발행·계약은 사용자 승인 후 진행되며, AI 생성물은 오류가 있을 수 있어 최종 책임은 사용자에게 있습니다. (C) 2026 오원트금융연구소.</p>
+  </div>
+</div>
+
+<script>
+  var i = 0, r = document.getElementById('rot');
+  setInterval(function(){ i++; r.style.transition = 'transform .5s ease'; r.style.transform = 'translateY(-' + (i*30) + 'px)';
+    if (i === 4) { setTimeout(function(){ r.style.transition = 'none'; i = 0; r.style.transform = 'translateY(0)'; }, 520); } }, 2000);
+</script>
+</body>
+</html>
