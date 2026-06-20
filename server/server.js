@@ -350,6 +350,26 @@ async function gtokenRows(tenant) {   // raw [[service,enc,scopes,connectedAt],.
 async function gtokenStatus(tenant) {   // service → {scopes, connectedAt} ★토큰값 0노출
   const out = {}; for (const r of await gtokenRows(tenant)) if (r[0]) out[r[0]] = { scopes: r[2] || '', connectedAt: r[3] || '' }; return out;
 }
+async function gtokenUpsert(tenant, service, refreshToken, scopes) {   // ★refresh_token은 AES 암호문으로만 저장(서비스당 1행)
+  const sheets = sheetsClient(); if (!sheets || !RESV_SHEET_ID) throw new Error('시트 미설정');
+  await ensureSheetTab(sheets, tenantTab(tenant, GTOKEN_KIND), GTOKEN_HEADER);
+  const tab = tenantTab(tenant, GTOKEN_KIND);
+  const row = [service, encToken(refreshToken), scopes || '', new Date().toISOString()];
+  const rows = await gtokenRows(tenant);
+  const idx = rows.findIndex((r) => r[0] === service);
+  if (idx >= 0) await sheets.spreadsheets.values.update({ spreadsheetId: RESV_SHEET_ID, range: `'${tab}'!A${idx + 2}:D${idx + 2}`, valueInputOption: 'RAW', requestBody: { values: [row] } });
+  else await sheets.spreadsheets.values.append({ spreadsheetId: RESV_SHEET_ID, range: `'${tab}'!A1`, valueInputOption: 'RAW', insertDataOption: 'INSERT_ROWS', requestBody: { values: [row] } });
+}
+async function gtokenGet(tenant, service) {   // 복호화 refresh_token — 요청 처리 시에만(메모리 즉시 폐기)
+  for (const r of await gtokenRows(tenant)) if (r[0] === service && r[1]) return decToken(r[1]);
+  return null;
+}
+async function gtokenDelete(tenant, service) {
+  const rows = await gtokenRows(tenant); const idx = rows.findIndex((r) => r[0] === service); if (idx < 0) return false;
+  const sheets = sheetsClient(); if (!sheets || !RESV_SHEET_ID) return false;
+  await sheets.spreadsheets.values.clear({ spreadsheetId: RESV_SHEET_ID, range: `'${tenantTab(tenant, GTOKEN_KIND)}'!A${idx + 2}:D${idx + 2}` });
+  return true;
+}
 // 본인 연동 상태(읽기전용·토큰값 0노출). 로그인(tenant) 필수 — 비로그인=빈. ★발행·발송 0.
 app.get('/me/google/status', async (req, res) => {
   if (!req.tenant) return res.json({ loggedIn: false, services: {} });
@@ -3934,6 +3954,64 @@ app.get('/auth/google/callback', async (req, res) => {
     res.send('<meta charset=utf8><body style="font-family:sans-serif;padding:24px;line-height:1.7"><h2>✅ 로그인 완료</h2><p><b>' + (name || email) + '</b> 님 환영합니다.</p><p style="color:#888">지니야빌더로 돌아가세요. (세션=httpOnly 쿠키, 화면에 토큰 노출 없음)</p></body>');
   } catch (e) { res.status(500).send('로그인 실패: ' + e.message); }
 });
+
+// ── 5c-2: 데이터 연결(offline) — 점진 동의 캘린더 readonly (본인 refresh_token AES 저장 + 본인 일정 읽기) ──
+//   ★ 신원 로그인(/auth/google, online)과 *별개 흐름*: 같은 client_id/secret + 다른 콜백(/me/google/oauth2callback).
+//   ★ 최소권한: 서비스당 readonly 스코프 하나씩(점진). 쓰기·발송 스코프 미요청 = 구조적 차단. 발행 0접촉.
+const MEGOOGLE_REDIRECT_URI = process.env.MEGOOGLE_REDIRECT_URI || 'https://jenya.onrender.com/me/google/oauth2callback';
+const ME_SCOPES = { calendar: ['https://www.googleapis.com/auth/calendar.readonly'] };   // 다음: drive/gmail/sheets readonly 순차 추가
+function meScopeOf(svc) { return Object.prototype.hasOwnProperty.call(ME_SCOPES, svc) ? ME_SCOPES[svc] : null; }   // ★proto 오염 차단
+function dataOAuthClient() {   // 로그인 클라이언트 재사용 + 데이터연결 콜백
+  const id = loginClientId();
+  const secret = process.env.LOGIN_CLIENT_SECRET || process.env.GMAIL_CLIENT_SECRET || process.env.YT_CLIENT_SECRET;
+  if (!id || !secret) return null;
+  return new google.auth.OAuth2(id, secret, MEGOOGLE_REDIRECT_URI);
+}
+async function tenantGoogleClient(tenant, service) {   // 본인 refresh_token으로 OAuth2 client
+  const rt = await gtokenGet(tenant, service); if (!rt) return null;
+  const o = dataOAuthClient(); if (!o) return null;
+  o.setCredentials({ refresh_token: rt });
+  return o;
+}
+// 연결 시작(점진 동의) — 로그인 필수, 서비스 1개 스코프만.
+app.get('/me/google/connect', (req, res) => {
+  if (!req.tenant) return res.status(401).send('<meta charset=utf8>로그인이 필요합니다. 먼저 /auth/google');
+  const svc = String(req.query.svc || ''); if (!meScopeOf(svc)) return res.status(400).send('지원: ' + Object.keys(ME_SCOPES).join(', '));
+  if (!tokenKeyBuf()) return res.status(400).send('<meta charset=utf8>관리자 셋업 필요: GOOGLE_TOKEN_KEY(암호화 키) 미설정.');
+  const o = dataOAuthClient(); if (!o) return res.status(400).send('<meta charset=utf8>OAuth 클라이언트 미설정(LOGIN_CLIENT_ID/SECRET). 콜백 URI ' + MEGOOGLE_REDIRECT_URI + ' 등록 필요.');
+  res.redirect(o.generateAuthUrl({ access_type: 'offline', prompt: 'consent', scope: meScopeOf(svc), include_granted_scopes: true, state: svc }));
+});
+app.get('/me/google/oauth2callback', async (req, res) => {
+  try {
+    if (!req.tenant) return res.status(401).send('세션 만료 — /auth/google 다시 로그인 후 재연결.');
+    const svc = String(req.query.state || ''); if (!meScopeOf(svc)) return res.status(400).send('알 수 없는 서비스');
+    if (!req.query.code) return res.status(400).send('인증 코드 없음. /me/google/connect 부터.');
+    const o = dataOAuthClient(); if (!o) return res.status(400).send('클라이언트 미설정');
+    const { tokens } = await o.getToken(req.query.code);
+    if (!tokens.refresh_token) return res.status(400).send('<meta charset=utf8>refresh_token 미수신 — 구글 계정 권한 해제 후 재시도(첫 동의에서만 발급).');
+    await gtokenUpsert(req.tenant, svc, tokens.refresh_token, meScopeOf(svc).join(' '));
+    res.send('<meta charset=utf8><body style="font-family:sans-serif;padding:24px;line-height:1.7"><h2>✅ ' + svc + ' 연결 완료</h2><p>본인 계정 데이터가 <b>읽기 전용</b>으로 연결됐습니다. 이 창을 닫으세요.</p><p style="color:#888">토큰은 암호화 보관·화면 노출 0. 발송·쓰기 권한 없음.</p></body>');
+  } catch (e) { res.status(500).send('연결 실패: ' + String(e.message).slice(0, 140)); }
+});
+app.post('/me/google/disconnect', async (req, res) => {
+  if (!req.tenant) return res.status(401).json({ error: '로그인 필요' });
+  const svc = String(req.query.svc || ((req.body && req.body.svc) || '')); if (!meScopeOf(svc)) return res.status(400).json({ error: '지원: ' + Object.keys(ME_SCOPES).join(',') });
+  try { const ok = await gtokenDelete(req.tenant, svc); res.json({ ok: true, disconnected: ok, svc, note: '본인 토큰 폐기(서버 보관 삭제).' }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+// 본인 캘린더(readonly) — 본인 토큰으로 본인 primary 일정만. ★events.list만(쓰기·발송 0=구조적 차단).
+app.get('/me/calendar', async (req, res) => {
+  if (!req.tenant) return res.json({ loggedIn: false, events: [] });
+  let o; try { o = await tenantGoogleClient(req.tenant, 'calendar'); } catch (e) { o = null; }
+  if (!o) return res.json({ connected: false, events: [], note: '캘린더 미연결 — /me/google/connect?svc=calendar' });
+  try {
+    const cal = google.calendar({ version: 'v3', auth: o });
+    const r = await cal.events.list({ calendarId: 'primary', timeMin: new Date().toISOString(), maxResults: 8, singleEvents: true, orderBy: 'startTime' });
+    const events = (r.data.items || []).map((e) => ({ start: (e.start && (e.start.dateTime || e.start.date)) || '', summary: e.summary || '' }));
+    res.json({ connected: true, count: events.length, events, note: '본인 캘린더(readonly). 쓰기·발송 0.' });
+  } catch (e) { res.json({ connected: false, events: [], error: '재동의 필요(만료/철회 가능)', detail: String(e.message).slice(0, 80) }); }
+});
+
 // ── 세션 조회 / 로그아웃 (UI 로그인 상태 확인) ──
 app.get('/me', (req, res) => {
   const s = readSession(req);
