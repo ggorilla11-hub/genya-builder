@@ -260,6 +260,23 @@ const app = express();
 app.use(cors({ origin: true, credentials: true }));   // 출처 echo + 쿠키 허용(5a 로그인 세션). ★파일럿용 origin:true — 5b에서 허용 출처 화이트리스트로 좁힘. B1 공개 읽기는 그대로 작동(여전히 모든 출처).
 app.use(express.json());
 
+// ── 5b-1: tenant 미들웨어 — 서명 세션에서 tenant_id·OWNER 판정을 도출해 req에 주입(읽기만) ──────────
+//   ★ 핸들러는 tenant를 파라미터로 받지 않는다 — 오직 여기서 HMAC 서명검증된 세션(5a)의 tenant만 신뢰
+//     (URL·쿼리·바디로 tenant 주입 불가 = 위조·?tenant= 주입 차단).
+//   ★ 이 단계는 '주입'만. 데이터 읽기 게이팅(비-OWNER 빈뷰)은 5b-2에서 적용 → 지금은 기존 동작 0 변경(회귀 0).
+//   ★ OWNER_EMAIL(대표 이메일) env로 식별, 코드 하드코딩 금지. 미설정이면 isOwner=false(게이팅 미적용 유지).
+//   ★ 발행·자동발송 0접촉(req 필드 주입만).
+const OWNER_EMAIL = String(process.env.OWNER_EMAIL || '').toLowerCase();
+app.use((req, res, next) => {
+  try {
+    const s = readSession(req);                         // 5a: HMAC 서명검증된 세션만(위조 거부)
+    req.session = s || null;
+    req.tenant  = s ? s.tenant : null;
+    req.isOwner = !!(s && OWNER_EMAIL && String(s.email || '').toLowerCase() === OWNER_EMAIL);
+  } catch (e) { req.session = null; req.tenant = null; req.isOwner = false; }
+  next();
+});
+
 // ── 제니야 화면 내보내기 ───────────────────────────────────
 // 배포(Render)에서는 이 서버 하나가 화면+두뇌를 모두 담당한다.
 // 주소(/)로 들어오면 제니야.html을 보여준다. (다른 폴더는 노출하지 않음)
@@ -3704,6 +3721,14 @@ app.get('/auth/stats', (req, res) => {
     안내: 'PII 미노출(건수·최근 발급일만). email·name·tenant_id 값 없음.',
   });
 });
+// ── 5b-1 검증용: 미들웨어가 도출한 tenant·OWNER 판정 확인 (게이팅 활성 여부 점검) ──
+//   ★ 본인 세션 정보만(tenant·isOwner). gatingReady=OWNER_EMAIL 설정돼야 5b-2 게이팅 활성.
+app.get('/whoami', (req, res) => res.json({
+  loggedIn: !!req.session,
+  tenant: req.tenant,
+  isOwner: req.isOwner,
+  gatingReady: !!OWNER_EMAIL,
+}));
 
 // ── F 1단계: Gmail 읽기(읽기전용) — 최근 메일 발신자·제목·날짜만. ★본문 원문 미저장 ─────────────────
 //   ★ 인증=유튜브와 같은 OAuth(대표 1회 동의 → refresh_token). 미설정이면 graceful("연결 안 됨").
