@@ -3547,6 +3547,66 @@ app.get('/aihand/targets', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── AI손 L2-3: 자율 리서치 타이머 (★AIHAND_AUTO=off 기본 = 완전 no-op). 새벽 1회·대상1건·읽기만·막히면 멈춤. ──
+//   ★ 발행 60초 setInterval·다른 타이머와 완전 별개(독립). 발행함수·solapi 0접촉. _aihandBusy 공유(수동 조사와 동시실행 차단).
+const AIHAND_HOUR = Math.max(0, Math.min(23, Number(process.env.AIHAND_HOUR || 7)));   // 새벽(모닝브리핑 8시 직전) 기본 7시
+function aihandDoneToday(ymd) { return DIARY.some((d) => d.kind === 'aihand' && kstYmdHour(d.ts).ymd === ymd); }
+async function updateTargetCell(row, col, val) {   // C=active, D=lastRunAt
+  const sheets = sheetsClient(); if (!sheets || !RESV_SHEET_ID) return;
+  await sheets.spreadsheets.values.update({ spreadsheetId: RESV_SHEET_ID, range: `'${AIHAND_TARGETS_TAB}'!${col}${row}`, valueInputOption: 'RAW', requestBody: { values: [[val]] } });
+}
+async function aihandAuto(force) {
+  if (!force && !settingOn('AIHAND_AUTO')) return { ran: false, reason: 'off' };          // off 기본 = no-op
+  const { ymd, hour } = kstNow();
+  if (!force && (hour !== AIHAND_HOUR || aihandDoneToday(ymd))) return { ran: false, reason: 'gate' };   // 새벽 1회만
+  if (_aihandBusy) return { ran: false, reason: 'busy' };                                 // ★동시실행 차단(⑤)
+  const target = pickNextTarget(await readAihandTargets().catch(() => []));               // ★목록 안에서만(URL 생성 0)
+  if (!target) return { ran: false, reason: 'no-target' };
+  _aihandBusy = true;
+  const ts = new Date().toISOString();
+  const dProj = (CAMPAIGN && CAMPAIGN.title) || '일반';
+  try {
+    const r = await browseResearch(target.url, target.purpose);                           // ★읽기만(클릭·로그인·발송 0)
+    const b = detectBlocked(r);
+    if (b.blocked) {   // ★멈춤+실패카드+감사+대상 일시정지. 재시도·우회·캡차풀기 0.
+      try { pushNotify({ kind: 'report', agentId: 'zenya', title: '🛑 AI손 멈춤', body: `${target.url} — ${b.reason}. 사람 확인 필요(자동 우회 안 함).` }); } catch (e) {}
+      try { appendDiary({ ts, agentId: 'lead', agentName: 'AI손(자율조사)', project: dProj, kind: 'aihand', entry: `[AI손 멈춤] ${target.url} — ${b.reason} (사람 확인 필요)` }); } catch (e) {}
+      saveAudit({ ts, target: target.url, status: 'blocked', textLen: r.textLen, reason: b.reason });
+      await updateTargetCell(target.row, 'C', 'off').catch(() => {});                      // 대상 일시정지(사람이 풀 때까지)
+      return { ran: true, blocked: true, reason: b.reason };
+    }
+    const entry = `[AI손 자율조사] ${(r.title || target.url).slice(0, 50)} — ${r.textPreview.slice(0, 120)} (본문 ${r.textLen}자)${target.purpose ? ' [목적:' + target.purpose + ']' : ''}`;
+    try { appendDiary({ ts, agentId: 'lead', agentName: 'AI손(자율조사)', project: dProj, kind: 'aihand', entry }); } catch (e) {}
+    saveAudit({ ts, target: target.url, status: 'ok', textLen: r.textLen, reason: '' });
+    await updateTargetCell(target.row, 'D', ts).catch(() => {});                           // lastRunAt 갱신(회전)
+    return { ran: true, blocked: false, title: r.title, textLen: r.textLen };
+  } catch (e) {   // 타임아웃·예외 = 멈춤 신호. 우회 0.
+    try { pushNotify({ kind: 'report', agentId: 'zenya', title: '🛑 AI손 멈춤', body: `${target.url} — 오류:${String(e.message).slice(0, 80)}. 사람 확인 필요.` }); } catch (e2) {}
+    try { appendDiary({ ts, agentId: 'lead', agentName: 'AI손(자율조사)', project: dProj, kind: 'aihand', entry: `[AI손 멈춤] ${target.url} — 오류 (사람 확인 필요)` }); } catch (e2) {}
+    saveAudit({ ts, target: target.url, status: 'fail', textLen: '', reason: String(e.message).slice(0, 80) });
+    return { ran: true, blocked: true, reason: 'error' };
+  } finally { _aihandBusy = false; }
+}
+async function aihandTimer() {
+  if (!settingOn('AIHAND_AUTO')) return;   // off 기본 = 완전 no-op (대표가 Render env로 켤 때만)
+  try { const r = await aihandAuto(false); if (r && r.ran) console.log(`🖐️ AI손 자율조사: ${r.blocked ? '멈춤(' + r.reason + ')' : 'ok ' + (r.textLen || '') + '자'}`); }
+  catch (e) { console.warn('⚠️ AI손 타이머 오류:', e.message); }
+}
+setInterval(() => { aihandTimer().catch(() => {}); }, 30 * 60 * 1000);   // ★ 발행·다른 타이머와 별개(off 기본). 새벽 1회·읽기만·발송0.
+// 검증·수동: ?force=1 = off/시각/하루1회 무시 1회 실행(대표 검증용). _aihandBusy 잠금은 force여도 존중(동시실행 0). 발송·발행 0.
+app.post('/aihand/auto-run', async (req, res) => {
+  if (gateEmpty(req)) return res.status(403).json({ error: 'OWNER 전용' });
+  try { const out = await aihandAuto(req.query.force === '1'); res.json({ ok: true, ...out, note: '읽기 자율조사(발송·발행 0, 막히면 멈춤·우회0)' }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+// AI손 자율 상태(읽기전용) — 켜짐·시각·다음대상·오늘실행 여부. 부작용 0.
+app.get('/aihand/auto-status', async (req, res) => {
+  if (gateEmpty(req)) return res.json({ on: false, gated: true });
+  const { ymd } = kstNow();
+  let next = null; try { next = pickNextTarget(await readAihandTargets()); } catch (e) {}
+  res.json({ on: settingOn('AIHAND_AUTO'), hour: AIHAND_HOUR, doneToday: aihandDoneToday(ymd), busy: _aihandBusy, nextTarget: next ? next.url : null, note: 'off 기본. 켜기=Render env AIHAND_AUTO=on(또는 설정 토글). 읽기·새벽1회·발송0.' });
+});
+
 // ── PHASE 2-2: 모닝브리핑 (대표 본인 아침 보고) — 알림함에만, 외부 발송 0 ──────────────────────
 //   밤사이 핫리드 + 다가오는 일정(캘린더) + 밤사이 영업일기를 LLM으로 묶어 아침 8시 정시에 알림함(pushNotify)에 올린다.
 //   ★ 외부 발송 0(Solapi 미사용). 대표 본인 알림(정보성)만. 별도 타이머(60초 발행 setInterval과 완전 별개). MORNING_BRIEF=off 기본. 하루 1회 dedup.
@@ -3561,15 +3621,18 @@ async function morningBriefing() {
   const wd = await anomalyScan().catch(() => ({ anomalies: [] }));   // 밤사이 시스템 이상 점검(읽기만, 감지·보고용)
   const wdN = (wd.anomalies || []).length;
   const wdLine = `[밤사이 시스템 점검] 이상 ${wdN}건${wdN ? ': ' + wd.anomalies.map((a) => a.msg).join(' / ') : ' (이상 없음)'}`;
+  const ahRows = DIARY.filter((d) => d.kind === 'aihand' && kstYmdHour(d.ts).ymd === kstNow().ymd);   // 오늘 새벽 AI손 자율조사(읽기)
+  const ahLine = `[밤사이 AI손 자율조사] ${ahRows.length ? ahRows.map((d) => d.entry).join(' / ') : '(없음/AI손 off)'}`;
   const stateText = [
     `[밤사이 핫 가망고객] ${hot.length}명${hot.length ? ': ' + hot.map((l) => l.author).filter(Boolean).slice(0, 6).join(', ') : ''}`,
     `[다가오는 일정] ${calOk ? cal.map((e) => `${String(e.start || '').slice(0, 16)} ${e.summary || ''}`).join(' / ') : '(없음/캘린더 미설정)'}`,
     `[밤사이 한 일(영업일기)]\n${night}`,
+    ahLine,
     wdLine,
   ].join('\n');
   const sys = buildZenyaPrompt('부트캠프')
     + '\n\n=== 모닝브리핑 모드 (대표님 본인 아침 보고, 정보성) ===\n'
-    + '아래 밤사이 결과를 대표님께 아침 보고로 정리하라: ① 밤사이 찾은 핫 가망고객 요약 ② 오늘 다가오는 일정 ③ 오늘 할 일 제안 2~3개(각 [대표 승인 필요 O/X]) ④ 밤사이 시스템 점검에 이상이 있으면 한 줄 경고(없으면 "시스템 이상 없음"). '
+    + '아래 밤사이 결과를 대표님께 아침 보고로 정리하라: ① 밤사이 찾은 핫 가망고객 요약 ② 오늘 다가오는 일정 ③ 오늘 할 일 제안 2~3개(각 [대표 승인 필요 O/X]) ④ 밤사이 시스템 점검에 이상이 있으면 한 줄 경고(없으면 "시스템 이상 없음") ⑤ 밤사이 AI손이 읽어온 공개정보(시세·뉴스 등)가 있으면 한 줄 요약(없으면 생략). AI손이 "멈춤"이면 그 사실만 알리고(자동 우회 안 함) 사람 확인을 권한다. '
     + '짧고 또렷하게(표·헤더 없이 6~10줄). 외부 고객 발송·연락은 "실행"이 아니라 "준비/승인 대기"로만 표현. 숫자는 위 값만, 지어내지 마라.';
   const r = await anthropic.messages.create({ model: MODEL, max_tokens: 900, system: sys, messages: [{ role: 'user', content: stateText + '\n\n오늘 아침 모닝브리핑을 써줘.' }] });
   const brief = r.content.filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim();
