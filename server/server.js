@@ -4137,6 +4137,85 @@ app.post('/bulk/plan', (req, res) => {
   });
 });
 
+// ── 단체카톡 골격 2: POST /bulk/approve(승인→검증명단·문구·속도 내보내기 + 대화이력 추정 힌트) + GET /bulk/audit ──
+//   ★대화이력 추정 힌트(소프트): 강한힌트=결제고객+CRM고객(포함) / 단순리드(유튜브 등)=제외. ★보수적(확실한 것만). 최종 하드가드=로컬(B).
+//   ★여전히 발송 0 — export.recipients(실번호)는 로컬 검증도구가 가져가 발송. Solapi·발송함수·60초 시계 0접촉. OWNER 전용.
+function phoneKey(p) { let d = String(p || '').replace(/\D/g, ''); if (d.length === 10 && d.startsWith('10')) d = '0' + d; return d.length >= 9 ? d : ''; }
+let _knownPhonesCache = { at: 0, set: null };
+async function crmPhonesRaw() {   // ★읽기 전용(열 생성 등 부작용 0 — readPeople과 달리 write 안 함)
+  const sheets = sheetsClient(); if (!sheets || !CRM_SHEET_ID) return [];
+  const meta = await sheets.spreadsheets.get({ spreadsheetId: CRM_SHEET_ID });
+  const tabs = (meta.data.sheets || []).map((s) => s.properties.title);
+  const tab = (CRM_SHEET_TAB && tabs.includes(CRM_SHEET_TAB)) ? CRM_SHEET_TAB : (tabs.find((t) => t.includes('응답')) || tabs[0]);
+  if (!tab) return [];
+  const got = await sheets.spreadsheets.values.get({ spreadsheetId: CRM_SHEET_ID, range: `'${tab.replace(/'/g, "''")}'!A1:ZZ` });
+  const rows = got.data.values || []; if (!rows.length) return [];
+  const header = rows[0].map((h) => String(h || '').trim());
+  const phoneCol = header.findIndex((h) => ['연락처', '전화', '휴대폰', '핸드폰'].some((w) => h.includes(w)));
+  if (phoneCol < 0) return [];
+  return rows.slice(1).map((r) => r[phoneCol]).filter(Boolean);
+}
+async function knownCustomerPhones() {   // 결제 + CRM 고객 전화 Set(정규화). 5분 캐시. ★읽기 전용.
+  if (_knownPhonesCache.set && (Date.now() - _knownPhonesCache.at) < 5 * 60 * 1000) return _knownPhonesCache.set;
+  const s = new Set();
+  try { for (const p of await crmPhonesRaw()) { const k = phoneKey(p); if (k) s.add(k); } } catch (e) {}
+  try { for (const p of await readPaidRows()) { const k = phoneKey(p.phone); if (k) s.add(k); } } catch (e) {}
+  _knownPhonesCache = { at: Date.now(), set: s };
+  return s;
+}
+const BULK_AUDIT_TAB = process.env.BULK_AUDIT_TAB || '제니야_단체발송감사';
+const BULK_AUDIT_HEADER = ['ts', 'planId', 'event', 'count', 'note'];
+let bulkAuditChain = Promise.resolve();
+async function appendBulkAudit(rec) {
+  const sheets = sheetsClient(); if (!sheets || !RESV_SHEET_ID) return;
+  await ensureSheetTab(sheets, BULK_AUDIT_TAB, BULK_AUDIT_HEADER);
+  const row = [rec.ts || new Date().toISOString(), rec.planId || '', rec.event || '', String(rec.count ?? ''), String(rec.note || '')];
+  await sheets.spreadsheets.values.append({ spreadsheetId: RESV_SHEET_ID, range: `'${BULK_AUDIT_TAB}'!A1`, valueInputOption: 'RAW', insertDataOption: 'INSERT_ROWS', requestBody: { values: [row] } });
+}
+function saveBulkAudit(rec) { bulkAuditChain = bulkAuditChain.catch(() => {}).then(() => appendBulkAudit(rec)).catch((e) => console.warn('⚠️ 단체발송 감사 저장 실패:', e.message)); return bulkAuditChain; }
+app.post('/bulk/approve', async (req, res) => {
+  if (gateEmpty(req)) return res.status(403).json({ error: 'OWNER 전용(단체카톡 승인)' });
+  const b = req.body || {};
+  const recipients = Array.isArray(b.recipients) ? b.recipients : null;
+  const message = String(b.message || '').trim();
+  if (!recipients) return res.status(400).json({ error: 'recipients 배열 필요([{name,phone,optout}])' });
+  if (!message) return res.status(400).json({ error: 'message(문구) 필요' });
+  const policy = {
+    perMsgSec: Math.max(20, Number((b.policy && b.policy.perMsgSec) || BULK_PER_MSG_SEC)),
+    hourlyCap: Math.max(1, Number((b.policy && b.policy.hourlyCap) || BULK_HOURLY_CAP)),
+    dailyCap:  Math.max(1, Number((b.policy && b.policy.dailyCap) || BULK_DAILY_CAP)),
+    nightBlock: '21:00-08:00 KST 발송 금지',
+  };
+  let known; try { known = await knownCustomerPhones(); } catch (e) { known = new Set(); }
+  const ex = { unknown: 0, optout: 0, invalid: 0, overDailyCap: 0 };
+  const eligible = [];
+  for (const r of recipients) {
+    const key = phoneKey(r && r.phone);
+    if (!key) { ex.invalid++; continue; }
+    if (r.optout === true) { ex.optout++; continue; }
+    if (!known.has(key)) { ex.unknown++; continue; }   // ★보수적: 결제·CRM에 확실히 있는 고객만(강한 힌트). 단순 리드·미지=제외.
+    eligible.push({ name: String(r.name || '').slice(0, 40), phone: r.phone, knownHint: true });
+  }
+  const included = eligible.slice(0, policy.dailyCap);
+  ex.overDailyCap = Math.max(0, eligible.length - included.length);
+  const planId = 'bk_' + crypto.randomBytes(6).toString('hex');
+  saveBulkAudit({ planId, event: 'approve', count: included.length, note: `승인 ${included.length}명(제외 미지${ex.unknown}·optout${ex.optout}·이상${ex.invalid})·발송0·로컬발송대기` });
+  res.json({
+    ok: true, planId, approvedBy: req.tenant || 'owner',
+    message, policy, included: included.length, excluded: ex, knownSourceCount: known.size,
+    export: { planId, message, perMsgSec: policy.perMsgSec, nightBlock: policy.nightBlock, recipients: included },
+    note: '★발송 0 — 승인된 발송계획 내보내기. export.recipients=실번호(로컬 검증도구용·OWNER 전용). 실제 발송·대화방 최종확인(하드가드)은 로컬(B).',
+  });
+});
+app.get('/bulk/audit', async (req, res) => {
+  if (gateEmpty(req)) return res.json({ tab: BULK_AUDIT_TAB, total: 0, rows: [], gated: true });
+  const sheets = sheetsClient(); if (!sheets || !RESV_SHEET_ID) return res.json({ tab: BULK_AUDIT_TAB, total: 0, rows: [], note: '시트 미설정' });
+  let all = [];
+  try { const got = await sheets.spreadsheets.values.get({ spreadsheetId: RESV_SHEET_ID, range: `'${BULK_AUDIT_TAB}'!A2:E` }); all = (got.data.values || []).map((r) => ({ ts: r[0] || '', planId: r[1] || '', event: r[2] || '', count: r[3] || '', note: r[4] || '' })); } catch (e) { all = []; }   // ★읽기만(탭 생성 안 함=레이스 0). 탭 없으면 빈 목록.
+  const limit = Math.max(1, Math.min(200, Number(req.query.limit || 50)));
+  res.json({ tab: BULK_AUDIT_TAB, total: all.length, rows: all.slice(-limit).reverse(), note: '단체발송 감사로그(읽기·발송 0)' });
+});
+
 // ── 세션 조회 / 로그아웃 (UI 로그인 상태 확인) ──
 app.get('/me', (req, res) => {
   const s = readSession(req);
