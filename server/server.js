@@ -4113,10 +4113,15 @@ app.post('/bulk/plan', (req, res) => {
     dailyCap:  Math.max(1, Number((b.policy && b.policy.dailyCap) || BULK_DAILY_CAP)),
     nightBlock: '21:00-08:00 KST 발송 금지',
   };
-  const ex = { unknown: 0, optout: 0, invalid: 0, overDailyCap: 0 };
+  const seg = (b.segment && typeof b.segment === 'object') ? b.segment : null;   // ★소팅: 유형 추출(구조적 segment). 자연어→segment(LLM)는 다음 층.
+  const segField = seg && seg.field ? String(seg.field) : 'type';
+  const segVals = seg && Array.isArray(seg.in) ? seg.in.map((v) => String(v).toLowerCase()).filter(Boolean) : null;
+  const segMatch = (r) => { if (!segVals) return true; const v = String((r && r[segField]) || '').toLowerCase(); return segVals.some((x) => v.includes(x)); };
+  const ex = { segment: 0, unknown: 0, optout: 0, invalid: 0, overDailyCap: 0 };
   const eligible = [];
   for (const r of recipients) {
     if (!validPhone(r && r.phone)) { ex.invalid++; continue; }
+    if (!segMatch(r)) { ex.segment++; continue; }            // ★소팅: segment(유형) 안 맞으면 제외(발송 0)
     if (r.optout === true) { ex.optout++; continue; }
     if (r.known !== true) { ex.unknown++; continue; }       // ★대화이력 없는 후보 제외(엔진 1차 차단). 최종 하드가드=로컬.
     eligible.push({ name: String(r.name || '').slice(0, 40), phoneMasked: maskPhone(r.phone) });
@@ -4127,6 +4132,7 @@ app.post('/bulk/plan', (req, res) => {
     ok: true,
     message,
     policy,
+    segment: segVals ? { field: segField, in: seg.in } : null,
     totalCandidates: recipients.length,
     eligible: eligible.length,
     included: included.length,
