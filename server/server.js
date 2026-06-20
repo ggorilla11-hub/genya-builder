@@ -3959,7 +3959,12 @@ app.get('/auth/google/callback', async (req, res) => {
 //   ★ 신원 로그인(/auth/google, online)과 *별개 흐름*: 같은 client_id/secret + 다른 콜백(/me/google/oauth2callback).
 //   ★ 최소권한: 서비스당 readonly 스코프 하나씩(점진). 쓰기·발송 스코프 미요청 = 구조적 차단. 발행 0접촉.
 const MEGOOGLE_REDIRECT_URI = process.env.MEGOOGLE_REDIRECT_URI || 'https://jenya.onrender.com/me/google/oauth2callback';
-const ME_SCOPES = { calendar: ['https://www.googleapis.com/auth/calendar.readonly'] };   // 다음: drive/gmail/sheets readonly 순차 추가
+const ME_SCOPES = {   // ★전부 readonly·최소권한. 쓰기·발송·생성 스코프 영영 미요청(구조적 차단).
+  calendar: ['https://www.googleapis.com/auth/calendar.readonly'],
+  drive:    ['https://www.googleapis.com/auth/drive.metadata.readonly'],   // 파일 목록·메타만(다운로드 X)
+  gmail:    ['https://www.googleapis.com/auth/gmail.readonly'],            // 읽기만 — ★send 영영 미요청
+  sheets:   ['https://www.googleapis.com/auth/spreadsheets.readonly'],     // 본인 시트 읽기(쓰기 X)
+};
 function meScopeOf(svc) { return Object.prototype.hasOwnProperty.call(ME_SCOPES, svc) ? ME_SCOPES[svc] : null; }   // ★proto 오염 차단
 function dataOAuthClient() {   // 로그인 클라이언트 재사용 + 데이터연결 콜백
   const id = loginClientId();
@@ -4010,6 +4015,48 @@ app.get('/me/calendar', async (req, res) => {
     const events = (r.data.items || []).map((e) => ({ start: (e.start && (e.start.dateTime || e.start.date)) || '', summary: e.summary || '' }));
     res.json({ connected: true, count: events.length, events, note: '본인 캘린더(readonly). 쓰기·발송 0.' });
   } catch (e) { res.json({ connected: false, events: [], error: '재동의 필요(만료/철회 가능)', detail: String(e.message).slice(0, 80) }); }
+});
+// 본인 드라이브 파일 목록(메타데이터 readonly) — ★files.list만(다운로드·쓰기·생성 0=구조적 차단).
+app.get('/me/drive', async (req, res) => {
+  if (!req.tenant) return res.json({ loggedIn: false, files: [] });
+  let o; try { o = await tenantGoogleClient(req.tenant, 'drive'); } catch (e) { o = null; }
+  if (!o) return res.json({ connected: false, files: [], note: '드라이브 미연결 — /me/google/connect?svc=drive' });
+  try {
+    const drv = google.drive({ version: 'v3', auth: o });
+    const r = await drv.files.list({ pageSize: 15, fields: 'files(name,mimeType,modifiedTime)', orderBy: 'modifiedTime desc' });
+    const files = (r.data.files || []).map((f) => ({ name: f.name || '', type: f.mimeType || '', modified: f.modifiedTime || '' }));
+    res.json({ connected: true, count: files.length, files, note: '본인 드라이브 파일목록(메타 readonly). 다운로드·쓰기 0.' });
+  } catch (e) { res.json({ connected: false, files: [], error: '재동의 필요(만료/철회 가능)', detail: String(e.message).slice(0, 80) }); }
+});
+// 본인 Gmail 최근 메일(발신자·제목·날짜만) — ★messages.list/get(metadata)만. 본문 원문 미저장·send/삭제 0.
+app.get('/me/gmail', async (req, res) => {
+  if (!req.tenant) return res.json({ loggedIn: false, messages: [] });
+  let o; try { o = await tenantGoogleClient(req.tenant, 'gmail'); } catch (e) { o = null; }
+  if (!o) return res.json({ connected: false, messages: [], note: 'Gmail 미연결 — /me/google/connect?svc=gmail' });
+  try {
+    const gm = google.gmail({ version: 'v1', auth: o });
+    const list = await gm.users.messages.list({ userId: 'me', maxResults: 8 });
+    const msgs = [];
+    for (const m of (list.data.messages || []).slice(0, 8)) {
+      const g = await gm.users.messages.get({ userId: 'me', id: m.id, format: 'metadata', metadataHeaders: ['From', 'Subject', 'Date'] });
+      const h = {}; ((g.data.payload && g.data.payload.headers) || []).forEach((x) => { h[x.name] = x.value; });
+      msgs.push({ from: h.From || '', subject: h.Subject || '', date: h.Date || '' });
+    }
+    res.json({ connected: true, count: msgs.length, messages: msgs, note: '본인 메일 메타(readonly). 본문 미저장·발송/삭제 0.' });
+  } catch (e) { res.json({ connected: false, messages: [], error: '재동의 필요(만료/철회 가능)', detail: String(e.message).slice(0, 80) }); }
+});
+// 본인 시트 읽기(spreadsheets.readonly) — ★values.get만(?id=&range= 지정). 쓰기·생성 0. 목록은 드라이브 연결로.
+app.get('/me/sheets', async (req, res) => {
+  if (!req.tenant) return res.json({ loggedIn: false, values: [] });
+  let o; try { o = await tenantGoogleClient(req.tenant, 'sheets'); } catch (e) { o = null; }
+  if (!o) return res.json({ connected: false, values: [], note: '시트 미연결 — /me/google/connect?svc=sheets' });
+  const id = String(req.query.id || '');
+  if (!id) return res.json({ connected: true, values: [], note: '읽을 스프레드시트 ID를 ?id= 로, 범위를 ?range= 로 주세요(읽기 전용). 목록은 /me/drive.' });
+  try {
+    const sh = google.sheets({ version: 'v4', auth: o });
+    const r = await sh.spreadsheets.values.get({ spreadsheetId: id, range: String(req.query.range || 'A1:E10') });
+    res.json({ connected: true, rows: (r.data.values || []).length, values: r.data.values || [], note: '본인 시트 읽기(readonly). 쓰기 0.' });
+  } catch (e) { res.json({ connected: false, values: [], error: '읽기 실패(권한/ID 확인 또는 재동의)', detail: String(e.message).slice(0, 80) }); }
 });
 
 // ── 세션 조회 / 로그아웃 (UI 로그인 상태 확인) ──
