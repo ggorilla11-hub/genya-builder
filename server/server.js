@@ -281,6 +281,36 @@ app.use((req, res, next) => {
 //   ★ 교육생(비-OWNER)은 본인 tenant 데이터만 — 5b-3(per-tenant 저장) 전엔 데이터 없음 = 빈뷰.
 //   ★ 판정은 req.isOwner(미들웨어가 서명세션서 도출)만 신뢰 — 파라미터·쿼리 무시(위조 차단).
 function gateEmpty(req) { return !!OWNER_EMAIL && !req.isOwner; }
+// ── 5b-3: per-tenant 저장 골격 (탭 prefix {tenant}_) — 교육생 본인 데이터만, OWNER는 글로벌(회귀0) ──
+//   ★ tenant=req.tenant(서명세션)만 — 파라미터 안 받음. 같은 RESV_SHEET_ID, 시트가 원본(재배포 생존, lazy 캐시).
+//   ★ 읽기성 데이터(영업일기)만 — 발송·발행 함수 미노출. 탭 폭증 한계는 B4서 테넌트별 시트로 강화.
+const TENANT_CACHE = new Map();   // tenant_id → { kind: [rows] }
+function tenantCacheOf(tenant) { if (!TENANT_CACHE.has(tenant)) TENANT_CACHE.set(tenant, {}); return TENANT_CACHE.get(tenant); }
+function tenantTab(tenant, kind) { return `${tenant}_${kind}`; }
+function tenantDiaryToObj(r) { return { ts: r[0] || '', agentId: r[1] || '', agentName: r[2] || '', project: r[3] || '', kind: r[4] || '', entry: r[5] || '' }; }
+async function tenantRead(tenant, kind, header) {
+  if (!tenant) return [];
+  const c = tenantCacheOf(tenant);
+  if (c[kind]) return c[kind];                       // lazy 캐시
+  const sheets = sheetsClient(); if (!sheets || !RESV_SHEET_ID) { c[kind] = []; return c[kind]; }
+  try {
+    await ensureSheetTab(sheets, tenantTab(tenant, kind), header);
+    const got = await sheets.spreadsheets.values.get({ spreadsheetId: RESV_SHEET_ID, range: `'${tenantTab(tenant, kind)}'!A2:Z` });
+    c[kind] = got.data.values || [];
+  } catch (e) { c[kind] = []; }
+  return c[kind];
+}
+async function tenantAppend(tenant, kind, header, row) {
+  if (!tenant) return;
+  const c = tenantCacheOf(tenant);
+  if (!c[kind]) await tenantRead(tenant, kind, header);
+  c[kind].push(row);
+  const sheets = sheetsClient(); if (!sheets || !RESV_SHEET_ID) return;
+  try {
+    await ensureSheetTab(sheets, tenantTab(tenant, kind), header);
+    await sheets.spreadsheets.values.append({ spreadsheetId: RESV_SHEET_ID, range: `'${tenantTab(tenant, kind)}'!A1`, valueInputOption: 'RAW', insertDataOption: 'INSERT_ROWS', requestBody: { values: [row] } });
+  } catch (e) { console.warn('⚠️ tenant 저장 실패:', e.message); }
+}
 
 // ── 제니야 화면 내보내기 ───────────────────────────────────
 // 배포(Render)에서는 이 서버 하나가 화면+두뇌를 모두 담당한다.
@@ -3587,16 +3617,33 @@ app.get('/capabilities', (req, res) => res.json({
 //   ★ DIARY 최근 N건 반환만. 맥락(밤사이 피드/제안/승인) 분류는 UI 책임(변환).
 //   ★ 시트 영속(제니야_영업일기)은 이미 부팅복원됨(PHASE 1-2). 새 자격증명·새 시트 0.
 //   ★ 발행함수·60초 시계·자동발송 0접촉(읽기만). 모닝브리핑 최신은 /dashboard/all·/notify에 이미 노출.
-app.get('/diary', (req, res) => {
-  if (gateEmpty(req)) return res.json({ count: 0, days: Math.max(1, Math.min(30, Number(req.query.days) || 2)), entries: [], gated: true });
+app.get('/diary', async (req, res) => {
   const days    = Math.max(1, Math.min(30, Number(req.query.days) || 2));
   const n       = Math.max(1, Math.min(200, Number(req.query.n) || 50));
   const agentId = req.query.agentId || '';
   const from    = Date.now() - days * 24 * 3600 * 1000;
-  let entries = (Array.isArray(DIARY) ? DIARY : []).filter((d) => new Date(d.ts).getTime() >= from);
+  // 5b-3: OWNER(또는 게이팅 미설정)=글로벌(기존, 회귀0) / 교육생=본인 tenant 일기 / 비로그인=빈
+  let source;
+  if (OWNER_EMAIL && !req.isOwner) {
+    if (!req.tenant) return res.json({ count: 0, days, entries: [], gated: true });                 // 비로그인
+    source = (await tenantRead(req.tenant, '영업일기', DIARY_HEADER)).map(tenantDiaryToObj);          // 교육생 본인 것만
+  } else {
+    source = Array.isArray(DIARY) ? DIARY : [];                                                       // OWNER=글로벌
+  }
+  let entries = source.filter((d) => new Date(d.ts).getTime() >= from);
   if (agentId) entries = entries.filter((d) => d.agentId === agentId);
   entries = entries.slice(-n).reverse();   // 최신순
-  res.json({ count: entries.length, days, entries, 안내: '읽기 전용 영업일기(최근 N건). 발송·발행·자동발송 0접촉.' });
+  res.json({ count: entries.length, days, entries, tenant: req.tenant || null, 안내: '읽기 전용 영업일기. 본인 tenant만(OWNER=전체). 발행 0접촉.' });
+});
+// ── 5b-3: per-tenant 더미 일기 seed (★누수 테스트용 — 본인 tenant에만 기록) ──
+//   ★ tenant=req.tenant(세션)만. OWNER는 글로벌 사용(seed 불가). 발송·발행 함수 0(일기 1줄만).
+app.post('/diary/seed', async (req, res) => {
+  if (!req.tenant) return res.status(401).json({ error: '로그인 필요(세션 tenant 없음)' });
+  if (req.isOwner) return res.status(400).json({ error: 'OWNER는 글로벌 영업일기 사용 — seed는 교육생 테넌트 전용' });
+  const text = String((req.body || {}).entry || '테스트 일기').slice(0, 200);
+  const row = [new Date().toISOString(), 'test', '교육생', '파일럿', 'seed', text];
+  await tenantAppend(req.tenant, '영업일기', DIARY_HEADER, row);
+  res.json({ ok: true, tenant: req.tenant, saved: text, count: (tenantCacheOf(req.tenant)['영업일기'] || []).length });
 });
 
 // ════════════════════════════════════════════════════════════════════════════
