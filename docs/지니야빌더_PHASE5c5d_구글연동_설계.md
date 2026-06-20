@@ -132,14 +132,46 @@ GET  /me/sheets / drive           본인 자료 목록(읽기)
 
 ---
 
-## 7. 코치 결정 필요 (구현 전 확정할 질문)
+## 7. ✅ 확정 결정 (2026-06-20 코치 답)
 
-1. **검토포인트 A (시트 권한):** 시트를 **읽기만**(`spreadsheets.readonly`)인가, **본인 작업시트 생성·쓰기**(`drive.file`로 앱생성 시트)까지인가? — 5c "연결"은 읽기로 충분해 보이나, 교육생이 결과물을 본인 시트에 받는 그림이면 쓰기 필요.
-2. **검토포인트 B (5d 업로드 경로):** **B-1 브라우저 직행(서버 바이트 0, 난도↑)** vs **B-2 서버 무저장 경유(쉬움, 바이트가 잠깐 스침)**. B4 원칙 엄격도 기준 어느 쪽?
-3. **OAuth 클라이언트:** 5a 로그인 클라이언트에 스코프를 **점진 추가**(권장, 클라이언트 1개)로 가는 게 맞나? (구글 콘솔에 4종 스코프 등록·동의화면 검수 필요할 수 있음 — 대표 1회 셋업.)
-4. **연결 UI 위치:** "연결" 카드 4종을 **온보딩 s-infra 화면**에 둘지, 별도 "내 연동" 설정 화면에 둘지. (s-infra가 정확히 어느 화면/파일인지도 확정 필요 — 현재 제니야.html에 교육생 로그인·온보딩 UI가 아직 없어 보임 → BL-1 온보딩과 함께 신설 가능성.)
-5. **점진 동의 1순위:** 5c-2에서 어느 서비스부터 실증? (권장: 캘린더 readonly = 가장 안전·검증 쉬움.)
+1. **시트 권한 = 읽기(`readonly`)만 1단계.** 본인 시트 쓰기는 필요성 확인 후 다음.
+2. **5d 업로드 = 브라우저 직행(B-1, 서버 바이트 0).** zero data ingress 원칙 — "잠깐 스침"도 회피. 본인 브라우저→본인 Drive 직행, 오원트는 `fileId`만.
+3. **OAuth = 5a와 같은 클라이언트 + 점진 동의(incremental).** ★단 **신원 로그인(online)과 데이터 연결(offline·refresh_token AES 암호화 저장)은 흐름 분리.**
+4. **연결 카드 = 온보딩(s-infra) 화면**(BL-1 온보딩 신설과 함께). ★단 **엔진은 연결 엔드포인트 + `/me/google/status` 먼저**, UI는 그 다음.
+5. **점진 동의 순서 = 캘린더 readonly → 드라이브 → Gmail → 시트.**
+
+### 7-1. #3 흐름 분리 (online 로그인 / offline 데이터연결)
+- **신원 로그인(5a, online):** access_type=online, 최소(email/profile). 세션 쿠키(HMAC)만 — 기존 5a 그대로.
+- **데이터 연결(5c, offline):** `/me/google/connect?svc=` 가 access_type=offline·prompt=consent·**해당 서비스 스코프만** 추가 동의 → 콜백에서 **refresh_token만 AES-256-GCM 암호화**해 `{tenant}_구글토큰`에 보관. 신원 로그인과 별도 트리거.
+- 효과: 로그인은 가볍게(승인율↑), 데이터 권한은 쓸 때 하나씩(최소권한·점진).
+
+### 7-2. #2 브라우저 직행 업로드 — 구현 방식·난이도 (코치 검토용)
+**방식(권장):** 프론트(교육생 브라우저)에서 **본인 access_token**으로 Google Drive **resumable upload**를 직접 호출.
+```
+① 프론트가 엔진에 "업로드용 단기 access_token" 요청
+   → 엔진: 저장된 본인 refresh_token(AES 복호) 로 access_token 발급(drive.file)해 *프론트에 단기 토큰만* 전달
+     (refresh_token은 서버 밖으로 안 나감, access_token은 1시간 만료)
+② 프론트: POST https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable
+   → 받은 업로드 URL로 파일 바이트를 *브라우저→구글* 직접 PUT (서버 경유 0)
+③ 완료 후 프론트가 fileId만 엔진에 보고 → 엔진은 {tenant}_자료에 fileId·이름·종류만 기록
+```
+**난이도/리스크 (정직):**
+- 중상(中上). 핵심 난점 = **프론트에 access_token을 잠깐 쥐어주는 부분**(절대 refresh_token은 안 줌, access_token도 짧게·`drive.file`로 최소권한·HTTPS만).
+- resumable PUT 진행률·재시도·CORS는 Google 공식 지원(브라우저 업로드 정식 경로)이라 표준대로 하면 됨.
+- 대안(쉬움) = B-2 서버 무저장 경유였으나 **코치가 zero ingress로 B-1 확정** → 이 방식 채택.
+- ★ 이 부분은 5d 단계라 5c(캘린더 readonly 등) 다 된 뒤 별도로 설계·실증. 지금은 방향만 확정.
 
 ---
 
-> **다음 = 코치가 7절 5개 질문에 답·이 검토안 승인 → 그때 5c-0(롤백태그)부터 구현 착수.** 그 전엔 구현 0.
+## 8. 착수 진행상황 (각 단계 롤백태그→가산→announce→승인→실측·회귀0)
+
+- **5c-0:** 롤백 태그 `rollback-before-5c` ✅
+- **5c-1 ✅ (커밋 77c90cf):** AES-256-GCM 유틸(`encToken`/`decToken`, 키=`GOOGLE_TOKEN_KEY`) + `{tenant}_구글토큰` 저장 골격(`gtokenRows`/`gtokenStatus`) + `GET /me/google/status`(읽기·토큰값0). OAuth 미연결=연결0. 실측: node --check·AES라운드트립(평문미포함)·status·발행/AI손 회귀0.
+- **5c-2 (다음):** 점진 동의 캘린더 readonly — `/me/google/connect?svc=calendar`→`/me/google/oauth2callback`→AES 저장→`/me/calendar` 실독 1건. (대표 1회 셋업: GCP 콘솔 calendar.readonly 스코프 등록·동의화면.)
+- **5c-3:** 드라이브→Gmail→시트 readonly 순차(같은 패턴).
+- **5d-1:** 브라우저 직행 업로드(7-2 방식) + `{tenant}_자료` fileId 기록.
+- **검증:** ★★ G1~G12(A·B·OWNER 3계정) 전부 O 후 다음.
+
+---
+
+> **다음 = 5c-2(캘린더 readonly 점진 동의) 구현.** 발행 PROTECT·회귀0·토큰 평문 0 유지. 5d 브라우저 직행은 5c 완료 후 별도 실증.
