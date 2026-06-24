@@ -3966,6 +3966,25 @@ app.get('/auth/token', (req, res) => {
   res.json({ ok: true, token });   // ★토큰 값은 응답 본문에만 — 서버 로그 미출력
 });
 
+// ── 5c-bridge2: 리다이렉트형 토큰 전달 (가산 — third-party 쿠키 차단 회피용) ──
+//   ★ 브라우저가 jenya로 직접 이동(first-party)이라 세션 쿠키 정상 전송 → readSession 작동.
+//     로그인됐으면 토큰을 return URL의 #gt 프래그먼트(서버로그 안 남음)로 실어 리다이렉트.
+//   ★ 오픈리다이렉트 차단: safeReturnUrl(화이트리스트) 통과 출처로만. 미로그인이면 /auth/google 거쳐 다시 bridge로.
+//   ★ 기존 /auth/google·callback·signSession·setSessionCookie 무수정(이 라우트만 가산).
+app.get('/auth/bridge', (req, res) => {
+  const ret = safeReturnUrl(req.query.return);   // 허용 출처(LOGIN_RETURN_WHITELIST)만
+  if (!ret) return res.status(400).send('<meta charset=utf8>허용되지 않은 return 주소입니다. (LOGIN_RETURN_WHITELIST 확인)');
+  const s = readSession(req);
+  if (s) {
+    const token = signSession({ tenant: s.tenant, email: s.email, aud: 'genya-rag', iat: Date.now(), exp: Date.now() + 15 * 60 * 1000 });
+    const sep = ret.indexOf('#') >= 0 ? '&' : '#';   // ★쿼리(?) 아닌 프래그먼트(#) — 서버로그·Referer에 안 남음
+    return res.redirect(ret + sep + 'gt=' + encodeURIComponent(token));
+  }
+  // 미로그인 → 로그인부터, 끝나면 다시 bridge로(같은 return 유지) → 그때 토큰 발급
+  const self = 'https://' + req.get('host') + '/auth/bridge?return=' + encodeURIComponent(ret);
+  return res.redirect('/auth/google?return=' + encodeURIComponent(self));
+});
+
 // ── 5c-2: 데이터 연결(offline) — 점진 동의 캘린더 readonly (본인 refresh_token AES 저장 + 본인 일정 읽기) ──
 //   ★ 신원 로그인(/auth/google, online)과 *별개 흐름*: 같은 client_id/secret + 다른 콜백(/me/google/oauth2callback).
 //   ★ 최소권한: 서비스당 readonly 스코프 하나씩(점진). 쓰기·발송 스코프 미요청 = 구조적 차단. 발행 0접촉.
