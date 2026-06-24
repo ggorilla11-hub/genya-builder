@@ -3955,6 +3955,17 @@ app.get('/auth/google/callback', async (req, res) => {
   } catch (e) { res.status(500).send('로그인 실패: ' + e.message); }
 });
 
+// ── 5c-bridge: genya-rag-server용 단기 서명토큰 발급 (가산 — 기존 로그인 무수정) ──
+//   ★ 로그인된 세션(readSession)만 → signSession 재사용으로 15분 토큰 JSON 반환.
+//     genya-rag-server가 같은 SESSION_SECRET으로 검증(tenant 식별). 발송·발행·데이터접근 0.
+//   ★ 미로그인/SESSION_SECRET 미설정 → readSession=null → 401(안전하게 닫힘). CORS는 기존 전역 사용.
+app.get('/auth/token', (req, res) => {
+  const s = readSession(req);
+  if (!s) return res.status(401).json({ ok: false, error: '로그인 필요 — 먼저 /auth/google' });
+  const token = signSession({ tenant: s.tenant, email: s.email, aud: 'genya-rag', iat: Date.now(), exp: Date.now() + 15 * 60 * 1000 });
+  res.json({ ok: true, token });   // ★토큰 값은 응답 본문에만 — 서버 로그 미출력
+});
+
 // ── 5c-2: 데이터 연결(offline) — 점진 동의 캘린더 readonly (본인 refresh_token AES 저장 + 본인 일정 읽기) ──
 //   ★ 신원 로그인(/auth/google, online)과 *별개 흐름*: 같은 client_id/secret + 다른 콜백(/me/google/oauth2callback).
 //   ★ 최소권한: 서비스당 readonly 스코프 하나씩(점진). 쓰기·발송 스코프 미요청 = 구조적 차단. 발행 0접촉.
