@@ -202,7 +202,7 @@ body{font-family:'Pretendard',-apple-system,sans-serif;font-weight:500;backgroun
 .inputbar input{flex:1 1 0;width:0;min-width:0;border:none;background:transparent;font-family:inherit;font-size:13.5px;font-weight:500;outline:none;color:var(--ink)}
 /* width:0 + min-width:0 — 텍스트칸은 "남는 공간만" 차지한다.
    placeholder(안내문)가 아무리 길어도 칸이 늘어나 마이크·전송을 밀어내지 못함 */
-.inputbar .plus,.inputbar .mic,.inputbar .send{flex:0 0 auto}
+.inputbar .plus,.inputbar .mic,.inputbar .rec,.inputbar .send{flex:0 0 auto}
 /* 버튼 3개는 고정폭 — 절대 줄어들거나 밀려나지 않음 */
 .inputbar .mic{width:36px;height:36px;border-radius:50%;background:var(--agent-soft);color:var(--agent-deep);border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:17px;transition:.2s;flex-shrink:0}
 .inputbar .mic:hover{background:var(--agent);color:#fff}
@@ -211,6 +211,23 @@ body{font-family:'Pretendard',-apple-system,sans-serif;font-weight:500;backgroun
 @keyframes micpulse{0%{box-shadow:0 0 0 0 rgba(179,38,30,.45)}70%{box-shadow:0 0 0 10px rgba(179,38,30,0)}100%{box-shadow:0 0 0 0 rgba(179,38,30,0)}}
 .inputbar .send{width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--agent),var(--agent-deep));color:#fff;border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:16px;box-shadow:0 6px 14px rgba(29,158,117,.35);flex-shrink:0}
 .inputbar .hint{font-size:11px;color:var(--muted);text-align:center;margin-top:8px;font-weight:500}
+/* ── 상담 녹음 버튼 + 실시간 자막 패널 (Task A) ── */
+.inputbar .rec{width:36px;height:36px;border-radius:50%;background:#FDECEC;color:#B3261E;border:1px solid #F2C7C4;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:.2s;flex-shrink:0}
+.inputbar .rec:hover{background:#B3261E;color:#fff}
+.inputbar .rec .recdot{width:13px;height:13px;border-radius:50%;background:currentColor;display:block}
+.inputbar .rec.live{background:#B3261E;color:#fff;animation:micpulse 1.6s infinite}
+.consultbar{display:none;flex-direction:column;gap:7px;background:#FFF4F4;border:1px solid #F2C7C4;border-radius:12px;padding:9px 12px;margin:0 0 9px}
+.consultbar.show{display:flex}
+.consultbar .ch{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:700;color:#B3261E}
+.consultbar .ch .clock{font-variant-numeric:tabular-nums}
+.consultbar .ch .cn{margin-left:auto;font-size:11px;color:var(--muted);font-weight:600}
+.consultbar .ch .recpill{width:9px;height:9px;border-radius:50%;background:#B3261E;animation:micpulse 1.6s infinite;flex-shrink:0}
+.consultbar .ct{max-height:140px;overflow-y:auto;font-size:13px;line-height:1.55;color:var(--ink);white-space:pre-wrap;word-break:break-word;background:#fff;border:1px solid #F3D6D4;border-radius:8px;padding:8px 10px;min-height:42px}
+.consultbar .ct .itm{color:var(--muted)}
+.consultbar .ct .ph{color:var(--muted);font-weight:500}
+.consultbar .cact{display:flex;gap:7px}
+.consultbar .cact button{border:1px solid #E6B5B2;background:#fff;color:#B3261E;font-family:inherit;font-size:11.5px;font-weight:700;border-radius:8px;padding:5px 11px;cursor:pointer}
+.consultbar .cact button:hover{background:#FDECEC}
 
 /* ---------- B-6. 우측 도구 세트 (앰버 구역) ---------- */
 .tools{background:var(--tool-bg);border-left:1px solid var(--tool-line);padding:15px 11px;display:flex;flex-direction:column;gap:7px;overflow-y:auto}
@@ -324,7 +341,7 @@ body{font-family:'Pretendard',-apple-system,sans-serif;font-weight:500;backgroun
   .inputbar .row{flex-wrap:wrap;gap:6px;padding:8px;border-radius:16px}
   .inputbar input{flex:1 1 100%;width:100%;order:-1;font-size:14px;padding:4px 4px 9px;border-bottom:1px solid var(--line)}
   .inputbar .plus{margin-right:auto}   /* ＋는 왼쪽 끝, 마이크·전송은 오른쪽 끝 */
-  .inputbar .plus,.inputbar .mic,.inputbar .send{width:38px;height:38px;font-size:17px}
+  .inputbar .plus,.inputbar .mic,.inputbar .rec,.inputbar .send{width:38px;height:38px;font-size:17px}
   .inputbar .hint{font-size:10px}
 
   /* 도구: 대화 아래 한 줄 가로 스크롤 */
@@ -572,9 +589,23 @@ body{font-family:'Pretendard',-apple-system,sans-serif;font-weight:500;backgroun
           <button class="m-stop" id="meet-stop"><i class="ti ti-hand-stop"></i> 회의 중단</button>
           <span class="m-hint">회의 진행 중… 멈추려면 [회의 중단]을 누르세요 (다음 발언부터 멈추고 비용도 끊깁니다)</span>
         </div>
+        <!-- 상담 녹음 실시간 자막 (Task A) — 녹음 중에만 보임 -->
+        <div class="consultbar" id="consultbar">
+          <div class="ch">
+            <span class="recpill" id="consult-pill"></span>
+            <span id="consult-state">상담 녹음 중</span> · <span class="clock" id="consult-clock">00:00</span>
+            <span class="cn" id="consult-count">0자</span>
+          </div>
+          <div class="ct" id="consult-text"><span class="ph">말씀이 시작되면 여기에 실시간으로 받아 적습니다…</span></div>
+          <div class="cact">
+            <button id="consult-stop"><i class="ti ti-player-stop"></i> 녹음 정지</button>
+            <button id="consult-clear">지우기</button>
+          </div>
+        </div>
         <div class="row">
           <button class="plus" id="plus" title="자료 업로드"><i class="ti ti-plus"></i></button>
           <input id="inp" placeholder="제니야 또는 에이전트에게 말하거나 입력…">
+          <button class="rec" id="rec" title="상담 녹음 시작/정지"><span class="recdot"></span></button>
           <button class="mic" id="mic" title="음성으로 말하기"><i class="ti ti-microphone"></i></button>
           <button class="send" id="send" title="보내기"><i class="ti ti-arrow-up"></i></button>
         </div>
@@ -2961,6 +2992,7 @@ function startListen(){
 
 document.getElementById('mic').onclick = function(){
   if(meeting.running){ addMessage('회의가 도는 동안에는 음성을 켤 수 없습니다.','zenya'); return; }
+  if(consult.recording){ addMessage('상담 녹음 중에는 음성 통화를 켤 수 없습니다. 먼저 [녹음 정지]를 눌러 주세요.','zenya'); return; }
   // 🎤 = Vapi(ELLIOT 목소리) 통화 토글. 두뇌는 텍스트 제니야(/vapi→/chat 정체성).
   if(voiceActive || voiceConnecting){ stopVoice(); return; }   // 통화 중 다시 누르면 종료
   ensureTodayThen(startVoice);
@@ -2968,6 +3000,148 @@ document.getElementById('mic').onclick = function(){
 };
 // 일부 브라우저는 보이스 목록을 비동기로 채운다 — 미리 한 번 깨워둔다
 try{ if('speechSynthesis' in window) window.speechSynthesis.getVoices(); }catch(e){}
+
+// ==========================================================
+// ★ Task A — 상담 녹음 → 실시간 텍스트 누적 (통찰·리포트의 재료)
+//   빨강 ● 버튼: 시작/정지 토글. 말하는 동안 SpeechRecognition(ko-KR, 연속)으로
+//   확정 문장을 consult.finalText 에 계속 append 한다. 침묵으로 onend가 떠도
+//   wantStop이 아니면 자동 재시작 → "끊겨도 계속 받아 적기".
+//   동시에 MediaRecorder로 원음도 녹음(정확도 보강·Whisper 재변환 대비, window.consultAudioBlob).
+//   정지하면 transcript는 consult.finalText 에 남아 B(통찰)·C(리포트)에서 그대로 쓴다.
+// ==========================================================
+var consult = { recording:false, finalText:'', interim:'', recog:null, wantStop:false,
+                media:null, stream:null, chunks:[], blob:null, startTs:0, timer:null };
+
+function consultRender(){
+  var txt = document.getElementById('consult-text');
+  var cnt = document.getElementById('consult-count');
+  if(!txt) return;
+  var f = consult.finalText, i = consult.interim;
+  if(!f && !i){
+    txt.innerHTML = '<span class="ph">말씀이 시작되면 여기에 실시간으로 받아 적습니다…</span>';
+  } else {
+    txt.innerHTML = escapeHtml(f) + (i ? '<span class="itm">' + escapeHtml(i) + '</span>' : '');
+    txt.scrollTop = txt.scrollHeight;
+  }
+  if(cnt) cnt.textContent = f.replace(/\s/g,'').length + '자';
+}
+
+function consultFmt(sec){
+  var m = Math.floor(sec/60), s = sec%60;
+  return (m<10?'0':'') + m + ':' + (s<10?'0':'') + s;
+}
+function consultTick(){
+  var c = document.getElementById('consult-clock');
+  if(c) c.textContent = consultFmt(Math.floor((Date.now() - consult.startTs)/1000));
+}
+
+// STT 엔진 한 개 — 확정문은 finalText에 append, 중간문은 interim에 임시 표시
+function buildConsultRecog(){
+  var r = new SR();
+  r.lang='ko-KR'; r.interimResults=true; r.continuous=true; r.maxAlternatives=1;
+  r.onresult = function(ev){
+    var itm='';
+    for(var i=ev.resultIndex; i<ev.results.length; i++){
+      var t = ev.results[i][0].transcript;
+      if(ev.results[i].isFinal) consult.finalText += t;
+      else itm += t;
+    }
+    consult.interim = itm;
+    consultRender();
+  };
+  r.onerror = function(ev){
+    if(ev.error==='not-allowed' || ev.error==='service-not-allowed'){
+      addMessage('마이크 권한이 거부됐습니다. 주소창 왼쪽 자물쇠(🔒)에서 마이크를 허용해 주세요.','zenya');
+      stopConsult();
+    } else if(ev.error==='audio-capture'){
+      addMessage('마이크를 찾지 못했어요. 마이크 연결을 확인해 주세요.','zenya');
+      stopConsult();
+    }
+    // no-speech / aborted 등은 조용히 onend에서 자동 재시작
+  };
+  r.onend = function(){
+    // 사용자가 멈춘 게 아니면(=침묵으로 크롬이 스스로 끊음) 계속 듣기 위해 다시 켠다
+    if(consult.recording && !consult.wantStop){
+      consult.interim = '';
+      try{ r.start(); return; }catch(e){}
+    }
+  };
+  return r;
+}
+
+async function startConsult(){
+  if(consult.recording) return;
+  if(!SR){ addMessage('이 브라우저는 음성 인식을 지원하지 않습니다. 크롬이나 엣지에서 열어 주세요.','zenya'); return; }
+  if(voiceActive || voiceConnecting){ addMessage('음성 통화 중에는 상담 녹음을 켤 수 없습니다. 먼저 통화를 끝내 주세요.','zenya'); return; }
+  if(listening){ addMessage('마이크 음성 입력 중입니다. 먼저 끄고 상담 녹음을 시작해 주세요.','zenya'); return; }
+
+  consult.recording = true; consult.wantStop = false; consult.interim = '';
+  consult.startTs = Date.now();
+
+  // 패널·버튼을 녹음 상태로 (이전에 '완료'였다면 빨강으로 되돌림)
+  var bar = document.getElementById('consultbar');
+  var btn = document.getElementById('rec');
+  var pill = document.getElementById('consult-pill');
+  var st = document.getElementById('consult-state');
+  if(bar) bar.classList.add('show');
+  if(btn){ btn.classList.add('live'); btn.title = '상담 녹음 정지'; }
+  if(pill){ pill.style.background = '#B3261E'; pill.style.animation = 'micpulse 1.6s infinite'; }
+  if(st) st.textContent = '상담 녹음 중';
+  consultRender();
+  consultTick();
+  consult.timer = setInterval(consultTick, 1000);
+
+  // (1) STT 시작
+  consult.recog = buildConsultRecog();
+  try{ consult.recog.start(); }catch(e){}
+
+  // (2) 원음 백업 — 실패해도 STT는 계속 (정확도 보강용, 나중에 Whisper 재변환 대비)
+  try{
+    consult.stream = await navigator.mediaDevices.getUserMedia({ audio:true });
+    consult.chunks = [];
+    consult.media = new MediaRecorder(consult.stream);
+    consult.media.ondataavailable = function(ev){ if(ev.data && ev.data.size) consult.chunks.push(ev.data); };
+    consult.media.onstop = function(){
+      try{
+        consult.blob = new Blob(consult.chunks, { type: (consult.media && consult.media.mimeType) || 'audio/webm' });
+        window.consultAudioBlob = consult.blob;   // 기능3에서 필요시 Whisper로 재변환
+      }catch(e){}
+    };
+    consult.media.start();
+  }catch(e){ /* 원음 백업 불가(권한·미지원)해도 무시하고 STT만 진행 */ }
+}
+
+function stopConsult(){
+  if(!consult.recording) return;
+  consult.recording = false; consult.wantStop = true;
+  if(consult.timer){ clearInterval(consult.timer); consult.timer = null; }
+  try{ consult.recog && consult.recog.stop(); }catch(e){}
+  consult.interim = '';
+  try{ if(consult.media && consult.media.state !== 'inactive') consult.media.stop(); }catch(e){}
+  try{ if(consult.stream) consult.stream.getTracks().forEach(function(t){ t.stop(); }); }catch(e){}
+
+  // 버튼·헤더를 '완료'(초록)로 바꾸고 패널은 남겨둔다(통찰·리포트 재료)
+  var btn = document.getElementById('rec');
+  var pill = document.getElementById('consult-pill');
+  var st = document.getElementById('consult-state');
+  if(btn){ btn.classList.remove('live'); btn.title = '상담 녹음 시작/정지'; }
+  if(pill){ pill.style.background = '#1D9E75'; pill.style.animation = 'none'; }
+  if(st) st.textContent = '녹음 완료';
+  consultRender();
+}
+
+function toggleConsult(){ if(consult.recording) stopConsult(); else startConsult(); }
+
+document.getElementById('rec').onclick = function(){
+  if(meeting.running){ addMessage('회의가 도는 동안에는 상담 녹음을 켤 수 없습니다.','zenya'); return; }
+  toggleConsult();
+};
+document.getElementById('consult-stop').onclick = stopConsult;
+document.getElementById('consult-clear').onclick = function(){
+  consult.finalText = ''; consult.interim = ''; consult.blob = null; window.consultAudioBlob = null;
+  if(!consult.recording) document.getElementById('consultbar').classList.remove('show');
+  consultRender();
+};
 
 // ── 멀티 에이전트 회의 ──────────────────────────────────
 // 흐름: 1라운드(7명 첫 의견) → 2라운드(회의록 읽고 자유 반응) → 제니야 의장 종합.
