@@ -466,6 +466,9 @@ body{font-family:'Pretendard',-apple-system,sans-serif;font-weight:500;backgroun
 </style>
 </head>
 <body>
+<!-- 우측 상단 고정 버튼: 발송 테스트(리포트 생성·카톡/문자 발송 점검) — 평소 흐름 안 해치고 한눈에 -->
+<a href="/send-test" target="_blank" id="sendtest-fab" title="발송 테스트 (샘플 리포트 → 카톡/문자 발송 점검)"
+   style="position:fixed;top:12px;right:16px;z-index:9999;background:linear-gradient(135deg,#1D9E75,#157a5a);color:#fff;font-weight:800;font-size:12.5px;text-decoration:none;padding:8px 14px;border-radius:999px;box-shadow:0 4px 12px rgba(0,0,0,.18)">📤 발송 테스트</a>
 <!-- [C] HTML (뼈대) — 목록 내용물은 JS의 명단표[D-1]에서 채워 넣는다 -->
 <div class="wrap">
 
@@ -629,7 +632,7 @@ body{font-family:'Pretendard',-apple-system,sans-serif;font-weight:500;backgroun
 
   </div>
 
-  <div class="foot">제니야 — <b>상단 프로젝트 × 좌측 에이전트 × 우측 도구</b> 교차 구조 · <a href="/send-test" target="_blank" style="color:var(--agent-deep);font-weight:700;text-decoration:none">📤 발송 테스트</a> · <span id="ver" title="배포 버전">버전 확인 중…</span></div>
+  <div class="foot">제니야 — <b>상단 프로젝트 × 좌측 에이전트 × 우측 도구</b> 교차 구조 · <span id="ver" title="배포 버전">버전 확인 중…</span></div>
 </div>
 
 <!-- C-6. 업로드 모달 (+ 버튼으로 열림 — 실제 업로드는 3단계) -->
