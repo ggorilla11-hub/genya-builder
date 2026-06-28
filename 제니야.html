@@ -3018,8 +3018,91 @@ try{ if('speechSynthesis' in window) window.speechSynthesis.getVoices(); }catch(
 //   동시에 MediaRecorder로 원음도 녹음(정확도 보강·Whisper 재변환 대비, window.consultAudioBlob).
 //   정지하면 transcript는 consult.finalText 에 남아 B(통찰)·C(리포트)에서 그대로 쓴다.
 // ==========================================================
-var consult = { recording:false, finalText:'', interim:'', recog:null, wantStop:false,
-                media:null, stream:null, chunks:[], blob:null, startTs:0, timer:null };
+var consult = { recording:false, finalText:'', interim:'', srRunning:'', recog:null, wantStop:false,
+                stream:null, g1rec:null, g1chunks:[], g1mime:'', rotateTimer:null, segIdx:0, pending:0,
+                startTs:0, timer:null, blob:null };
+var SEG_MS = 7 * 60 * 1000;   // 길1: 7분마다 세그먼트를 끊어 Whisper 업로드(25MB·90분 대비)
+
+// 녹음 포맷 동적 감지(필수): 브라우저가 지원하는 첫 포맷 선택(하드코딩 금지)
+function pickAudioMime(){
+  var cands = ['audio/webm;codecs=opus','audio/webm','audio/mp4','audio/wav'];
+  if(window.MediaRecorder && MediaRecorder.isTypeSupported){
+    for(var i=0;i<cands.length;i++){ try{ if(MediaRecorder.isTypeSupported(cands[i])) return cands[i]; }catch(e){} }
+  }
+  return '';   // 못 정하면 브라우저 기본
+}
+function mimeToExt(m){
+  m = String(m||'').toLowerCase();
+  if(m.indexOf('webm')>=0) return 'webm';
+  if(m.indexOf('mp4')>=0 || m.indexOf('m4a')>=0 || m.indexOf('aac')>=0) return 'm4a';
+  if(m.indexOf('wav')>=0) return 'wav';
+  if(m.indexOf('ogg')>=0) return 'ogg';
+  if(m.indexOf('mpeg')>=0 || m.indexOf('mp3')>=0) return 'mp3';
+  return 'webm';
+}
+
+// 길1 — 한 세그먼트(완전한 파일) 녹음. timeslice 없이 start/stop으로 헤더 포함 파일을 만든다.
+function g1StartSegment(){
+  try{
+    var opts = consult.g1mime ? { mimeType: consult.g1mime } : undefined;
+    var rec = new MediaRecorder(consult.stream, opts);
+    consult.g1chunks = [];
+    rec.ondataavailable = function(e){ if(e.data && e.data.size) consult.g1chunks.push(e.data); };
+    rec.onstop = function(){
+      var type = rec.mimeType || consult.g1mime || 'audio/webm';
+      var blob = null;
+      try{ blob = new Blob(consult.g1chunks, { type: type }); }catch(e){}
+      consult.g1chunks = [];
+      if(blob && blob.size > 2000) g1Upload(blob, type);   // 빈/짧은 세그먼트는 무시
+      // 마지막 세그먼트면 스트림 정리
+      if(!consult.recording && consult.stream){ try{ consult.stream.getTracks().forEach(function(t){ t.stop(); }); }catch(e){} consult.stream = null; }
+    };
+    rec.start();
+    consult.g1rec = rec;
+    return true;
+  }catch(e){ return false; }
+}
+// 7분마다: 현재 세그먼트를 끝내(=완전 파일 업로드) 곧바로 다음 세그먼트 시작 — 끊김 최소화
+function g1Rotate(){
+  if(consult.g1rec && consult.g1rec.state !== 'inactive'){
+    try{ consult.g1rec.stop(); }catch(e){}
+    if(consult.recording) g1StartSegment();
+  }
+}
+// 세그먼트 오디오 → 서버 Whisper. 실패하면 그 구간의 실시간(SR) 받아쓴 글로 대체 저장(글 손실 방지).
+function g1Upload(blob, type){
+  consult.segIdx += 1;
+  var idx = consult.segIdx;
+  var srSnapshot = consult.srRunning;     // Whisper 실패 시 폴백용
+  consult.srRunning = ''; consult.interim = '';   // 이 구간은 Whisper가 확정 → 미리보기 비움
+  consult.pending += 1;
+  consultStatus('🧠 녹음 ' + idx + '번째 구간 변환 중…', 'info');
+  var fd = new FormData();
+  fd.append('audio', blob, 'seg' + idx + '.' + mimeToExt(type));
+  var xhr = new XMLHttpRequest();
+  xhr.open('POST', SERVER_URL + '/transcribe', true);
+  xhr.withCredentials = true;
+  xhr.onload = function(){
+    consult.pending -= 1;
+    var j = {}; try{ j = JSON.parse(xhr.responseText); }catch(e){}
+    if(xhr.status >= 200 && xhr.status < 300 && j.text !== undefined){
+      if((j.text || '').trim()) consultAppend(j.text);
+      consultStatus(consult.pending > 0 ? '🧠 변환 중…' : '✅ 변환 완료 — 글이 더해졌습니다.', 'ok');
+    } else {
+      if(srSnapshot.trim()) consultAppend(srSnapshot);   // 폴백: 실시간 받아쓴 글 저장
+      var m = xhr.status === 503 ? '음성변환 키가 아직 없습니다(대표님께 요청).'
+            : xhr.status === 413 ? '구간이 25MB를 넘습니다.'
+            : ((j && j.error) || ('변환 실패(오류 ' + xhr.status + ')'));
+      consultStatus('⚠️ ' + m + (srSnapshot.trim() ? ' — 실시간 받아쓴 글로 대체 저장했습니다.' : ''), 'err');
+    }
+  };
+  xhr.onerror = function(){
+    consult.pending -= 1;
+    if(srSnapshot.trim()) consultAppend(srSnapshot);
+    consultStatus('⚠️ 변환 업로드 실패 — 실시간 받아쓴 글로 대체했습니다.', 'err');
+  };
+  xhr.send(fd);
+}
 
 function consultRender(){
   var txt = document.getElementById('consult-text');
@@ -3044,7 +3127,8 @@ function consultTick(){
   if(c) c.textContent = consultFmt(Math.floor((Date.now() - consult.startTs)/1000));
 }
 
-// STT 엔진 한 개 — 확정문은 finalText에 append, 중간문은 interim에 임시 표시
+// SR(브라우저 음성인식) = 실시간 미리보기(회색)만 담당. 정식 글은 Whisper가 확정한다.
+//   지원 안 하는 브라우저(아이폰 사파리 등)면 SR 없이 Whisper만으로 동작한다.
 function buildConsultRecog(){
   var r = new SR();
   r.lang='ko-KR'; r.interimResults=true; r.continuous=true; r.maxAlternatives=1;
@@ -3052,40 +3136,38 @@ function buildConsultRecog(){
     var itm='';
     for(var i=ev.resultIndex; i<ev.results.length; i++){
       var t = ev.results[i][0].transcript;
-      if(ev.results[i].isFinal) consult.finalText += t;
+      if(ev.results[i].isFinal) consult.srRunning += t;   // Whisper 실패 시 폴백용으로만 모은다
       else itm += t;
     }
-    consult.interim = itm;
+    consult.interim = consult.srRunning + itm;            // 화면엔 회색 실시간 미리보기
     consultRender();
   };
-  r.onerror = function(ev){
-    if(ev.error==='not-allowed' || ev.error==='service-not-allowed'){
-      addMessage('마이크 권한이 거부됐습니다. 주소창 왼쪽 자물쇠(🔒)에서 마이크를 허용해 주세요.','zenya');
-      stopConsult();
-    } else if(ev.error==='audio-capture'){
-      addMessage('마이크를 찾지 못했어요. 마이크 연결을 확인해 주세요.','zenya');
-      stopConsult();
-    }
-    // no-speech / aborted 등은 조용히 onend에서 자동 재시작
-  };
+  r.onerror = function(ev){ /* 권한/마이크 문제는 getUserMedia에서 처리, no-speech 등은 onend 재시작 */ };
   r.onend = function(){
-    // 사용자가 멈춘 게 아니면(=침묵으로 크롬이 스스로 끊음) 계속 듣기 위해 다시 켠다
-    if(consult.recording && !consult.wantStop){
-      consult.interim = '';
-      try{ r.start(); return; }catch(e){}
-    }
+    if(consult.recording && !consult.wantStop){ try{ r.start(); return; }catch(e){} }
   };
   return r;
 }
 
 async function startConsult(){
   if(consult.recording) return;
-  if(!SR){ addMessage('이 브라우저는 음성 인식을 지원하지 않습니다. 크롬이나 엣지에서 열어 주세요.','zenya'); return; }
+  if(!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia) || !window.MediaRecorder){
+    addMessage('이 브라우저는 녹음을 지원하지 않습니다. 아이폰은 사파리, 안드로이드는 크롬에서 열거나, [🎙 녹음 파일 올리기]를 이용해 주세요.','zenya'); return;
+  }
   if(voiceActive || voiceConnecting){ addMessage('음성 통화 중에는 상담 녹음을 켤 수 없습니다. 먼저 통화를 끝내 주세요.','zenya'); return; }
   if(listening){ addMessage('마이크 음성 입력 중입니다. 먼저 끄고 상담 녹음을 시작해 주세요.','zenya'); return; }
 
-  consult.recording = true; consult.wantStop = false; consult.interim = '';
+  // 마이크 권한 + 스트림 (실패 시 명확히 안내)
+  try{ consult.stream = await navigator.mediaDevices.getUserMedia({ audio:true }); }
+  catch(e){
+    addMessage('마이크를 켤 수 없습니다(권한 거부 또는 마이크 없음). 주소창 왼쪽 자물쇠(🔒)에서 마이크를 허용한 뒤 다시 눌러 주세요.','zenya');
+    return;
+  }
+
+  consult.recording = true; consult.wantStop = false;
+  consult.interim = ''; consult.srRunning = ''; consult.segIdx = 0; consult.pending = 0;
   consult.startTs = Date.now();
+  consult.g1mime = pickAudioMime();
 
   // 패널·버튼을 녹음 상태로 (이전에 '완료'였다면 빨강으로 되돌림)
   var bar = document.getElementById('consultbar');
@@ -3096,38 +3178,31 @@ async function startConsult(){
   if(btn){ btn.classList.add('live'); btn.title = '상담 녹음 정지'; }
   if(pill){ pill.style.background = '#B3261E'; pill.style.animation = 'micpulse 1.6s infinite'; }
   if(st) st.textContent = '상담 녹음 중';
+  consultStatus('🎙 녹음 중… (정지하면 글로 변환됩니다)', 'info');
   consultRender();
   consultTick();
   consult.timer = setInterval(consultTick, 1000);
 
-  // (1) STT 시작
-  consult.recog = buildConsultRecog();
-  try{ consult.recog.start(); }catch(e){}
+  // 길1: 세그먼트 녹음 시작 + 7분 회전(완전 파일 단위로 Whisper 업로드)
+  if(!g1StartSegment()){ consultStatus('⚠️ 녹음을 시작하지 못했습니다. 브라우저를 바꿔 다시 시도해 주세요.', 'err'); }
+  consult.rotateTimer = setInterval(g1Rotate, SEG_MS);
 
-  // (2) 원음 백업 — 실패해도 STT는 계속 (정확도 보강용, 나중에 Whisper 재변환 대비)
-  try{
-    consult.stream = await navigator.mediaDevices.getUserMedia({ audio:true });
-    consult.chunks = [];
-    consult.media = new MediaRecorder(consult.stream);
-    consult.media.ondataavailable = function(ev){ if(ev.data && ev.data.size) consult.chunks.push(ev.data); };
-    consult.media.onstop = function(){
-      try{
-        consult.blob = new Blob(consult.chunks, { type: (consult.media && consult.media.mimeType) || 'audio/webm' });
-        window.consultAudioBlob = consult.blob;   // 기능3에서 필요시 Whisper로 재변환
-      }catch(e){}
-    };
-    consult.media.start();
-  }catch(e){ /* 원음 백업 불가(권한·미지원)해도 무시하고 STT만 진행 */ }
+  // 실시간 미리보기(회색): SR 지원 브라우저에서만 (아이폰 사파리는 생략 — Whisper로 대체)
+  if(SR){ try{ consult.recog = buildConsultRecog(); consult.recog.start(); }catch(e){ consult.recog = null; } }
 }
 
 function stopConsult(){
   if(!consult.recording) return;
   consult.recording = false; consult.wantStop = true;
   if(consult.timer){ clearInterval(consult.timer); consult.timer = null; }
+  if(consult.rotateTimer){ clearInterval(consult.rotateTimer); consult.rotateTimer = null; }
   try{ consult.recog && consult.recog.stop(); }catch(e){}
-  consult.interim = '';
-  try{ if(consult.media && consult.media.state !== 'inactive') consult.media.stop(); }catch(e){}
-  try{ if(consult.stream) consult.stream.getTracks().forEach(function(t){ t.stop(); }); }catch(e){}
+  consult.recog = null; consult.interim = '';
+
+  // 마지막 세그먼트 마무리 → onstop이 업로드하고 스트림도 정리한다
+  var hadRec = consult.g1rec && consult.g1rec.state !== 'inactive';
+  try{ if(hadRec) consult.g1rec.stop(); }catch(e){}
+  if(!hadRec && consult.stream){ try{ consult.stream.getTracks().forEach(function(t){ t.stop(); }); }catch(e){} consult.stream = null; }
 
   // 버튼·헤더를 '완료'(초록)로 바꾸고 패널은 남겨둔다(통찰·리포트 재료)
   var btn = document.getElementById('rec');
@@ -3135,7 +3210,7 @@ function stopConsult(){
   var st = document.getElementById('consult-state');
   if(btn){ btn.classList.remove('live'); btn.title = '상담 녹음 시작/정지'; }
   if(pill){ pill.style.background = '#1D9E75'; pill.style.animation = 'none'; }
-  if(st) st.textContent = '녹음 완료';
+  if(st) st.textContent = consult.pending > 0 ? '변환 마무리 중…' : '녹음 완료';
   consultRender();
 }
 
