@@ -5565,7 +5565,7 @@ app.post('/insight', async (req, res) => {
     if (!transcript) return res.status(400).json({ error: '녹음 텍스트가 없습니다. 먼저 상담을 녹음해 주세요.' });
     if (transcript.length > 60000) return res.status(400).json({ error: '녹음 텍스트가 너무 깁니다.' });
     const r = await anthropic.messages.create({
-      model: MODEL, max_tokens: 1800, system: INSIGHT_SYSTEM,
+      model: MODEL, max_tokens: 2600, system: INSIGHT_SYSTEM,
       messages: [{ role: 'user', content: '상담 녹취:\n' + transcript }],
     });
     const text = (r.content || []).map((c) => c.text || '').join('').trim();
