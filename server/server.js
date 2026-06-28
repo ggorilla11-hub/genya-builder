@@ -5237,28 +5237,42 @@ function wrapReport(clientName, bodyHtml) {
 }
 
 // POST /report  { clientName, html }  → { token, url }  (리포트를 우리 서버에 저장하고 추측불가 링크 발급)
-app.post('/report', (req, res) => {
+function reportObjPath(token) { return `genya-reports/${token}.html`; }   // 클라우드 저장 경로
+
+app.post('/report', async (req, res) => {
   if (!testGate(req, res, 'report', 60)) return;
   try {
     const { clientName, html } = req.body || {};
     if (!html || typeof html !== 'string') return res.status(400).json({ error: 'html(리포트 내용)이 필요합니다.' });
     const token = crypto.randomBytes(24).toString('hex');           // 추측 불가 토큰
-    const safeName = String(clientName || '고객').slice(0, 40);
-    fs.writeFileSync(path.join(REPORTS_DIR, token + '.html'), wrapReport(safeName, html), 'utf8');
-    fs.writeFileSync(path.join(REPORTS_DIR, token + '.json'), JSON.stringify({ clientName: safeName, ts: new Date().toISOString() }), 'utf8');
+    const clientNm = String(clientName || '고객').slice(0, 40);
+    const doc = wrapReport(clientNm, html);
+    const bucket = storageBucket();
+    if (bucket) {                                                   // 클라우드 우선(재시작에도 안 사라짐)
+      await bucket.file(reportObjPath(token)).save(doc, { contentType: 'text/html; charset=utf-8', resumable: false });
+    } else {                                                        // 폴백: 로컬 디스크(임시)
+      fs.writeFileSync(path.join(REPORTS_DIR, token + '.html'), doc, 'utf8');
+    }
     const url = 'https://' + req.get('host') + '/report/' + token;
-    res.json({ ok: true, token, url, clientName: safeName });
+    res.json({ ok: true, token, url, clientName: clientNm });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // GET /report/:token  → 리포트 HTML (공개 — 토큰만 알면 열람, 발송 대상이 보는 화면)
-app.get('/report/:token', (req, res) => {
+app.get('/report/:token', async (req, res) => {
   const t = String(req.params.token || '').replace(/[^a-f0-9]/g, '');
   if (!t) return res.status(404).send('리포트를 찾을 수 없습니다.');
+  const bucket = storageBucket();
+  if (bucket) {
+    try {
+      const [buf] = await bucket.file(reportObjPath(t)).download();
+      res.set('Content-Type', 'text/html; charset=utf-8');
+      return res.send(buf);
+    } catch (e) { /* 클라우드에 없으면 로컬 폴백 시도 */ }
+  }
   const f = path.join(REPORTS_DIR, t + '.html');
-  if (!fs.existsSync(f)) return res.status(404).send('리포트를 찾을 수 없거나 만료되었습니다.');
-  res.set('Content-Type', 'text/html; charset=utf-8');
-  res.send(fs.readFileSync(f, 'utf8'));
+  if (fs.existsSync(f)) { res.set('Content-Type', 'text/html; charset=utf-8'); return res.send(fs.readFileSync(f, 'utf8')); }
+  return res.status(404).send('리포트를 찾을 수 없거나 만료되었습니다.');
 });
 
 // 발송 가능 상태 (프론트가 어떤 버튼을 켤지 판단) — 키 노출 없음, 가능/불가 여부만
