@@ -5367,7 +5367,7 @@ button{font-family:inherit;font-size:14px;font-weight:700;border:none;border-rad
   <div class="muted">발신번호 등록 후 활성됩니다(최종 백업).</div>
 </div>
 <div id="log"></div>
-<script src="https://t1.kakao.com/kakao_js_sdk/2.7.2/kakao.min.js" crossorigin="anonymous"></script>
+<script src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.2/kakao.min.js" crossorigin="anonymous"></script>
 <script>
 var report = null;
 function log(m){ document.getElementById('log').textContent = m; }
