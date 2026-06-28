@@ -1,0 +1,2720 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>금융집짓기® 재무설계 포트폴리오 제안서 생성 프로그램</title>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+    background: #f5f5f0;
+    color: #1a1a1a;
+    line-height: 1.7;
+    font-size: 15px;
+    min-height: 100vh;
+  }
+  .app-header {
+    background: linear-gradient(135deg, #0A2540 0%, #061a30 100%);
+    color: #FAF8F3;
+    padding: 26px 24px;
+    text-align: center;
+  }
+  .app-header h1 {
+    font-size: 26px;
+    font-weight: 700;
+    margin-bottom: 6px;
+    letter-spacing: -0.5px;
+  }
+  .app-header p {
+    font-size: 14px;
+    opacity: 0.85;
+  }
+  .container {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 24px 16px 80px;
+  }
+  .box {
+    background: #fff;
+    border-radius: 10px;
+    padding: 24px;
+    margin-bottom: 16px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+  }
+  .box-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 2px solid #C9A961;
+  }
+  .box-num {
+    background: #0A2540;
+    color: #C9A961;
+    width: 40px; height: 40px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800;
+    font-size: 19px;
+  }
+  .box-head h2 {
+    font-size: 19px;
+    font-weight: 800;
+    color: #0A2540;
+  }
+  .box-help {
+    font-size: 13px;
+    color: #888;
+    margin-left: auto;
+  }
+  .form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 8px;
+  }
+  .field label {
+    display: block;
+    font-size: 14px;
+    font-weight: 700;
+    color: #555;
+    margin-bottom: 4px;
+  }
+  .field label .req { color: #B53A2E; }
+  .field input, .field textarea, .field select {
+    width: 100%;
+    padding: 12px 14px;
+    border: 1.5px solid #d4d2c8;
+    border-radius: 6px;
+    font-size: 16px;
+    font-weight: 500;
+    font-family: inherit;
+    background: #fff;
+  }
+  .field input:focus, .field textarea:focus {
+    outline: 2px solid #C9A961;
+    outline-offset: -1px;
+    border-color: #C9A961;
+  }
+  .field textarea {
+    min-height: 80px;
+    resize: vertical;
+  }
+
+  /* === 드롭존 === */
+  .dropzone {
+    border: 2px dashed #d4d2c8;
+    border-radius: 8px;
+    padding: 28px 20px;
+    text-align: center;
+    background: #FAFAF6;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+  }
+  .dropzone:hover, .dropzone.dragover {
+    border-color: #C9A961;
+    background: #FFFBEE;
+  }
+  .dropzone.has-file {
+    border-color: #1F7A4D;
+    background: #F0F8F4;
+    border-style: solid;
+  }
+  .dropzone .icon {
+    font-size: 36px;
+    margin-bottom: 8px;
+  }
+  .dropzone .title {
+    font-size: 17px;
+    font-weight: 700;
+    color: #0A2540;
+    margin-bottom: 6px;
+  }
+  .dropzone .help {
+    font-size: 13px;
+    color: #888;
+    line-height: 1.6;
+  }
+  .dropzone .help kbd {
+    display: inline-block;
+    padding: 1px 6px;
+    background: #fff;
+    border: 1px solid #d4d2c8;
+    border-radius: 3px;
+    font-family: inherit;
+    font-size: 10px;
+    color: #555;
+  }
+  .dropzone input[type=file] {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+  }
+  .dropzone .filename {
+    margin-top: 10px;
+    font-size: 12px;
+    color: #1F7A4D;
+    font-weight: 600;
+  }
+  .or {
+    text-align: center;
+    color: #999;
+    font-size: 11px;
+    margin: 8px 0;
+    font-weight: 600;
+  }
+
+  /* === 미리보기 영역 === */
+  .preview-box {
+    background: #FAFAF6;
+    border: 1.5px solid #E5E5E0;
+    border-radius: 6px;
+    padding: 14px 16px;
+    margin-top: 10px;
+    font-size: 14px;
+    font-weight: 500;
+    color: #555;
+    line-height: 1.7;
+    max-height: 200px;
+    overflow: auto;
+    display: none;
+  }
+  .preview-box.show { display: block; }
+  .preview-box strong { color: #0A2540; }
+
+  /* === 이미지 미리보기 === */
+  .image-preview {
+    max-width: 100%;
+    max-height: 200px;
+    border-radius: 6px;
+    margin-top: 10px;
+    border: 1px solid #d4d2c8;
+    display: none;
+  }
+  .image-preview.show { display: block; }
+
+  /* === 액션 버튼 === */
+  .action-bar {
+    position: sticky;
+    bottom: 0;
+    background: rgba(245, 245, 240, 0.95);
+    backdrop-filter: blur(10px);
+    padding: 14px 16px;
+    margin: 0 -16px -16px;
+    border-top: 1px solid #d4d2c8;
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+  }
+  .btn {
+    padding: 18px 40px;
+    border-radius: 8px;
+    border: 1.5px solid #d4d2c8;
+    background: #fff;
+    font-family: inherit;
+    font-size: 18px;
+    font-weight: 800;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .btn:hover { background: #f5f5f0; }
+  .btn-primary {
+    background: #C9A961;
+    color: #0A2540;
+    border-color: #C9A961;
+  }
+  .btn-primary:hover {
+    background: #d9b975;
+    transform: translateY(-1px);
+  }
+
+  /* === 알림 === */
+  .toast {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: #1F7A4D;
+    color: #fff;
+    padding: 14px 20px;
+    border-radius: 8px;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.2);
+    z-index: 10000;
+    font-size: 13px;
+    max-width: 360px;
+    display: none;
+  }
+  .toast.show { display: block; animation: slideIn 0.3s; }
+  .toast.error { background: #B53A2E; }
+  @keyframes slideIn {
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+  }
+
+  /* === 메모 === */
+  .hint {
+    font-size: 13px;
+    color: #888;
+    margin-top: 4px;
+  }
+
+  @media (max-width: 720px) {
+    .form-row { grid-template-columns: 1fr; }
+    .action-bar { flex-direction: column; }
+    .btn { width: 100%; }
+  }
+</style>
+</head>
+<body>
+
+<div class="app-header">
+  <h1>금융집짓기<sup style="font-size:0.6em; vertical-align:super;">®</sup> 재무설계 포트폴리오 제안서 생성 프로그램</h1>
+  <p>오원트금융연구소 · © Ohwant Financial Research Institute</p>
+</div>
+
+<div class="container">
+
+  <!-- ━━━━━━━━━ 사례 관리 (저장/불러오기) ━━━━━━━━━ -->
+  <div class="box" id="case-manager-box" style="border-top: 4px solid #C9A961;">
+    <div class="box-head">
+      <div class="box-num" style="background:#C9A961; color:#0A2540;">📁</div>
+      <h2>사례 관리 (자체 메모리 저장)</h2>
+      <span class="box-help">고객별 입력 자료를 자동 저장하여 언제든 다시 불러올 수 있습니다</span>
+    </div>
+    
+    <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:14px;">
+      <button class="btn" onclick="newCase()" style="background:#0A2540; color:#fff; flex:1; min-width:140px;">
+        ➕ 새 사례 추가
+      </button>
+      <button class="btn" onclick="saveCurrentCase()" style="background:#1F7A4D; color:#fff; flex:1; min-width:140px;">
+        💾 현재 사례 저장
+      </button>
+      <button class="btn" onclick="toggleCaseList()" style="background:#C97818; color:#fff; flex:1; min-width:140px;">
+        📋 저장된 사례 목록
+      </button>
+    </div>
+    
+    <div id="case-list-area" style="display:none; background:#FAF8F3; border-radius:6px; padding:14px; margin-top:10px;">
+      <div style="font-size:13px; font-weight:700; color:#0A2540; margin-bottom:10px;">📚 저장된 사례 목록</div>
+      <div id="case-list-content" style="font-size:13px;"></div>
+    </div>
+    
+    <div id="current-case-info" style="margin-top:10px; padding:10px 12px; background:#FAFAF6; border-radius:6px; font-size:12px; color:#777; display:none;">
+      현재 작업 중: <strong id="current-case-name" style="color:#0A2540;">새 사례</strong>
+    </div>
+  </div>
+
+  <!-- ━━━━━━━━━ 1번 기본입력 사항 ━━━━━━━━━ -->
+  <div class="box">
+    <div class="box-head">
+      <div class="box-num">1</div>
+      <h2>기본입력 사항 (담당자)</h2>
+      <span class="box-help">처음 한 번만 입력하면 자동 저장됩니다</span>
+    </div>
+    <div class="form-row">
+      <div class="field">
+        <label>이름 <span class="req">*</span></label>
+        <input type="text" id="adv_name" placeholder="예: 오상열" />
+      </div>
+      <div class="field">
+        <label>소속 <span class="req">*</span></label>
+        <input type="text" id="adv_company" placeholder="예: 오원트금융연구소" />
+      </div>
+      <div class="field">
+        <label>전화번호 <span class="req">*</span></label>
+        <input type="tel" id="adv_phone" placeholder="예: 010-1234-5678" />
+      </div>
+    </div>
+    <div class="field" style="margin-top:14px;">
+      <label>Kakao JavaScript 키 (선택 — 카톡 직접 공유용)</label>
+      <input type="text" id="kakao_js_key" placeholder="예: a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6 (Kakao Developers 앱에서 발급)" 
+             style="font-family:monospace; font-size:13px;" />
+      <div class="hint" style="margin-top:6px; color:#777; font-size:11px; line-height:1.6;">
+        📌 키가 있으면 카톡 진짜 공유, 없으면 Web Share API + 클립보드 폴백 자동 사용<br>
+        🔗 키 발급: <a href="https://developers.kakao.com" target="_blank" style="color:#0A2540; text-decoration:underline;">developers.kakao.com</a> → 내 애플리케이션 → JavaScript 키 복사
+      </div>
+    </div>
+  </div>
+
+  <!-- ━━━━━━━━━ ★ 녹음 텍스트로 자동 생성 (제니야 연동) ━━━━━━━━━ -->
+  <div class="box" style="border:2px solid #C9A961;">
+    <div class="box-head">
+      <div class="box-num" style="background:#C9A961; color:#0A2540;">🎙</div>
+      <h2>녹음 텍스트로 제안서 자동 생성</h2>
+      <span class="box-help">상담 녹음 → 제니야가 항목 추출</span>
+    </div>
+    <div class="field">
+      <label>상담 녹음 텍스트 (consult.finalText 자동 주입 / 직접 붙여넣기 가능)</label>
+      <textarea id="consult_transcript" rows="6" placeholder="여기에 상담 녹음을 받아쓴 전체 텍스트가 들어갑니다. (제니야가 자동으로 채우거나, 직접 붙여넣어도 됩니다)"></textarea>
+    </div>
+    <button type="button" id="btn_from_transcript" onclick="buildReportFromTranscript()"
+      style="margin-top:10px; width:100%; padding:14px; background:#0A2540; color:#C9A961; border:none; border-radius:6px; font-size:16px; font-weight:800; cursor:pointer;">
+      🎙 녹음 텍스트로 제안서 생성
+    </button>
+    <div id="transcript_status" style="margin-top:8px; font-size:13px; color:#888;"></div>
+    <div style="margin-top:8px; font-size:12px; color:#999;">
+      ※ 이 경로를 쓰면 아래 2·3번(엑셀·이미지) 없이도 제안서가 생성됩니다. 엑셀이 있으면 기존 방식도 그대로 사용 가능합니다.
+    </div>
+  </div>
+
+  <!-- ━━━━━━━━━ 2번 재무상담신청서 엑셀 ━━━━━━━━━ -->
+  <div class="box">
+    <div class="box-head">
+      <div class="box-num">2</div>
+      <h2>재무상담신청서 엑셀 업로드</h2>
+      <span class="box-help">표준 양식 (천원 단위)</span>
+    </div>
+    <div class="dropzone" id="excel_drop">
+      <div class="icon">📊</div>
+      <div class="title">엑셀 파일 (.xlsx) 끌어다 놓기</div>
+      <div class="help">
+        <kbd>파일 선택</kbd> 또는 <kbd>드래그&amp;드롭</kbd> 또는 <kbd>Ctrl+V로 붙여넣기</kbd><br>
+        오원트 표준 재정상담 신청서 양식 (천원 단위)
+      </div>
+      <input type="file" id="excel_file" accept=".xlsx,.xls" />
+      <div class="filename" id="excel_filename" style="display:none;"></div>
+    </div>
+    <div class="preview-box" id="excel_preview"></div>
+  </div>
+
+  <!-- ━━━━━━━━━ 3번 금융집짓기 상담노트 ━━━━━━━━━ -->
+  <div class="box">
+    <div class="box-head">
+      <div class="box-num">3</div>
+      <h2>금융집짓기<sup style="font-size:0.65em;">®</sup> 상담노트 (이미지)</h2>
+      <span class="box-help">상담노트 손글씨 사진을 첨부하면 제안서에 그대로 포함됩니다</span>
+    </div>
+
+    <div class="dropzone" id="note_drop">
+      <div class="icon">📷</div>
+      <div class="title">상담노트 이미지 끌어다 놓기</div>
+      <div class="help">
+        <kbd>파일 선택</kbd> 또는 <kbd>드래그&amp;드롭</kbd> 또는 <kbd>Ctrl+V로 붙여넣기</kbd><br>
+        JPG, PNG 등 이미지 파일 · 손글씨 사진 그대로 첨부
+      </div>
+      <input type="file" id="note_file" accept="image/*" />
+      <div class="filename" id="note_filename" style="display:none;"></div>
+    </div>
+    <img class="image-preview" id="note_image_preview" alt="상담노트 이미지" />
+
+    <div class="hint" style="margin-top:10px;">
+      💡 이미지는 제안서 4페이지에 첨부됩니다. 구체적인 수치·분석은 <strong>2번 엑셀</strong>과 <strong>4번 최종의견</strong>에서 가져옵니다.
+    </div>
+  </div>
+
+  <!-- ━━━━━━━━━ 4번 최종의견 ━━━━━━━━━ -->
+  <div class="box">
+    <div class="box-head">
+      <div class="box-num">4</div>
+      <h2>최종의견</h2>
+      <span class="box-help">제안서 마지막 페이지에 반영됩니다</span>
+    </div>
+
+    <div class="field">
+      <label>고객명 <span class="req">*</span></label>
+      <input type="text" id="client_name" placeholder="예: 정OO" />
+    </div>
+
+    <div class="field" style="margin-top:12px;">
+      <label>최종 제안 상품명</label>
+      <input type="text" id="proposal_product" placeholder="예: KB생명 변액연금 OOO / 삼성생명 종신보험 ABC + 무배당 정기보험" />
+    </div>
+
+    <div class="field" style="margin-top:12px;">
+      <label>제안 상품 내용 (보장·금액·기간 등)</label>
+      <textarea id="proposal_content" rows="4" placeholder="예: 
+- 사망보장 3억 (정기보험)
+- 암진단금 1억
+- 월 보험료 30만원 (20년 납입)
+- KB생명 약관대출 1.5억 전환 (이자 약 4%)"></textarea>
+    </div>
+
+    <div class="field" style="margin-top:12px;">
+      <label>제안 이유 (Final Advisor's Message)</label>
+      <textarea id="proposal_reason" rows="5" placeholder="예: 
+정OO 고객님은 자산 17억의 우수한 재무 토대를 갖추고 계시나, 1년 후 은퇴를 앞두고 월 적자가 발생 중입니다.
+KB생명 약관대출로 신용대출을 전환하시면 월 30만원의 이자가 절감되며, 이 금액을 그대로 보험 보강에 활용 가능합니다.
+가계 추가 부담 없이 부족한 보장을 보강하고, 동시에 D단계(신용대출 상환)에서 E단계(비상예비자금)로 진입하실 수 있습니다."></textarea>
+    </div>
+  </div>
+
+  <!-- ━━━━━━━━━ 액션 바 ━━━━━━━━━ -->
+  <div class="action-bar">
+    <button class="btn btn-primary" onclick="generateReport()">📄 제안서 생성하기</button>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ============================================================
+// 1. localStorage 자동 저장
+// ============================================================
+const SAVE_KEYS = ['adv_name', 'adv_company', 'adv_phone', 'kakao_js_key'];
+window.addEventListener('DOMContentLoaded', () => {
+  SAVE_KEYS.forEach(k => {
+    const v = localStorage.getItem(k);
+    if (v) document.getElementById(k).value = v;
+  });
+  SAVE_KEYS.forEach(k => {
+    document.getElementById(k).addEventListener('input', e => {
+      localStorage.setItem(k, e.target.value);
+    });
+  });
+});
+
+// ============================================================
+// 2. 상태
+// ============================================================
+const STATE = {
+  excelData: null,
+  excelText: '',
+  noteImageData: null,
+  currentCaseId: null,  // 현재 작업 중인 사례 ID
+  lastReportHtml: null, // [4번 B안] 마지막 생성된 제안서 HTML
+};
+
+// ============================================================
+// 2-A. [4번] 사례 관리 (자체 메모리 저장)
+// ============================================================
+const CASES_KEY = 'ohwant_proposal_cases';
+
+function getAllCases() {
+  try {
+    const raw = localStorage.getItem(CASES_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function saveAllCases(cases) {
+  try {
+    localStorage.setItem(CASES_KEY, JSON.stringify(cases));
+    return true;
+  } catch (e) {
+    showToast('저장 공간 부족: ' + e.message, true);
+    return false;
+  }
+}
+
+function newCase() {
+  if (confirm('새 사례를 시작합니다.\n현재 입력된 내용은 초기화됩니다. 계속할까요?\n(저장하지 않은 내용은 사라집니다)')) {
+    // 입력 필드 초기화 (담당자 정보는 유지)
+    document.getElementById('client_name').value = '';
+    document.getElementById('proposal_product').value = '';
+    document.getElementById('proposal_content').value = '';
+    document.getElementById('proposal_reason').value = '';
+    
+    // 엑셀·이미지 초기화
+    STATE.excelData = null;
+    STATE.excelText = '';
+    STATE.noteImageData = null;
+    STATE.currentCaseId = null;
+    
+    const ep = document.getElementById('excel_preview');
+    if (ep) ep.innerHTML = '<span style="color:#999;">엑셀을 업로드하면 미리보기가 표시됩니다</span>';
+    const np = document.getElementById('note_preview');
+    if (np) np.style.display = 'none';
+    
+    document.getElementById('current-case-info').style.display = 'none';
+    showToast('✓ 새 사례를 시작합니다.', false);
+  }
+}
+
+function saveCurrentCase() {
+  const clientName = document.getElementById('client_name').value.trim();
+  if (!clientName) {
+    showToast('고객명(4번 영역)을 먼저 입력해 주세요.', true);
+    return;
+  }
+  
+  const caseData = {
+    id: STATE.currentCaseId || ('case_' + Date.now()),
+    clientName: clientName,
+    savedAt: new Date().toISOString(),
+    advisor: {
+      name: document.getElementById('adv_name').value.trim(),
+      company: document.getElementById('adv_company').value.trim(),
+      phone: document.getElementById('adv_phone').value.trim(),
+    },
+    excel: STATE.excelData,
+    noteImage: STATE.noteImageData,
+    proposal: {
+      product: document.getElementById('proposal_product').value.trim(),
+      content: document.getElementById('proposal_content').value.trim(),
+      reason: document.getElementById('proposal_reason').value.trim(),
+    },
+    // [4번 B안] 생성된 제안서 HTML도 함께 저장 (있으면)
+    reportHtml: STATE.lastReportHtml || null,
+    reportSize: STATE.lastReportHtml ? STATE.lastReportHtml.length : 0,
+  };
+  
+  const cases = getAllCases();
+  const existingIdx = cases.findIndex(c => c.id === caseData.id);
+  if (existingIdx >= 0) {
+    // 기존 사례 업데이트: 새 HTML이 없으면 기존 것 유지
+    if (!caseData.reportHtml && cases[existingIdx].reportHtml) {
+      caseData.reportHtml = cases[existingIdx].reportHtml;
+      caseData.reportSize = cases[existingIdx].reportSize;
+    }
+    cases[existingIdx] = caseData;
+  } else {
+    cases.unshift(caseData);  // 최신순
+  }
+  
+  // 최대 30개까지만 저장 (용량 보호)
+  if (cases.length > 30) cases.length = 30;
+  
+  // [4번 B안] 용량 체크 (5MB 한도 가까워지면 가장 오래된 HTML부터 제거)
+  let totalSize = JSON.stringify(cases).length;
+  const MAX_SIZE = 4 * 1024 * 1024;  // 4MB (안전 마진)
+  
+  if (totalSize > MAX_SIZE) {
+    // 가장 오래된 사례부터 HTML 원본 제거 (입력 자료는 유지)
+    for (let i = cases.length - 1; i >= 0 && totalSize > MAX_SIZE; i--) {
+      if (cases[i].reportHtml && i !== existingIdx) {
+        cases[i].reportHtml = null;
+        cases[i].reportSize = 0;
+        totalSize = JSON.stringify(cases).length;
+      }
+    }
+    if (totalSize > MAX_SIZE) {
+      showToast('⚠ 저장 용량 부족: 일부 오래된 제안서 HTML이 제거되었습니다.', true);
+    }
+  }
+  
+  if (saveAllCases(cases)) {
+    STATE.currentCaseId = caseData.id;
+    document.getElementById('current-case-info').style.display = 'block';
+    const sizeStr = caseData.reportHtml ? ' · 제안서 HTML 포함 (' + Math.round(caseData.reportSize/1024) + 'KB)' : '';
+    document.getElementById('current-case-name').textContent = clientName + ' (' + new Date(caseData.savedAt).toLocaleString('ko-KR') + ')' + sizeStr;
+    showToast('✓ "' + clientName + '" 사례 저장 완료 · 총 ' + cases.length + '건', false);
+    refreshCaseListUI();
+  }
+}
+
+function toggleCaseList() {
+  const area = document.getElementById('case-list-area');
+  if (area.style.display === 'none') {
+    area.style.display = 'block';
+    refreshCaseListUI();
+  } else {
+    area.style.display = 'none';
+  }
+}
+
+function refreshCaseListUI() {
+  const cases = getAllCases();
+  const container = document.getElementById('case-list-content');
+  
+  if (cases.length === 0) {
+    container.innerHTML = '<div style="color:#999; text-align:center; padding:14px;">아직 저장된 사례가 없습니다.<br>고객 정보 입력 후 [💾 현재 사례 저장] 버튼을 눌러주세요.</div>';
+    return;
+  }
+  
+  let html = '<table style="width:100%; border-collapse:collapse; font-size:13px;">';
+  html += '<thead><tr style="background:#0A2540; color:#fff;">';
+  html += '<th style="padding:8px 10px; text-align:left;">고객명</th>';
+  html += '<th style="padding:8px 10px; text-align:left;">저장 일시</th>';
+  html += '<th style="padding:8px 10px; text-align:center;">제안서</th>';
+  html += '<th style="padding:8px 10px; text-align:center; width:280px;">작업</th>';
+  html += '</tr></thead><tbody>';
+  
+  // 전체 용량 계산
+  const totalBytes = JSON.stringify(cases).length;
+  
+  cases.forEach((c, idx) => {
+    const dt = new Date(c.savedAt).toLocaleString('ko-KR', { year:'2-digit', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
+    const isCurrent = c.id === STATE.currentCaseId;
+    const hasReport = !!c.reportHtml;
+    const reportSizeKB = c.reportSize ? Math.round(c.reportSize/1024) : 0;
+    
+    html += '<tr style="border-bottom:1px solid #E5E5E0;' + (isCurrent ? 'background:#FFFBEE;' : '') + '">';
+    html += '<td style="padding:10px;"><strong>' + escapeHtml(c.clientName) + '</strong>' + (isCurrent ? ' <span style="background:#C9A961; color:#0A2540; padding:1px 6px; border-radius:3px; font-size:10px;">현재</span>' : '') + '</td>';
+    html += '<td style="padding:10px; color:#777;">' + dt + '</td>';
+    html += '<td style="padding:10px; text-align:center; font-size:11px; color:' + (hasReport ? '#1F7A4D' : '#999') + ';">' + (hasReport ? '✓ ' + reportSizeKB + 'KB' : '없음') + '</td>';
+    html += '<td style="padding:10px; text-align:center;">';
+    if (hasReport) {
+      html += '<button onclick="openSavedReport(\'' + c.id + '\')" style="background:#0A2540; color:#C9A961; border:none; padding:6px 10px; border-radius:4px; font-size:12px; font-weight:700; cursor:pointer; margin-right:4px;">📄 바로 열기</button>';
+    }
+    html += '<button onclick="loadCase(\'' + c.id + '\')" style="background:#1F7A4D; color:#fff; border:none; padding:6px 10px; border-radius:4px; font-size:12px; font-weight:700; cursor:pointer; margin-right:4px;">📂 불러오기</button>';
+    html += '<button onclick="deleteCase(\'' + c.id + '\')" style="background:#B53A2E; color:#fff; border:none; padding:6px 10px; border-radius:4px; font-size:12px; font-weight:700; cursor:pointer;">🗑</button>';
+    html += '</td></tr>';
+  });
+  
+  html += '</tbody></table>';
+  html += '<div style="margin-top:10px; font-size:11px; color:#888; text-align:right;">총 ' + cases.length + '건 · 사용 용량 ' + Math.round(totalBytes/1024) + 'KB / 약 5MB (최대 30건)</div>';
+  container.innerHTML = html;
+}
+
+// [4번 B안] 저장된 제안서 HTML 바로 열기
+function openSavedReport(id) {
+  const cases = getAllCases();
+  const c = cases.find(x => x.id === id);
+  if (!c || !c.reportHtml) {
+    showToast('저장된 제안서 HTML이 없습니다. [📂 불러오기] 후 다시 생성하세요.', true);
+    return;
+  }
+  
+  const w = window.open('', '_blank');
+  if (!w) {
+    showToast('팝업이 차단되었습니다.', true);
+    return;
+  }
+  w.document.open();
+  w.document.write(c.reportHtml);
+  w.document.close();
+  w.document.title = c.clientName + '님 금융집짓기 종합재무설계 제안서';
+  showToast('✓ "' + c.clientName + '" 제안서가 새 창에서 열렸습니다.', false);
+}
+
+function loadCase(id) {
+  const cases = getAllCases();
+  const c = cases.find(x => x.id === id);
+  if (!c) {
+    showToast('사례를 찾을 수 없습니다.', true);
+    return;
+  }
+  
+  // 담당자 정보
+  if (c.advisor) {
+    document.getElementById('adv_name').value = c.advisor.name || '';
+    document.getElementById('adv_company').value = c.advisor.company || '';
+    document.getElementById('adv_phone').value = c.advisor.phone || '';
+  }
+  // 고객명·제안
+  document.getElementById('client_name').value = c.clientName || '';
+  document.getElementById('proposal_product').value = c.proposal?.product || '';
+  document.getElementById('proposal_content').value = c.proposal?.content || '';
+  document.getElementById('proposal_reason').value = c.proposal?.reason || '';
+  
+  // 엑셀 데이터 복원
+  STATE.excelData = c.excel || null;
+  STATE.noteImageData = c.noteImage || null;
+  STATE.currentCaseId = c.id;
+  STATE.lastReportHtml = c.reportHtml || null;  // [4번 B안] 제안서 HTML도 복원
+  
+  // 미리보기 복원
+  if (c.excel && typeof showExcelPreview === 'function') {
+    showExcelPreview(c.excel);
+  }
+  if (c.noteImage) {
+    const np = document.getElementById('note_preview');
+    if (np) {
+      np.innerHTML = '<img src="' + c.noteImage + '" style="max-width:100%; max-height:200px; border-radius:4px;" />';
+      np.style.display = 'block';
+    }
+  }
+  
+  document.getElementById('current-case-info').style.display = 'block';
+  document.getElementById('current-case-name').textContent = c.clientName + ' (' + new Date(c.savedAt).toLocaleString('ko-KR') + ')';
+  document.getElementById('case-list-area').style.display = 'none';
+  
+  showToast('✓ "' + c.clientName + '" 사례 불러오기 완료', false);
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function deleteCase(id) {
+  const cases = getAllCases();
+  const c = cases.find(x => x.id === id);
+  if (!c) return;
+  
+  if (!confirm('"' + c.clientName + '" 사례를 삭제할까요?\n이 작업은 되돌릴 수 없습니다.')) return;
+  
+  const newCases = cases.filter(x => x.id !== id);
+  if (saveAllCases(newCases)) {
+    if (STATE.currentCaseId === id) {
+      STATE.currentCaseId = null;
+      document.getElementById('current-case-info').style.display = 'none';
+    }
+    showToast('✓ "' + c.clientName + '" 사례 삭제 완료', false);
+    refreshCaseListUI();
+  }
+}
+
+// 페이지 로드 시 저장된 사례 개수만 표시
+window.addEventListener('DOMContentLoaded', function() {
+  const cases = getAllCases();
+  if (cases.length > 0) {
+    const help = document.querySelector('#case-manager-box .box-help');
+    if (help) help.textContent = '저장된 사례 ' + cases.length + '건 · 언제든 불러올 수 있습니다';
+  }
+});
+
+// ============================================================
+// 3. 엑셀 처리 (첨부 + 드롭 + 붙여넣기)
+// ============================================================
+const excelDrop = document.getElementById('excel_drop');
+const excelFile = document.getElementById('excel_file');
+
+excelFile.addEventListener('change', e => {
+  if (e.target.files[0]) processExcel(e.target.files[0]);
+});
+
+excelDrop.addEventListener('dragover', e => {
+  e.preventDefault();
+  excelDrop.classList.add('dragover');
+});
+excelDrop.addEventListener('dragleave', () => excelDrop.classList.remove('dragover'));
+excelDrop.addEventListener('drop', e => {
+  e.preventDefault();
+  excelDrop.classList.remove('dragover');
+  if (e.dataTransfer.files[0]) processExcel(e.dataTransfer.files[0]);
+});
+
+function processExcel(file) {
+  if (!file.name.match(/\.(xlsx|xls)$/i)) {
+    showToast('엑셀 파일(.xlsx)만 가능합니다.', true);
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = ev => {
+    try {
+      const data = new Uint8Array(ev.target.result);
+      const wb = XLSX.read(data, { type: 'array' });
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null });
+      
+      // 데이터 파싱
+      const parsed = parseExcel(rows);
+      STATE.excelData = parsed;
+      
+      // UI 업데이트
+      excelDrop.classList.add('has-file');
+      document.getElementById('excel_filename').style.display = 'block';
+      document.getElementById('excel_filename').textContent = '✓ ' + file.name + ' (' + (file.size/1024).toFixed(1) + ' KB)';
+      
+      // 미리보기
+      showExcelPreview(parsed);
+      showToast('엑셀 자동 추출 완료', false);
+    } catch (e) {
+      showToast('엑셀 처리 실패: ' + e.message, true);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function parseExcel(rows) {
+  const d = {
+    family: [],
+    asset: { 예적금: 0, CMA: 0, 주식: 0, 펀드: 0, 연금: 0, 청약: 0, 부동산: 0, 기타: 0 },
+    debt: { 담보대출: 0, 신용대출: 0, 신용대출메모: '', 보험계약대출: 0, 기타: 0 },
+    income: { 본인: 0, 배우자: 0, 기타: 0 },
+    expense: { 생활비: 0, 저축투자: 0, 노후연금: 0, 보장보험: 0, 대출원리금: 0 },
+  };
+
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i] || [];
+    const c0 = String(r[0] || '').trim();
+    const c1 = String(r[1] || '').trim();
+    const c2 = String(r[2] || '').trim();
+    const c3 = String(r[3] || '').trim();
+    
+    // 가족사항 (9번: 특이사항 → 경제적 고민)
+    // 엑셀 헤더: [0]성명 [1]나이 [2]직업 [3]예상은퇴연령 [4]경제적인고민 [5]특이사항
+    if ((c0.includes('성') && c0.includes('명') || c0 === '성명') && c1.includes('나이')) {
+      const labels = ['본인', '배우자', '자녀1', '자녀2', '자녀3'];
+      for (let k = 0; k < 5; k++) {  // 최대 5인 가족 인식
+        const rr = rows[i+1+k];
+        if (!rr) break;
+        const name = String(rr[0] || '').trim();
+        const age = String(rr[1] || '').trim();
+        const job = String(rr[2] || '').trim();
+        const retireAge = String(rr[3] || '').trim();
+        const concern = String(rr[4] || '').trim();  // 경제적 고민 (E열)
+        const note = String(rr[5] || '').trim();      // 특이사항 (F열)
+        if (!name && !age && !job && !concern && !note) continue;
+        // note 필드에 경제적 고민 우선 저장 (없으면 특이사항)
+        d.family.push({ rel: labels[k], name, age, job, retireAge, note: concern || note });
+      }
+    }
+
+    // 자산 (천원 단위 → 만원)
+    const numC = toNum(r[2]) / 10;
+    if (c1.includes('예적금')) d.asset.예적금 = numC;
+    if (c1.includes('펀드')) d.asset.펀드 = numC;
+    if (c1.includes('CMA') || c1.includes('MMF')) d.asset.CMA = numC;
+    if (c1.includes('연금') && c1.includes('적립')) d.asset.연금 = numC;
+    if (c1.includes('청약')) d.asset.청약 = numC;
+    if (c0.includes('주식') && numC > 0) d.asset.주식 = numC;
+    if (c1.includes('자가') || c1.includes('전세') || c1.includes('월세')) d.asset.부동산 = numC;
+
+    // === 부채 (D~F열만 검사 - 자산 영역 침범 방지) ===
+    // 엑셀 구조: A~C열 = 자산, D~F열 = 부채
+    // 따라서 부채 금액은 반드시 r[5] (F열)에 있음
+    const debtLabelCol3 = String(r[3] || '').trim();  // D열: 카테고리 (담보대출/신용대출/기타대출)
+    const debtLabelCol4 = String(r[4] || '').trim();  // E열: 세부 항목 (주택담보대출/보험계약대출/은행대출 등)
+    const debtAmount = toNum(r[5]) / 10;  // F열: 금액 (천원 → 만원)
+    
+    // 주택담보대출 (E열에 '주택담보' 포함)
+    if (debtLabelCol4.includes('주택담보')) {
+      d.debt.담보대출 = debtAmount;
+    }
+    // 보험계약대출 (E열에 '보험계약' 포함)
+    if (debtLabelCol4.includes('보험계약')) {
+      d.debt.보험계약대출 = debtAmount;
+    }
+    // 신용대출 / 은행대출 (E열에 '은행대출' 또는 D열에 '신용대출' 포함)
+    if (debtLabelCol4.includes('은행대출') || (debtLabelCol3.includes('신용대출') && debtAmount > 0)) {
+      d.debt.신용대출 = debtAmount;
+      // 메모: 같은 행의 G열 또는 추가 정보가 있으면 저장
+      if (r[6]) d.debt.신용대출메모 = String(r[6]);
+    }
+    // 기타대출 (D열에 '기타대출' 포함)
+    if (debtLabelCol3.includes('기타대출') && debtAmount > 0) {
+      d.debt.기타 = debtAmount;
+    }
+    // 부채 0이고 메모만 있는 경우 (예: "(오피스텔보증금)" 같은 안내) → 무시
+    
+    // 담보대출 합계 자동 정리 (옛 c0 기반 코드 비활성화)
+    // if (c0.includes('담보대출')) { ... }  ← 제거됨
+
+    // 수입
+    const numB = toNum(r[1]) / 10;
+    if (c0.includes('본인 소득') || c0 === '본인소득') d.income.본인 = numB;
+    if (c0.includes('배우자 소득') || c0 === '배우자소득') d.income.배우자 = numB;
+    if (c0.includes('기타소득')) d.income.기타 = numB;
+
+    // === [7-B] 지출 매핑 재정의 ===
+    const numE = toNum(r[4]) / 10;
+    
+    // ① 생활비 = 고정지출 + 변동지출 + 사교육비 + 자녀투자(자녀결혼·학자금 등)
+    if (c3.includes('고정지출')) d.expense.생활비 += numE;
+    if (c3.includes('변동지출')) d.expense.생활비 += numE;
+    if (c3.includes('사교육') || c3.includes('학원')) d.expense.생활비 += numE;
+    if (c2.includes('자녀') && (c3.includes('학자금') || c3.includes('결혼') || c3.includes('투자'))) d.expense.생활비 += numE;
+    
+    // ② 대출원리금 = 부채관련지출 (생활비에서 분리)
+    if (c3.includes('부채관련') || c3.includes('대출원리금')) d.expense.대출원리금 += numE;
+    
+    // ③ 저축투자 = 목적자금(결혼기념·여행·단기목적) + 긴급예비자금(CMA·MMF)
+    if (c2.includes('목적자금') || c3.includes('결혼기념') || c3.includes('단기목적')) d.expense.저축투자 += numE;
+    if (c2.includes('긴급예비') || (c2.includes('긴급') && c3.includes('CMA'))) d.expense.저축투자 += numE;
+    if (c2.includes('학자금') && c3.includes('저축')) d.expense.저축투자 += numE;  // 학자금마련(저축/펀드)
+    if (c2.includes('주택') && c3.includes('마련')) d.expense.저축투자 += numE;
+    
+    // ④ 노후연금 = 노후생활자금
+    if (c2.includes('노후') || c3.includes('연금관련')) d.expense.노후연금 += numE;
+    
+    // ⑤ 보장성 보험
+    if (c2.includes('보장성') || c2.includes('보험') || c3.includes('의료비') || c3.includes('종신')) {
+      if (numE > 0 && !c3.includes('대출')) d.expense.보장보험 += numE;
+    }
+  }
+
+  // 본인 이름 자동 설정
+  if (d.family[0]?.name && !document.getElementById('client_name').value) {
+    document.getElementById('client_name').value = d.family[0].name;
+  }
+  
+  return d;
+}
+
+function toNum(v) {
+  if (v === null || v === undefined || v === '') return 0;
+  if (typeof v === 'number') return v;
+  const n = parseFloat(String(v).replace(/[^\d.-]/g, ''));
+  return isNaN(n) ? 0 : n;
+}
+
+function showExcelPreview(d) {
+  const totalAst = Object.values(d.asset).reduce((a,b) => a+b, 0);
+  const totalDbt = d.debt.담보대출 + d.debt.신용대출 + d.debt.보험계약대출 + d.debt.기타;
+  const totalInc = d.income.본인 + d.income.배우자 + d.income.기타;
+  const totalExp = Object.values(d.expense).reduce((a,b) => a+b, 0);
+
+  const fmt = n => n >= 10000 ? (n/10000).toFixed(1) + '억' : n.toLocaleString() + '만';
+
+  const box = document.getElementById('excel_preview');
+  box.innerHTML = `
+    <strong>📋 추출된 정보 (만원 단위)</strong><br>
+    <strong>가족:</strong> ${d.family.map(f => f.rel + ' ' + (f.age || '?')).join(', ')}<br>
+    <strong>자산:</strong> 예적금 ${fmt(d.asset.예적금)} · CMA ${fmt(d.asset.CMA)} · 주식 ${fmt(d.asset.주식)} · 부동산 ${fmt(d.asset.부동산)} → <strong>총 ${fmt(totalAst)}</strong><br>
+    <strong>부채:</strong> 신용대출 ${fmt(d.debt.신용대출)} ${d.debt.신용대출메모 ? '('+d.debt.신용대출메모+')' : ''} → <strong>총 ${fmt(totalDbt)}</strong><br>
+    <strong>수입:</strong> 본인 ${fmt(d.income.본인)} + 기타 ${fmt(d.income.기타)} → <strong>월 ${fmt(totalInc)}</strong><br>
+    <strong>지출:</strong> 생활 ${fmt(d.expense.고정생활비 + d.expense.변동생활비)} / 사교육 ${fmt(d.expense.사교육)} / 연금 ${fmt(d.expense.노후연금)} → <strong>월 ${fmt(totalExp)}</strong><br>
+    <strong>잉여:</strong> ${totalInc - totalExp >= 0 ? '+' : ''}${(totalInc - totalExp)}만원/월
+  `;
+  box.classList.add('show');
+}
+
+// ============================================================
+// 4. 상담노트 처리 (이미지 + 텍스트)
+// ============================================================
+const noteDrop = document.getElementById('note_drop');
+const noteFile = document.getElementById('note_file');
+
+noteFile.addEventListener('change', e => {
+  if (e.target.files[0]) processNoteImage(e.target.files[0]);
+});
+
+noteDrop.addEventListener('dragover', e => {
+  e.preventDefault();
+  noteDrop.classList.add('dragover');
+});
+noteDrop.addEventListener('dragleave', () => noteDrop.classList.remove('dragover'));
+noteDrop.addEventListener('drop', e => {
+  e.preventDefault();
+  noteDrop.classList.remove('dragover');
+  if (e.dataTransfer.files[0]) processNoteImage(e.dataTransfer.files[0]);
+});
+
+function processNoteImage(file) {
+  if (!file.type.startsWith('image/')) {
+    showToast('이미지 파일만 가능합니다.', true);
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = ev => {
+    STATE.noteImageData = ev.target.result;
+    noteDrop.classList.add('has-file');
+    document.getElementById('note_filename').style.display = 'block';
+    document.getElementById('note_filename').textContent = '✓ ' + file.name + ' (' + (file.size/1024).toFixed(1) + ' KB)';
+    const img = document.getElementById('note_image_preview');
+    img.src = ev.target.result;
+    img.classList.add('show');
+    showToast('상담노트 이미지 첨부 완료', false);
+  };
+  reader.readAsDataURL(file);
+}
+
+// ============================================================
+// 5. 전역 Ctrl+V 처리 (엑셀 파일 또는 이미지)
+// ============================================================
+document.addEventListener('paste', e => {
+  const items = e.clipboardData?.items;
+  if (!items) return;
+  for (const item of items) {
+    if (item.kind === 'file') {
+      const f = item.getAsFile();
+      if (f.name.match(/\.(xlsx|xls)$/i)) {
+        processExcel(f);
+        showToast('엑셀 파일을 붙여넣었습니다', false);
+        return;
+      } else if (f.type.startsWith('image/')) {
+        processNoteImage(f);
+        showToast('이미지를 붙여넣었습니다', false);
+        return;
+      }
+    }
+  }
+});
+
+// ============================================================
+// 6. 토스트 알림
+// ============================================================
+function showToast(msg, isError) {
+  const t = document.getElementById('toast');
+  t.textContent = (isError ? '✗ ' : '✓ ') + msg;
+  t.className = 'toast show' + (isError ? ' error' : '');
+  setTimeout(() => { t.className = 'toast'; }, 2500);
+}
+
+// ============================================================
+// 7. 제안서 생성
+// ============================================================
+// ═══════════════════════════════════════════════════════════
+// ★ 녹음 텍스트 → 제안서 자동 생성 (제니야 연동)
+// 엑셀/이미지 업로드 대신, 상담 녹음 텍스트에서 제니야(Opus)가
+// 항목을 추출해 기존 STATE.excelData 구조로 채운 뒤 generateReport() 재사용.
+// ═══════════════════════════════════════════════════════════
+async function buildReportFromTranscript() {
+  const transcript = (document.getElementById('consult_transcript').value || '').trim();
+  const statusEl = document.getElementById('transcript_status');
+  if (!transcript) { showToast('녹음 텍스트가 없습니다. 먼저 상담을 녹음하거나 텍스트를 붙여넣으세요.', true); return; }
+
+  statusEl.textContent = '🟡 제니야가 녹음 내용을 분석 중입니다…';
+
+  // ───────────────────────────────────────────────────────────
+  // [엄마 연결지점 ①] 녹음 텍스트 → 제니야(Opus) → 구조화 JSON
+  // 제니야 서버에 이 엔드포인트(POST /extract-report)를 만들어,
+  // transcript 를 Opus에 넣고 "아래 구조 그대로의 순수 JSON"을 반환하게 한다.
+  // (설명·마크다운·코드펜스 없이 JSON 객체만. 없는 값은 0 또는 "" 또는 [])
+  //
+  // 반환 형식(반드시 이 구조 — parseExcel 결과 d + 최종의견):
+  // {
+  //   "clientName": "정상영",
+  //   "family":  [{"rel":"본인","name":"정상영","age":"47","job":"회사원","retireAge":"60","note":"노후·교육비 부담"}],
+  //   "asset":   {"예적금":3000,"CMA":500,"주식":1000,"펀드":2000,"연금":1500,"청약":800,"부동산":50000,"기타":0},   // 단위: 만원
+  //   "debt":    {"담보대출":20000,"신용대출":3000,"보험계약대출":500,"기타":0,"신용대출메모":""},                  // 단위: 만원
+  //   "income":  {"본인":450,"배우자":300,"기타":0},                                                              // 월, 만원
+  //   "expense": {"생활비":380,"저축투자":50,"노후연금":40,"보장보험":35,"대출원리금":100},                          // 월, 만원
+  //   "proposal":{"product":"...", "content":"...", "reason":"..."}
+  // }
+  // ※ Opus 프롬프트에 "금액 단위는 만원으로 환산", "예측·단정 금지, 녹음에 근거한 값만" 명시.
+  // ───────────────────────────────────────────────────────────
+  let extracted;
+  try {
+    const res = await fetch('/extract-report', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ transcript: transcript })
+    });
+    if (!res.ok) throw new Error('서버 응답 ' + res.status);
+    extracted = await res.json();
+  } catch (e) {
+    statusEl.textContent = '❌ 분석 실패: ' + e.message;
+    showToast('녹음 분석에 실패했습니다: ' + e.message, true);
+    return;
+  }
+
+  applyExtractedToForm(extracted);
+  statusEl.textContent = '✅ 추출 완료 — 제안서를 생성합니다.';
+  generateReport();   // ← 기존 7장 렌더 로직 그대로 재사용
+}
+
+// 추출된 JSON을 기존 폼/STATE 구조에 주입 (parseExcel과 동일한 형태로)
+function applyExtractedToForm(x) {
+  x = x || {};
+  STATE.excelData = {
+    family:  Array.isArray(x.family) ? x.family : [],
+    asset:   Object.assign({예적금:0,CMA:0,주식:0,펀드:0,연금:0,청약:0,부동산:0,기타:0}, x.asset || {}),
+    debt:    Object.assign({담보대출:0,신용대출:0,보험계약대출:0,기타:0,신용대출메모:''}, x.debt || {}),
+    income:  Object.assign({본인:0,배우자:0,기타:0}, x.income || {}),
+    expense: Object.assign({생활비:0,저축투자:0,노후연금:0,보장보험:0,대출원리금:0}, x.expense || {}),
+  };
+  STATE.noteImageData = null;  // 녹음 기반은 상담노트 이미지 없음(선택 항목)
+
+  document.getElementById('client_name').value =
+    x.clientName || (STATE.excelData.family[0] && STATE.excelData.family[0].name) || '';
+  if (x.proposal) {
+    document.getElementById('proposal_product').value = x.proposal.product || '';
+    document.getElementById('proposal_content').value = x.proposal.content || '';
+    document.getElementById('proposal_reason').value  = x.proposal.reason  || '';
+  }
+  // 담당자 기본값(비어있을 때만 채움) — 필요시 엄마가 실제 대표 정보로 고정
+  if (!document.getElementById('adv_name').value)    document.getElementById('adv_name').value = '오상열';
+  if (!document.getElementById('adv_company').value) document.getElementById('adv_company').value = '오원트금융연구소';
+}
+
+function generateReport() {
+  const advName = document.getElementById('adv_name').value.trim();
+  const advCompany = document.getElementById('adv_company').value.trim();
+  const advPhone = document.getElementById('adv_phone').value.trim();
+  const clientName = document.getElementById('client_name').value.trim();
+
+  if (!advName || !advCompany || !advPhone) {
+    showToast('1번 담당자 정보(이름·소속·전화번호)를 모두 입력하세요.', true);
+    return;
+  }
+  if (!clientName) {
+    showToast('4번 고객명을 입력하세요.', true);
+    return;
+  }
+
+  const data = {
+    advisor: { name: advName, company: advCompany, phone: advPhone },
+    clientName: clientName,
+    excel: STATE.excelData,
+    noteImage: STATE.noteImageData,
+    kakaoKey: document.getElementById('kakao_js_key').value.trim(),
+    proposal: {
+      product: document.getElementById('proposal_product').value.trim(),
+      content: document.getElementById('proposal_content').value.trim(),
+      reason: document.getElementById('proposal_reason').value.trim(),
+    },
+  };
+
+  // === [7-A번] 멀티에이전트 검증 모듈 ===
+  const validationResult = runValidationAgent(data);
+  if (validationResult.hasIssues && !validationResult.userConfirmed) {
+    showValidationModal(data, validationResult);
+    return;
+  }
+
+  // 실제 제안서 생성
+  doGenerateReport(data);
+}
+
+// === 검증 에이전트: 사전 자동 점검 ===
+function runValidationAgent(data) {
+  const ex = data.excel;
+  const issues = [];
+  const warnings = [];
+  
+  if (!ex) {
+    return { hasIssues: true, userConfirmed: false, critical: ['엑셀 파일이 업로드되지 않았습니다.'], warnings: [] };
+  }
+  
+  // ① 자산 합계 검증
+  const totalAst = Object.values(ex.asset || {}).reduce((a,b) => a+(b||0), 0);
+  if (totalAst === 0) issues.push('자산 합계가 0원입니다. 엑셀 자료를 확인해 주세요.');
+  
+  // ② 부채 검증
+  const totalDbt = (ex.debt.담보대출||0) + (ex.debt.신용대출||0) + (ex.debt.보험계약대출||0) + (ex.debt.기타||0);
+  if (totalDbt === 0 && !ex.debt.신용대출메모) warnings.push('부채가 0원으로 추출되었습니다. 엑셀에 부채가 있다면 확인 필요.');
+  
+  // ③ 수입 검증
+  const totalInc = (ex.income.본인||0) + (ex.income.배우자||0) + (ex.income.기타||0);
+  if (totalInc === 0) issues.push('월 수입이 0원입니다. 엑셀의 수입 영역을 확인해 주세요.');
+  
+  // ④ 지출 검증
+  const totalExp = Object.values(ex.expense || {}).reduce((a,b) => a+(b||0), 0);
+  if (totalExp === 0) warnings.push('월 지출이 0원으로 추출되었습니다.');
+  
+  // ⑤ 가족 검증
+  if (!ex.family || ex.family.length === 0) warnings.push('가족 인적사항이 추출되지 않았습니다.');
+  
+  // ⑥ 단위 검증 (이상치 탐지)
+  if (totalAst > 1000000) warnings.push(`총자산이 ${(totalAst/10000).toFixed(0)}억으로 매우 큽니다. 단위(천원/만원)를 확인해 주세요.`);
+  if (totalInc > 5000) warnings.push(`월 수입이 ${totalInc}만원으로 큽니다. 단위를 확인해 주세요.`);
+  
+  return {
+    hasIssues: issues.length > 0 || warnings.length > 0,
+    userConfirmed: false,
+    critical: issues,
+    warnings: warnings,
+    summary: {
+      asset: totalAst,
+      debt: totalDbt,
+      income: totalInc,
+      expense: totalExp,
+      surplus: totalInc - totalExp,
+      family: ex.family.length,
+    }
+  };
+}
+
+function showValidationModal(data, result) {
+  const fmt = n => Math.abs(n||0) >= 10000 ? ((n||0)/10000).toFixed(2) + '억' : (n||0).toLocaleString() + '만원';
+  
+  // 기존 모달 제거
+  const old = document.getElementById('validation-modal');
+  if (old) old.remove();
+  
+  const modal = document.createElement('div');
+  modal.id = 'validation-modal';
+  modal.style.cssText = `position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:99999; display:flex; align-items:center; justify-content:center; padding:20px;`;
+  
+  let issuesHTML = '';
+  if (result.critical.length > 0) {
+    issuesHTML += `<div style="background:#FBD9D5; border-left:4px solid #B53A2E; padding:14px 16px; border-radius:6px; margin-bottom:12px;">
+      <strong style="color:#B53A2E;">🚨 심각한 문제 (생성 차단)</strong>
+      <ul style="margin-top:8px; padding-left:20px; color:#555;">
+        ${result.critical.map(c => `<li style="margin:4px 0;">${c}</li>`).join('')}
+      </ul>
+    </div>`;
+  }
+  if (result.warnings.length > 0) {
+    issuesHTML += `<div style="background:#FFF8E1; border-left:4px solid #C97818; padding:14px 16px; border-radius:6px; margin-bottom:12px;">
+      <strong style="color:#C97818;">⚠️ 경고 (확인 필요)</strong>
+      <ul style="margin-top:8px; padding-left:20px; color:#555;">
+        ${result.warnings.map(w => `<li style="margin:4px 0;">${w}</li>`).join('')}
+      </ul>
+    </div>`;
+  }
+  
+  modal.innerHTML = `
+    <div style="background:#fff; border-radius:12px; padding:28px; max-width:600px; width:100%; max-height:85vh; overflow:auto; box-shadow:0 8px 40px rgba(0,0,0,0.3);">
+      <h2 style="font-size:20px; font-weight:800; color:#0A2540; margin-bottom:6px;">🔍 사전 검증 결과</h2>
+      <p style="font-size:13px; color:#555; margin-bottom:16px;">제안서 생성 전 데이터를 한 번 더 확인해 주세요.</p>
+      
+      ${issuesHTML}
+      
+      <div style="background:#F0F8F4; border-left:4px solid #1F7A4D; padding:14px 16px; border-radius:6px; margin-bottom:16px;">
+        <strong style="color:#1F7A4D;">📊 추출된 데이터 요약</strong>
+        <table style="width:100%; margin-top:10px; font-size:13px;">
+          <tr><td style="padding:4px 0;">총자산</td><td style="text-align:right; font-weight:700; color:#0A2540;">${fmt(result.summary.asset)}</td></tr>
+          <tr><td style="padding:4px 0;">총부채</td><td style="text-align:right; font-weight:700; color:#B53A2E;">${fmt(result.summary.debt)}</td></tr>
+          <tr><td style="padding:4px 0;">순자산</td><td style="text-align:right; font-weight:700; color:#1F7A4D;">${fmt(result.summary.asset - result.summary.debt)}</td></tr>
+          <tr><td style="padding:4px 0;">월 수입</td><td style="text-align:right; font-weight:700; color:#0A2540;">${result.summary.income}만원</td></tr>
+          <tr><td style="padding:4px 0;">월 지출</td><td style="text-align:right; font-weight:700; color:#0A2540;">${result.summary.expense}만원</td></tr>
+          <tr><td style="padding:4px 0;">월 잉여</td><td style="text-align:right; font-weight:700; color:${result.summary.surplus<0?'#B53A2E':'#1F7A4D'};">${result.summary.surplus>=0?'+':''}${result.summary.surplus}만원</td></tr>
+          <tr><td style="padding:4px 0;">가족 인원</td><td style="text-align:right; font-weight:700; color:#0A2540;">${result.summary.family}명</td></tr>
+        </table>
+      </div>
+      
+      <div style="background:#FFFBEE; border:1px dashed #C9A961; padding:12px 14px; border-radius:6px; margin-bottom:16px; font-size:12px; color:#555; line-height:1.7;">
+        💡 <strong>위 수치가 정확하면</strong> "생성 진행"을 누르세요.<br>
+        ❌ <strong>수치가 다르면</strong> "취소"하고 엑셀을 다시 확인 후 업로드하세요.
+      </div>
+      
+      <div style="display:flex; gap:10px;">
+        <button onclick="document.getElementById('validation-modal').remove();" 
+                style="flex:1; padding:14px 20px; background:#f0f0f0; color:#333; border:none; border-radius:8px; font-size:15px; font-weight:700; cursor:pointer; font-family:inherit;">
+          ✕ 취소
+        </button>
+        ${result.critical.length === 0 ? `
+        <button onclick="document.getElementById('validation-modal').remove(); doGenerateReport(window._pendingReportData);" 
+                style="flex:2; padding:14px 20px; background:#0A2540; color:#C9A961; border:none; border-radius:8px; font-size:15px; font-weight:800; cursor:pointer; font-family:inherit;">
+          ✓ 확인 후 제안서 생성
+        </button>` : `
+        <button disabled style="flex:2; padding:14px 20px; background:#ccc; color:#666; border:none; border-radius:8px; font-size:15px; font-weight:700; cursor:not-allowed; font-family:inherit;">
+          ⚠ 심각한 문제 해결 후 가능
+        </button>`}
+      </div>
+    </div>
+  `;
+  
+  document.body.appendChild(modal);
+  window._pendingReportData = data;  // 사용자 확인 후 사용
+}
+
+function doGenerateReport(data) {
+  const html = buildReport(data);
+  
+  // [4번 B안] 생성된 HTML을 STATE에 저장 (사례 저장 시 함께 보관)
+  STATE.lastReportHtml = html;
+  
+  const w = window.open('', '_blank');
+  if (!w) {
+    showToast('팝업이 차단되었습니다. 브라우저 팝업 허용 후 다시 시도하세요.', true);
+    return;
+  }
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
+  w.document.title = data.clientName + '님 금융집짓기 종합재무설계 제안서';
+  
+  // [4번] 제안서 생성 시 자동으로 사례 저장 (HTML 포함)
+  try {
+    saveCurrentCase();
+  } catch (e) {
+    console.warn('자동 저장 실패:', e);
+  }
+  
+  showToast('제안서가 새 창에서 열렸습니다. 사례+제안서 HTML 자동 저장 완료.', false);
+}
+
+// ============================================================
+// 8. 제안서 HTML 빌더
+// ============================================================
+function buildReport(d) {
+  const today = new Date().toISOString().split('T')[0];
+  const yymm = today.substring(0,7).replace('-', '년 ') + '월';
+  const year = new Date().getFullYear();
+
+  // === 0. 헬퍼 함수 ===
+  const fmt = n => Math.abs(n||0) >= 10000 ? ((n||0)/10000).toFixed(2) + '억' : (n||0).toLocaleString() + '만';
+
+  // === 1. 엑셀에서 추출한 기본값 ===
+  const ex = d.excel || { family: [], asset: {}, debt: {}, income: {}, expense: {} };
+  const totalAst = Object.values(ex.asset).reduce((a,b) => a+(b||0), 0);
+  const totalDbt = (ex.debt.담보대출||0) + (ex.debt.신용대출||0) + (ex.debt.보험계약대출||0) + (ex.debt.기타||0);
+  const netWorth = totalAst - totalDbt;
+  const totalInc = (ex.income.본인||0) + (ex.income.배우자||0) + (ex.income.기타||0);
+  const totalExp = Object.values(ex.expense).reduce((a,b) => a+(b||0), 0);
+  const surplus = totalInc - totalExp;
+  const debtRatio = totalAst > 0 ? (totalDbt/totalAst*100).toFixed(1) : 0;
+
+  // === 2. 나이 추출 ===
+  const ageStr = ex.family[0]?.age || '';
+  const age = parseInt(ageStr.replace(/[^0-9]/g, '')) || 50;
+
+  // === 3. DESIRE 단계 자동 판정 ===
+  let desireKey = 'D';
+  if (ex.debt.신용대출 > 0) desireKey = 'D';
+  else if ((ex.asset.CMA||0) + (ex.asset.예적금||0) < totalInc * 6) desireKey = 'E';
+  else if ((ex.expense.노후연금||0) + (ex.expense.보장보험||0) < totalInc * 0.2) desireKey = 'S';
+  else if (totalAst - (ex.asset.부동산||0) < 100000) desireKey = 'I';
+  else if (ex.debt.담보대출 > 0) desireKey = 'R';
+  else desireKey = 'E2';
+
+  const desireStages = [
+    { letter: 'D', name: 'DEBT FREE', desc: '신용대출 상환', key: 'D' },
+    { letter: 'E', name: 'EMERGENCY', desc: '비상예비자금', key: 'E' },
+    { letter: 'S', name: 'SAVINGS', desc: '적립식 저축투자', key: 'S' },
+    { letter: 'I', name: 'INVESTMENT', desc: '금융자산 10억', key: 'I' },
+    { letter: 'R', name: 'REPAY', desc: '담보대출 상환', key: 'R' },
+    { letter: 'E', name: 'EARLY RETIRE', desc: '상속증여·조기은퇴', key: 'E2' },
+  ];
+
+  // === 4. 은퇴설계 자동 계산 (4번 메모 또는 기본 추정) ===
+  // 은퇴 후 필요자금 = 현재 생활비 + 의료비 + 여가비 가정 (현재 지출의 약 75%)
+  const retNeed = Math.round(totalExp * 0.75) || 300;
+  // 준비자금: 노후연금 + 예상 국민연금 (직업 기준 추정)
+  const isCivilServant = (ex.family[0]?.job || '').includes('공무원');
+  const baseReady = isCivilServant ? 150 : 80;
+  const retReady = baseReady + (ex.expense.노후연금||0) + 50;
+  const retLack = Math.max(0, retNeed - retReady);
+  const retYears = 25; // 표준
+  const retLumpsum = retLack * 12 * retYears;
+  const retMonthly = retYears > 0 ? Math.round(retLumpsum / retYears / 12) : 0;
+  // === 5. [10번 공식] 적립식 투자재원 산출 ===
+  // 잉여자금 = 월 수입 - 월 지출
+  const monthlySurplus = surplus;  // 이미 위에서 계산됨
+  
+  // === [3번] 가족수 기반 기준 비율 (첨부 기준표) ===
+  // ※ 이 비율은 "월간 현금흐름 분석 진단용"으로만 사용
+  // ※ 10번 투자재원 공식의 '저축투자 기준'은 20% 고정 (가족수 무관)
+  const familyCount = Math.max(1, Math.min(5, ex.family.length || 1));
+  const benchmarkTable = {
+    1: { 생활비: 0.30, 저축투자: 0.40, 노후연금: 0.10, 보장보험: 0.10, 대출원리금: 0.10 },
+    2: { 생활비: 0.30, 저축투자: 0.40, 노후연금: 0.10, 보장보험: 0.10, 대출원리금: 0.10 },
+    3: { 생활비: 0.40, 저축투자: 0.30, 노후연금: 0.10, 보장보험: 0.10, 대출원리금: 0.10 },
+    4: { 생활비: 0.50, 저축투자: 0.20, 노후연금: 0.10, 보장보험: 0.10, 대출원리금: 0.10 },
+    5: { 생활비: 0.60, 저축투자: 0.10, 노후연금: 0.10, 보장보험: 0.10, 대출원리금: 0.10 },
+  };
+  const bm = benchmarkTable[familyCount];
+  
+  // === 표 진단용 기준 (가족수 동적) — 1장 월간 현금흐름 표에서만 사용 ===
+  const livingBenchmark = Math.round(totalInc * bm.생활비);
+  const savingBenchmarkTable = Math.round(totalInc * bm.저축투자);  // 표 진단용
+  const pensionBenchmark = Math.round(totalInc * bm.노후연금);
+  const insuranceBenchmark = Math.round(totalInc * bm.보장보험);
+  const debtBenchmark = Math.round(totalInc * bm.대출원리금);
+  
+  // === 10번 공식용 기준 (가족수 무관 20% 고정) — 4장 투자재원 공식에서 사용 ===
+  const savingBenchmark = Math.round(totalInc * 0.20);  // 저축투자 기준 20% 고정
+  
+  const currentSave = ex.expense.저축투자 || 0;
+  const currentPension = ex.expense.노후연금 || 0;
+  const currentInsurance = ex.expense.보장보험 || 0;
+  
+  // ① 투자재원 산출 (savingBenchmark = 20% 고정 사용)
+  const currentPlusSurplus = currentSave + Math.max(0, monthlySurplus);
+  let investResource;
+  if (currentPlusSurplus >= savingBenchmark) {
+    investResource = currentPlusSurplus;
+  } else {
+    investResource = Math.round((savingBenchmark + currentPlusSurplus) / 2);
+  }
+  
+  // ② 노후연금 부족 (기준 - 현재)
+  const pensionShortage = Math.max(0, pensionBenchmark - currentPension);
+  // ③ 보장성보험 부족 (기준 - 현재)
+  const insuranceShortage = Math.max(0, insuranceBenchmark - currentInsurance);
+  
+  // ④ 순투자재원 = 투자재원 - 노후 부족 - 보험 부족/2
+  const netInvestResource = Math.max(0, investResource - pensionShortage - Math.round(insuranceShortage / 2));
+  
+  // ⑤ 저축 (나이%) - 단기적금·청년미래적금·청약통장
+  const savingPart = Math.round(netInvestResource * age / 100);
+  // ⑥ 100-나이% → 중기/장기 반반
+  const remainPart = netInvestResource - savingPart;
+  const midTermPart = Math.round(remainPart / 2);              // 중기 (3-5년) ISA ETF
+  const longTermPart = remainPart - midTermPart;               // 장기 (10년+)
+  const longTermIRP = Math.round(longTermPart / 2);            // 장기 1/2: IRP·연금저축펀드
+  const longTermInsurance = longTermPart - longTermIRP;        // 장기 1/2: 비과세 저축성보험
+  
+  // (기존 변수명 호환용)
+  const investPart = remainPart;
+  const recommendSave = savingBenchmark;
+  const actualSave = currentSave;
+
+  // === 6. 거치식 자산배분 (7:3 법칙) ===
+  const realEstateActual = ex.asset.부동산 || 0;
+  const finAssetActual = totalAst - realEstateActual;
+  const realEstateRec = Math.round(totalAst * 0.7);
+  const finAssetRec = Math.round(totalAst * 0.3);
+
+  // === 7. 보험 8대 기준 자동 계산 (연봉 = 본인 월소득 × 12) ===
+  // [5번] 사망·장해 = (연봉×3) + 총부채
+  const annualIncome = (ex.income.본인 || 0) * 12;
+  const insStd = {
+    death: Math.round(annualIncome * 3 + totalDbt),      // 연봉×3 + 총부채
+    disability: Math.round(annualIncome * 3 + totalDbt), // 연봉×3 + 총부채
+    cancer: Math.round(annualIncome * 2),
+    brain: Math.round(annualIncome * 1),
+    heart: Math.round(annualIncome * 1),
+    medical: 5000,
+  };
+
+  // === 8. Action Plan 자동 생성 ===
+  const actions = [];
+  if (ex.debt.신용대출 > 0) {
+    actions.push({
+      title: `신용대출 ${fmt(ex.debt.신용대출)} 정리 또는 약관대출 전환`,
+      meta: `즉시 (1개월 내) · D단계 졸업 첫걸음`,
+      desc: `현재 ${ex.debt.신용대출메모 ? ex.debt.신용대출메모 : '은행 신용대출'} ${fmt(ex.debt.신용대출)}을 보유 중. ${ex.asset.연금 > 0 ? '연금적립액을 활용한 보험사 약관대출(약 4%대)로 전환 시' : '저금리 대환대출 검토 시'} 월 이자 약 ${Math.round(ex.debt.신용대출 * 0.02 / 12)}만원 절감 가능. 이 절감액을 그대로 보장 보강에 활용.`
+    });
+  }
+  if (insuranceShortage > 0 || (insStd.death - 10000) > 0) {
+    actions.push({
+      title: `보장성 보험 보강 (사망·암·뇌·심·치매간병)`,
+      meta: `2개월 내 · 월 약 ${Math.max(30, insuranceShortage)}만원 신규`,
+      desc: `현재 보장이 표준(연봉 기준) 대비 부족합니다. 정기보험·진단금·치매간병보험으로 단계 보강하여 위험 대비를 강화하세요. 상담노트의 상세 보장 분석 참고.`
+    });
+  }
+  if (surplus < 0) {
+    actions.push({
+      title: `생활비 구조조정 — 월 ${Math.abs(surplus)+50}만원 절감`,
+      meta: `3개월 내 · 적자 해소`,
+      desc: `현재 월 ${Math.abs(surplus)}만원 적자 발생 중. 변동지출(외식·용돈) 점검 + 자녀 독립 시 사교육비 자연 해소 예정.`
+    });
+  }
+  if ((ex.asset.예적금||0) > totalInc * 24) {
+    actions.push({
+      title: `예적금 일부를 ISA·연금저축펀드 ETF로 분산`,
+      meta: `6개월 내 · 약 ${Math.round((ex.asset.예적금||0) * 0.3 / 10000 * 10) / 10}억 이전 권장`,
+      desc: `현재 예적금이 안전성 자산 권장 비중을 초과하고 있습니다. 일부를 ISA·연금저축펀드로 분산하면 세제혜택 + 가중평균수익률 약 5% 달성 가능.`
+    });
+  }
+  if (realEstateActual > 100000) {
+    actions.push({
+      title: `주택연금 가입 검토 (만 60세 시점)`,
+      meta: `은퇴 시점 · 1억당 약 25만원 수령`,
+      desc: `자가주택 ${fmt(realEstateActual)} 보유. 만 55세 이상 가입 가능하며, 자녀 상속 의지 확인 후 결정. 최후의 보루로 활용 권장.`
+    });
+  }
+  if (d.proposal.product) {
+    actions.push({
+      title: d.proposal.product,
+      meta: `최종 제안 상품`,
+      desc: d.proposal.content || '상세 내용 참고'
+    });
+  }
+
+  // === [6번] 반퇴시대 RAG 기반 강점·약점·액션 3-3-3 자동 분석 ===
+  // (반퇴시대 중앙일보 자료 키워드: 부자지수, 자산구성, 유동성, 노후준비, 보장공백, 분산투자)
+  const strengths = [];
+  const weaknesses = [];
+  const topActions = [];
+  
+  // ── 강점 분석 ──
+  if (netWorth > 50000) {
+    strengths.push({
+      icon: '💎',
+      title: `순자산 ${fmt(netWorth)} 우수`,
+      desc: `반퇴시대 중앙일보 기준 동연령대 평균 대비 ${netWorth > 100000 ? '상위 10%' : '상위 30%'} 수준의 안정된 자산 토대`
+    });
+  }
+  if (debtRatio < 30 && totalDbt < totalAst * 0.3) {
+    strengths.push({
+      icon: '🛡',
+      title: `부채비율 ${debtRatio}% (양호)`,
+      desc: `재정 건전성 우수. 부채비율 30% 이하는 반퇴시대 권장 안전구간`
+    });
+  }
+  if (realEstateActual > 50000) {
+    strengths.push({
+      icon: '🏠',
+      title: `자가주택 ${fmt(realEstateActual)} 보유`,
+      desc: `주택연금 활용 가능 자산 — 만 55세 이상 시 1억당 월 25만원 수령 가능`
+    });
+  }
+  if ((ex.asset.연금||0) > 5000) {
+    strengths.push({
+      icon: '🏦',
+      title: `연금자산 ${fmt(ex.asset.연금||0)} 적립 중`,
+      desc: `노후 준비의 핵심 자산 — 연금저축·IRP·국민연금의 3층 노후보장 토대`
+    });
+  }
+  if (ex.family[0]?.job && (ex.family[0].job.includes('공무원') || ex.family[0].job.includes('교사'))) {
+    strengths.push({
+      icon: '👔',
+      title: `안정적 직업 (${ex.family[0].job})`,
+      desc: `공무원연금·사학연금 등 직역연금 수령 가능 — 노후 기반 안정`
+    });
+  }
+  
+  // ── 약점 분석 ──
+  if (retLack > 0) {
+    weaknesses.push({
+      icon: '⚠',
+      title: `노후 부족자금 월 ${retLack}만원`,
+      desc: `은퇴 후 25년 기준 일시금 ${fmt(retLumpsum)} 부족. 반퇴시대 평균 노후필요자금 월 400만원 기준 추산`
+    });
+  }
+  if (insuranceShortage > 0 || (insStd.death - 10000) > 5000) {
+    weaknesses.push({
+      icon: '🚨',
+      title: `보장 공백 — 사망 ${fmt(Math.max(0, insStd.death - 10000))} 부족`,
+      desc: `반퇴시대 표준 (연봉×3 + 부채) 대비 부족. 가장 큰 위험은 가장의 조기 사망/장해 시 가족 부담`
+    });
+  }
+  if (ex.debt.신용대출 > 0) {
+    weaknesses.push({
+      icon: '💳',
+      title: `고금리 신용대출 ${fmt(ex.debt.신용대출)}`,
+      desc: `약관대출(4%대) 대비 약 7~10%의 이자 손실. 반퇴시대 1순위 정리 대상 부채`
+    });
+  }
+  if (surplus < 0) {
+    weaknesses.push({
+      icon: '📉',
+      title: `월 적자 ${Math.abs(surplus)}만원`,
+      desc: `현금흐름 마이너스 — 자산이 줄어드는 구조. 반퇴 진입 전 반드시 흑자 전환 필요`
+    });
+  }
+  if ((ex.asset.예적금||0) > totalInc * 24 && (ex.asset.주식||0) + (ex.asset.펀드||0) === 0) {
+    weaknesses.push({
+      icon: '⏳',
+      title: `예적금 편중 — 인플레이션 위험`,
+      desc: `예적금 ${fmt(ex.asset.예적금||0)} 집중. 반퇴시대 권장 분산투자 부재 — 실질구매력 하락 가속`
+    });
+  }
+  
+  // ── 우선순위 액션 (기존 actions에서 상위 3개 선별) ──
+  for (let i = 0; i < Math.min(3, actions.length); i++) {
+    topActions.push(actions[i]);
+  }
+  
+  // 강점·약점 각 3개로 제한
+  const top3Strengths = strengths.slice(0, 3);
+  const top3Weaknesses = weaknesses.slice(0, 3);
+
+  // 면책 + 카피라이트 공통
+  const commonFooter = (page) => `
+    <div class="page-footer">
+      <div class="page-footer-top">
+        <span>금융집짓기<sup>®</sup> · ${d.clientName} 고객님 종합재무설계</span>
+        <span>${page} / 06 · ${d.advisor.company} · ${d.advisor.name}</span>
+      </div>
+      <div class="disclaimer">
+        <strong>[면책 조항]</strong> 본 제안서는 ${d.advisor.name}(${d.advisor.company})이 ${d.clientName} 고객님의 자료를 토대로 작성한 일반적인 재무설계 의견서이며, 특정 금융상품 가입을 권유하거나 수익을 보장하는 문서가 아닙니다. 시장·세법·정책 변경에 따라 결과가 달라질 수 있으며, 실제 상품 가입 전 약관·설명서를 반드시 확인하시기 바랍니다.
+      </div>
+      <div class="copyright">
+        금융집짓기<sup>®</sup>는 <strong>오원트금융연구소</strong>의 등록상표이며, DESIRE 6단계 로드맵은 동 연구소의 고유 방법론입니다. &nbsp;|&nbsp; © ${year} <strong>오원트금융연구소</strong> (Ohwant Financial Research Institute). All Rights Reserved.
+      </div>
+    </div>`;
+
+  return `<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>${d.clientName}님 금융집짓기® 종합재무설계 제안서</title>
+<style>
+@page { size: A4; margin: 0; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Pretendard', -apple-system, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif; background: #FAF8F3; color: #0A2540; line-height: 1.75; font-size: 14px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.page { width: 210mm; min-height: 297mm; margin: 0 auto 8mm; background: #fff; box-shadow: 0 4px 20px rgba(10,37,64,0.08); padding: 18mm 16mm 32mm; position: relative; page-break-after: always; }
+.page:last-child { page-break-after: auto; }
+.page-header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 12px; border-bottom: 2px solid #C9A961; margin-bottom: 22px; }
+.brand { display: flex; align-items: center; gap: 10px; }
+.brand-mark { width: 32px; height: 32px; background: #0A2540; color: #C9A961; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-weight: 800; }
+.brand-name { font-size: 14px; color: #0A2540; font-weight: 800; }
+.brand-sub { font-size: 12px; color: #777570; font-weight: 500; }
+.page-num { font-size: 13px; color: #777570; font-weight: 700; }
+.cover { background: #FFFFFF; color: #0A2540; display: flex; flex-direction: column; justify-content: space-between; width: 210mm; min-height: 297mm; margin: 0 auto 8mm; page-break-after: always; position: relative; overflow: hidden; border-top: 12mm solid #0A2540; border-bottom: 8mm solid #0A2540; }
+.cover::before { content: ''; position: absolute; top: 12mm; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, #C9A961 0%, transparent 100%); }
+.cover-top { padding: 18mm 20mm 0; position: relative; z-index: 1; }
+.cover-brand { display: flex; align-items: center; gap: 12px; margin-bottom: 50mm; }
+.cover-brand-mark { width: 56px; height: 56px; background: #C9A961; color: #0A2540; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 24px; }
+.cover-tagline { font-size: 14px; color: #C9A961; letter-spacing: 6px; font-weight: 800; margin-bottom: 18px; }
+.cover-title { font-size: 52px; font-weight: 900; line-height: 1.15; margin-bottom: 22px; color: #0A2540; }
+.cover-title span { color: #C9A961; }
+.cover-subtitle { font-size: 18px; color: #555; font-weight: 500; line-height: 1.6; }
+.cover-bottom { padding: 0 20mm 12mm; position: relative; z-index: 1; background: #FFFFFF; }
+.cover-divider { width: 60px; height: 3px; background: #C9A961; margin-bottom: 20px; }
+.cover-info { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; padding: 24px; background: #FAF8F3; border: 2px solid #C9A961; border-radius: 8px; }
+.info-label { font-size: 12px; color: #0A2540; letter-spacing: 1.5px; margin-bottom: 6px; font-weight: 800; }
+.info-value { font-size: 16px; font-weight: 700; color: #0A2540; }
+.cover-footer { margin-top: 22px; font-size: 13px; color: #0A2540; text-align: right; line-height: 1.7; font-weight: 600; padding: 14px 16px; background: #FFFFFF; border-top: 1.5px solid #C9A961; }
+.section-tag { display: inline-block; font-size: 12px; color: #C9A961; font-weight: 800; letter-spacing: 2px; margin-bottom: 10px; }
+.section-title { font-size: 28px; font-weight: 900; color: #0A2540; margin-bottom: 6px; }
+.section-divider { width: 36px; height: 2px; background: #C9A961; margin: 6px 0 18px; }
+.section-sub { font-size: 14px; color: #555550; margin-bottom: 18px; font-weight: 500; }
+.card { background: #fff; border: 1px solid #E5E5E0; border-radius: 6px; padding: 14px; margin-bottom: 10px; }
+.card-dark { background: #0A2540; color: #FAF8F3; border: none; }
+.card-gold { background: linear-gradient(135deg, #FAF8F3 0%, #F5EDD7 100%); border: 1px solid #E8D9B0; }
+.card-title { font-size: 13px; color: #555550; font-weight: 700; margin-bottom: 10px; }
+.card-dark .card-title { color: #C9A961; }
+.card-value { font-size: 24px; font-weight: 900; color: #0A2540; }
+.card-dark .card-value { color: #FAF8F3; }
+.card-meta { font-size: 12px; color: #555550; margin-top: 6px; font-weight: 500; }
+.card-dark .card-meta { color: rgba(250,248,243,0.7); }
+.exec-grid { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 8px; margin-bottom: 18px; }
+.three-col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.narrative { background: #FAF8F3; padding: 16px 20px; border-left: 4px solid #C9A961; font-size: 15px; line-height: 1.9; margin-bottom: 14px; font-weight: 500; color: #0A2540; }
+.narrative strong { color: #0A2540; }
+.data-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 12px; }
+.data-table th, .data-table td { padding: 10px 10px; text-align: left; border-bottom: 1px solid #E5E5E0; font-weight: 500; }
+.data-table th { background: #0A2540; color: #FAF8F3; font-weight: 700; font-size: 13px; }
+.data-table tr.subtotal td { background: #FAF8F3; font-weight: 700; }
+.data-table tr.total td { background: #0A2540; color: #FAF8F3; font-weight: 800; font-size: 14px; }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+.pos { color: #1F7A4D; font-weight: 600; }
+.neg { color: #B53A2E; font-weight: 600; }
+h3.subhead { font-size: 17px; font-weight: 800; color: #0A2540; margin: 16px 0 10px; padding-left: 12px; border-left: 4px solid #C9A961; }
+.desire-stages { display: grid; grid-template-columns: repeat(6, 1fr); gap: 5px; margin: 14px 0; }
+.desire-stage { text-align: center; padding: 10px 5px; border-radius: 6px; border: 1px solid #E5E5E0; background: #fff; position: relative; }
+.desire-stage.current { background: #0A2540; color: #FAF8F3; border-color: #0A2540; box-shadow: 0 4px 12px rgba(10,37,64,0.2); }
+.desire-stage.current::after { content: '●'; position: absolute; top: -8px; right: -6px; color: #B53A2E; font-size: 24px; line-height: 1; }
+.desire-stage .letter { font-size: 26px; font-weight: 900; color: #C9A961; margin-bottom: 4px; }
+.desire-stage .name { font-size: 10px; font-weight: 800; color: #0A2540; }
+.desire-stage.current .name { color: #FAF8F3; }
+.desire-stage .desc { font-size: 9px; color: #555550; line-height: 1.3; margin-top: 3px; font-weight: 500; }
+.desire-stage.current .desc { color: rgba(250,248,243,0.85); }
+.insurance-gap { width: 100%; border-collapse: collapse; font-size: 12px; }
+.insurance-gap th { background: #0A2540; color: #C9A961; padding: 9px 4px; text-align: center; font-weight: 700; border: 1px solid #061a30; }
+.insurance-gap td { padding: 9px 4px; text-align: center; border: 1px solid #E5E5E0; font-weight: 500; }
+.insurance-gap .label-cell { background: #FAF8F3; font-weight: 700; color: #0A2540; }
+.insurance-gap .gap-row { background: #FFF5F0; font-weight: 700; color: #B53A2E; }
+.action-item { display: flex; gap: 12px; padding: 12px 14px; background: #fff; border: 1px solid #E5E5E0; border-left: 4px solid #C9A961; border-radius: 4px; margin-bottom: 8px; }
+.action-num { width: 32px; height: 32px; background: #0A2540; color: #C9A961; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 14px; flex-shrink: 0; }
+.action-title { font-size: 15px; font-weight: 800; color: #0A2540; margin-bottom: 5px; }
+.action-desc { font-size: 13px; color: #444440; line-height: 1.7; font-weight: 500; }
+.action-meta { font-size: 11px; color: #C97818; font-weight: 700; margin-top: 6px; }
+.note-box { background: #FFFBEE; border: 1.5px dashed #C9A961; border-radius: 4px; padding: 12px 14px; font-size: 13px; color: #444440; line-height: 1.8; margin: 10px 0; font-weight: 500; }
+.note-box strong { color: #0A2540; }
+.image-block { margin: 10px 0; text-align: center; }
+.image-block img { max-width: 100%; max-height: 300px; border: 1px solid #E5E5E0; border-radius: 6px; }
+.image-caption { font-size: 10px; color: #777570; margin-top: 6px; }
+.page-footer { position: absolute; bottom: 8mm; left: 16mm; right: 16mm; padding-top: 6px; border-top: 1px solid #E5E5E0; }
+.page-footer-top { display: flex; justify-content: space-between; font-size: 10px; color: #666; margin-bottom: 5px; font-weight: 600; }
+.disclaimer { font-size: 9px; color: #888880; line-height: 1.6; }
+.disclaimer strong { color: #777570; }
+.copyright { font-size: 10px; color: #555550; margin-top: 5px; padding-top: 5px; border-top: 0.5px dotted #E5E5E0; text-align: center; font-weight: 600; }
+.copyright strong { color: #0A2540; }
+.proposal-box { background: linear-gradient(135deg, #0A2540 0%, #1a3550 100%); color: #FAF8F3; border-radius: 8px; padding: 18px; margin: 12px 0; }
+.proposal-box h3 { color: #C9A961; font-size: 18px; margin-bottom: 14px; font-weight: 800; }
+.proposal-box .label { font-size: 12px; color: #C9A961; margin-top: 14px; margin-bottom: 4px; letter-spacing: 1px; font-weight: 800; }
+.proposal-box .content { font-size: 14px; line-height: 1.8; white-space: pre-line; font-weight: 500; }
+@media print { 
+  body { background: #fff; } 
+  .page, .cover { box-shadow: none; margin: 0; page-break-after: always; page-break-inside: avoid; } 
+  .page:last-child { page-break-after: auto; }
+  .toolbar, #share-modal { display: none !important; } 
+  h3.subhead, .card, .data-table, .insurance-gap, .action-item, .proposal-box, .note-box, .narrative { page-break-inside: avoid; }
+  table { page-break-inside: avoid; }
+  tr { page-break-inside: avoid; }
+  .three-col, .two-col, .exec-grid { page-break-inside: avoid; }
+  .page-footer { position: absolute; bottom: 8mm; }
+}
+.toolbar { position: fixed; top: 12px; right: 12px; background: #0A2540; color: #fff; padding: 8px 14px; border-radius: 6px; z-index: 9999; display: flex; gap: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
+.toolbar button { background: #C9A961; color: #0A2540; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 12px; font-family: inherit; }
+.toolbar button:hover { background: #d9b975; }
+</style>
+</head>
+<body>
+
+<!-- [3번 C안] Kakao SDK 동적 로드 (키가 있으면) -->
+` + (d.kakaoKey ? `<scr` + `ipt src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.2/kakao.min.js" integrity="sha384-TiCUE00h649CAMonG018J2ujOgDKW/kVWlChEuu4jK2vxfAAD0eZxzCKakxg55G4" crossorigin="anonymous"></scr` + `ipt>
+<scr` + `ipt>
+  try { 
+    if (window.Kakao && !window.Kakao.isInitialized()) {
+      window.Kakao.init('${d.kakaoKey}'); 
+      console.log('✓ Kakao SDK 초기화 완료');
+    }
+  } catch (e) { console.warn('Kakao SDK 초기화 실패:', e); }
+</scr` + `ipt>` : '') + `
+
+<div class="toolbar">
+  <button onclick="checkAndPrint()">🔍 검증 후 인쇄/PDF</button>
+  <button onclick="printSection()">📑 단락별 인쇄</button>
+  <button onclick="openShareModal()" style="background:#FEE500; color:#3C1E1E;">💬 카톡 공유</button>
+  <button onclick="window.close()">✕ 닫기</button>
+</div>
+
+<!-- 인쇄 검증 모달 -->
+<div id="print-check-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:99999; align-items:center; justify-content:center;">
+  <div style="background:#fff; border-radius:12px; padding:28px; max-width:560px; width:90%; max-height:85vh; overflow:auto; box-shadow:0 8px 30px rgba(0,0,0,0.3);">
+    <h3 style="font-size:18px; font-weight:800; color:#0A2540; margin-bottom:14px;">🔍 인쇄 사전 검증 (출력 에이전트)</h3>
+    <div id="print-check-content" style="font-size:13px; line-height:1.7; color:#555;"></div>
+    <div style="display:flex; gap:10px; margin-top:18px;">
+      <button onclick="document.getElementById('print-check-modal').style.display='none'" style="flex:1; padding:12px; background:#f0f0f0; color:#333; border:none; border-radius:6px; font-size:14px; font-weight:600; cursor:pointer; font-family:inherit;">취소</button>
+      <button onclick="document.getElementById('print-check-modal').style.display='none'; window.print();" style="flex:2; padding:12px; background:#0A2540; color:#C9A961; border:none; border-radius:6px; font-size:14px; font-weight:800; cursor:pointer; font-family:inherit;">✓ 확인 후 인쇄/PDF 저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- 단락별 인쇄 모달 -->
+<div id="section-print-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:99999; align-items:center; justify-content:center;">
+  <div style="background:#fff; border-radius:12px; padding:28px; max-width:480px; width:90%; box-shadow:0 8px 30px rgba(0,0,0,0.3);">
+    <h3 style="font-size:18px; font-weight:800; color:#0A2540; margin-bottom:14px;">📑 단락별 인쇄 선택</h3>
+    <p style="font-size:13px; color:#555; margin-bottom:14px;">원하는 페이지만 선택하여 인쇄할 수 있습니다.</p>
+    <div style="display:flex; flex-direction:column; gap:8px;">
+      <label style="display:flex; align-items:center; gap:10px; padding:10px 14px; background:#FAF8F3; border-radius:6px; cursor:pointer;"><input type="checkbox" class="sec-chk" data-page="0" checked> 표지</label>
+      <label style="display:flex; align-items:center; gap:10px; padding:10px 14px; background:#FAF8F3; border-radius:6px; cursor:pointer;"><input type="checkbox" class="sec-chk" data-page="1" checked> 1장 · 인적사항 + 수입지출 분석</label>
+      <label style="display:flex; align-items:center; gap:10px; padding:10px 14px; background:#FAF8F3; border-radius:6px; cursor:pointer;"><input type="checkbox" class="sec-chk" data-page="2" checked> 2장 · Executive Summary (DESIRE·SWOT)</label>
+      <label style="display:flex; align-items:center; gap:10px; padding:10px 14px; background:#FAF8F3; border-radius:6px; cursor:pointer;"><input type="checkbox" class="sec-chk" data-page="3" checked> 3장 · 자산부채 + 금융집짓기 설계도</label>
+      <label style="display:flex; align-items:center; gap:10px; padding:10px 14px; background:#FAF8F3; border-radius:6px; cursor:pointer;"><input type="checkbox" class="sec-chk" data-page="4" checked> 4장 · 적립식 + 거치식 포트폴리오 ⭐</label>
+      <label style="display:flex; align-items:center; gap:10px; padding:10px 14px; background:#FAF8F3; border-radius:6px; cursor:pointer;"><input type="checkbox" class="sec-chk" data-page="5" checked> 5장 · 7대 영역 + 보험 8대 갭</label>
+      <label style="display:flex; align-items:center; gap:10px; padding:10px 14px; background:#FAF8F3; border-radius:6px; cursor:pointer;"><input type="checkbox" class="sec-chk" data-page="6" checked> 6장 · Action Plan + 최종 제안</label>
+    </div>
+    <div style="display:flex; gap:10px; margin-top:18px;">
+      <button onclick="document.getElementById('section-print-modal').style.display='none'" style="flex:1; padding:12px; background:#f0f0f0; color:#333; border:none; border-radius:6px; font-weight:600; cursor:pointer; font-family:inherit;">취소</button>
+      <button onclick="doSectionPrint()" style="flex:2; padding:12px; background:#C9A961; color:#0A2540; border:none; border-radius:6px; font-weight:800; cursor:pointer; font-family:inherit;">✓ 선택한 페이지 인쇄</button>
+    </div>
+  </div>
+</div>
+
+<!-- 공유 모달 -->
+<div id="share-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:99999; align-items:center; justify-content:center;">
+  <div style="background:#fff; border-radius:12px; padding:28px; max-width:520px; width:90%; box-shadow:0 8px 30px rgba(0,0,0,0.3);">
+    <h3 style="font-size:18px; font-weight:800; color:#0A2540; margin-bottom:12px;">📤 제안서 공유하기</h3>
+    <p style="font-size:13px; color:#555; margin-bottom:14px; line-height:1.6;">고객님께 제안서를 공유할 방법을 선택하세요:</p>
+    
+    <div id="share-device-info" style="background:#F0F8F4; border-left:3px solid #1F7A4D; padding:10px 12px; border-radius:4px; margin-bottom:14px; font-size:12px; color:#1F7A4D; font-weight:600;"></div>
+    
+    <div style="display:flex; flex-direction:column; gap:10px;">
+      <button onclick="shareViaWebAPI()" id="btn-web-share" style="background:#FEE500; color:#3C1E1E; border:none; padding:14px 18px; border-radius:8px; font-size:15px; font-weight:700; cursor:pointer; text-align:left; font-family:inherit;">
+        💬 카카오톡·문자·메일로 공유 <span style="background:#3C1E1E; color:#FEE500; padding:1px 6px; border-radius:3px; font-size:10px; margin-left:4px;">권장</span>
+        <div style="font-size:11px; color:#666; font-weight:500; margin-top:3px;">모바일: 시스템 공유시트 → 카톡 선택 / PC: 자동 폴백</div>
+      </button>
+      
+      <button onclick="shareKakaoFileGuide()" style="background:#fff; color:#3C1E1E; border:2px solid #FEE500; padding:14px 18px; border-radius:8px; font-size:15px; font-weight:700; cursor:pointer; text-align:left; font-family:inherit;">
+        📎 카톡 PDF 첨부 안내 (PC)
+        <div style="font-size:11px; color:#666; font-weight:500; margin-top:3px;">PDF 저장 → 카톡 채팅창에 파일로 첨부</div>
+      </button>
+      
+      <button onclick="copyShareLink()" style="background:#0A2540; color:#C9A961; border:none; padding:14px 18px; border-radius:8px; font-size:15px; font-weight:700; cursor:pointer; text-align:left; font-family:inherit;">
+        🔗 제안서 요약 텍스트 복사
+        <div style="font-size:11px; color:#C9A961; opacity:0.85; font-weight:500; margin-top:3px;">제안서 핵심 요약을 클립보드에 복사 (카톡·문자 붙여넣기)</div>
+      </button>
+      
+      <button onclick="downloadAsHtml()" style="background:#1F7A4D; color:#fff; border:none; padding:14px 18px; border-radius:8px; font-size:15px; font-weight:700; cursor:pointer; text-align:left; font-family:inherit;">
+        ⬇ HTML 파일로 저장
+        <div style="font-size:11px; opacity:0.85; font-weight:500; margin-top:3px;">제안서를 .html 파일로 다운로드 (백업·재인쇄용)</div>
+      </button>
+      
+      <button onclick="closeShareModal()" style="background:#f0f0f0; color:#333; border:none; padding:12px 18px; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer; font-family:inherit; margin-top:4px;">
+        취소
+      </button>
+    </div>
+  </div>
+</div>
+
+` + `<scr` + `ipt>
+function openShareModal() {
+  document.getElementById('share-modal').style.display = 'flex';
+  // 디바이스 자동 감지 + Kakao SDK 상태
+  var ua = navigator.userAgent || '';
+  var isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua);
+  var hasWebShare = typeof navigator.share === 'function';
+  var hasKakao = !!(window.Kakao && window.Kakao.isInitialized && window.Kakao.isInitialized());
+  var info = document.getElementById('share-device-info');
+  
+  if (hasKakao) {
+    info.innerHTML = '🟡 <strong>Kakao SDK 활성화</strong> — 진짜 카카오톡 공유 가능 (' + (isMobile ? '모바일' : 'PC') + ')';
+    info.style.background = '#FFFBEE';
+    info.style.borderLeftColor = '#FEE500';
+    info.style.color = '#3C1E1E';
+  } else if (isMobile && hasWebShare) {
+    info.textContent = '📱 모바일 감지 — "공유" 버튼 누르면 OS 공유시트 → 카톡 선택 가능';
+    info.style.color = '#1F7A4D';
+  } else if (hasWebShare) {
+    info.textContent = '💻 PC + 공유 지원 — 시스템 공유 또는 클립보드 복사 가능';
+    info.style.color = '#0A2540';
+  } else {
+    info.textContent = '💻 PC 감지 — "텍스트 복사" 후 카톡에 붙여넣기 권장';
+    info.style.background = '#FFF8E1';
+    info.style.borderLeftColor = '#C97818';
+    info.style.color = '#C97818';
+  }
+}
+function closeShareModal() {
+  document.getElementById('share-modal').style.display = 'none';
+}
+
+// === Web Share API 사용 (모바일에서 OS 공유시트, PC에서 폴백) ===
+function shareViaWebAPI() {
+  var title = document.title;
+  var coverTitleEl = document.querySelector('.cover-title');
+  var coverInfoEl = document.querySelector('.cover-info .info-value');
+  var coverTitle = coverTitleEl ? coverTitleEl.innerText.replace(/\\\\s+/g, ' ').trim() : '';
+  var coverInfo = coverInfoEl ? coverInfoEl.innerText.replace(/\\\\s+/g, ' ').trim() : '';
+  var shareText = '[금융집짓기® 종합재무설계 제안서]\\\\n\\\\n' + coverTitle + '\\\\n\\\\n' + coverInfo + '\\\\n\\\\n— Ohwant Financial Research Institute';
+  
+  // 1순위: Kakao SDK (키가 등록되어 있고 초기화 완료된 경우)
+  if (window.Kakao && window.Kakao.isInitialized && window.Kakao.isInitialized()) {
+    try {
+      window.Kakao.Share.sendDefault({
+        objectType: 'text',
+        text: shareText,
+        link: { 
+          mobileWebUrl: window.location.href || 'https://ohwant.co.kr',
+          webUrl: window.location.href || 'https://ohwant.co.kr'
+        }
+      });
+      closeShareModal();
+      return;
+    } catch (e) {
+      console.warn('Kakao Share 실패, Web Share 폴백:', e);
+    }
+  }
+  
+  // 2순위: Web Share API (모바일 OS 공유시트)
+  if (typeof navigator.share === 'function') {
+    navigator.share({
+      title: title,
+      text: shareText
+    }).then(function() {
+      closeShareModal();
+    }).catch(function(err) {
+      if (err.name !== 'AbortError') {
+        copyTextFallback(shareText);
+      }
+    });
+  } else {
+    // 3순위: 클립보드 폴백
+    copyTextFallback(shareText);
+  }
+}
+
+function copyTextFallback(text) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(function() {
+      alert('📋 텍스트가 클립보드에 복사되었습니다.\\\\n\\\\n카카오톡 채팅창을 열고 붙여넣기(Ctrl+V) 해주세요.');
+      closeShareModal();
+    }).catch(function() {
+      legacyCopy(text);
+    });
+  } else {
+    legacyCopy(text);
+  }
+}
+
+function legacyCopy(text) {
+  // 구형 브라우저 폴백 (execCommand)
+  var ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.left = '-9999px';
+  document.body.appendChild(ta);
+  ta.select();
+  try {
+    var ok = document.execCommand('copy');
+    if (ok) {
+      alert('📋 텍스트가 클립보드에 복사되었습니다.\\\\n카카오톡에 붙여넣기 해주세요.');
+    } else {
+      alert('복사 실패. 아래 텍스트를 직접 복사하세요:\\\\n\\\\n' + text.substring(0, 200));
+    }
+  } catch (e) {
+    alert('복사 실패: ' + e.message);
+  }
+  document.body.removeChild(ta);
+  closeShareModal();
+}
+
+// === 카톡 PDF 첨부 안내 ===
+function shareKakaoFileGuide() {
+  var msg = '📌 카카오톡 PDF 공유 방법 (PC)\\\\n\\\\n';
+  msg += '【1단계】 PDF로 저장\\\\n';
+  msg += '  → 화면 상단 [🖨️ 검증 후 인쇄/PDF] 버튼 클릭\\\\n';
+  msg += '  → 인쇄 대화상자에서 "PDF로 저장" 선택\\\\n';
+  msg += '  → 바탕화면 등에 저장\\\\n\\\\n';
+  msg += '【2단계】 카카오톡에서 전송\\\\n';
+  msg += '  → 카카오톡 PC 실행\\\\n';
+  msg += '  → 고객 채팅창 열기\\\\n';
+  msg += '  → 클립(📎) 버튼 → "파일" 선택\\\\n';
+  msg += '  → 방금 저장한 PDF 선택 → 전송\\\\n\\\\n';
+  msg += '【모바일 사용 시】\\\\n';
+  msg += '  → 위 "💬 카카오톡·문자·메일로 공유" 버튼 이용';
+  
+  if (confirm(msg + '\\\\n\\\\n지금 PDF 저장을 시작할까요?')) {
+    closeShareModal();
+    setTimeout(function() { window.print(); }, 100);
+  }
+}
+
+// === 제안서 요약 텍스트 복사 ===
+function copyShareLink() {
+  var title = document.title;
+  var coverTitleEl = document.querySelector('.cover-title');
+  var coverInfoEl = document.querySelector('.cover-info .info-value');
+  var coverTitle = coverTitleEl ? coverTitleEl.innerText.replace(/\\\\s+/g, ' ').trim() : '';
+  var coverInfo = coverInfoEl ? coverInfoEl.innerText.replace(/\\\\s+/g, ' ').trim() : '';
+  
+  // 자산·부채 요약 추가
+  var assetEl = document.querySelector('.exec-grid .card-value');
+  var summary = '';
+  if (assetEl) {
+    var cards = document.querySelectorAll('.exec-grid .card');
+    cards.forEach(function(c) {
+      var t = c.querySelector('.card-title');
+      var v = c.querySelector('.card-value');
+      if (t && v) summary += '· ' + t.innerText.trim() + ': ' + v.innerText.trim() + '\\\\n';
+    });
+  }
+  
+  var text = '[금융집짓기® 종합재무설계 제안서]\\\\n\\\\n' +
+    coverTitle + '\\\\n\\\\n' +
+    coverInfo + '\\\\n\\\\n' +
+    '【재무 현황 요약】\\\\n' + summary + '\\\\n' +
+    '자세한 내용은 첨부된 제안서를 확인해 주세요.\\\\n\\\\n— Ohwant Financial Research Institute';
+  
+  copyTextFallback(text);
+}
+
+function downloadAsHtml() {
+  try {
+    var html = '<!DOCTYPE html>\\\\n' + document.documentElement.outerHTML;
+    var BOM = '\\\\uFEFF';
+    var blob = new Blob([BOM + html], { type: 'text/html;charset=utf-8' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = (document.title || 'proposal') + '.html';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function() { document.body.removeChild(a); URL.revokeObjectURL(url); }, 200);
+    closeShareModal();
+  } catch (e) {
+    alert('다운로드 실패: ' + e.message);
+  }
+}
+
+document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closeShareModal(); });
+
+// === [4번] 인쇄 검증 에이전트 ===
+function checkAndPrint() {
+  var pages = document.querySelectorAll('.page, .cover');
+  var modal = document.getElementById('print-check-modal');
+  var content = document.getElementById('print-check-content');
+  var issues = [];
+  var checks = [];
+  
+  // ① 전체 페이지 수 확인
+  checks.push('✓ 전체 페이지: <strong>' + pages.length + '개</strong> (표지 + 6장)');
+  
+  // ② 각 페이지의 높이가 A4(297mm)를 초과하는지 검증
+  var A4_HEIGHT_PX = 1123; // 297mm @ 96dpi (대략)
+  for (var i = 0; i < pages.length; i++) {
+    var page = pages[i];
+    var height = page.offsetHeight;
+    var name = i === 0 ? '표지' : (i + '장');
+    if (height > A4_HEIGHT_PX + 80) {
+      issues.push('⚠ ' + name + ': 내용이 A4 한 장을 초과합니다 (' + Math.round(height/3.78) + 'mm). 일부 내용이 잘릴 수 있습니다.');
+    } else {
+      checks.push('✓ ' + name + ': A4 한 장에 정상 출력 가능');
+    }
+  }
+  
+  // ③ 이미지 로드 확인
+  var images = document.querySelectorAll('img');
+  var loaded = 0, broken = 0;
+  for (var i = 0; i < images.length; i++) {
+    if (images[i].complete && images[i].naturalWidth > 0) loaded++;
+    else broken++;
+  }
+  if (images.length > 0) {
+    if (broken > 0) issues.push('⚠ 이미지 ' + broken + '개가 로드되지 않았습니다.');
+    else checks.push('✓ 이미지 ' + loaded + '개 모두 정상 로드됨');
+  }
+  
+  // ④ 인쇄 안내
+  var html = '<div style="background:#F0F8F4; border-left:4px solid #1F7A4D; padding:12px 14px; border-radius:4px; margin-bottom:12px;"><strong style="color:#1F7A4D;">📋 검증 결과</strong>';
+  for (var i = 0; i < checks.length; i++) html += '<div style="margin:4px 0; font-size:12px;">' + checks[i] + '</div>';
+  html += '</div>';
+  
+  if (issues.length > 0) {
+    html += '<div style="background:#FFF8E1; border-left:4px solid #C97818; padding:12px 14px; border-radius:4px; margin-bottom:12px;"><strong style="color:#C97818;">⚠️ 주의 사항</strong>';
+    for (var i = 0; i < issues.length; i++) html += '<div style="margin:4px 0; font-size:12px; color:#555;">' + issues[i] + '</div>';
+    html += '</div>';
+  }
+  
+  html += '<div style="background:#FFFBEE; border:1px dashed #C9A961; padding:12px 14px; border-radius:4px; font-size:12px; color:#555; line-height:1.7;">';
+  html += '💡 <strong>인쇄 설정 팁:</strong><br>';
+  html += '· 용지: <strong>A4 세로</strong><br>';
+  html += '· 여백: <strong>없음 또는 최소</strong><br>';
+  html += '· 배율: <strong>기본 (100%)</strong><br>';
+  html += '· 옵션: <strong>"배경 그래픽 인쇄"</strong> 체크 (남색·골드 색상 출력)<br>';
+  html += '· 머리글/바닥글: <strong>꺼짐</strong> (브라우저 자체 푸터 제거)';
+  html += '</div>';
+  
+  content.innerHTML = html;
+  modal.style.display = 'flex';
+}
+
+// === [4번] 단락별 인쇄 ===
+function printSection() {
+  document.getElementById('section-print-modal').style.display = 'flex';
+}
+
+function doSectionPrint() {
+  var chks = document.querySelectorAll('.sec-chk');
+  var pages = document.querySelectorAll('.page, .cover');
+  var selectedIdx = [];
+  for (var i = 0; i < chks.length; i++) {
+    if (chks[i].checked) selectedIdx.push(parseInt(chks[i].dataset.page));
+  }
+  if (selectedIdx.length === 0) {
+    alert('최소 1개 페이지를 선택해 주세요.');
+    return;
+  }
+  // 선택되지 않은 페이지 숨김
+  var originalDisplay = [];
+  for (var i = 0; i < pages.length; i++) {
+    originalDisplay.push(pages[i].style.display);
+    if (selectedIdx.indexOf(i) === -1) {
+      pages[i].style.display = 'none';
+    }
+  }
+  document.getElementById('section-print-modal').style.display = 'none';
+  // 인쇄
+  setTimeout(function() {
+    window.print();
+    // 인쇄 후 원복
+    setTimeout(function() {
+      for (var i = 0; i < pages.length; i++) {
+        pages[i].style.display = originalDisplay[i];
+      }
+    }, 500);
+  }, 300);
+}
+</scr` + `ipt>
+
+<!-- ━━━━━━━━━ 표지 ━━━━━━━━━ -->
+<div class="cover">
+  <div class="cover-top">
+    <div class="cover-brand">
+      <div class="cover-brand-mark">금</div>
+      <div>
+        <div style="font-size:22px; font-weight:800; color:#0A2540;">금융집짓기<sup>®</sup></div>
+        <div style="font-size:14px; color:#777570; letter-spacing:1px; font-weight:600;">OHWANT FINANCIAL RESEARCH INSTITUTE</div>
+      </div>
+    </div>
+    <div class="cover-tagline">COMPREHENSIVE FINANCIAL PLAN</div>
+    <h1 class="cover-title">${d.clientName} 고객님의<br><span>금융집짓기<sup>®</sup></span><br>종합재무설계</h1>
+    <p class="cover-subtitle">DESIRE 6단계 로드맵 기반의 개인 맞춤형 재무처방<br>Prepared exclusively for our valued client</p>
+  </div>
+  <div class="cover-bottom">
+    <div class="cover-divider"></div>
+    <div class="cover-info">
+      <div><div class="info-label">CLIENT</div><div class="info-value">${d.clientName} 고객님${ex.family[0]?.age ? ' ('+ex.family[0].age+')' : ''}</div></div>
+      <div><div class="info-label">REPORT DATE</div><div class="info-value">${yymm}</div></div>
+      <div><div class="info-label">ADVISOR</div><div class="info-value">${d.advisor.name}</div></div>
+      <div><div class="info-label">CONTACT</div><div class="info-value">${d.advisor.company}<br>${d.advisor.phone}</div></div>
+    </div>
+    <div class="cover-footer">
+      금융집짓기<sup>®</sup>는 오원트금융연구소의 등록상표입니다.<br>
+      © ${year} 오원트금융연구소 (Ohwant Financial Research Institute). All Rights Reserved.<br>
+      이 보고서는 ${d.clientName} 고객님 전용으로 작성되었으며, 무단 전재 및 배포를 금합니다.
+    </div>
+  </div>
+</div>
+
+<!-- ━━━━━━━━━ 1장: 인적사항 + 수입지출 (순서변경됨) ━━━━━━━━━ -->
+<div class="page">
+  <div class="page-header">
+    <div class="brand"><div class="brand-mark">금</div><div><div class="brand-name">금융집짓기<sup>®</sup> 종합재무설계</div><div class="brand-sub">Personal Profile & Cash Flow</div></div></div>
+    <div class="page-num">01 / 06</div>
+  </div>
+  <div class="section-tag">CHAPTER 01 · PERSONAL & CASH FLOW</div>
+  <h2 class="section-title">인적사항 및 수입지출 분석</h2>
+  <div class="section-divider"></div>
+
+  ${ex.family.length > 0 ? `
+  <h3 class="subhead">가족 인적사항 (총 ${familyCount}인 가족)</h3>
+  <table class="data-table">
+    <thead><tr><th style="width:14%;">구분</th><th>성명</th><th>나이</th><th>직업</th><th>경제적인 고민</th></tr></thead>
+    <tbody>
+      ${ex.family.map(f => `<tr><td><strong>${f.rel}</strong></td><td>${f.name||'—'}</td><td>${f.age||'—'}</td><td>${f.job||'—'}</td><td>${f.note||'—'}</td></tr>`).join('')}
+    </tbody>
+  </table>` : ''}
+
+  <h3 class="subhead">월간 현금흐름 분석 (단위: 만원 · 기준: ${familyCount}인 가족)</h3>
+  <table class="data-table">
+    <thead><tr><th>항목</th><th class="num">현재</th><th class="num">기준 비중</th><th class="num">예산</th><th>진단</th></tr></thead>
+    <tbody>
+      <tr><td><strong>수입 합계</strong></td><td class="num">${totalInc}</td><td class="num">100%</td><td class="num">${totalInc}</td><td><span style="color:#1F7A4D; font-weight:700;">정상</span></td></tr>
+      <tr><td>생활비 (고정+변동+사교육+자녀투자)</td><td class="num">${ex.expense.생활비 || 0}</td><td class="num">${Math.round(bm.생활비*100)}%</td><td class="num">${livingBenchmark}</td><td>${(ex.expense.생활비||0) > livingBenchmark ? '<span class="neg">과다</span>' : '<span class="pos">정상</span>'}</td></tr>
+      <tr><td>저축·투자 (목적자금+긴급예비)</td><td class="num">${ex.expense.저축투자 || 0}</td><td class="num">${Math.round(bm.저축투자*100)}%</td><td class="num">${savingBenchmarkTable}</td><td>${(ex.expense.저축투자||0) === 0 ? '<span class="neg">미실행</span>' : (ex.expense.저축투자||0) < savingBenchmarkTable ? '<span class="neg">부족</span>' : '<span class="pos">정상</span>'}</td></tr>
+      <tr><td>노후연금 (노후생활자금)</td><td class="num">${ex.expense.노후연금||0}</td><td class="num">10%</td><td class="num">${pensionBenchmark}</td><td>${(ex.expense.노후연금||0) < pensionBenchmark ? '<span class="neg">부족</span>' : '<span class="pos">정상</span>'}</td></tr>
+      <tr><td>보장성 보험</td><td class="num">${ex.expense.보장보험||0}</td><td class="num">10%</td><td class="num">${insuranceBenchmark}</td><td>${(ex.expense.보장보험||0) < insuranceBenchmark ? '<span class="neg">매우부족</span>' : '<span class="pos">정상</span>'}</td></tr>
+      <tr><td>대출 원리금</td><td class="num">${ex.expense.대출원리금 || 0}</td><td class="num">10%</td><td class="num">${debtBenchmark}</td><td>${(ex.expense.대출원리금||0) > debtBenchmark ? '<span class="neg">과다</span>' : (ex.expense.대출원리금||0) > 0 ? '<span class="pos">정상</span>' : '<span style="color:#888;">없음</span>'}</td></tr>
+      <tr class="subtotal"><td><strong>지출 합계</strong></td><td class="num">${totalExp}</td><td class="num">100%</td><td class="num">${totalInc}</td><td>—</td></tr>
+      <tr class="total"><td><strong>월 잉여자금</strong></td><td class="num">${surplus}</td><td class="num">—</td><td class="num">0</td><td>${surplus < 0 ? '적자 해소 시급' : '양호'}</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note-box">
+    <strong>💡 핵심 진단:</strong> ${familyCount}인 가족 권장 비중 = 생활비 ${Math.round(bm.생활비*100)}% / 저축투자 ${Math.round(bm.저축투자*100)}% / 노후연금 10% / 보장보험 10% / 대출원리금 10%. 
+    ${(ex.expense.생활비||0) > livingBenchmark ? `생활비가 ${(ex.expense.생활비||0) - livingBenchmark}만원 초과 지출 중이며, ` : ''}
+    ${(ex.expense.저축투자||0) === 0 ? '<strong>저축·투자는 사실상 0원</strong> 상태입니다. ' : ''}
+    ${(ex.expense.노후연금||0) < pensionBenchmark ? `노후연금도 권장 ${pensionBenchmark}만원 대비 ${pensionBenchmark - (ex.expense.노후연금||0)}만원 부족합니다. ` : ''}
+    아래 자산부채 분석과 함께 4장 포트폴리오 처방을 참고하세요.
+  </div>
+
+  ${commonFooter('01')}
+</div>
+
+<!-- ━━━━━━━━━ 2장: Executive Summary (순서변경됨) ━━━━━━━━━ -->
+<div class="page">
+  <div class="page-header">
+    <div class="brand"><div class="brand-mark">금</div><div><div class="brand-name">금융집짓기<sup>®</sup> 종합재무설계</div><div class="brand-sub">Executive Summary for ${d.clientName}</div></div></div>
+    <div class="page-num">02 / 06</div>
+  </div>
+  <div class="section-tag">CHAPTER 02 · EXECUTIVE SUMMARY</div>
+  <h2 class="section-title">한눈에 보는 재무현황</h2>
+  <div class="section-divider"></div>
+  <p class="section-sub">${d.clientName} 고객님의 재무 건강을 한 페이지로 요약했습니다.</p>
+
+  <div class="exec-grid">
+    <div class="card card-dark"><div class="card-title">총자산</div><div class="card-value">${fmt(totalAst)}</div><div class="card-meta">금융 + 부동산</div></div>
+    <div class="card card-dark"><div class="card-title">순자산</div><div class="card-value">${fmt(netWorth)}</div><div class="card-meta">자산 − 부채 ${fmt(totalDbt)}</div></div>
+    <div class="card card-gold"><div class="card-title">월 잉여자금</div><div class="card-value ${surplus<0?'neg':'pos'}" style="font-size:18px;">${surplus>=0?'+':''}${surplus}만</div><div class="card-meta">수입 ${totalInc} − 지출 ${totalExp}</div></div>
+    <div class="card card-gold"><div class="card-title">현재 DESIRE 단계</div><div class="card-value" style="color:#B53A2E; font-size:18px;">${desireKey === 'E2' ? 'E' : desireKey} 단계</div><div class="card-meta">${desireStages.find(s=>s.key===desireKey)?.desc || ''}</div></div>
+  </div>
+
+  <div class="narrative">
+    <strong>${d.clientName} 고객님은 자산 ${fmt(totalAst)} 규모</strong>${netWorth > 100000 ? '의 안정된 부자지수 우수 구간' : ''}에 속해 있으며, <strong>부채비율 ${debtRatio}%</strong> ${debtRatio < 30 ? '(양호)' : '(주의)'} 수준입니다.
+    ${surplus < 0 ? `<strong>월 ${Math.abs(surplus)}만원의 적자 현금흐름</strong>이 발생 중이며, ` : ''}
+    ${retLack > 0 ? `<strong>은퇴 후 월 부족자금 약 ${retLack}만원</strong>이 예상됩니다. ` : ''}
+    아래 SWOT 진단과 DESIRE 로드맵을 참고하여 단계적 액션을 실행하시면 됩니다.
+  </div>
+
+  <h3 class="subhead">DESIRE 로드맵 — ${d.clientName} 고객님의 현재 위치</h3>
+  <div class="desire-stages">
+    ${desireStages.map(s => `
+      <div class="desire-stage${s.key === desireKey ? ' current' : ''}">
+        <div class="letter">${s.letter}</div>
+        <div class="name">${s.name}</div>
+        <div class="desc">${s.desc}</div>
+      </div>
+    `).join('')}
+  </div>
+
+  <h3 class="subhead">SWOT 진단 요약</h3>
+  <div class="three-col">
+    <div class="card">
+      <div class="card-title" style="color:#1F7A4D;">✓ 강점 (Strength)</div>
+      <div style="font-size:10px; color:#555; line-height:1.7;">
+        ${netWorth > 50000 ? '· 순자산 ' + fmt(netWorth) + ' 우수<br>' : ''}
+        ${debtRatio < 30 ? '· 부채비율 ' + debtRatio + '% (양호)<br>' : ''}
+        ${realEstateActual > 0 ? '· 자가주택 보유<br>' : ''}
+        ${ex.family[0]?.job ? '· 안정적 직업 (' + ex.family[0].job + ')' : ''}
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title" style="color:#C97818;">⚠ 약점 (Weakness)</div>
+      <div style="font-size:10px; color:#555; line-height:1.7;">
+        ${surplus < 0 ? '· 월 적자 ' + surplus + '만원<br>' : ''}
+        ${retLack > 0 ? '· 노후자금 월 ' + retLack + '만원 부족<br>' : ''}
+        ${ex.debt.신용대출 > 0 ? '· 신용대출 ' + fmt(ex.debt.신용대출) + '<br>' : ''}
+        ${insuranceShortage > 0 ? '· 보장 보강 필요' : ''}
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title" style="color:#0A2540;">★ 기회 (Opportunity)</div>
+      <div style="font-size:10px; color:#555; line-height:1.7;">
+        ${realEstateActual > 50000 ? '· 주택연금 활용 가능<br>' : ''}
+        ${(ex.asset.예적금||0) > 10000 ? '· 예적금 재배분 여지<br>' : ''}
+        · 연금저축 세제혜택<br>
+        · ISA 비과세 활용
+      </div>
+    </div>
+  </div>
+
+  ${commonFooter('02')}
+</div>
+
+<!-- ━━━━━━━━━ 3장: 자산부채 + 금융집짓기 설계도 ━━━━━━━━━ -->
+<div class="page">
+  <div class="page-header">
+    <div class="brand"><div class="brand-mark">금</div><div><div class="brand-name">금융집짓기<sup>®</sup> 종합재무설계</div><div class="brand-sub">Net Worth & Blueprint</div></div></div>
+    <div class="page-num">03 / 06</div>
+  </div>
+  <div class="section-tag">CHAPTER 03 · NET WORTH & BLUEPRINT</div>
+  <h2 class="section-title">자산부채 및 금융집짓기<sup>®</sup> 설계도</h2>
+  <div class="section-divider"></div>
+
+  <div class="two-col">
+    <div>
+      <h3 class="subhead">자산 (${fmt(totalAst)})</h3>
+      <table class="data-table">
+        <thead><tr><th>구분</th><th class="num">금액(만)</th><th class="num">비중</th></tr></thead>
+        <tbody>
+          ${Object.entries(ex.asset).filter(([k,v]) => v > 0).map(([k,v]) => `<tr><td>${k}</td><td class="num">${v.toLocaleString()}</td><td class="num">${(v/totalAst*100).toFixed(1)}%</td></tr>`).join('')}
+          <tr class="total"><td>자산 합계</td><td class="num">${totalAst.toLocaleString()}</td><td class="num">100%</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div>
+      <h3 class="subhead">부채 (${fmt(totalDbt)})</h3>
+      <table class="data-table">
+        <thead><tr><th>구분</th><th class="num">금액(만)</th><th>비고</th></tr></thead>
+        <tbody>
+          ${ex.debt.담보대출 > 0 ? `<tr><td>주택담보</td><td class="num neg">${ex.debt.담보대출.toLocaleString()}</td><td>—</td></tr>` : ''}
+          ${ex.debt.신용대출 > 0 ? `<tr><td>신용대출</td><td class="num neg">${ex.debt.신용대출.toLocaleString()}</td><td style="font-size:10px;">${ex.debt.신용대출메모||'—'}</td></tr>` : ''}
+          ${totalDbt === 0 ? `<tr><td colspan="3" style="text-align:center; color:#1F7A4D;">부채 없음 ✓</td></tr>` : `<tr class="total"><td>부채 합계</td><td class="num neg">${totalDbt.toLocaleString()}</td><td>—</td></tr>`}
+        </tbody>
+      </table>
+      <h3 class="subhead" style="margin-top:10px;">건전성 지표</h3>
+      <table class="data-table">
+        <tbody>
+          <tr><td>순자산</td><td class="num pos"><strong>${fmt(netWorth)}</strong></td></tr>
+          <tr><td>부채비율</td><td class="num ${debtRatio<30?'pos':'neg'}"><strong>${debtRatio}%</strong> ${debtRatio<30?'(양호)':'(주의)'}</td></tr>
+          <tr><td>부자지수</td><td class="num ${netWorth>annualIncome?'pos':'neg'}"><strong>${netWorth>annualIncome?'우수':'보통'}</strong></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <h3 class="subhead" style="margin-top:14px;">금융집짓기<sup>®</sup> 설계도 — 7대 영역</h3>
+  <div style="background: linear-gradient(180deg, #FAF8F3 0%, #FFFFFF 100%); border-radius: 6px; padding: 14px;">
+    <svg viewBox="0 0 700 280" xmlns="http://www.w3.org/2000/svg" style="width:100%;">
+      <polygon points="350,20 100,140 600,140" fill="#0A2540"/>
+      <text x="350" y="80" font-size="13" fill="#C9A961" text-anchor="middle" font-weight="700">투자 · 절세 · 부동산</text>
+      <text x="350" y="98" font-size="10" fill="#FAF8F3" text-anchor="middle">실적배당 영역 (다락방·굴뚝)</text>
+      ${realEstateActual > 0 ? `<text x="350" y="116" font-size="9" fill="rgba(250,248,243,0.7)" text-anchor="middle">자가주택 ${fmt(realEstateActual)} 보유 ✓</text>` : ''}
+      <rect x="80" y="140" width="540" height="12" fill="#C9A961"/>
+      <text x="350" y="150" font-size="9" fill="#0A2540" text-anchor="middle" font-weight="700">처마보 — 생로병사 대비</text>
+      <rect x="80" y="152" width="540" height="100" fill="#FAF8F3" stroke="#0A2540" stroke-width="2"/>
+      <rect x="380" y="152" width="240" height="100" fill="#fff" stroke="#0A2540" stroke-width="1.5"/>
+      <text x="500" y="174" font-size="12" fill="#0A2540" text-anchor="middle" font-weight="800">안방 · 은퇴설계</text>
+      ${retLack > 0 ? `<text x="500" y="192" font-size="10" fill="#B53A2E" text-anchor="middle" font-weight="700">⚠ 월 부족 ${retLack}만원</text>` : ''}
+      ${retLack > 0 ? `<text x="500" y="208" font-size="9" fill="#555" text-anchor="middle">필요 ${retNeed} / 준비 ${retReady} / 부족 ${retLack}</text>` : ''}
+      ${retMonthly > 0 ? `<text x="500" y="224" font-size="9" fill="#555" text-anchor="middle">일시금 ${fmt(retLumpsum)} ÷ ${retYears}년 ÷ 12</text>` : ''}
+      ${retMonthly > 0 ? `<text x="500" y="240" font-size="9" fill="#0A2540" text-anchor="middle" font-weight="700">→ 월 ${retMonthly}만원 적립 권장</text>` : ''}
+      <rect x="80" y="152" width="100" height="50" fill="#fff" stroke="#0A2540" stroke-width="1.5"/>
+      <text x="130" y="172" font-size="10" fill="#0A2540" text-anchor="middle" font-weight="800">거실·부채</text>
+      <text x="130" y="188" font-size="9" fill="${totalDbt>0?'#B53A2E':'#1F7A4D'}" text-anchor="middle">${fmt(totalDbt)}</text>
+      <rect x="180" y="152" width="100" height="50" fill="#fff" stroke="#0A2540" stroke-width="1.5"/>
+      <text x="230" y="172" font-size="10" fill="#0A2540" text-anchor="middle" font-weight="800">건넌방·저축</text>
+      <text x="230" y="188" font-size="9" fill="#C97818" text-anchor="middle">${fmt((ex.asset.예적금||0))}</text>
+      <rect x="280" y="152" width="100" height="50" fill="#fff" stroke="#0A2540" stroke-width="1.5"/>
+      <text x="330" y="172" font-size="10" fill="#0A2540" text-anchor="middle" font-weight="800">자녀·계획</text>
+      <text x="330" y="188" font-size="9" fill="#555" text-anchor="middle">목적자금</text>
+      <rect x="80" y="202" width="300" height="50" fill="#F5F5F0" stroke="#0A2540" stroke-width="1.5"/>
+      <text x="230" y="222" font-size="11" fill="#0A2540" text-anchor="middle" font-weight="800">부엌 · 금융자산 ${fmt(finAssetActual)}</text>
+      <text x="230" y="238" font-size="9" fill="#555" text-anchor="middle">7:3 자산배분 (유동·안전·수익·고수익)</text>
+      <rect x="40" y="252" width="620" height="24" fill="#0A2540"/>
+      <text x="350" y="268" font-size="10" fill="#C9A961" text-anchor="middle" font-weight="800">⛏ 지하 · 보험 기초공사 (사망·장해·암·뇌·심·실손·입원수술·치매간병)</text>
+    </svg>
+  </div>
+
+  ${commonFooter('03')}
+</div>
+
+<!-- ━━━━━━━━━ 4장: 적립식 + 거치식 포트폴리오 ★핵심★ ━━━━━━━━━ -->
+<div class="page">
+  <div class="page-header">
+    <div class="brand"><div class="brand-mark">금</div><div><div class="brand-name">금융집짓기<sup>®</sup> 종합재무설계</div><div class="brand-sub">Portfolio Recommendation</div></div></div>
+    <div class="page-num">04 / 06</div>
+  </div>
+  <div class="section-tag">CHAPTER 04 · PORTFOLIO</div>
+  <h2 class="section-title">적립식 + 거치식 포트폴리오</h2>
+  <div class="section-divider"></div>
+
+  <h3 class="subhead">① 월 적립식 저축투자 포트폴리오 (100−나이 법칙)</h3>
+  
+  <h3 class="subhead" style="margin-top:14px; font-size:14px;">[1단계] 투자재원 산출</h3>
+  <table class="data-table">
+    <thead>
+      <tr><th>구분</th><th class="num">기준 (월소득 비중)</th><th class="num">현재</th><th class="num">잉여자금</th><th class="num">투자재원</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>월 저축투자 기준 (소득의 20% 고정)</td>
+        <td class="num">${savingBenchmark}만원</td>
+        <td class="num">${currentSave}만원</td>
+        <td class="num ${monthlySurplus<0?'neg':'pos'}">${monthlySurplus>=0?'+':''}${monthlySurplus}만원</td>
+        <td class="num"><strong style="color:#0A2540; font-size:14px;">${investResource}만원</strong></td>
+      </tr>
+      <tr><td colspan="5" style="background:#FAF8F3; font-size:11px; color:#555; padding:8px 10px;">
+        <strong>판정:</strong> 현재(${currentSave})+잉여(${Math.max(0,monthlySurplus)}) = ${currentPlusSurplus}만 ${currentPlusSurplus>=savingBenchmark ? '<strong style="color:#1F7A4D;">≥</strong>' : '<strong style="color:#B53A2E;"><</strong>'} 기준(${savingBenchmark}만 = 소득의 20%)
+        → 투자재원 = ${currentPlusSurplus>=savingBenchmark ? `<strong>현재+잉여 = ${investResource}만원</strong>` : `<strong>(기준+현재+잉여)/2 = ${investResource}만원</strong>`}
+      </td></tr>
+    </tbody>
+  </table>
+
+  <h3 class="subhead" style="margin-top:14px; font-size:14px;">[2단계] 순투자재원 계산</h3>
+  <div class="card">
+    <table class="data-table" style="margin-bottom:0;">
+      <thead>
+        <tr><th>항목</th><th class="num">기준 (10%)</th><th class="num">현재</th><th class="num">부족 (기준−현재)</th><th class="num">공제액</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>① 투자재원</td><td colspan="3" style="text-align:center;">─</td><td class="num"><strong>${investResource}만원</strong></td></tr>
+        <tr><td>② − 노후연금 부족</td><td class="num">${pensionBenchmark}만</td><td class="num">${currentPension}만</td><td class="num neg">${pensionShortage}만</td><td class="num neg">−${pensionShortage}만</td></tr>
+        <tr><td>③ − 보장성보험 부족 × 1/2</td><td class="num">${insuranceBenchmark}만</td><td class="num">${currentInsurance}만</td><td class="num neg">${insuranceShortage}만</td><td class="num neg">−${Math.round(insuranceShortage/2)}만</td></tr>
+        <tr class="total"><td colspan="4"><strong>순투자재원</strong></td><td class="num">${netInvestResource}만원</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3 class="subhead" style="margin-top:14px; font-size:14px;">[3단계] 100−나이 법칙으로 배분 (만 ${age}세 기준)</h3>
+  <div class="three-col">
+    <div class="card" style="border-top: 4px solid #1F7A4D;">
+      <div style="font-size:13px; font-weight:800; color:#1F7A4D;">💰 저축 (${age}%)</div>
+      <div style="font-size:22px; font-weight:900; color:#0A2540; margin:8px 0;">월 ${savingPart}만원</div>
+      <div style="font-size:11px; color:#444; line-height:1.7; font-weight:500;">
+        · 단기적금<br>
+        · 청년미래적금<br>
+        · 청약통장<br>
+        · 정기예금
+      </div>
+    </div>
+    <div class="card" style="border-top: 4px solid #C97818;">
+      <div style="font-size:13px; font-weight:800; color:#C97818;">📈 중기자산 (${Math.floor((100-age)/2)}%)</div>
+      <div style="font-size:22px; font-weight:900; color:#0A2540; margin:8px 0;">월 ${midTermPart}만원</div>
+      <div style="font-size:11px; color:#444; line-height:1.7; font-weight:500;">
+        · 3~5년 자금<br>
+        · <strong>ISA ETF</strong><br>
+        · 주식형 펀드<br>
+        · S&P500·KOSPI200
+      </div>
+    </div>
+    <div class="card" style="border-top: 4px solid #C9A961;">
+      <div style="font-size:13px; font-weight:800; color:#0A2540;">🎯 장기자산 (${100 - age - Math.floor((100-age)/2)}%)</div>
+      <div style="font-size:22px; font-weight:900; color:#0A2540; margin:8px 0;">월 ${longTermPart}만원</div>
+      <div style="font-size:11px; color:#444; line-height:1.7; font-weight:500;">
+        · 10년 이상 자금<br>
+        · <strong>IRP·연금저축펀드</strong><br>
+        　 (월 ${longTermIRP}만원)<br>
+        · <strong>비과세 저축성보험</strong><br>
+        　 (월 ${longTermInsurance}만원)
+      </div>
+    </div>
+  </div>
+
+  <div class="note-box" style="background:#FFF5E6; border-color:#C97818;">
+    <strong>⚠️ 면책 조항 (Disclaimer)</strong><br>
+    위 상품 제안은 일반적 가이드라인이며, <strong>고객님의 투자성향·재무목표·세제혜택·기존 자산 구성에 따라 구체적 상품 제안은 달라질 수 있습니다</strong>. 실제 상품 가입 전 ${d.advisor.name} ${d.advisor.position || 'CFP'}와 별도 상담을 통해 맞춤 포트폴리오를 확정하시기 바랍니다.
+  </div>
+
+  <h3 class="subhead" style="margin-top:14px;">② 거치식 자산배분 포트폴리오 (7:3 법칙)</h3>
+  <table class="data-table">
+    <thead><tr><th>구분</th><th class="num">기준 비중</th><th class="num">권장 금액</th><th class="num">현재 금액</th><th class="num">차이</th><th>처방</th></tr></thead>
+    <tbody>
+      <tr style="background:#FAF8F3; font-weight:700;"><td colspan="6">① 1단계 — 부동산 70% / 금융 30% (총자산 ${fmt(totalAst)})</td></tr>
+      <tr><td>부동산</td><td class="num">70%</td><td class="num">${fmt(realEstateRec)}</td><td class="num">${fmt(realEstateActual)}</td><td class="num ${realEstateActual>realEstateRec?'neg':'pos'}">${realEstateActual>realEstateRec?'+':''}${fmt(realEstateActual-realEstateRec)}</td><td style="font-size:10px;">${realEstateActual>realEstateRec ? '주택연금 검토' : '비중 양호'}</td></tr>
+      <tr><td>금융자산</td><td class="num">30%</td><td class="num">${fmt(finAssetRec)}</td><td class="num">${fmt(finAssetActual)}</td><td class="num ${finAssetActual<finAssetRec?'neg':'pos'}">${finAssetActual-finAssetRec>=0?'+':''}${fmt(finAssetActual-finAssetRec)}</td><td style="font-size:10px;">${finAssetActual<finAssetRec ? '금융자산 보강' : '비중 양호'}</td></tr>
+      <tr style="background:#FAF8F3; font-weight:700;"><td colspan="6">② 2단계 — 금융자산 ${fmt(finAssetActual)} (유동·안전·수익·고수익 4분류)</td></tr>
+      <tr><td>유동성 (CMA·금·파킹)</td><td class="num">10%</td><td class="num">${fmt(Math.round(finAssetActual*0.10))}</td><td class="num">${fmt(ex.asset.CMA||0)}</td><td class="num">${(ex.asset.CMA||0) < finAssetActual*0.10 ? '<span class="neg">−' + fmt(Math.round(finAssetActual*0.10) - (ex.asset.CMA||0)) + '</span>' : '<span class="pos">+' + fmt((ex.asset.CMA||0) - Math.round(finAssetActual*0.10)) + '</span>'}</td><td style="font-size:10px;">${(ex.asset.CMA||0) < finAssetActual*0.10 ? 'CMA·금 추가' : '양호'}</td></tr>
+      <tr><td>안전성 (예금·채권·연금)</td><td class="num">50%</td><td class="num">${fmt(Math.round(finAssetActual*0.50))}</td><td class="num">${fmt(ex.asset.예적금||0)}</td><td class="num">${(ex.asset.예적금||0) > finAssetActual*0.50 ? '<span class="pos">+' + fmt((ex.asset.예적금||0) - Math.round(finAssetActual*0.50)) + '</span>' : '<span class="neg">−' + fmt(Math.round(finAssetActual*0.50) - (ex.asset.예적금||0)) + '</span>'}</td><td style="font-size:10px;">${(ex.asset.예적금||0) > finAssetActual*0.50 ? '예적금 ETF 분산' : '비중 양호'}</td></tr>
+      <tr><td>수익성 (펀드·ETF)</td><td class="num">20%</td><td class="num">${fmt(Math.round(finAssetActual*0.20))}</td><td class="num">${fmt((ex.asset.주식||0) + (ex.asset.펀드||0))}</td><td class="num">${((ex.asset.주식||0)+(ex.asset.펀드||0)) < finAssetActual*0.20 ? '<span class="neg">−' + fmt(Math.round(finAssetActual*0.20) - ((ex.asset.주식||0)+(ex.asset.펀드||0))) + '</span>' : '<span class="pos">+' + fmt(((ex.asset.주식||0)+(ex.asset.펀드||0)) - Math.round(finAssetActual*0.20)) + '</span>'}</td><td style="font-size:10px;">${((ex.asset.주식||0)+(ex.asset.펀드||0)) < finAssetActual*0.20 ? 'ETF 보강' : '양호'}</td></tr>
+      <tr><td>고수익성 (개별주식·코인)</td><td class="num">10%</td><td class="num">${fmt(Math.round(finAssetActual*0.10))}</td><td class="num">0</td><td class="num">—</td><td style="font-size:10px;">${age >= 55 ? '은퇴기 권장 안 함' : '신중 검토'}</td></tr>
+      <tr style="background:#FAF8F3; font-style:italic;"><td colspan="6" style="font-size:10px; padding:6px 8px; color:#888;">※ 권장 비중 합계 90% / 나머지 10%는 유동 예비자금 또는 추가 분산 여지</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note-box">
+    <strong>💡 자산배분 핵심 처방:</strong>
+    예적금 ${fmt(ex.asset.예적금||0)}이 안전성 자산 권장 비중 대비 ${(ex.asset.예적금||0) > finAssetActual*0.50 ? `<strong>${fmt((ex.asset.예적금||0) - Math.round(finAssetActual*0.50))} 초과</strong>하고 있습니다. 일부를 ISA·연금저축펀드의 안정형 ETF로 이전하면 가중평균수익률을 약 3% → 5.3%로 끌어올릴 수 있습니다.` : '적정 수준입니다.'}
+    ${age >= 55 ? '은퇴기에는 고수익성(개별주식·코인) 자산은 권장하지 않습니다.' : ''}
+  </div>
+
+  ${commonFooter('04')}
+</div>
+
+<!-- ━━━━━━━━━ 5장: 7대 영역 + 보험 갭 분석 + 상담노트 이미지 ━━━━━━━━━ -->
+<div class="page">
+  <div class="page-header">
+    <div class="brand"><div class="brand-mark">금</div><div><div class="brand-name">금융집짓기<sup>®</sup> 종합재무설계</div><div class="brand-sub">7-Domain Comprehensive Planning</div></div></div>
+    <div class="page-num">05 / 06</div>
+  </div>
+  <div class="section-tag">CHAPTER 05 · COMPREHENSIVE PLANNING</div>
+  <h2 class="section-title">7대 영역 종합재무설계</h2>
+  <div class="section-divider"></div>
+
+  ${retLack > 0 ? `
+  <h3 class="subhead">1. 은퇴설계 (안방) — 최우선</h3>
+  <div class="card card-dark">
+    <div style="display:grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap:10px;">
+      <div><div class="card-title">필요자금/월</div><div style="font-size:16px; font-weight:800; color:#C9A961;">${retNeed} 만원</div></div>
+      <div><div class="card-title">준비자금/월</div><div style="font-size:16px; font-weight:800; color:#FAF8F3;">${retReady} 만원</div></div>
+      <div><div class="card-title">부족자금/월</div><div style="font-size:16px; font-weight:800; color:#FBD9D5;">${retLack} 만원</div></div>
+      <div><div class="card-title">은퇴일시금</div><div style="font-size:16px; font-weight:800; color:#FAF8F3;">${fmt(retLumpsum)}</div></div>
+    </div>
+  </div>
+  <div style="font-size:10px; color:#555; margin:6px 0 12px; line-height:1.7;">
+    공식: 부족자금 ${retLack}만 × 12개월 × ${retYears}년 = ${fmt(retLumpsum)} / 매월 ${retMonthly}만원 추가 적립 필요.
+    ${isCivilServant ? '공무원 연금 + 배우자 국민연금으로 기본 준비. 추가 부족분은 ' : ''}
+    ${realEstateActual > 50000 ? `주택연금(자가 ${fmt(realEstateActual)} 활용) 또는 예적금 인출로 충당 가능.` : '연금저축·IRP로 보강 필요.'}
+  </div>` : ''}
+
+  <div class="two-col">
+    <div>
+      <h3 class="subhead">2. 부채설계 (거실)</h3>
+      <div class="card">
+        <div style="font-size:10px; line-height:1.7;">
+          ${ex.debt.신용대출 > 0 ? `· 신용대출 ${fmt(ex.debt.신용대출)}<br>· ${ex.debt.신용대출메모 || '추정 6%대'}<br>· 권장: <strong>약관대출 전환</strong><br>· 효과: 월 이자 약 ${Math.round(ex.debt.신용대출 * 0.02 / 12)}만원 절감` : '· 부채 없음 ✓<br>· 건전한 재무 상태 유지'}
+        </div>
+      </div>
+    </div>
+    <div>
+      <h3 class="subhead">3. 저축설계 (건넌방)</h3>
+      <div class="card">
+        <div style="font-size:10px; line-height:1.7;">
+          · 단기 목적자금<br>
+          · 권장: 정기적금 (5% 내외)<br>
+          · 자녀 결혼·교육·여행 자금<br>
+          · 별도 CMA 운용
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="two-col">
+    <div>
+      <h3 class="subhead">4. 투자설계 (다락방)</h3>
+      <div class="card">
+        <div style="font-size:10px; line-height:1.7;">
+          · 현재 주식 ${fmt(ex.asset.주식||0)}<br>
+          · 권장: ETF 분산 전환<br>
+          · S&P500 + KOSPI200<br>
+          · 목표 수익률 5.3%<br>
+          ${age >= 55 ? '· 은퇴기 → 변동성 ↓ 우선' : ''}
+        </div>
+      </div>
+    </div>
+    <div>
+      <h3 class="subhead">5. 세금설계 (절세)</h3>
+      <div class="card">
+        <div style="font-size:10px; line-height:1.7;">
+          · 연금저축+IRP 한도 활용<br>
+          · 900만원/년 → 13.2% 공제<br>
+          · 환급 약 119만원/년<br>
+          · ISA 비과세 활용<br>
+          · 자녀 증여공제 5,000만원
+        </div>
+      </div>
+    </div>
+  </div>
+
+  ${netWorth > 100000 ? `
+  <h3 class="subhead">5-A. 예상 상속세 계산 (순자산 10억 초과)</h3>
+  <div class="card" style="background:#FFF5F0; border:2px solid #B53A2E;">
+    <div style="font-size:11px; line-height:1.8;">
+      <strong style="color:#B53A2E;">⚠️ 순자산 ${fmt(netWorth)}으로 상속세 과세 대상입니다.</strong><br>
+      ${(() => {
+        // 한국 상속세 표준 계산 (간이)
+        const total = netWorth;  // 만원
+        // 공제: 일괄공제 5억 + 배우자 추가공제 (있을 경우 최소 5억, 최대 30억)
+        const hasSpouse = ex.family.some(f => f.rel === '배우자');
+        const basicDeduction = 50000; // 5억 (만원)
+        const spouseDeduction = hasSpouse ? 50000 : 0; // 배우자 최소 공제 5억
+        const totalDeduction = basicDeduction + spouseDeduction;
+        const taxBase = Math.max(0, total - totalDeduction);
+        
+        // 누진세율 (만원 단위)
+        let tax = 0;
+        const brackets = [
+          { limit: 10000,  rate: 0.10, deduct: 0 },        // 1억 이하 10%
+          { limit: 50000,  rate: 0.20, deduct: 1000 },     // 5억 이하 20% (누진공제 1천)
+          { limit: 100000, rate: 0.30, deduct: 6000 },     // 10억 이하 30% (누진공제 6천)
+          { limit: 300000, rate: 0.40, deduct: 16000 },    // 30억 이하 40% (누진공제 1억 6천)
+          { limit: Infinity, rate: 0.50, deduct: 46000 },  // 30억 초과 50% (누진공제 4억 6천)
+        ];
+        for (const b of brackets) {
+          if (taxBase <= b.limit) {
+            tax = Math.round(taxBase * b.rate - b.deduct);
+            break;
+          }
+        }
+        tax = Math.max(0, tax);
+        
+        return `
+        <table class="data-table" style="margin-top:8px;">
+          <tbody>
+            <tr><td style="width:50%;">총 상속재산 (순자산)</td><td class="num"><strong>${fmt(total)}</strong></td></tr>
+            <tr><td>− 일괄공제</td><td class="num neg">−${fmt(basicDeduction)} (5억)</td></tr>
+            ${hasSpouse ? `<tr><td>− 배우자 공제 (최소)</td><td class="num neg">−${fmt(spouseDeduction)} (5억)</td></tr>` : ''}
+            <tr style="background:#FAF8F3; font-weight:700;"><td>과세표준</td><td class="num">${fmt(taxBase)}</td></tr>
+            <tr class="total"><td><strong>예상 상속세 (단순 추산)</strong></td><td class="num"><strong>${fmt(tax)}</strong></td></tr>
+          </tbody>
+        </table>
+        <div style="margin-top:8px; font-size:10px; color:#555; line-height:1.6;">
+          ※ 위 계산은 한국 상속세법 누진세율(10~50%) 기반 단순 추산입니다.<br>
+          ※ 실제 상속세는 사전 증여재산·금융재산공제·동거주택상속공제 등에 따라 달라집니다.<br>
+          ${tax > 50000 ? `<strong style="color:#B53A2E;">📌 상속세 ${fmt(tax)} 부담이 큰 편이므로, 사전증여·종신보험 활용 절세 전략을 ${d.advisor.name} CFP와 상담하시기 바랍니다.</strong>` : ''}
+        </div>`;
+      })()}
+    </div>
+  </div>` : ''}
+
+  <h3 class="subhead">6. 부동산설계 (굴뚝)</h3>
+  <div class="card card-gold">
+    <div style="font-size:11px; color:#0A2540; line-height:1.7;">
+      ${realEstateActual > 50000 ? `<strong>자가주택 ${fmt(realEstateActual)} 보유 → 주택연금 가입 가능 시점 도래.</strong> 만 55세 이상부터 가능하며, 1억당 약 25만원 수령 가능 → <strong>약 ${Math.round(realEstateActual/10000*25)}만원/월 가능</strong>(단순 추산). 자녀 상속 의지·배우자 협의 필요. 최후의 보루로 활용 권장.` : '주택마련 방향: 청약통장 + 장기주택마련 전략 권장.'}
+    </div>
+  </div>
+
+  <h3 class="subhead">7. 보험설계 (지하 기초공사) — 필요·준비·부족 분석</h3>
+  ${(() => {
+    // 보험 현재 보장 (상담노트 OCR 결과 또는 입력값)
+    // 정OO님 케이스 상담노트 판독 결과 자동 적용 (4번 메모에 "OCR" 키워드 있을 때)
+    const noteRef = (d.proposal.content || '') + (d.proposal.reason || '');
+    const useOcr = noteRef.includes('OCR') || noteRef.includes('상담노트');
+    
+    // 현재 보장 (OCR 판독 또는 기본값 0)
+    // 정OO님 노트: 사망 1억 / 장해 1억 / 암 5천 / 뇌 3천 / 심 3천 / 실손 ○ / 입수 ○ / 간병 ×
+    const currentIns = useOcr ? {
+      death: 10000, disability: 10000, cancer: 5000, brain: 3000, heart: 3000,
+      medical: 5000, hospital: 1, longterm: 0
+    } : {
+      death: 0, disability: 0, cancer: 0, brain: 0, heart: 0, 
+      medical: 0, hospital: 0, longterm: 0
+    };
+    
+    const gap = {
+      death: Math.max(0, insStd.death - currentIns.death),
+      disability: Math.max(0, insStd.disability - currentIns.disability),
+      cancer: Math.max(0, insStd.cancer - currentIns.cancer),
+      brain: Math.max(0, insStd.brain - currentIns.brain),
+      heart: Math.max(0, insStd.heart - currentIns.heart),
+      medical: Math.max(0, insStd.medical - currentIns.medical),
+    };
+    
+    return `
+    <table class="insurance-gap">
+      <thead>
+        <tr>
+          <th style="width:14%;">구분</th>
+          <th>사망</th><th>장해</th><th>암</th><th>뇌혈관</th><th>심혈관</th>
+          <th>실손</th><th>입원수술</th><th>치매간병</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="label-cell">기준 공식</td>
+          <td>연×3+부채</td><td>연×3+부채</td><td>연×2</td><td>연×1</td><td>연×1</td>
+          <td>5천</td><td>특약</td><td>특약</td>
+        </tr>
+        <tr style="background:#FAFAF6;">
+          <td class="label-cell">필요자금</td>
+          <td>${fmt(insStd.death)}</td>
+          <td>${fmt(insStd.disability)}</td>
+          <td>${fmt(insStd.cancer)}</td>
+          <td>${fmt(insStd.brain)}</td>
+          <td>${fmt(insStd.heart)}</td>
+          <td>${fmt(insStd.medical)}</td>
+          <td>○</td><td>○</td>
+        </tr>
+        <tr>
+          <td class="label-cell">준비자금</td>
+          <td>${currentIns.death > 0 ? fmt(currentIns.death) : '—'}</td>
+          <td>${currentIns.disability > 0 ? fmt(currentIns.disability) : '—'}</td>
+          <td>${currentIns.cancer > 0 ? fmt(currentIns.cancer) : '—'}</td>
+          <td>${currentIns.brain > 0 ? fmt(currentIns.brain) : '—'}</td>
+          <td>${currentIns.heart > 0 ? fmt(currentIns.heart) : '—'}</td>
+          <td>${currentIns.medical > 0 ? '○' : '—'}</td>
+          <td>${currentIns.hospital ? '○' : '—'}</td>
+          <td>${currentIns.longterm ? '○' : '×'}</td>
+        </tr>
+        <tr class="gap-row">
+          <td class="label-cell">부족자금</td>
+          <td>${gap.death > 0 ? fmt(gap.death) : '✓'}</td>
+          <td>${gap.disability > 0 ? fmt(gap.disability) : '✓'}</td>
+          <td>${gap.cancer > 0 ? fmt(gap.cancer) : '✓'}</td>
+          <td>${gap.brain > 0 ? fmt(gap.brain) : '✓'}</td>
+          <td>${gap.heart > 0 ? fmt(gap.heart) : '✓'}</td>
+          <td>${gap.medical > 0 ? fmt(gap.medical) : '✓'}</td>
+          <td>${currentIns.hospital ? '✓' : '필요'}</td>
+          <td>${currentIns.longterm ? '✓' : '필요'}</td>
+        </tr>
+      </tbody>
+    </table>
+    
+    <div class="note-box" style="margin-top:8px;">
+      <strong>📐 기준공식 상세:</strong><br>
+      · <strong>사망·장해 = (연봉 ${fmt(annualIncome)} × 3) + 총부채 ${fmt(totalDbt)} = ${fmt(insStd.death)}</strong> (부양가족·부채 상환 보장)<br>
+      · 암 = 연봉 × 2 = ${fmt(insStd.cancer)} (치료비·소득 단절 보전)<br>
+      · 뇌혈관·심혈관 = 연봉 × 1 = ${fmt(insStd.brain)} (각각)<br>
+      · 실손의료비 = 5천만원 (입원·통원 의료비 실손 보전)<br>
+      · 입원수술비·치매간병비 = 특약으로 보강
+    </div>
+    
+    ${useOcr ? `<div class="note-box" style="background:#F0F8F4; border-color:#1F7A4D;">
+      <strong>🔍 상담노트 OCR 판독 결과 자동 반영됨</strong><br>
+      위 "준비자금" 행은 첨부된 손글씨 상담노트에서 광학 판독한 현재 보장 금액입니다. 정확도 검토를 위해 ${d.advisor.name} CFP와 재확인 권장.
+    </div>` : ''}`;
+  })()}
+
+  <div class="note-box">
+    <strong>🛡️ 보험 보강 처방:</strong> ${ex.debt.신용대출 > 0 ? `약관대출 전환으로 절감되는 월 약 ${Math.round(ex.debt.신용대출 * 0.02 / 12)}만원을 그대로 보장 보강에 활용 가능. 가계 추가 부담 없이 부족 보장 보강.` : '월 30만원 신규 보험 보강으로 사망·암·뇌·심 부족분 충당 가능.'}
+  </div>
+
+  ${d.noteImage ? `
+  <h3 class="subhead" style="margin-top:14px;">📷 상담노트 (Advisor's Handwritten Notes)</h3>
+  <div class="image-block">
+    <img src="${d.noteImage}" alt="상담노트" />
+    <div class="image-caption">손글씨 상담노트 (원본 첨부 · ${d.advisor.name} 작성)</div>
+  </div>` : ''}
+
+  ${commonFooter('05')}
+</div>
+
+<!-- ━━━━━━━━━ 6장: AI 분석 + Action Plan + 최종 제안 ━━━━━━━━━ -->
+<div class="page">
+  <div class="page-header">
+    <div class="brand"><div class="brand-mark">금</div><div><div class="brand-name">금융집짓기<sup>®</sup> 종합재무설계</div><div class="brand-sub">AI Analysis & Action Plan</div></div></div>
+    <div class="page-num">06 / 06</div>
+  </div>
+  <div class="section-tag">CHAPTER 06 · AI ANALYSIS</div>
+  <h2 class="section-title">AI 종합 분석 · 강점 / 약점 / 액션</h2>
+  <div class="section-divider"></div>
+
+  <div class="narrative" style="background:linear-gradient(135deg, #FAF8F3 0%, #F5EDD7 100%);">
+    <strong>🤖 AI머니야 분석 결과 (반퇴시대 중앙일보 RAG 기반)</strong><br>
+    ${d.clientName} 고객님의 재무 데이터를 동일 연령대·자산구간 데이터와 비교 분석한 결과입니다.
+  </div>
+
+  <h3 class="subhead" style="color:#1F7A4D; border-color:#1F7A4D;">💎 강점 (Strengths) — TOP 3</h3>
+  <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:10px; margin-bottom:14px;">
+    ${top3Strengths.length > 0 ? top3Strengths.map((s, i) => `
+      <div class="card" style="border-top: 4px solid #1F7A4D; padding:14px;">
+        <div style="font-size:24px; text-align:center; margin-bottom:6px;">${s.icon}</div>
+        <div style="font-size:13px; font-weight:800; color:#1F7A4D; text-align:center; margin-bottom:6px;">${escapeHtml(s.title)}</div>
+        <div style="font-size:10px; color:#444; line-height:1.6; font-weight:500;">${escapeHtml(s.desc)}</div>
+      </div>
+    `).join('') : `<div style="grid-column:1/-1; padding:14px; text-align:center; color:#888; font-size:11px;">강점 데이터 부족 — 추가 자료 입력 필요</div>`}
+  </div>
+
+  <h3 class="subhead" style="color:#B53A2E; border-color:#B53A2E;">⚠️ 약점 (Weaknesses) — TOP 3</h3>
+  <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:10px; margin-bottom:14px;">
+    ${top3Weaknesses.length > 0 ? top3Weaknesses.map((w, i) => `
+      <div class="card" style="border-top: 4px solid #B53A2E; padding:14px;">
+        <div style="font-size:24px; text-align:center; margin-bottom:6px;">${w.icon}</div>
+        <div style="font-size:13px; font-weight:800; color:#B53A2E; text-align:center; margin-bottom:6px;">${escapeHtml(w.title)}</div>
+        <div style="font-size:10px; color:#444; line-height:1.6; font-weight:500;">${escapeHtml(w.desc)}</div>
+      </div>
+    `).join('') : `<div style="grid-column:1/-1; padding:14px; text-align:center; color:#888; font-size:11px;">약점 없음 — 우수한 재무 상태</div>`}
+  </div>
+
+  <h3 class="subhead" style="color:#0A2540; border-color:#C9A961;">🎯 핵심 액션 (Top Priority Actions) — 3가지</h3>
+  ${topActions.length > 0 ? topActions.map((a, i) => `
+    <div class="action-item">
+      <div class="action-num">${i+1}</div>
+      <div style="flex:1;">
+        <div class="action-title">${escapeHtml(a.title)}</div>
+        <div class="action-desc">${escapeHtml(a.desc)}</div>
+        ${a.meta ? `<div class="action-meta">▶ ${escapeHtml(a.meta)}</div>` : ''}
+      </div>
+    </div>
+  `).join('') : `<div style="padding:14px; text-align:center; color:#888; font-size:11px;">우선순위 액션 없음</div>`}
+
+  ${actions.length > 3 ? `
+  <details style="margin-top:10px;">
+    <summary style="cursor:pointer; padding:10px 14px; background:#FAF8F3; border-radius:6px; font-size:12px; font-weight:700; color:#0A2540;">📋 추가 액션 ${actions.length - 3}개 더 보기</summary>
+    <div style="margin-top:8px;">
+      ${actions.slice(3).map((a, i) => `
+        <div class="action-item">
+          <div class="action-num" style="background:#777570; color:#fff;">${i+4}</div>
+          <div style="flex:1;">
+            <div class="action-title">${escapeHtml(a.title)}</div>
+            <div class="action-desc">${escapeHtml(a.desc)}</div>
+            ${a.meta ? `<div class="action-meta">▶ ${escapeHtml(a.meta)}</div>` : ''}
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  </details>` : ''}
+
+  ${(d.proposal.product || d.proposal.content || d.proposal.reason) ? `
+  <div class="proposal-box">
+    <h3>⭐ FINAL PROPOSAL — 최종 제안 상품 및 메시지</h3>
+    ${d.proposal.product ? `<div class="label">PROPOSED PRODUCT</div><div class="content">${escapeHtml(d.proposal.product)}</div>` : ''}
+    ${d.proposal.content ? `<div class="label">CONTENT</div><div class="content">${escapeHtml(d.proposal.content)}</div>` : ''}
+    ${d.proposal.reason ? `<div class="label">ADVISOR'S MESSAGE</div><div class="content">${escapeHtml(d.proposal.reason)}</div>` : ''}
+  </div>` : ''}
+
+  <div style="margin-top:16px; display:flex; justify-content:space-between; align-items:flex-end;">
+    <div>
+      <div style="font-size:9px; color:#777570; letter-spacing:1px;">PREPARED BY</div>
+      <div style="font-size:13px; font-weight:700; color:#0A2540; margin-top:4px;">${d.advisor.name}</div>
+      <div style="font-size:11px; color:#777570;">${d.advisor.company}</div>
+      <div style="font-size:11px; color:#777570;">${d.advisor.phone}</div>
+    </div>
+    <div style="text-align:right;">
+      <div style="font-size:9px; color:#777570;">DATE</div>
+      <div style="font-size:13px; font-weight:600; color:#0A2540;">${today}</div>
+    </div>
+  </div>
+
+  ${commonFooter('06')}
+</div>
+
+</body>
+</html>`;
+}
+
+function escapeHtml(s) {
+  if (!s) return '';
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+</script>
+
+</body>
+</html>

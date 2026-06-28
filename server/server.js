@@ -388,6 +388,12 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, '..', '제니야.html'));
 });
 
+// 녹음 텍스트 → 7장 재무리포트 생성기 (코치 양식 재사용). 같은 출처라 /extract-report·/report 연결.
+app.get('/report-gen', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.sendFile(path.join(__dirname, '..', 'report_gen.html'));
+});
+
 // ── 살아있는지 확인용 창구 ─────────────────────────────────
 app.get('/health', (req, res) => {
   res.json({ ok: true, name: 'jenya-server', message: '제니야 중계 서버가 켜져 있습니다.' });
@@ -5509,7 +5515,7 @@ app.post('/extract-report', async (req, res) => {
     let data;
     try { data = JSON.parse(txt); }
     catch (e) { return res.status(502).json({ error: '추출 결과가 JSON 형식이 아닙니다.', raw: txt.slice(0, 400) }); }
-    res.json({ ok: true, data });
+    res.json(data);   // ★ raw 구조 그대로 반환(코치 파일 applyExtractedToForm이 x.family·x.asset… 직접 읽음)
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
