@@ -5196,8 +5196,203 @@ app.post('/care/reject', (req, res) => {
   res.json({ rejected: n });
 });
 
+// ══════════════════════════════════════════════════════════
+// 재무상담 리포트 호스팅 + 발송 3종 (방법1 카톡공유 · 방법2 나에게보내기 · 방법3 문자)
+//   원칙: 자동발송 없음. 리포트 생성·발송은 OWNER만(gateEmpty). 키 없으면 안전 거부(503).
+//   GET /report/:token 만 공개 — 추측 불가 토큰(24바이트)이라 링크 아는 사람만 열람(개인정보 보호).
+// ══════════════════════════════════════════════════════════
+const REPORTS_DIR = path.join(DATA_DIR, 'reports');
+try { if (!fs.existsSync(REPORTS_DIR)) fs.mkdirSync(REPORTS_DIR, { recursive: true }); } catch (e) {}
+const REPORT_DISCLAIMER = '본 리포트는 사례 설명용이며 투자 조언이 아닙니다. 개인의 상황에 따라 결과가 다를 수 있습니다. 중요한 결정은 제출·실행 전 반드시 전문가와 본인이 최종 확인하시기 바랍니다.';
+
+// 카카오 키 (환경변수) — JS키는 공개 클라이언트 키(프론트 init용), 액세스토큰은 비공개(서버 보관)
+const KAKAO_JS_KEY       = process.env.KAKAO_JS_KEY || '';        // 방법1 (Kakao.Share)
+const KAKAO_ACCESS_TOKEN = process.env.KAKAO_ACCESS_TOKEN || '';  // 방법2 (나에게 보내기)
+
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+// 저장용 리포트 문서로 감싸기 — 면책문구·기본 스타일 포함. body는 C(리포트생성)가 만든 HTML 조각.
+function wrapReport(clientName, bodyHtml) {
+  return '<!doctype html><html lang="ko"><head><meta charset="utf-8">'
+    + '<meta name="viewport" content="width=device-width,initial-scale=1">'
+    + '<meta name="robots" content="noindex,nofollow">'
+    + '<title>' + esc(clientName) + '님 재무상담 리포트</title>'
+    + '<style>body{font-family:-apple-system,"Malgun Gothic",sans-serif;max-width:820px;margin:0 auto;padding:22px;color:#1a1a1a;line-height:1.6}'
+    + 'h1{font-size:20px}.rpt-disc{margin-top:28px;padding:12px 14px;background:#FFF7EA;border:1px solid #F0D9AE;border-radius:10px;color:#8A5A00;font-size:12.5px}</style>'
+    + '</head><body>' + (bodyHtml || '') + '<div class="rpt-disc">⚠️ ' + esc(REPORT_DISCLAIMER) + '</div></body></html>';
+}
+
+// POST /report  { clientName, html }  → { token, url }  (리포트를 우리 서버에 저장하고 추측불가 링크 발급)
+app.post('/report', (req, res) => {
+  if (gateEmpty(req)) return res.status(403).json({ error: '권한 없음 — 리포트 생성은 OWNER(대표)만.' });
+  try {
+    const { clientName, html } = req.body || {};
+    if (!html || typeof html !== 'string') return res.status(400).json({ error: 'html(리포트 내용)이 필요합니다.' });
+    const token = crypto.randomBytes(24).toString('hex');           // 추측 불가 토큰
+    const safeName = String(clientName || '고객').slice(0, 40);
+    fs.writeFileSync(path.join(REPORTS_DIR, token + '.html'), wrapReport(safeName, html), 'utf8');
+    fs.writeFileSync(path.join(REPORTS_DIR, token + '.json'), JSON.stringify({ clientName: safeName, ts: new Date().toISOString() }), 'utf8');
+    const url = 'https://' + req.get('host') + '/report/' + token;
+    res.json({ ok: true, token, url, clientName: safeName });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /report/:token  → 리포트 HTML (공개 — 토큰만 알면 열람, 발송 대상이 보는 화면)
+app.get('/report/:token', (req, res) => {
+  const t = String(req.params.token || '').replace(/[^a-f0-9]/g, '');
+  if (!t) return res.status(404).send('리포트를 찾을 수 없습니다.');
+  const f = path.join(REPORTS_DIR, t + '.html');
+  if (!fs.existsSync(f)) return res.status(404).send('리포트를 찾을 수 없거나 만료되었습니다.');
+  res.set('Content-Type', 'text/html; charset=utf-8');
+  res.send(fs.readFileSync(f, 'utf8'));
+});
+
+// 발송 가능 상태 (프론트가 어떤 버튼을 켤지 판단) — 키 노출 없음, 가능/불가 여부만
+app.get('/send/status', (req, res) => res.json({
+  share: !!KAKAO_JS_KEY,                 // 방법1 카톡공유 가능
+  memo:  !!KAKAO_ACCESS_TOKEN,           // 방법2 나에게보내기 가능
+  sms:   !!(solapi && SOLAPI_SENDER),    // 방법3 문자 가능
+}));
+// 방법1용 공개 JS키만 내려줌 (프론트 Kakao.init용 — 공개키라 노출 정상)
+app.get('/kakao/jskey', (req, res) => res.json({ jsKey: KAKAO_JS_KEY }));
+
+// 방법2 — 나에게 보내기: 대표 본인 카톡으로 리포트 링크 전송 (100% 작동·안전망)
+app.post('/kakao/memo/send', async (req, res) => {
+  if (gateEmpty(req)) return res.status(403).json({ error: '권한 없음 — 발송은 OWNER(대표)만.' });
+  try {
+    if (!KAKAO_ACCESS_TOKEN) return res.status(503).json({ error: '카카오 액세스 토큰이 없습니다. (Render 환경변수 KAKAO_ACCESS_TOKEN 등록 필요)' });
+    const { url, clientName } = req.body || {};
+    if (!url) return res.status(400).json({ error: 'url(리포트 링크)이 필요합니다.' });
+    const template = {
+      object_type: 'feed',
+      content: {
+        title: (clientName || '고객') + '님 재무상담 리포트',
+        description: '금융집짓기 진단 결과 · 사례 설명용(투자조언 아님)',
+        image_url: process.env.KAKAO_REPORT_IMAGE || '',
+        link: { web_url: url, mobile_web_url: url },
+      },
+      buttons: [{ title: '리포트 열기', link: { web_url: url, mobile_web_url: url } }],
+    };
+    const r = await fetch('https://kapi.kakao.com/v2/api/talk/memo/default/send', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + KAKAO_ACCESS_TOKEN, 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'template_object=' + encodeURIComponent(JSON.stringify(template)),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (r.ok) return res.json({ ok: true, result: j });
+    return res.status(502).json({ ok: false, error: '카카오 발송 실패(토큰 만료·권한 동의 누락 가능)', detail: j });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 방법3 — 문자(MMS) 백업: 리포트 링크를 문자로. 발신번호 등록 후 활성(Solapi 기존 연결 재사용)
+app.post('/report/sms', async (req, res) => {
+  if (gateEmpty(req)) return res.status(403).json({ error: '권한 없음 — 발송은 OWNER(대표)만.' });
+  try {
+    if (!solapi) return res.status(503).json({ error: 'Solapi 키가 없습니다. (SOLAPI_API_KEY/SECRET)' });
+    if (!SOLAPI_SENDER) return res.status(503).json({ error: '발신번호가 아직 없습니다. 대표님 발신번호 등록(SOLAPI_SENDER) 후 활성됩니다.' });
+    const { to, url, clientName } = req.body || {};
+    const phone = cleanPhone(to);
+    if (!phone) return res.status(400).json({ error: '받는 번호가 올바르지 않습니다.' });
+    if (!url) return res.status(400).json({ error: 'url(리포트 링크)이 필요합니다.' });
+    await solapi.send({ to: phone, from: SOLAPI_SENDER, text: (clientName || '고객') + '님 재무상담 리포트\n' + url + '\n\n※ 사례 설명용(투자조언 아님)' });
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /send-test — 발송 3종 독립 동작 확인용 (가상고객 '따님' 샘플 리포트로 테스트). OWNER 화면.
+app.get('/send-test', (req, res) => {
+  res.set('Content-Type', 'text/html; charset=utf-8');
+  res.send(`<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>발송 테스트 — 제니야</title>
+<style>body{font-family:-apple-system,"Malgun Gothic",sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#1a1a1a}
+h1{font-size:19px}.card{border:1px solid #e5e5e5;border-radius:12px;padding:16px;margin:14px 0}
+button{font-family:inherit;font-size:14px;font-weight:700;border:none;border-radius:10px;padding:11px 16px;cursor:pointer;margin:4px 0}
+.b1{background:#FEE500;color:#191600}.b2{background:#1D9E75;color:#fff}.b3{background:#555;color:#fff}
+.gen{background:#222;color:#fff}input{font-family:inherit;font-size:14px;padding:9px;border:1px solid #ccc;border-radius:8px;width:60%}
+.muted{color:#777;font-size:12.5px}.st{font-size:12.5px;margin-top:6px}.off{opacity:.45}#log{white-space:pre-wrap;font-size:12px;background:#f6f6f6;border-radius:8px;padding:10px;margin-top:10px;min-height:30px}</style>
+</head><body>
+<h1>📤 발송 3종 테스트</h1>
+<p class="muted">가상고객(따님) 샘플 리포트를 만들어 발송 경로를 독립 확인합니다. ① 먼저 [샘플 리포트 만들기] → ② 방법별 버튼.</p>
+<div class="card">
+  <button class="gen" id="gen">① 샘플 리포트 만들기</button>
+  <div class="st" id="rpt">아직 리포트 없음</div>
+</div>
+<div class="card">
+  <div><b>방법 1 · 카톡 공유</b> <span class="st" id="s1"></span></div>
+  <button class="b1" id="k-share" disabled>고객님께 카톡 전송(공유)</button>
+  <div class="muted">Kakao JS키 + 도메인 등록이 있어야 켜집니다. 한 번 탭하면 카톡 공유창이 뜹니다.</div>
+</div>
+<div class="card">
+  <div><b>방법 2 · 나에게 보내기</b> <span class="st" id="s2"></span></div>
+  <button class="b2" id="k-memo" disabled>내 카톡으로 받기</button>
+  <div class="muted">대표 본인 카톡으로 리포트 링크가 옵니다(안전망).</div>
+</div>
+<div class="card">
+  <div><b>방법 3 · 문자(MMS)</b> <span class="st" id="s3"></span></div>
+  <input id="phone" placeholder="010-0000-0000" value=""> <button class="b3" id="sms" disabled>문자로 보내기</button>
+  <div class="muted">발신번호 등록 후 활성됩니다(최종 백업).</div>
+</div>
+<div id="log"></div>
+<script src="https://t1.kakao.com/kakao_js_sdk/2.7.2/kakao.min.js" crossorigin="anonymous"></script>
+<script>
+var report = null;
+function log(m){ document.getElementById('log').textContent = m; }
+fetch('/send/status').then(function(r){return r.json();}).then(function(s){
+  document.getElementById('s1').textContent = s.share ? '✅ 준비됨' : '⚠️ JS키 필요';
+  document.getElementById('s2').textContent = s.memo  ? '✅ 준비됨' : '⚠️ 액세스토큰 필요';
+  document.getElementById('s3').textContent = s.sms   ? '✅ 준비됨' : '⚠️ 발신번호 필요';
+  if(!s.share) document.getElementById('s1').parentElement.parentElement.classList.add('off');
+  if(!s.memo)  document.getElementById('s2').parentElement.parentElement.classList.add('off');
+  if(!s.sms)   document.getElementById('s3').parentElement.parentElement.classList.add('off');
+  window._send = s;
+});
+fetch('/kakao/jskey').then(function(r){return r.json();}).then(function(j){
+  if(j.jsKey && window.Kakao && !Kakao.isInitialized()){ try{ Kakao.init(j.jsKey); }catch(e){} }
+});
+document.getElementById('gen').onclick = function(){
+  var html = '<h1>따님님 재무상담 리포트</h1><p>이것은 발송 경로 확인용 <b>샘플 리포트</b>입니다.</p>'
+    + '<ul><li>가족: 따님(28세)</li><li>자산: 예적금 1,000만 · 청약 300만</li><li>제안: 비상금 마련 후 연금 시작</li></ul>';
+  fetch('/report', { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include',
+    body: JSON.stringify({ clientName:'따님', html: html }) })
+  .then(function(r){return r.json();}).then(function(d){
+    if(d.url){ report = d; document.getElementById('rpt').innerHTML = '✅ 리포트 생성됨 → <a href="'+d.url+'" target="_blank">미리보기 열기</a>';
+      if(window._send){ document.getElementById('k-share').disabled = !window._send.share;
+        document.getElementById('k-memo').disabled = !window._send.memo;
+        document.getElementById('sms').disabled = !window._send.sms; }
+      log('리포트 URL: '+d.url);
+    } else { log('리포트 생성 실패: '+(d.error||JSON.stringify(d))); }
+  }).catch(function(e){ log('오류: '+e.message); });
+};
+document.getElementById('k-share').onclick = function(){
+  if(!report) return log('먼저 샘플 리포트를 만드세요.');
+  if(!window.Kakao || !Kakao.isInitialized()) return log('Kakao 미초기화 — JS키/도메인 등록을 확인하세요.');
+  Kakao.Share.sendDefault({ objectType:'feed',
+    content:{ title:'따님님 재무상담 리포트', description:'금융집짓기 진단 결과', imageUrl:'',
+      link:{ webUrl: report.url, mobileWebUrl: report.url } },
+    buttons:[{ title:'리포트 열기', link:{ webUrl: report.url, mobileWebUrl: report.url } }] });
+};
+document.getElementById('k-memo').onclick = function(){
+  if(!report) return log('먼저 샘플 리포트를 만드세요.');
+  fetch('/kakao/memo/send', { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include',
+    body: JSON.stringify({ url: report.url, clientName: report.clientName }) })
+  .then(function(r){return r.json();}).then(function(d){ log(d.ok ? '✅ 내 카톡으로 보냈습니다. 카톡을 확인하세요.' : '실패: '+(d.error||JSON.stringify(d.detail||d))); })
+  .catch(function(e){ log('오류: '+e.message); });
+};
+document.getElementById('sms').onclick = function(){
+  if(!report) return log('먼저 샘플 리포트를 만드세요.');
+  var to = document.getElementById('phone').value;
+  fetch('/report/sms', { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include',
+    body: JSON.stringify({ to: to, url: report.url, clientName: report.clientName }) })
+  .then(function(r){return r.json();}).then(function(d){ log(d.ok ? '✅ 문자 발송 완료.' : '실패: '+(d.error||JSON.stringify(d))); })
+  .catch(function(e){ log('오류: '+e.message); });
+};
+</script>
+</body></html>`);
+});
+
 // ── 서버 켜기 ──────────────────────────────────────────────
 app.listen(PORT, () => {
   console.log(`✅ 제니야 중계 서버 가동 — http://localhost:${PORT}`);
   console.log(`📨 고객관리 손 — 구글열쇠 ${googleCreds() ? 'O' : 'X'} / Solapi ${solapi ? 'O' : 'X'} / 발신번호 ${SOLAPI_SENDER ? 'O' : 'X'}`);
+  console.log(`📤 발송 3종 — 카톡공유(JS키) ${KAKAO_JS_KEY ? 'O' : 'X'} / 나에게보내기(토큰) ${KAKAO_ACCESS_TOKEN ? 'O' : 'X'} / 문자(발신번호) ${(solapi && SOLAPI_SENDER) ? 'O' : 'X'}`);
 });
