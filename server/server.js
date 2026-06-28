@@ -5467,6 +5467,52 @@ app.post('/transcribe', (req, res) => {
   });
 });
 
+// ══════════════════════════════════════════════════════════
+// C(리포트 생성) — 녹음 텍스트 → 제안서용 구조 JSON (Opus). "엄마 연결지점 ①"
+//   기존 제안서 프로그램의 parseExcel 구조와 똑같은 JSON을 만들어, 프론트가 STATE.excelData에 주입 → 7장 렌더 재사용.
+// ══════════════════════════════════════════════════════════
+app.post('/extract-report', async (req, res) => {
+  if (!testGate(req, res, 'extract', 40)) return;
+  try {
+    if (!process.env.ANTHROPIC_API_KEY) return res.status(503).json({ error: '두뇌 API 키가 없습니다.' });
+    const transcript = String((req.body || {}).transcript || '').trim();
+    if (!transcript) return res.status(400).json({ error: 'transcript(녹음 텍스트)가 필요합니다.' });
+    if (transcript.length > 60000) return res.status(400).json({ error: '녹음 텍스트가 너무 깁니다.' });
+
+    const system = [
+      '너는 25년차 CFP(재무설계사)의 보조다. 아래 상담 녹취에서 재무 제안서용 데이터를 추출한다.',
+      '반드시 아래 구조와 "완전히 똑같은" 순수 JSON 하나만 출력한다. 설명·인사·코드펜스(```)·주석 없이 오직 JSON만.',
+      '금액은 모두 "만원" 단위의 숫자로 환산한다(예: 5천만원→5000, 50만원→50). 녹취에 없는 값은 숫자=0, 문자열="", 배열=[].',
+      '추측·단정·예측 금지 — 녹취에 실제로 나온 근거만 채운다. 가족은 녹취에 언급된 사람만 family에 넣는다.',
+      'proposal(제안)은 상담자가 녹취에서 실제로 권한 내용이 있을 때만 채우고, 없으면 빈 문자열로 둔다.',
+      '',
+      '구조:',
+      '{',
+      '  "clientName": "",',
+      '  "family": [{"rel":"본인|배우자|자녀1|자녀2|자녀3","name":"","age":"","job":"","retireAge":"","note":"경제적 고민/특이사항"}],',
+      '  "asset": {"예적금":0,"CMA":0,"주식":0,"펀드":0,"연금":0,"청약":0,"부동산":0,"기타":0},',
+      '  "debt": {"담보대출":0,"신용대출":0,"신용대출메모":"","보험계약대출":0,"기타":0},',
+      '  "income": {"본인":0,"배우자":0,"기타":0},',
+      '  "expense": {"생활비":0,"저축투자":0,"노후연금":0,"보장보험":0,"대출원리금":0},',
+      '  "proposal": {"product":"","content":"","reason":""}',
+      '}',
+    ].join('\n');
+
+    const r = await anthropic.messages.create({
+      model: MODEL, max_tokens: 2500, system,
+      messages: [{ role: 'user', content: '상담 녹취:\n' + transcript }],
+    });
+    let txt = (r.content || []).map((c) => c.text || '').join('').trim();
+    txt = txt.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();   // 코드펜스 제거
+    const a = txt.indexOf('{'), b = txt.lastIndexOf('}');
+    if (a >= 0 && b > a) txt = txt.slice(a, b + 1);                              // 첫 { ~ 마지막 }
+    let data;
+    try { data = JSON.parse(txt); }
+    catch (e) { return res.status(502).json({ error: '추출 결과가 JSON 형식이 아닙니다.', raw: txt.slice(0, 400) }); }
+    res.json({ ok: true, data });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── 서버 켜기 ──────────────────────────────────────────────
 app.listen(PORT, () => {
   console.log(`✅ 제니야 중계 서버 가동 — http://localhost:${PORT}`);
