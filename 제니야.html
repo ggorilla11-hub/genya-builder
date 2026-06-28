@@ -607,6 +607,7 @@ body{font-family:'Pretendard',-apple-system,sans-serif;font-weight:500;backgroun
           <div class="cstatus" id="consult-status"></div>
           <div class="cact">
             <button id="consult-stop"><i class="ti ti-player-stop"></i> 녹음 정지</button>
+            <button id="consult-report" style="border-color:#9CC9B5;color:#137A52">📄 녹음으로 제안서 생성</button>
             <button id="consult-clear">지우기</button>
           </div>
         </div>
@@ -3221,6 +3222,14 @@ document.getElementById('rec').onclick = function(){
   toggleConsult();
 };
 document.getElementById('consult-stop').onclick = stopConsult;
+// 📄 녹음 텍스트 → 제안서 생성기로 한 번에 (consult.finalText를 넘겨 자동 생성·발송)
+document.getElementById('consult-report').onclick = function(){
+  var t = (consult.finalText || '').trim();
+  if(!t){ addMessage('아직 받아쓴 상담 내용이 없습니다. 먼저 녹음(●)하거나 [🎙 녹음 파일 올리기]로 텍스트를 만들어 주세요.','zenya'); return; }
+  if(consult.recording){ addMessage('먼저 [녹음 정지]를 누른 뒤 제안서를 만들어 주세요.','zenya'); return; }
+  try{ localStorage.setItem('genya_transcript', t); }catch(e){}
+  window.open('/report-gen?auto=1', '_blank');
+};
 document.getElementById('consult-clear').onclick = function(){
   consult.finalText = ''; consult.interim = ''; consult.blob = null; window.consultAudioBlob = null;
   if(!consult.recording) document.getElementById('consultbar').classList.remove('show');
