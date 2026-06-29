@@ -598,6 +598,15 @@ const VOICE_RULES =
   + '지금은 대표님과 음성 통화 중이다. 최종 답만 1~3문장으로 아주 짧게, 귀로 듣기 좋은 구어체로 말하라. '
   + '마크다운·기호·이모지·목록·괄호 절대 금지. 숫자는 읽기 쉽게.';
 
+// 음성 제니야 "먼저 리딩 + 능력 인식 + 법적 경계" — 음성 zenya 분기에만 덧붙인다(추가만, 기존 규칙 불변)
+const ZENYA_LEAD_RULES =
+  '\n\n=== 먼저 리딩 + 능력 + 경계 ===\n'
+  + '수동적으로 기다리지 말고 먼저 리딩한다. 상황을 읽고 다음 할 일을 추천 1개 + 단답 확인으로 먼저 제안한다(대표는 YES만). '
+  + '상담 시작 분위기면 "녹음 켜드릴까요?", 상담이 일단락되면 "통찰 정리해드릴까요?", 통찰 후엔 "제안서 만들어 보낼까요?"처럼. '
+  + '너는 네 능력 목록(상담 녹음·통찰·진단 제안서·발송)을 안다 — 대표가 모르는 기능이 있으면 "○○도 해드릴 수 있어요"로 먼저 안내한다. '
+  + '★ 대표가 "어떻게 들었니 / 제안서 / 녹음 시작·정지 / 보내" 같은 명령을 말하면, 너는 그 내용을 직접 말하지 마라. "네, 정리할게요" "네, 녹음 켤게요" 같은 짧은 확인 한마디만 하고 멈춰라. 실제 통찰·제안서 내용과 결과 안내는 화면 비서가 한다. 네가 통찰 내용을 음성으로 또 말하면 겹치니 절대 하지 마라. '
+  + '[법적] 너는 재무"상담"이 아니라 재무"진단"을 돕는다. 단정적 예측·특정 상품 권유·수익 보장 금지. 감정·심리 해석은 하지 않는다(대표 영역). 분산·세금·원칙처럼 정답 있는 영역에 집중한다.';
+
 // ISO(UTC) → KST "6/16 18시" 표기
 function fmtK(iso) { try { const k = new Date(new Date(iso).getTime() + 9 * 3600 * 1000); return (k.getUTCMonth() + 1) + '/' + k.getUTCDate() + ' ' + k.getUTCHours() + '시'; } catch (e) { return ''; } }
 
@@ -765,7 +774,7 @@ app.post(['/vapi', '/vapi/chat/completions', '/vapi/chat/completions/chat/comple
       system = buildAllVoicePrompt(project);
     } else if (agentId === 'zenya') {
       // ★ 음성 제니야 = 비서실장(콘텐츠 공장 두뇌). 본사 총괄·영업일기 없음 + 외부 발행결과 + 채널 연결상태 + 반응 분석.
-      system = buildZenyaPrompt(project) + '\n\n' + (await autonomousStateText()) + VOICE_RULES;   // 음성 제니야: 자율현황(발행·핫리드·일정·브리핑) 읽기 주입. 발송·발행 0
+      system = buildZenyaPrompt(project) + '\n\n' + (await autonomousStateText()) + VOICE_RULES + ZENYA_LEAD_RULES;   // 음성 제니야: 자율현황 + 리딩·능력·겹침방지·경계(ZENYA_LEAD_RULES 추가). 발송·발행 0
 
     } else {
       system = withLiveStatus(buildSystemPrompt(agentId, project), agentId) + VOICE_RULES;
