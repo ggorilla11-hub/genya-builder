@@ -44,7 +44,11 @@ const OA_SECRET = process.env.GOOGLE_OAUTH_CLIENT_SECRET || '';
 // ★배포 콜백 자동화: env 미설정 시 Render 배포 도메인(RENDER_EXTERNAL_URL)으로 콜백 → 로그인 후 배포 서버(genya.html)로 복귀
 const _BASE = (process.env.RENDER_EXTERNAL_URL || '').replace(/\/$/, '');
 const OA_REDIRECT = process.env.GOOGLE_OAUTH_REDIRECT || (_BASE ? _BASE + '/auth/google/callback' : `http://localhost:${process.env.PORT || 8090}/auth/google/callback`);
-const OA_SCOPES = ['openid', 'email', 'profile', 'https://www.googleapis.com/auth/calendar.readonly', 'https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive.readonly', 'https://www.googleapis.com/auth/drive.file'];
+// ★"확인 안 된 앱" 경고 제거: 로그인은 openid·email·profile만(민감 스코프 없음 → 경고 안 뜸).
+//   캘린더·시트·드라이브(민감)는 그 기능 쓸 때 /auth/google/connect 로 별도 동의(incremental).
+const LOGIN_SCOPES = ['openid', 'email', 'profile'];
+const DATA_SCOPES = ['https://www.googleapis.com/auth/calendar.readonly', 'https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive.readonly', 'https://www.googleapis.com/auth/drive.file'];
+const OA_SCOPES = LOGIN_SCOPES;
 const OA_CONFIGURED = !!(OA_ID && OA_SECRET);
 // ★회원 간 격리: 세션ID → {email, tokens}. 서버 메모리에만(디스크·DB 0, 회원 데이터 저장 0=토큰뿐)
 const sessions = new Map();
@@ -351,7 +355,12 @@ app.get('/login', (req, res) => {
 });
 app.get('/auth/google', (req, res) => {
   if (!OA_CONFIGURED) return res.status(503).send('OAuth 미설정');
-  res.redirect(oaClient().generateAuthUrl({ access_type: 'offline', prompt: 'consent', scope: OA_SCOPES }));
+  res.redirect(oaClient().generateAuthUrl({ access_type: 'offline', prompt: 'consent', scope: LOGIN_SCOPES }));
+});
+// ★데이터 연결(캘린더·시트·드라이브) — 그 기능 실제로 쓸 때만 별도 동의(incremental). 여기서만 민감 스코프 요청.
+app.get('/auth/google/connect', (req, res) => {
+  if (!OA_CONFIGURED) return res.status(503).send('OAuth 미설정');
+  res.redirect(oaClient().generateAuthUrl({ access_type: 'offline', prompt: 'consent', include_granted_scopes: true, scope: LOGIN_SCOPES.concat(DATA_SCOPES) }));
 });
 app.get('/auth/google/callback', async (req, res) => {
   try {

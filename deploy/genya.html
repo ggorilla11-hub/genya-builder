@@ -626,7 +626,7 @@
     var nm=document.getElementById('wsName'); if(nm&&PROFILE.job)nm.textContent=PROFILE.job+' 지니야';
     fetch('/api/profile').then(r=>r.json()).then(function(d){if(d.ok&&d.profile&&d.profile['직업']){var e=document.getElementById('wsName');if(e)e.textContent=d.profile['직업']+' 지니야';}}).catch(()=>{});
     fetch('/api/calendar').then(r=>r.json()).then(function(d){var el=document.getElementById('wsBrief');if(!el)return;
-      if(d.needsGoogle){el.innerHTML='구글을 연결하면 오늘 일정을 브리핑해드려요.';return;}
+      if(d.needsGoogle){el.innerHTML='<a href="/auth/google/connect" style="color:#7FD9B0;font-weight:700;text-decoration:none;">📅 캘린더·드라이브 연결하기 →</a> 연결하면 오늘 일정을 브리핑해드려요.';return;}
       var b='오늘 일정 '+d.count+'건이에요. '+(d.events||[]).map(function(e){return e.time+' '+e.title+(e.prep&&e.prep[0]?'('+e.prep[0]+')':'');}).join(' · ');
       el.textContent=b||'오늘 예정된 일정이 없어요.';}).catch(()=>{});
     fetch('/api/connectors').then(r=>r.json()).then(function(d){var el=document.getElementById('wsConnMeta');if(el)el.textContent='🔌 '+d.connectedCount+'개 연결됨 · 관리 →';}).catch(()=>{});
