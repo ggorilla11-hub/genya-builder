@@ -337,7 +337,7 @@ app.get('/api/status', (req, res) => {
 function loginPage(body) { return `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><body style="font-family:Pretendard,'맑은 고딕',sans-serif;max-width:520px;margin:60px auto;padding:0 18px;color:#1a1f28;text-align:center;">${body}</body>`; }
 app.get('/login', (req, res) => {
   const s = sessionOf(req);
-  if (s) return res.redirect('/main');
+  if (s) return res.redirect('/');
   const warnG = OA_CONFIGURED ? '' : '<div style="background:#FBF0DC;color:#8a4d18;padding:10px;border-radius:10px;margin-bottom:10px;font-size:13px;">⚠️ 구글 OAuth 미설정</div>';
   const warnK = KA_CONFIGURED ? '' : '<div style="background:#FBF0DC;color:#8a4d18;padding:10px;border-radius:10px;margin-bottom:10px;font-size:13px;">⚠️ 카카오 미설정 — KAKAO_REST_KEY 필요(대표님 카카오 개발자센터)</div>';
   res.send(loginPage(`${warnG}${warnK}<h1 style="color:#0B1F3A;">지니야빌더</h1><p style="color:#6b7a8d">주문제작 AI 비서 · 내 데이터는 내 것만</p>
@@ -359,7 +359,7 @@ app.get('/auth/google/callback', async (req, res) => {
     const s = crypto.randomBytes(16).toString('hex');
     sessions.set(s, { email: ui.data.email, name: ui.data.name, tokens, provider: 'google' });
     res.setHeader('Set-Cookie', `genya_sid=${s}; HttpOnly; Path=/; SameSite=Lax${process.env.RENDER ? '; Secure' : ''}`);
-    res.redirect('/onboarding'); // 로그인 → 온보딩(이미 만든 회원은 온보딩에서 "워크스페이스로")
+    res.redirect('/'); // 로그인 → 통합 페이지(genya.html), /me 확인 후 직업 화면부터
   } catch (e) { res.status(500).send('로그인 오류: ' + e.message); }
 });
 app.get('/logout', (req, res) => { const s = sidOf(req); if (s) sessions.delete(s); res.setHeader('Set-Cookie', 'genya_sid=; Path=/; Max-Age=0'); res.redirect('/login'); });
@@ -388,7 +388,7 @@ app.get('/auth/kakao/callback', async (req, res) => {
     const s = crypto.randomBytes(16).toString('hex');
     sessions.set(s, { email, name, provider: 'kakao' }); // s.tokens(구글) 없음
     res.setHeader('Set-Cookie', `genya_sid=${s}; HttpOnly; Path=/; SameSite=Lax${process.env.RENDER ? '; Secure' : ''}`);
-    res.redirect('/main');
+    res.redirect('/');
   } catch (e) { res.status(500).send('카카오 로그인 오류: ' + e.message); }
 });
 
@@ -404,6 +404,7 @@ app.get('/work', (req, res) => {
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
   res.sendFile(path.join(__dirname, 'main.html'), { etag: false, lastModified: false, cacheControl: false });
 });
-app.get('/', (req, res) => res.redirect(sessionOf(req) ? '/main' : '/login'));
+// ★기본 URL / → v4 통합 페이지(genya.html). 로그인 화면0부터. "Not Found" 없음.
+app.get('/', (req, res) => { res.setHeader('Cache-Control', 'no-store'); res.sendFile(path.join(__dirname, 'genya.html'), { etag: false }); });
 
 app.listen(PORT, () => console.log(`[공통 메인+로그인] http://localhost:${PORT}/login (OAuth ${OA_CONFIGURED ? 'ON' : 'OFF'}, 약관 ${YAK.pageCount}p) — 회원토큰 우선·SA 폴백`));

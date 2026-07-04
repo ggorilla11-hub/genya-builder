@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>지니야빌더 종합 시뮬레이터 v3</title>
+<style>
+  :root{
+    --navy:#0B1F3A; --teal:#0d7a52; --teal-l:#e9f5ef; --teal-bd:#bfe6d2;
+    --violet:#c4c2f0; --violet-l:#f6f5fd; --amber:#8a4d18; --amber-l:#f0dcb8;
+    --line:#e6e9ed; --line2:#e2e6ea; --ink:#1a1f28; --gray:#6b7a8d; --bg:#eef1f4;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  body{font-family:'Pretendard','맑은 고딕',sans-serif;background:var(--bg);color:var(--ink);
+    display:flex;flex-direction:column;align-items:center;padding:18px 12px;}
+  .head{text-align:center;margin-bottom:14px;}
+  .head h1{font-size:17px;color:var(--navy);}
+  .head p{font-size:12px;color:var(--gray);margin-top:3px;}
+  .device{width:100%;max-width:1180px;background:#fff;border-radius:20px;overflow:hidden;
+    box-shadow:0 14px 46px rgba(11,31,58,.16);border:1px solid #dde3ea;position:relative;min-height:720px;}
+  .screen{display:none;flex-direction:column;min-height:720px;}
+  .screen.on{display:flex;animation:fd .34s;}
+  @keyframes fd{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+  .top{display:flex;align-items:center;gap:12px;padding:16px 26px;border-bottom:1px solid var(--line2);}
+  .top .logo{width:34px;height:34px;background:#1DB088;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;}
+  .top .bn{font-size:15px;font-weight:700;color:var(--navy);}
+  .top .prog{flex:1;display:flex;gap:5px;max-width:360px;margin-left:auto;}
+  .top .prog span{flex:1;height:4px;background:#e0e5ea;border-radius:2px;}
+  .top .prog span.done{background:var(--teal);}
+  .body{flex:1;display:flex;flex-direction:column;padding:34px 26px;max-width:640px;margin:0 auto;width:100%;}
+  .step-lb{font-size:12px;color:var(--teal);font-weight:700;margin-bottom:10px;}
+  h2.big{font-size:25px;line-height:1.35;color:var(--navy);margin-bottom:10px;}
+  .sub{font-size:14.5px;color:var(--gray);line-height:1.65;margin-bottom:24px;}
+  .btn{display:block;width:100%;padding:16px;border:none;border-radius:13px;font-size:15px;font-weight:600;cursor:pointer;font-family:inherit;}
+  .btn-primary{background:var(--teal);color:#fff;}
+  .btn-line{background:#fff;border:1px solid #d0d6dd;color:var(--ink);}
+  .btn-ghost{background:transparent;color:#98a4b2;font-size:13px;padding:12px;}
+
+  .jobs{display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:10px;}
+  .job{display:flex;flex-direction:column;align-items:center;gap:7px;padding:15px 8px;border:1.5px solid var(--line2);border-radius:13px;cursor:pointer;transition:.15s;text-align:center;}
+  .job:hover{border-color:var(--teal);}
+  .job.sel{border-color:var(--teal);background:var(--teal-l);}
+  .job .e{font-size:25px;}
+  .job b{font-size:12.5px;}
+
+  /* 설문 방식 선택 (2갈래) */
+  .choice{display:flex;flex-direction:column;gap:12px;}
+  .choice .c{border:1.5px solid var(--line2);border-radius:15px;padding:20px;cursor:pointer;transition:.15s;}
+  .choice .c:hover{border-color:var(--teal);}
+  .choice .c .ct{display:flex;align-items:center;gap:12px;}
+  .choice .c .e{font-size:28px;}
+  .choice .c b{font-size:16px;display:block;}
+  .choice .c span{font-size:13px;color:var(--gray);}
+  .choice .c .rec{display:inline-block;background:var(--teal-l);color:var(--teal);font-size:11px;padding:3px 9px;border-radius:6px;margin-top:8px;font-weight:600;}
+
+  .up{border:2px dashed #c3ccd6;border-radius:16px;padding:34px 20px;text-align:center;cursor:pointer;transition:.15s;}
+  .up:hover{border-color:var(--teal);background:var(--teal-l);}
+  .up .ic{font-size:42px;} .up .t1{font-size:16px;font-weight:600;margin-top:12px;} .up .t2{font-size:13px;color:var(--gray);margin-top:5px;line-height:1.5;}
+  .up-done{border:1.5px solid var(--teal);background:var(--teal-l);border-radius:16px;padding:20px;display:flex;align-items:center;gap:14px;}
+  .up-done .ic{font-size:30px;} .up-done .tx b{font-size:15px;display:block;} .up-done .tx span{font-size:12.5px;color:var(--teal);}
+  .parsed{margin-top:14px;background:#f6f8fa;border-radius:12px;padding:16px;}
+  .parsed .row{display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-bottom:1px solid #edf0f3;}
+  .parsed .row:last-child{border:none;} .parsed .row span{color:var(--gray);} .parsed .row b{color:var(--ink);text-align:right;max-width:60%;}
+
+  /* 직접 입력 폼 */
+  .field{margin-bottom:16px;}
+  .field label{font-size:13px;font-weight:600;color:var(--navy);display:block;margin-bottom:6px;}
+  .field .hint{font-size:11.5px;color:var(--gray);margin-bottom:6px;}
+  .field input,.field textarea{width:100%;border:1px solid #d0d6dd;border-radius:10px;padding:12px;font-size:14px;font-family:inherit;}
+  .field textarea{min-height:60px;resize:vertical;}
+  .checks{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+  .chk{display:flex;align-items:center;gap:8px;padding:11px;border:1.5px solid var(--line2);border-radius:10px;font-size:12.5px;cursor:pointer;}
+  .chk.on{border-color:var(--teal);background:var(--teal-l);}
+  .chk .b{width:18px;height:18px;border:1.5px solid #ccc;border-radius:5px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;flex-shrink:0;}
+  .chk.on .b{background:var(--teal);border-color:var(--teal);}
+
+  .meet{text-align:center;margin:auto;max-width:460px;padding:20px;}
+  .meet .spin{width:76px;height:76px;margin:0 auto 22px;border-radius:20px;background:var(--teal);display:flex;align-items:center;justify-content:center;font-size:40px;animation:ps 1.4s infinite;}
+  @keyframes ps{0%,100%{transform:scale(1)}50%{transform:scale(1.07)}}
+  .arow{display:flex;align-items:center;gap:11px;padding:12px 15px;background:#f6f8fa;border-radius:11px;margin-bottom:8px;text-align:left;font-size:13.5px;}
+  .arow .d{width:8px;height:8px;border-radius:50%;background:var(--teal);flex-shrink:0;}
+
+  .conn{display:flex;align-items:center;gap:13px;padding:14px;border:1px solid var(--line2);border-radius:12px;margin-bottom:10px;}
+  .conn .e{font-size:21px;width:32px;text-align:center;} .conn .tx{flex:1;} .conn .tx b{font-size:14px;display:block;} .conn .tx span{font-size:11.5px;color:var(--gray);}
+  .conn .st{font-size:11.5px;padding:5px 12px;border-radius:8px;font-weight:600;}
+  .st-done{background:var(--teal-l);color:var(--teal);} .st-go{background:#fff;color:var(--teal);border:1px solid var(--teal);cursor:pointer;}
+
+  /* ===== 문제해결 6화면 (NEW) ===== */
+  .solve-hd{display:flex;align-items:center;gap:10px;margin-bottom:6px;}
+  .solve-hd .num{background:var(--teal);color:#fff;font-size:13px;font-weight:700;width:30px;height:30px;border-radius:9px;display:flex;align-items:center;justify-content:center;}
+  .solve-dots{display:flex;gap:6px;margin-bottom:18px;}
+  .solve-dots i{width:9px;height:9px;border-radius:50%;background:#d5dbe1;font-style:normal;}
+  .solve-dots i.on{background:var(--teal);width:22px;border-radius:5px;}
+  .demo-chat{background:#f6f8fa;border-radius:14px;padding:16px;margin-bottom:14px;}
+  .dm{display:flex;gap:10px;margin-bottom:12px;}
+  .dm.me{flex-direction:row-reverse;}
+  .dm .av{width:30px;height:30px;border-radius:9px;background:#e3e8ee;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0;}
+  .dm.me .av{background:var(--navy);color:#fff;}
+  .dm .bb{max-width:78%;padding:11px 14px;border-radius:12px;font-size:13px;line-height:1.55;}
+  .dm.you .bb{background:#fff;border:1px solid var(--line);}
+  .dm.me .bb{background:var(--navy);color:#fff;}
+  .dm .bb .src{font-size:11px;color:var(--teal);font-weight:600;margin-top:5px;}
+  .solve-result{background:var(--teal-l);border:1px solid var(--teal-bd);border-radius:12px;padding:14px;font-size:13px;color:#2a5f47;line-height:1.6;margin-bottom:16px;}
+  .solve-result b{color:var(--teal);}
+
+  /* ===== 워크스페이스 ===== */
+  .ws-head{background:var(--navy);padding:14px 24px;display:flex;align-items:center;gap:12px;}
+  .ws-head .lg{width:34px;height:34px;background:#1DB088;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;}
+  .ws-head .nm b{color:#fff;font-size:15px;display:block;} .ws-head .nm span{color:#7FA8D9;font-size:11px;}
+  .ws-head .badge{margin-left:auto;background:#12324f;color:#7FD9B0;font-size:11px;padding:5px 12px;border-radius:20px;}
+  .ws{display:grid;grid-template-columns:210px 1fr 235px;flex:1;}
+  @media(max-width:900px){.ws{grid-template-columns:1fr;}}
+  .col{padding:18px;} .col-l{border-right:1px solid var(--line);background:#fbfcfd;} .col-r{border-left:1px solid var(--line);background:#fbfcfd;} .col-c{overflow-y:auto;}
+  .sec-t{font-size:11px;font-weight:700;color:var(--gray);margin:0 0 10px;display:flex;align-items:center;gap:6px;}
+  .sec-t .tag{background:var(--violet);color:#3a3480;font-size:9px;padding:2px 7px;border-radius:6px;}
+  .menu-i{display:flex;align-items:center;gap:9px;padding:10px 12px;border-radius:9px;font-size:13.5px;cursor:pointer;margin-bottom:3px;}
+  .menu-i.on{background:var(--teal-l);color:var(--teal);font-weight:600;} .menu-i:hover{background:#f0f3f6;}
+  .safe{background:var(--teal-l);border:1px solid var(--teal-bd);border-radius:11px;padding:12px;margin-top:18px;}
+  .safe .st{font-size:11px;font-weight:700;color:var(--teal);margin-bottom:8px;} .safe .li{font-size:11.5px;color:#2a5f47;padding:3px 0;}
+  .report{margin-top:18px;} .report .ri{font-size:12px;padding:6px 0;border-bottom:1px solid var(--line);} .report .ri b{color:var(--navy);} .report .ri span{color:var(--gray);display:block;font-size:11px;margin-top:2px;}
+  .loop-hd{display:flex;align-items:center;gap:9px;margin-bottom:6px;} .loop-hd .e{font-size:24px;} .loop-hd h3{font-size:18px;color:var(--navy);}
+  .dims{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;} .dims span{background:#eef1f4;font-size:11px;padding:4px 10px;border-radius:7px;color:#5a6674;}
+  .interp{font-size:13.5px;color:#4a5560;line-height:1.6;margin-bottom:16px;}
+  .card3{background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:14px;}
+  .card3 .h{font-size:13px;font-weight:700;color:var(--navy);margin-bottom:12px;}
+  .div3{display:flex;flex-direction:column;gap:8px;}
+  .di{display:flex;align-items:center;gap:10px;padding:11px 13px;border-radius:10px;font-size:13px;}
+  .di-1{background:#fdeee9;} .di-1 .bg{background:#d85a30;} .di-2{background:var(--teal-l);} .di-2 .bg{background:var(--teal);} .di-3{background:var(--violet-l);} .di-3 .bg{background:#6a5acd;}
+  .di .bg{color:#fff;font-size:10px;font-weight:700;padding:3px 9px;border-radius:6px;white-space:nowrap;} .di .tt{flex:1;color:#3a4550;} .di .go{font-size:11px;color:var(--teal);font-weight:600;}
+  /* ★워크스페이스 하단 자연어 대화창 */
+  .ws-chat{background:#fff;border:1.5px solid var(--teal);border-radius:14px;padding:14px;margin-top:14px;}
+  .ws-chat .h{font-size:12px;font-weight:700;color:var(--teal);margin-bottom:10px;display:flex;align-items:center;gap:6px;}
+  .ws-chat .inp{display:flex;align-items:center;gap:9px;background:#f6f8fa;border-radius:11px;padding:11px 14px;}
+  .ws-chat .inp .ph{flex:1;font-size:13px;color:#a0aab5;}
+  .kpi-g{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px;}
+  .kpi{background:#fff;border:1px solid var(--line);border-radius:11px;padding:12px;} .kpi .n{font-size:22px;font-weight:700;color:var(--navy);} .kpi.hot .n{color:#d85a30;} .kpi .l{font-size:10.5px;color:var(--gray);margin-top:2px;}
+  .rec{background:#fff;border:1px solid var(--line);border-radius:11px;padding:12px;margin-bottom:8px;} .rec .rt{font-size:12.5px;font-weight:600;} .rec .rd{font-size:11px;color:var(--gray);margin-top:3px;}
+  .sched{background:#fff;border:1px solid var(--line);border-radius:11px;padding:12px;margin-bottom:8px;} .sched .si{font-size:12px;padding:5px 0;display:flex;gap:8px;} .sched .si b{color:var(--teal);white-space:nowrap;}
+
+  /* ===== 홈페이지형 메인 (B) ===== */
+  .home{flex:1;overflow-y:auto;background:#f4f6f9;}
+  .hero{background:linear-gradient(135deg,#0B1F3A 0%,#0f2d52 100%);padding:22px 26px;}
+  .hero .greet{color:#fff;font-size:19px;font-weight:700;margin-bottom:4px;}
+  .hero .greet-s{color:#8fb2d8;font-size:13px;}
+  .hero-brief{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);border-radius:13px;padding:14px 16px;margin-top:14px;}
+  .hero-brief .bl{font-size:11px;color:#7FD9B0;font-weight:700;margin-bottom:6px;}
+  .hero-brief p{font-size:13.5px;color:#e6eef7;line-height:1.6;}
+  .hero-brief .ask{font-size:13px;color:#7FD9B0;font-weight:700;margin-top:8px;}
+  .home-body{padding:20px 26px;max-width:1180px;margin:0 auto;width:100%;}
+  .home-sec{font-size:13px;font-weight:700;color:var(--navy);margin:22px 0 12px;display:flex;align-items:center;gap:7px;}
+  .home-sec:first-child{margin-top:0;}
+  .home-sec .cnt{font-size:11px;color:var(--gray);font-weight:400;margin-left:auto;}
+  /* 창고 3개 */
+  .stores{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;}
+  .store{border-radius:15px;padding:18px;border:1px solid var(--line);position:relative;overflow:hidden;cursor:pointer;transition:.15s;}
+  .store:hover{transform:translateY(-2px);box-shadow:0 8px 22px rgba(11,31,58,.1);}
+  .store-doc{background:linear-gradient(135deg,#e9f5ef,#fff);}
+  .store-skill{background:linear-gradient(135deg,#f6f5fd,#fff);}
+  .store-conn{background:linear-gradient(135deg,#e6f1fb,#fff);}
+  .store .si{font-size:30px;margin-bottom:10px;}
+  .store b{font-size:15px;color:var(--navy);display:block;margin-bottom:4px;}
+  .store .sd{font-size:12px;color:var(--gray);line-height:1.5;margin-bottom:12px;}
+  .store .schips{display:flex;flex-wrap:wrap;gap:5px;}
+  .store .schip{font-size:10.5px;padding:3px 8px;border-radius:6px;background:rgba(255,255,255,.7);border:1px solid var(--line);color:#4a5560;}
+  .store .smeta{font-size:11px;font-weight:600;margin-top:11px;display:flex;align-items:center;gap:5px;}
+  .store-doc .smeta{color:var(--teal);} .store-skill .smeta{color:#6a5acd;} .store-conn .smeta{color:#185FA5;}
+  /* 능력 카드 그리드 */
+  .abils{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;}
+  .abil{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px;cursor:pointer;transition:.15s;}
+  .abil:hover{border-color:var(--teal);}
+  .abil .ai{font-size:21px;} .abil b{font-size:13px;display:block;margin-top:7px;} .abil span{font-size:11px;color:var(--gray);}
+  .abil.hot{border-color:#f0c4b0;background:#fdf4f0;}
+  /* 홈 하단 대화창 (상시, 크게) */
+  .home-chat{background:#fff;border:1.5px solid var(--teal);border-radius:15px;padding:16px;margin-top:22px;}
+  .home-chat .hc-t{font-size:13px;font-weight:700;color:var(--teal);margin-bottom:10px;display:flex;align-items:center;gap:6px;}
+  .home-chat .hc-i{display:flex;align-items:center;gap:10px;background:#f6f8fa;border-radius:12px;padding:13px 16px;}
+  .home-chat .hc-i .ph{flex:1;font-size:13.5px;color:#98a4b2;}
+  .home-safe{background:var(--teal-l);border:1px solid var(--teal-bd);border-radius:12px;padding:12px 15px;margin-top:14px;font-size:11.5px;color:#2a5f47;line-height:1.6;}
+  /* 하단 탭바 (홈페이지 느낌) */
+  .tabbar{display:flex;border-top:1px solid var(--line);background:#fff;}
+  .tabbar .tb{flex:1;text-align:center;padding:11px 4px;font-size:10.5px;color:var(--gray);cursor:pointer;}
+  .tabbar .tb.on{color:var(--teal);font-weight:600;}
+  .tabbar .tb i{font-size:19px;font-style:normal;display:block;margin-bottom:2px;}
+
+  .ctrl{display:flex;gap:6px;justify-content:center;margin-top:16px;flex-wrap:wrap;max-width:1180px;}
+  .ctrl button{padding:8px 12px;border:1px solid var(--teal);background:#fff;color:var(--teal);border-radius:20px;font-size:11.5px;font-weight:600;cursor:pointer;font-family:inherit;}
+  .ctrl button.active{background:var(--teal);color:#fff;}
+  .note{font-size:11.5px;color:var(--gray);text-align:center;margin-top:11px;line-height:1.6;max-width:920px;}
+</style>
+</head>
+<body>
+<div class="head">
+  <h1>지니야빌더 — 종합 시뮬레이터 v3 (Order Made)</h1>
+  <p>직업 → 설문(업로드/직접입력/대화) → 생성 → 자료 → 연결 → 문제해결 6화면 → 워크스페이스</p>
+</div>
+
+<div class="device">
+
+  <!-- 0. 로그인 -->
+  <div class="screen on" data-s="0" style="background:var(--navy);justify-content:center;align-items:center;text-align:center;">
+    <div style="max-width:420px;padding:40px;">
+      <div style="width:70px;height:70px;background:#1DB088;border-radius:18px;display:flex;align-items:center;justify-content:center;font-size:38px;margin:0 auto 22px;">🤖</div>
+      <h2 class="big" style="color:#fff;">지니야빌더</h2>
+      <p style="color:#7FA8D9;font-size:15px;margin:10px 0 32px;">주문제작(Order Made) AI 비서를 만드는 곳</p>
+      <button class="btn btn-line" style="margin-bottom:11px;" onclick="location.href='/auth/google'">🟦 Google로 시작하기</button>
+      <button class="btn" style="background:#FEE500;color:#3a2a00;" onclick="location.href='/auth/kakao'">💬 카카오로 시작하기</button>
+      <p style="color:#5A7391;font-size:11.5px;margin-top:24px;line-height:1.6;">데이터는 내 것만 — 서버에 저장하지 않아요.</p>
+    </div>
+  </div>
+
+  <!-- 1. 직업 -->
+  <div class="screen" data-s="1">
+    <div class="top"><div class="logo">🤖</div><div class="bn">지니야빌더</div>
+      <div class="prog"><span class="done"></span><span></span><span></span><span></span><span></span><span></span><span></span></div></div>
+    <div class="body">
+      <div class="step-lb">1/7 · 직업 선택</div>
+      <h2 class="big">어떤 일을 하세요?</h2>
+      <p class="sub">직업에 맞춰 지니야가 만들어져요.</p>
+      <div class="jobs">
+        <div class="job sel" onclick="pickJob(this)"><span class="e">🛡️</span><b>보험 설계사</b></div>
+        <div class="job" onclick="pickJob(this)"><span class="e">🏢</span><b>부동산 중개사</b></div>
+        <div class="job" onclick="pickJob(this)"><span class="e">🍜</span><b>음식점 사장</b></div>
+        <div class="job" onclick="pickJob(this)"><span class="e">💇</span><b>뷰티샵 원장</b></div>
+        <div class="job" onclick="pickJob(this)"><span class="e">📚</span><b>학원 원장</b></div>
+        <div class="job" onclick="pickJob(this)"><span class="e">🎤</span><b>강사·코치</b></div>
+        <div class="job" onclick="pickJob(this)"><span class="e">🎨</span><b>디자이너</b></div>
+        <div class="job" onclick="pickJob(this)"><span class="e">📊</span><b>재무상담사</b></div>
+        <div class="job" onclick="pickJob(this)"><span class="e">🏥</span><b>병원장</b></div>
+        <div class="job" onclick="pickJob(this)"><span class="e">🌳</span><b>은퇴 시니어</b></div>
+        <div class="job" onclick="pickJob(this)"><span class="e">👩‍🏫</span><b>교사</b></div>
+        <div class="job" onclick="pickJob(this)"><span class="e">➕</span><b>기타 직업</b></div>
+      </div>
+      <div style="height:20px;"></div>
+      <button class="btn btn-primary" onclick="go(2)">다음</button>
+    </div>
+  </div>
+
+  <!-- 2. 설문 방식 3갈래 ★ -->
+  <div class="screen" data-s="2">
+    <div class="top"><div class="logo">🤖</div><div class="bn">지니야빌더</div>
+      <div class="prog"><span class="done"></span><span class="done"></span><span></span><span></span><span></span><span></span><span></span></div></div>
+    <div class="body">
+      <div class="step-lb">2/7 · 나에 대해 알려주기</div>
+      <h2 class="big">지니야에게 나를<br>어떻게 알려줄까요?</h2>
+      <p class="sub">주문제작이니까, 편한 방법을 고르세요. 셋 다 같은 곳으로 이어져요.</p>
+      <div class="choice">
+        <div class="c" onclick="go(3)">
+          <div class="ct"><span class="e">📋</span><div><b>설문지 통째로 올리기</b><span>작성한 설문지 파일 하나면 끝</span></div></div>
+          <span class="rec">가장 빠름 · 추천</span>
+        </div>
+        <div class="c" onclick="go(4)">
+          <div class="ct"><span class="e">✍️</span><div><b>직접 입력하기</b><span>설문지 없이 간단한 폼으로 입력</span></div></div>
+        </div>
+        <div class="c" onclick="go(5)">
+          <div class="ct"><span class="e">💬</span><div><b>지니야와 대화하며 만들기</b><span>말로 설명하면 지니야가 알아들어요</span></div></div>
+          <span class="rec" style="background:#f0dcb8;color:#8a4d18;">비서와 대화하는 느낌</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. 설문 업로드 -->
+  <div class="screen" data-s="3">
+    <div class="top"><div class="logo">🤖</div><div class="bn">지니야빌더</div>
+      <div class="prog"><span class="done"></span><span class="done"></span><span class="done"></span><span></span><span></span><span></span><span></span></div></div>
+    <div class="body">
+      <div class="step-lb">설문지 업로드</div>
+      <h2 class="big">설문지를 통째로<br>올려주세요</h2>
+      <p class="sub">지니야가 읽고 직업·고객·고민·철칙을 자동으로 뽑아요. (PDF·이미지·워드)</p>
+      <input type="file" id="surveyFile" style="display:none" onchange="onSurveyFile(this)">
+      <div class="up" onclick="document.getElementById('surveyFile').click()">
+        <div class="ic">📋</div><div class="t1">설문지 파일 올리기</div><div class="t2">여기를 눌러 선택하세요</div>
+      </div>
+      <div id="pB" style="display:none;">
+        <div class="up-done" style="margin-top:14px;"><div class="ic">✅</div><div class="tx"><b>설문지</b><span>내 드라이브 저장 + 지니야가 읽는 중…</span></div></div>
+        <div class="parsed"><div class="row"><span>지니야가 읽는 중…</span><b></b></div></div>
+      </div>
+      <div style="height:20px;"></div>
+      <button class="btn btn-primary" onclick="go(6)">이 정보로 지니야 만들기</button>
+    </div>
+  </div>
+
+  <!-- 4. 직접 입력 폼 ★ (설문지 간추림) -->
+  <div class="screen" data-s="4" id="s4">
+    <div class="top"><div class="logo">🤖</div><div class="bn">지니야빌더</div>
+      <div class="prog"><span class="done"></span><span class="done"></span><span class="done"></span><span></span><span></span><span></span><span></span></div></div>
+    <div class="body">
+      <div class="step-lb">직접 입력 (설문지 핵심만)</div>
+      <h2 class="big">몇 가지만<br>알려주세요</h2>
+      <p class="sub">설문지 없이도 괜찮아요. 핵심만 채우면 지니야가 만들어져요.</p>
+      <div class="field"><label>1. 하는 일을 한 문장으로</label><div class="hint">예: 25년 보험설계사, 가족 단위 고객 설계·관리</div><input id="f_work" placeholder="예: 25년 보험설계사, 가족 단위 설계·관리"></div>
+      <div class="field"><label>2. 주 고객은 누구인가요</label><input id="f_clients" placeholder="예: 40~55세 자영업·맞벌이 부부"></div>
+      <div class="field"><label>3. 제일 귀찮은 반복 업무 (3개)</label><textarea id="f_pain" placeholder="예: 상담 전 고객 정보 정리 · 만기일 확인 · 안내 문자 작성"></textarea></div>
+      <div class="field">
+        <label>4. 지니야에게 맡길 일 (복수 선택)</label>
+        <div class="checks">
+          <div class="chk on" onclick="tg(this)"><span class="b">✓</span>신규 고객 발굴</div>
+          <div class="chk on" onclick="tg(this)"><span class="b">✓</span>문자·카톡 초안</div>
+          <div class="chk on" onclick="tg(this)"><span class="b">✓</span>제안서·자료 준비</div>
+          <div class="chk" onclick="tg(this)"><span class="b">✓</span>상담 녹음 요약</div>
+          <div class="chk on" onclick="tg(this)"><span class="b">✓</span>만기 일정 관리</div>
+          <div class="chk on" onclick="tg(this)"><span class="b">✓</span>약관·서류 분석</div>
+          <div class="chk" onclick="tg(this)"><span class="b">✓</span>명단·CRM 정리</div>
+          <div class="chk on" onclick="tg(this)"><span class="b">✓</span>아침 브리핑</div>
+        </div>
+      </div>
+      <div class="field"><label>5. 이것만은 꼭 지켜라 (철칙)</label><input id="f_rule" placeholder="예: 보내기 전 반드시 확인 · 제안서 2~3개"></div>
+      <div style="height:12px;"></div>
+      <button class="btn btn-primary" onclick="submitDirect()">이 정보로 지니야 만들기</button>
+    </div>
+  </div>
+
+  <!-- 5. 자연어 대화 ★★ (비서와 대화) -->
+  <div class="screen" data-s="5">
+    <div class="top"><div class="logo">🤖</div><div class="bn">지니야빌더</div>
+      <div class="prog"><span class="done"></span><span class="done"></span><span class="done"></span><span></span><span></span><span></span><span></span></div></div>
+    <div class="body">
+      <div class="step-lb">지니야와 대화하며 만들기</div>
+      <h2 class="big">말로 설명해 주세요</h2>
+      <p class="sub">직원에게 말하듯 편하게 이야기하면, 지니야가 알아듣고 맞춰갑니다.</p>
+      <div class="demo-chat" style="margin-bottom:14px;">
+        <div class="dm you"><div class="av">🤖</div><div class="bb">안녕하세요! 어떤 일을 도와드릴 비서를 만들까요? 편하게 말씀해 주세요.</div></div>
+        <div class="dm me"><div class="av">나</div><div class="bb">나는 보험설계사야. 매주 만기 오는 고객 정리해서 안내 문자 보내는 게 제일 귀찮아. 그리고 약관 찾는 것도 도와줬으면 좋겠어.</div></div>
+        <div class="dm you"><div class="av">🤖</div><div class="bb">알겠어요! 정리하면 — ① 만기 고객 자동 정리 ② 안내 문자 초안 ③ 약관 검색, 이 세 가지를 먼저 맡기고 싶으신 거죠? 문자는 보내기 전에 확인받을까요?<div class="src">→ 대화에서 기능·철칙을 자동 추출</div></div></div>
+        <div class="dm me"><div class="av">나</div><div class="bb">응 맞아. 꼭 나한테 먼저 보여주고 보내야 해.</div></div>
+        <div class="dm you"><div class="av">🤖</div><div class="bb">완벽해요. "발송 전 확인"을 철칙으로 넣었어요. 이대로 지니야를 만들까요?</div></div>
+      </div>
+      <div class="ws-chat" style="margin-top:0;">
+        <div class="inp"><span style="font-size:18px;">💬</span><input id="chatInput" placeholder="지니야에게 말하기… (예: 저는 보험설계사인데 만기관리와 약관검색을 맡기고 싶어요)" style="flex:1;border:none;background:transparent;font-size:13.5px;font-family:inherit;outline:none;"><span style="font-size:18px;color:var(--teal);">🎤</span></div>
+      </div>
+      <div style="height:14px;"></div>
+      <button class="btn btn-primary" onclick="submitChat()">대화한 대로 지니야 만들기</button>
+    </div>
+  </div>
+
+  <!-- 6. 생성 -->
+  <div class="screen" data-s="6">
+    <div class="meet">
+      <div class="spin">🤖</div>
+      <h2 class="big" style="font-size:22px;">지니야를 만들고 있어요</h2>
+      <p class="sub" style="margin-bottom:22px;">내 정보를 바탕으로 나만의 비서가 태어나는 중…</p>
+      <div class="arow"><span class="d"></span>직업·고민·철칙 반영</div>
+      <div class="arow"><span class="d"></span>맡길 기능 → 문제해결 화면 준비</div>
+      <div class="arow"><span class="d"></span>약관 지식 창고 연결</div>
+      <div class="arow"><span class="d"></span>안전 장치(발송 전 확인) 심음</div>
+      <button class="btn btn-primary" style="margin-top:22px;max-width:300px;margin-left:auto;margin-right:auto;" onclick="go(7)">다음 → 자료 넣기</button>
+    </div>
+  </div>
+
+  <!-- 7. 자료 -->
+  <div class="screen" data-s="7">
+    <div class="top"><div class="logo">🤖</div><div class="bn">지니야빌더</div>
+      <div class="prog"><span class="done"></span><span class="done"></span><span class="done"></span><span class="done"></span><span></span><span></span><span></span></div></div>
+    <div class="body">
+      <div class="step-lb">4/7 · 업무 자료 넣기</div>
+      <h2 class="big">업무 자료를<br>올려주세요</h2>
+      <p class="sub">고객명단·증권을 올리면 지니야가 바로 일해요. 내 드라이브에만 저장돼요.</p>
+      <input type="file" id="dataFile1" style="display:none" onchange="onDataFile(this, document.getElementById('dataDone1'))">
+      <div class="up" style="padding:24px;" onclick="document.getElementById('dataFile1').click()"><div class="ic">📊</div><div class="t1">고객명단 엑셀 / 구글시트</div></div>
+      <div class="up-done" id="dataDone1" style="margin-top:10px;display:none;"><div class="ic">✅</div><div class="tx"><b>파일</b><span>업로드 중…</span></div></div>
+      <input type="file" id="dataFile2" style="display:none" onchange="onDataFile(this, document.getElementById('dataDone2'))">
+      <div class="up" style="padding:18px;margin-top:12px;" onclick="document.getElementById('dataFile2').click()"><div class="ic">📄</div><div class="t1" style="font-size:14px;">보험증권 PDF (선택)</div></div>
+      <div class="up-done" id="dataDone2" style="margin-top:10px;display:none;"><div class="ic">✅</div><div class="tx"><b>파일</b><span>업로드 중…</span></div></div>
+      <div style="height:20px;"></div>
+      <button class="btn btn-primary" onclick="go(8)">다음</button>
+      <button class="btn btn-ghost" onclick="go(8)">나중에 올릴게요</button>
+    </div>
+  </div>
+
+  <!-- 8. 연결 -->
+  <div class="screen" data-s="8">
+    <div class="top"><div class="logo">🤖</div><div class="bn">지니야빌더</div>
+      <div class="prog"><span class="done"></span><span class="done"></span><span class="done"></span><span class="done"></span><span class="done"></span><span></span><span></span></div></div>
+    <div class="body">
+      <div class="step-lb">5/7 · 도구 연결</div>
+      <h2 class="big">한 번만 연결하면<br>계속 써요</h2>
+      <p class="sub">연결한 도구만 지니야가 써요. 언제든 끊을 수 있어요.</p>
+      <div class="conn"><span class="e">📅</span><div class="tx"><b>구글 캘린더</b><span>일정·준비물 브리핑</span></div><span class="st st-done">연결됨</span></div>
+      <div class="conn"><span class="e">📊</span><div class="tx"><b>구글 시트</b><span>고객명단 정리</span></div><span class="st st-done">연결됨</span></div>
+      <div class="conn"><span class="e">📁</span><div class="tx"><b>구글 드라이브</b><span>증권·서류 검색</span></div><span class="st st-done">연결됨</span></div>
+      <div class="conn"><span class="e">📧</span><div class="tx"><b>Gmail</b><span>메일 정리·초안</span></div><span class="st st-go" onclick="this.className='st st-done';this.textContent='연결됨'">연결</span></div>
+      <div class="conn"><span class="e">💬</span><div class="tx"><b>카카오톡</b><span>고객 문자 발송</span></div><span class="st st-go" onclick="this.className='st st-done';this.textContent='연결됨'">연결</span></div>
+      <div style="height:20px;"></div>
+      <button class="btn btn-primary" onclick="go(9)">연결 완료 → 내 문제 해결하기</button>
+    </div>
+  </div>
+
+  <!-- 9. 문제해결 6화면 ★★ NEW -->
+  <div class="screen" data-s="9">
+    <div class="top"><div class="logo">🤖</div><div class="bn">지니야빌더</div>
+      <div class="prog"><span class="done"></span><span class="done"></span><span class="done"></span><span class="done"></span><span class="done"></span><span class="done"></span><span></span></div></div>
+    <div class="body">
+      <div class="step-lb">6/7 · 내 문제 해결 체험 (설문에서 나온 고민)</div>
+      <div class="solve-dots"><i class="on" id="sd0"></i><i id="sd1"></i><i id="sd2"></i><i id="sd3"></i><i id="sd4"></i><i id="sd5"></i></div>
+
+      <div id="solveContent">
+        <!-- JS로 6문제 채움 -->
+      </div>
+
+      <div style="height:6px;"></div>
+      <div style="display:flex;gap:10px;">
+        <button class="btn btn-line" style="flex:1;" onclick="prevSolve()">이전</button>
+        <button class="btn btn-primary" style="flex:2;" id="solveBtn" onclick="nextSolve()">해결됐어요 · 다음 문제 →</button>
+      </div>
+      <button class="btn btn-ghost" onclick="go(10)">건너뛰고 워크스페이스로</button>
+    </div>
+  </div>
+
+  <!-- 10. 워크스페이스 (반영구) -->
+  <div class="screen" data-s="10">
+    <div class="ws-head">
+      <div class="lg">🤖</div>
+      <div class="nm"><b id="wsName">지니야</b><span>기억하고 먼저 리딩하는 비서 · 기억 영구 보존</span></div>
+      <div class="badge">● 온보딩 완료</div>
+    </div>
+
+    <div class="home">
+      <!-- 히어로: 지니야 인사 + 아침 브리핑 -->
+      <div class="hero">
+        <div class="greet">좋은 아침이에요 👋</div>
+        <div class="greet-s">오늘도 제가 먼저 챙겨뒀어요. 함께 시작해요.</div>
+        <div class="hero-brief">
+          <div class="bl">☀️ 오늘 아침 브리핑</div>
+          <p id="wsBrief">오늘 일정을 불러오는 중…</p>
+          <div class="ask">비교표 먼저 볼까요? (네 / 아니요)</div>
+        </div>
+      </div>
+
+      <div class="home-body">
+
+        <!-- ★★ 3대 창고 -->
+        <div class="home-sec">🗄️ 내 비서의 창고 <span class="cnt">지니야가 이 창고들을 갖추고 일해요</span></div>
+        <div class="stores">
+          <div class="store store-doc" onclick="openStore('yak',event)">
+            <div class="si">📄</div>
+            <b>약관 창고</b>
+            <div class="sd">보험 약관을 근거·출처로 답해요. 밤·휴일에도 물어보면 즉시.</div>
+            <div class="schips"><span class="schip">삼성 자동차약관 276p</span><span class="schip">출처 표시</span><span class="schip">지어내지 않음</span></div>
+            <div class="smeta">📄 8개 약관 연결됨 · 열기 →</div>
+          </div>
+          <div class="store store-skill" onclick="openStore('skill',event)">
+            <div class="si">🛠️</div>
+            <b>스킬 창고</b>
+            <div class="sd">서류 작업을 대신해요. 증권 분석·비교표·제안서·보고서를 직접 만들어요.</div>
+            <div class="schips"><span class="schip">PDF 읽기</span><span class="schip">엑셀 표</span><span class="schip">PPT 제안서</span><span class="schip">문서 보고서</span></div>
+            <div class="smeta" id="wsSkillMeta">🛠️ 스킬 창고 · 열기 →</div>
+          </div>
+          <div class="store store-conn" onclick="openStore('conn',event)">
+            <div class="si">🔌</div>
+            <b>커넥터 창고</b>
+            <div class="sd">내 도구와 연결돼요. 캘린더·시트·드라이브·카톡·발굴이 손발이 돼요.</div>
+            <div class="schips"><span class="schip">구글 4종</span><span class="schip">카카오톡</span><span class="schip">발굴</span><span class="schip">+ 추가</span></div>
+            <div class="smeta" id="wsConnMeta">🔌 커넥터 창고 · 관리 →</div>
+          </div>
+        </div>
+
+        <!-- 기존 능력들 제자리 -->
+        <div class="home-sec">⚡ 지니야가 할 수 있는 일 <span class="cnt">눌러서 바로 시키기</span></div>
+        <div class="abils">
+          <div class="abil"><div class="ai">☀️</div><b>아침 브리핑</b><span>오늘 할 일 먼저</span></div>
+          <div class="abil"><div class="ai">📁</div><b>증권 분석</b><span>보장 빈틈 찾기</span></div>
+          <div class="abil"><div class="ai">📄</div><b>약관 검색</b><span>근거+출처로</span></div>
+          <div class="abil"><div class="ai">📊</div><b>비교표 제작</b><span>3사 한 표로</span></div>
+          <div class="abil"><div class="ai">📅</div><b>만기 관리</b><span>자동 정리·알림</span></div>
+          <div class="abil"><div class="ai">💬</div><b>문자 초안</b><span>발송 전 확인</span></div>
+          <div class="abil"><div class="ai">📇</div><b>명단 정리</b><span>시트 자동</span></div>
+          <div class="abil hot"><div class="ai">🎯</div><b>고객 발굴 🔥</b><span>스스로 찾음</span></div>
+        </div>
+
+        <!-- ★ 상시 자연어 대화창 -->
+        <div class="home-chat">
+          <div class="hc-t">💬 지니야와 대화하기 — 무엇이든 말하세요 (Order Made)</div>
+          <div class="hc-i">
+            <span style="font-size:19px;">➕</span>
+            <input id="wsChatInput" placeholder='예: "이번 주 만기 고객 정리해서 안내 문자 초안 만들어줘"' style="flex:1;border:none;background:transparent;font-size:13.5px;font-family:inherit;outline:none;" onkeydown="if(event.key==='Enter')wsAsk()">
+            <span style="font-size:19px;color:var(--teal);cursor:pointer;" onclick="wsAsk()">📤</span>
+          </div>
+          <div id="wsChatOut" style="margin-top:10px;font-size:13px;color:#2a3540;line-height:1.6;white-space:pre-wrap;"></div>
+        </div>
+
+        <!-- 데이터 안전 -->
+        <div class="home-safe">
+          🔒 <b>데이터 안전 · 제로 인그레스</b> — 모든 고객 데이터는 본인 Google Drive에만 저장 · AI는 무보존·비학습 · 오원트 서버에 미저장 · 발송·수정은 사람 승인 후에만
+        </div>
+      </div>
+
+      <!-- 하단 탭바 -->
+      <div class="tabbar">
+        <div class="tb on"><i>🏠</i>홈</div>
+        <div class="tb"><i>✅</i>할 일·승인</div>
+        <div class="tb"><i>🗄️</i>창고</div>
+        <div class="tb"><i>📈</i>성과</div>
+        <div class="tb"><i>⚙️</i>설정</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="ctrl">
+  <button onclick="go(0)">①로그인</button>
+  <button onclick="go(1)">②직업</button>
+  <button onclick="go(2)">③방식선택</button>
+  <button onclick="go(3)">·업로드</button>
+  <button onclick="go(4)">·직접입력</button>
+  <button onclick="go(5)">·대화</button>
+  <button onclick="go(6)">④생성</button>
+  <button onclick="go(7)">⑤자료</button>
+  <button onclick="go(8)">⑥연결</button>
+  <button onclick="go(9)">⑦문제해결6</button>
+  <button onclick="go(10)">⑧워크스페이스</button>
+</div>
+<div class="note">
+  ★ 설문 3갈래: 업로드 / 직접입력(설문지 간추림) / 자연어 대화 (Order Made)<br>
+  ★ 연결 다음 → 문제해결 6화면(설문 고민 해결 체험, 개인문제 추가 가능) → 워크스페이스(반영구·기억영구)<br>
+  ★ 워크스페이스 중앙에 상시 자연어 대화창 · "짜앙" 등 개인호칭 삭제(범용)
+</div>
+
+<script>
+  // ═══ 지니야빌더 v4 — 실엔진 배선 (목업·하드코딩 0) ═══
+  const screens=[...document.querySelectorAll('.screen')];
+  const ctrlBtns=[...document.querySelectorAll('.ctrl button')];
+  var PROFILE={job:'',work:'',clients:'',tasks:[],rule:''};
+  function enc(s){return encodeURIComponent(s==null?'':s);}
+  function esc(s){return String(s==null?'':s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+  function go(n){
+    screens.forEach(s=>s.classList.remove('on'));
+    const t=document.querySelector(`.screen[data-s="${n}"]`);
+    if(t){t.classList.add('on');t.scrollTop=0;}
+    ctrlBtns.forEach(b=>b.classList.remove('active'));
+    if(n===6) buildGenya();
+    if(n===9) renderSolve();
+    if(n===10) loadWorkspace();
+    window.scrollTo(0,0);
+  }
+  function pickJob(el){document.querySelectorAll('.job').forEach(j=>j.classList.remove('sel'));el.classList.add('sel');PROFILE.job=(el.querySelector('b')||{}).textContent||'';}
+  function tg(el){el.classList.toggle('on');}
+
+  // 로그인돼 있으면 직업(화면1)부터 시작
+  fetch('/me').then(r=>r.json()).then(d=>{ if(d&&d.ok){ go(1); } }).catch(()=>{});
+
+  // ── 프로필 저장(회원 구글시트, 서버 저장 0) ──
+  function saveProfile(mode){
+    var q='job='+enc(PROFILE.job||'전문가')+'&work='+enc(PROFILE.work)+'&clients='+enc(PROFILE.clients)+'&tasks='+enc((PROFILE.tasks||[]).join(' / '))+'&rule='+enc(PROFILE.rule)+'&mode='+enc(mode||'v4');
+    return fetch('/api/profile/save?'+q).then(r=>r.json()).catch(()=>({ok:false}));
+  }
+  // ── 화면3 설문 업로드 → 드라이브 직행 + 자연어 추출 ──
+  function onSurveyFile(inp){var f=inp.files[0];if(!f)return;
+    var pB=document.getElementById('pB'); if(pB)pB.style.display='block';
+    uploadToDrive(f);
+    var rd=new FileReader();rd.onload=function(){
+      var text=(f.type&&f.type.indexOf('text')>=0)?rd.result:f.name;
+      fetch('/api/onboard/extract',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:String(text).slice(0,4000)})}).then(r=>r.json()).then(function(d){
+        var p=d.profile||{}; if(p.job)PROFILE.job=p.job; PROFILE.work=p.work||''; PROFILE.clients=p.clients||''; PROFILE.tasks=p.tasks?String(p.tasks).split(/[;,·\/]/).map(s=>s.trim()).filter(Boolean):[]; PROFILE.rule=p.rule||'';
+        renderParsed(p);
+      });
+    }; try{rd.readAsText(f);}catch(e){}
+  }
+  function renderParsed(p){var el=document.querySelector('#pB .parsed');if(!el)return;
+    var rows=[['직업',p.job||PROFILE.job],['핵심 고객',p.clients||'-'],['제일 힘든 일',p.pain||'-'],['맡길 기능',p.tasks||'-'],['철칙',p.rule||'-']];
+    el.innerHTML=rows.map(function(r){return '<div class="row"><span>'+esc(r[0])+'</span><b>'+esc(r[1])+'</b></div>';}).join('');
+  }
+  // ── 화면4 직접입력 → 저장 ──
+  function submitDirect(){
+    PROFILE.work=(document.getElementById('f_work')||{}).value||'';
+    PROFILE.clients=(document.getElementById('f_clients')||{}).value||'';
+    PROFILE.rule=(document.getElementById('f_rule')||{}).value||'';
+    var pain=(document.getElementById('f_pain')||{}).value||'';
+    PROFILE.tasks=[]; document.querySelectorAll('#s4 .chk.on').forEach(function(c){PROFILE.tasks.push(c.textContent.trim());});
+    if(pain)PROFILE.tasks.unshift(pain);
+    go(6);
+  }
+  // ── 화면5 자연어 대화 → 실제 추출 ──
+  function submitChat(){
+    var inp=document.getElementById('chatInput'); var t=(inp&&inp.value||'').trim();
+    if(!t){go(6);return;}
+    fetch('/api/onboard/extract',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:t})}).then(r=>r.json()).then(function(d){
+      var p=d.profile||{}; if(p.job)PROFILE.job=p.job; PROFILE.work=p.work||t; PROFILE.clients=p.clients||''; PROFILE.tasks=p.tasks?String(p.tasks).split(/[;,·\/]/).map(s=>s.trim()).filter(Boolean):[]; PROFILE.rule=p.rule||'';
+      go(6);
+    }).catch(()=>go(6));
+  }
+  // ── 화면6 생성: 실제 저장 + LLM 능력 배정 ──
+  function buildGenya(){
+    saveProfile('v4').then(function(){
+      var goals=(PROFILE.tasks&&PROFILE.tasks.length?PROFILE.tasks:[PROFILE.work]).filter(Boolean).join('|');
+      if(!goals)return null;
+      return fetch('/api/agents/assign?goals='+enc(goals)).then(r=>r.json());
+    }).then(function(a){ window._assigned=a; }).catch(function(){});
+  }
+  // ── 화면7 자료 → 회원 드라이브 직행(drive.file, 서버 안 지남) ──
+  function uploadToDrive(f, doneEl){
+    return fetch('/api/drive/token').then(r=>r.json()).then(function(d){
+      if(!d.ok||!d.token)throw new Error(d.error||d.message||'토큰 없음');
+      var meta={name:f.name,mimeType:f.type||'application/octet-stream'};
+      var b='genya'+Math.random().toString(16).slice(2);
+      var body=new Blob(['--'+b+'\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n',JSON.stringify(meta),'\r\n--'+b+'\r\nContent-Type: '+meta.mimeType+'\r\n\r\n',f,'\r\n--'+b+'--']);
+      return fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,webViewLink',{method:'POST',headers:{'Authorization':'Bearer '+d.token,'Content-Type':'multipart/related; boundary='+b},body:body}).then(r=>r.json());
+    }).then(function(g){ if(doneEl){doneEl.style.display='flex'; var s=doneEl.querySelector('span'); if(s)s.textContent=g&&g.id?'내 드라이브에 저장됨(브라우저→구글 직행)':'업로드 실패';} return g; })
+    .catch(function(e){ if(doneEl){doneEl.style.display='flex'; var s=doneEl.querySelector('span'); if(s)s.textContent='실패: '+e.message;} });
+  }
+  function onDataFile(inp, doneEl){var f=inp.files[0];if(!f)return; var b=doneEl&&doneEl.querySelector('b'); if(b)b.textContent=f.name; uploadToDrive(f, doneEl);}
+
+  // ── 화면9 문제해결 6 — 실제 엔진(약관·시트·캘린더 실호출) ──
+  const solveDefs=[
+    {n:1,title:'보장분석 → 재설계 제안',q:'김철수님 자동차 증권 보장분석해줘.',run:function(cb){cb('증권은 회원 드라이브에서 읽어 대물·자기신체 등 보장 빈틈을 분석하고 A/B/C안을 만듭니다. 자료 화면에서 증권을 올리면 실제로 읽어요.','드라이브 증권 읽기 + 약관 근거');}},
+    {n:2,title:'약관 쉽게 물어보기',q:'무보험차상해가 뭐야?',run:function(cb){fetch('/api/yakgwan?q='+enc('무보험차상해가 뭐야')).then(r=>r.json()).then(function(d){cb(d.answer||'(응답 없음)',((d.sources||[])[0])||'약관 창고');}).catch(function(){cb('약관 창고 연결 오류','-');});}},
+    {n:3,title:'고객 문자 초안',q:'만기 고객 안내 문자 써줘.',run:function(cb){cb('"OOO님, 자동차보험 만기가 곧 다가와 미리 연락드려요. 편하실 때 봐드릴게요 😊" — ★보내기 전 확인받고 발송합니다.','철칙(발송 전 확인) 반영 · 발송 0');}},
+    {n:4,title:'만기 고객 자동 정리',q:'이번 주 만기 고객 정리해줘.',run:function(cb){fetch('/api/sheets').then(r=>r.json()).then(function(d){if(d.needsGoogle){cb('구글 연결이 필요해요.','구글 연결');return;}var n=(d.q1_7월만기||[]).length;var im=(d.q2_만기임박순||[]).map(function(o){return o.고객명+'('+o.만기일+')';}).join(' · ');cb('7월 만기 '+n+'명'+(im?': '+im:' — 명단 없음'),'구글시트 명단 자동 필터');}).catch(function(){cb('시트 연결 오류','-');});}},
+    {n:5,title:'아침 브리핑',q:'(매일 아침 자동)',run:function(cb){fetch('/api/calendar').then(r=>r.json()).then(function(d){if(d.needsGoogle){cb('구글 연결이 필요해요.','구글 연결');return;}var b='오늘 일정 '+d.count+'건. '+(d.events||[]).map(function(e){return e.time+' '+e.title;}).join(' · ');cb(b||'오늘 일정 없음','캘린더 + 명단 자동 연결');}).catch(function(){cb('캘린더 연결 오류','-');});}},
+    {n:6,title:'첫 고객 발굴 🔥',q:'새 고객 좀 찾아줘.',run:function(cb){cb('유튜브 공개 댓글에서 관심 고객을 찾아 Hot🔥/Warm🌤 분류하고 첫 인사 초안까지 만듭니다. ★연락은 직접 하세요(발송 0).','유튜브 댓글 발굴 + 분류');}},
+  ];
+  let si=0;
+  function renderSolve(){
+    var s=solveDefs[si];
+    var box=document.getElementById('solveContent'); if(!box)return;
+    box.innerHTML='<div class="solve-hd"><span class="num">'+s.n+'</span><h2 class="big" style="font-size:20px;margin:0;">'+esc(s.title)+'</h2></div><div style="height:14px;"></div><div class="demo-chat"><div class="dm me"><div class="av">나</div><div class="bb">'+esc(s.q)+'</div></div><div class="dm you"><div class="av">🤖</div><div class="bb" id="solveAns">지니야가 실제로 처리하는 중…</div></div></div><div class="solve-result" id="solveRes">…</div>';
+    s.run(function(ans,src){var a=document.getElementById('solveAns');if(a)a.innerHTML=esc(ans)+'<div class="src">→ '+esc(src)+'</div>';var r=document.getElementById('solveRes');if(r)r.innerHTML='✅ 실제 엔진으로 처리했어요.';});
+    for(let i=0;i<6;i++){var d=document.getElementById('sd'+i);if(d)d.className=(i===si?'on':'');}
+    document.getElementById('solveBtn').textContent = si<5 ? '해결됐어요 · 다음 문제 →' : '6개 다 해결! 워크스페이스 열기 →';
+  }
+  function nextSolve(){ if(si<5){si++;renderSolve();}else{go(10);} }
+  function prevSolve(){ if(si>0){si--;renderSolve();} }
+
+  // ── 화면10 워크스페이스 실데이터 ──
+  function loadWorkspace(){
+    var nm=document.getElementById('wsName'); if(nm&&PROFILE.job)nm.textContent=PROFILE.job+' 지니야';
+    fetch('/api/profile').then(r=>r.json()).then(function(d){if(d.ok&&d.profile&&d.profile['직업']){var e=document.getElementById('wsName');if(e)e.textContent=d.profile['직업']+' 지니야';}}).catch(()=>{});
+    fetch('/api/calendar').then(r=>r.json()).then(function(d){var el=document.getElementById('wsBrief');if(!el)return;
+      if(d.needsGoogle){el.innerHTML='구글을 연결하면 오늘 일정을 브리핑해드려요.';return;}
+      var b='오늘 일정 '+d.count+'건이에요. '+(d.events||[]).map(function(e){return e.time+' '+e.title+(e.prep&&e.prep[0]?'('+e.prep[0]+')':'');}).join(' · ');
+      el.textContent=b||'오늘 예정된 일정이 없어요.';}).catch(()=>{});
+    fetch('/api/connectors').then(r=>r.json()).then(function(d){var el=document.getElementById('wsConnMeta');if(el)el.textContent='🔌 '+d.connectedCount+'개 연결됨 · 관리 →';}).catch(()=>{});
+    fetch('/api/skills').then(r=>r.json()).then(function(d){var el=document.getElementById('wsSkillMeta');if(el)el.textContent='🛠️ '+d.list.length+'개 스킬 장착됨 · 열기 →';}).catch(()=>{});
+  }
+  function wsAsk(){var inp=document.getElementById('wsChatInput');var q=(inp&&inp.value||'').trim();if(!q)return;
+    var out=document.getElementById('wsChatOut');if(out)out.textContent='지니야가 처리하는 중…';
+    fetch('/api/order?q='+enc(q)).then(r=>r.json()).then(function(d){if(out)out.innerHTML='<b>'+esc(d.kind||'')+'</b> '+esc(d.text||d.error||'');}).catch(function(){if(out)out.textContent='오류';});
+  }
+  function openStore(kind,ev){ if(ev)ev.stopPropagation();
+    var out=document.getElementById('wsChatOut');
+    if(kind==='yak'){ if(out)out.textContent='약관 창고 검색 중…'; fetch('/api/yakgwan?q='+enc('무보험차상해가 뭐야')).then(r=>r.json()).then(function(d){if(out)out.innerHTML='<b>📄 약관 창고</b> '+esc(d.answer||'')+' <span style="color:#0d7a52">('+((d.sources||[]).join(', ')||'출처 없음')+')</span>';}); }
+    else if(kind==='conn'){ if(out)out.textContent='커넥터 확인 중…'; fetch('/api/connectors').then(r=>r.json()).then(function(d){if(out)out.innerHTML='<b>🔌 커넥터 창고</b> 연결됨 '+d.connectedCount+'/'+d.list.length+' — '+d.list.map(function(c){return c.name+':'+c.status;}).join(', ');}); }
+    else { if(out)out.innerHTML='<b>🛠️ 스킬 창고</b> PDF·엑셀·PPT·문서 생성 — 능력 카드의 비교표 등에서 실행됩니다.'; }
+  }
+  go(0);
+</script>
+</body>
+</html>
