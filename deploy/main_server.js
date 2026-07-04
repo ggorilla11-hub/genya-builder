@@ -275,7 +275,7 @@ app.get('/api/profile/save', async (req, res) => {
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 // 온보딩 화면(로그인 게이트)
-app.get('/onboarding', (req, res) => { if (!sessionOf(req)) return res.redirect('/login'); res.setHeader('Cache-Control', 'no-store'); res.sendFile(path.join(__dirname, 'onboarding.html'), { etag: false }); });
+app.get('/onboarding', (req, res) => { res.redirect('/'); }); // ★옛날 축소판 제거 → v4(genya.html)로 통일
 
 // 🤖 목표 → 실제 능력 배정(LLM이 우리 실제 커넥터/창고로 매핑. 글자매칭 아님)
 app.get('/api/agents/assign', async (req, res) => {
@@ -397,12 +397,12 @@ app.get('/auth/kakao/callback', async (req, res) => {
 app.get('/main', (req, res) => {
   if (!sessionOf(req)) return res.redirect('/login');
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-  res.sendFile(path.join(__dirname, 'home.html'), { etag: false, lastModified: false, cacheControl: false });
+  res.redirect('/'); // ★옛날 홈 축소판 제거 → v4(genya.html)로 통일
 });
 app.get('/work', (req, res) => {
   if (!sessionOf(req)) return res.redirect('/login');
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-  res.sendFile(path.join(__dirname, 'main.html'), { etag: false, lastModified: false, cacheControl: false });
+  res.redirect('/'); // ★옛날 작업공간 축소판 제거 → v4(genya.html)로 통일
 });
 // ★기본 URL / → v4 통합 페이지(genya.html). 로그인 화면0부터. "Not Found" 없음.
 app.get('/', (req, res) => { res.setHeader('Cache-Control', 'no-store'); res.sendFile(path.join(__dirname, 'genya.html'), { etag: false }); });
