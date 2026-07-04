@@ -41,7 +41,9 @@ try { require('dotenv').config(); } catch (e) {}
 const crypto = require('crypto');
 const OA_ID = process.env.GOOGLE_OAUTH_CLIENT_ID || '';
 const OA_SECRET = process.env.GOOGLE_OAUTH_CLIENT_SECRET || '';
-const OA_REDIRECT = process.env.GOOGLE_OAUTH_REDIRECT || `http://localhost:${process.env.PORT || 8090}/auth/google/callback`;
+// ★배포 콜백 자동화: env 미설정 시 Render 배포 도메인(RENDER_EXTERNAL_URL)으로 콜백 → 로그인 후 배포 서버(genya.html)로 복귀
+const _BASE = (process.env.RENDER_EXTERNAL_URL || '').replace(/\/$/, '');
+const OA_REDIRECT = process.env.GOOGLE_OAUTH_REDIRECT || (_BASE ? _BASE + '/auth/google/callback' : `http://localhost:${process.env.PORT || 8090}/auth/google/callback`);
 const OA_SCOPES = ['openid', 'email', 'profile', 'https://www.googleapis.com/auth/calendar.readonly', 'https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive.readonly', 'https://www.googleapis.com/auth/drive.file'];
 const OA_CONFIGURED = !!(OA_ID && OA_SECRET);
 // ★회원 간 격리: 세션ID → {email, tokens}. 서버 메모리에만(디스크·DB 0, 회원 데이터 저장 0=토큰뿐)
@@ -67,7 +69,7 @@ function gateGoogle(req, res) {
 //   ★카카오 = "누구인지"(신원)만. 회원 구글 데이터(캘린더·시트·드라이브)는 카카오로 못 얻음
 //   → 카카오 로그인 후에도 데이터 기능은 [구글 연결]이 필요(원칙1). 정직히 분리.
 const KA_KEY = process.env.KAKAO_REST_KEY || '';
-const KA_REDIRECT = process.env.KAKAO_REDIRECT || `http://localhost:${process.env.PORT || 8090}/auth/kakao/callback`;
+const KA_REDIRECT = process.env.KAKAO_REDIRECT || (_BASE ? _BASE + '/auth/kakao/callback' : `http://localhost:${process.env.PORT || 8090}/auth/kakao/callback`);
 const KA_CONFIGURED = !!KA_KEY;
 
 // ── SA 폴백(데모). 로그인 시엔 memberAuth가 우선 ──
