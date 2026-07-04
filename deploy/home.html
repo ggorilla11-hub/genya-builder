@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>지니야빌더 — 홈</title>
+<style>
+/* ── 코치 design-tokens 인라인(외부 의존 완전 제거: 폰트=시스템 폴백, 아이콘=이모지) ── */
+:root{--navy-ink:#0B1F3A;--navy:#16335C;--navy-mid:#1F4E8C;--navy-br:#3B82C4;--navy-bg:#E6F1FB;--teal-dk:#06564A;--teal:#0F8A6E;--teal-br:#1DB088;--teal-bg:#E1F5EE;--ink:#1A1C1E;--body:#5F6368;--border:#DADCE0;--bg:#F8F9FB;--radius:8px;--radius-card:14px;--radius-btn:14px;--radius-pill:9999px;--border-w:0.5px;--shadow-card:0 2px 8px rgba(11,31,58,.05);--sp-1:4px;--sp-2:8px;--sp-3:12px;--sp-4:16px;--sp-5:24px;--sp-6:32px;--font:'Pretendard','Apple SD Gothic Neo','Malgun Gothic',sans-serif;}
+*,*::before,*::after{box-sizing:border-box;}html,body{margin:0;}
+body{font-family:var(--font);color:var(--ink);background:#EDEFF3;font-size:15px;line-height:1.6;letter-spacing:-.2px;-webkit-font-smoothing:antialiased;}
+p,li,td,label,input,button{font-family:var(--font);color:var(--body);}
+h1,h2,h3{font-family:var(--font);color:var(--ink);letter-spacing:-.4px;line-height:1.35;margin:0 0 var(--sp-3);}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:var(--sp-2);font-family:var(--font);font-weight:600;font-size:15px;letter-spacing:-.3px;padding:10px 20px;border-radius:var(--radius-btn);border:var(--border-w) solid transparent;cursor:pointer;transition:filter .15s;}
+.btn:hover{filter:brightness(.97);}.btn:disabled{opacity:.5;cursor:not-allowed;}
+.btn-yes{background:var(--teal-br);color:#fff;}.btn-navy{background:var(--navy);color:#fff;}.btn-sub{background:#fff;color:var(--body);border:var(--border-w) solid var(--border);}
+/* 코치 메인 style */
+.wrap{max-width:560px;margin:0 auto;padding:var(--sp-5) 16px 60px;}
+.brand{display:flex;align-items:center;gap:9px;padding:var(--sp-3) 0 var(--sp-5);}
+.brand .logo-box{width:30px;height:30px;border-radius:8px;background:var(--navy);display:flex;align-items:center;justify-content:center;}
+.brand .logo-box .ti{color:var(--teal-br);font-size:18px;}
+.brand b{font-weight:800;letter-spacing:-.5px;color:var(--navy-ink);font-size:16px;}
+.brand .who{margin-left:auto;font-size:12px;color:var(--body);}
+.hello{text-align:center;margin-bottom:var(--sp-5);}
+.hello .s{font-size:13px;color:var(--body);}
+.hello .b{font-size:19px;font-weight:600;color:var(--navy-ink);margin-top:6px;}
+.hello .b .t{color:var(--teal);}
+.todo{background:#fff;border:var(--border-w) solid var(--border);border-radius:16px;padding:18px 20px;margin-bottom:10px;}
+.todo .t1{font-size:15px;font-weight:600;color:var(--navy-ink);}
+.todo .t1 .n{font-weight:700;letter-spacing:-.5px;color:var(--teal);}
+.todo .t2{font-size:13px;color:var(--body);margin:3px 0 14px;}
+.todo .row{display:flex;gap:8px;}.todo .row .btn{flex:1;justify-content:center;font-weight:500;}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:16px 0;}
+.stat-c{background:#fff;border:var(--border-w) solid var(--border);border-radius:12px;padding:14px;text-align:center;}
+.stat-c.hot{background:var(--teal-bg);border:0;}
+.stat-c p{font-size:11px;color:var(--body);}.stat-c.hot p{color:var(--teal);}
+.stat-c .v{font-weight:700;letter-spacing:-.5px;color:var(--navy-ink);font-size:20px;font-variant-numeric:tabular-nums;}
+.stat-c.hot .v{color:var(--teal-dk);}
+.stat-c .v small{font-size:12px;color:var(--body);font-weight:400;}
+.tabbar{display:flex;justify-content:center;gap:22px;border-top:var(--border-w) solid var(--border);padding-top:14px;}
+.tabbar a{text-align:center;text-decoration:none;cursor:pointer;background:none;border:none;padding:0;}
+.tabbar .ti{font-size:20px;display:block;}
+.tabbar p{font-size:11px;color:var(--body);margin-top:2px;}
+.safe{background:var(--teal-bg);border-radius:11px;padding:10px 14px;font-size:12px;color:var(--teal-dk);margin:18px 0;}
+.safe b{color:var(--teal-dk);}
+/* 비전 */
+.vision{background:var(--navy-ink);border-radius:16px;padding:28px 22px;text-align:center;margin:24px 0 16px;}
+.vision .vbox{width:44px;height:44px;border-radius:12px;background:var(--navy);display:inline-flex;align-items:center;justify-content:center;margin-bottom:12px;}
+.vision .vbox .ti{color:var(--teal-br);font-size:26px;}
+.vision .gn{font-size:13px;color:#85B7EB;}
+.vision .l1,.vision .l2{font-size:18px;font-weight:500;color:#fff;}
+.vision .rotw{height:30px;overflow:hidden;margin:2px 0;}
+.vision .rotw p{height:30px;line-height:30px;font-size:21px;font-weight:700;color:var(--teal-br);margin:0;}
+.after{background:var(--teal-bg);border-radius:16px;padding:20px 22px;}
+.after .h{font-size:12px;color:var(--teal);font-weight:600;margin-bottom:8px;}
+.after .q{font-size:15px;color:var(--teal-dk);font-weight:500;line-height:1.65;}
+/* 푸터 */
+.footer{background:var(--navy-ink);border-radius:14px;padding:26px 22px;margin-top:24px;}
+.footer .frow{display:flex;align-items:center;gap:9px;margin-bottom:16px;}
+.footer .fbox{width:30px;height:30px;border-radius:8px;background:var(--navy);display:flex;align-items:center;justify-content:center;}
+.footer .fbox .ti{color:var(--teal-br);font-size:18px;}
+.footer .fbrand{font-size:15px;font-weight:700;color:#fff;}
+.footer .links{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:18px;}
+.footer .links span{font-size:13px;color:#85B7EB;}
+.footer .co{border-top:var(--border-w) solid var(--navy-mid);padding-top:16px;}
+.footer .co .name{font-size:13px;color:#fff;font-weight:500;margin-bottom:7px;}
+.footer .co .info{font-size:12px;color:#85B7EB;line-height:1.7;}
+.footer .ai{font-size:11px;color:#5F7A9C;line-height:1.6;margin-top:14px;border-top:var(--border-w) solid var(--navy-mid);padding-top:12px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand"><span class="logo-box"><i class="ti">⬡</i></span><b>GENYABUILDER</b><span class="who" id="who">…</span></div>
+
+  <!-- 인사 + 오늘 할 일 (실데이터: 회원 캘린더) -->
+  <div class="hello">
+    <p class="s" id="greet">좋은 하루예요</p>
+    <p class="b" id="todoCount">오늘 할 일을 확인하는 중…</p>
+  </div>
+  <div class="todo" id="todoCard" style="display:none;">
+    <p class="t1" id="todoT1"></p>
+    <p class="t2" id="todoT2"></p>
+    <div class="row" id="todoRow"><button class="btn btn-yes" onclick="location.href='/work'">지금 하기</button><button class="btn btn-sub" onclick="document.getElementById('todoCard').style.display='none'">나중에</button></div>
+  </div>
+
+  <!-- 핵심 3지표 (실데이터: 캘린더·시트·커넥터. 매출/목표는 데이터 소스 없어 실제 있는 지표로 정직 교체) -->
+  <div class="stats">
+    <div class="stat-c"><p>오늘 일정</p><p class="v" id="s1">…</p></div>
+    <div class="stat-c hot"><p>이번주 만기</p><p class="v" id="s2">…</p></div>
+    <div class="stat-c"><p>연결된 도구</p><p class="v" id="s3">…</p></div>
+  </div>
+
+  <!-- 탭바 (실제 화면 /work 연결) -->
+  <div class="tabbar">
+    <a onclick="location.href='/work'"><i class="ti">👥</i><p>내 비서</p></a>
+    <a onclick="location.href='/work'"><i class="ti">📁</i><p>데이터</p></a>
+    <a onclick="location.href='/work'"><i class="ti">✨</i><p>기능</p></a>
+    <a onclick="location.href='/work'"><i class="ti">💬</i><p>지니야</p></a>
+  </div>
+
+  <div class="safe">🔒 대표님 자료는 <b>본인 구글에만</b> 저장 — 오원트 서버 저장 0.</div>
+
+  <!-- 비전 회전 배너 (브랜드 카피) -->
+  <div class="vision">
+    <span class="vbox"><i class="ti">⬡</i></span>
+    <p class="gn">GENYABUILDER</p>
+    <p class="l1" style="margin-top:14px">사장님께</p>
+    <div class="rotw"><div id="rot">
+      <p>저녁이 있는 삶</p><p>주말이 있는 삶</p><p>휴가가 있는 삶</p><p>대출이 없는 삶</p><p>저녁이 있는 삶</p>
+    </div></div>
+    <p class="l2">을 돌려드립니다</p>
+  </div>
+  <div class="after">
+    <p class="h">1년 후, 사장님의 모습</p>
+    <p class="q">"고객 획득도 운영도 저희 AI비서들이 알아서 합니다. 사장님께서는 저녁이 있고, 주말이 있고, 휴가가 있고, 대출 걱정에서 벗어나셨습니다."</p>
+  </div>
+
+  <!-- 푸터 (회사 정보 = 실제) -->
+  <div class="footer">
+    <div class="frow"><span class="fbox"><i class="ti">⬡</i></span><span class="fbrand">GENYABUILDER</span></div>
+    <div class="links"><span>이용약관</span><span>개인정보처리방침</span><span>AI 운용 고지</span><span>고객지원</span></div>
+    <div class="co">
+      <p class="name">오원트금융연구소</p>
+      <p class="info">대표자 오상열 · 사업자등록번호 220-09-78255<br>통신판매업 제2014-서울강남-01282호<br>서울시 강남구 테헤란로 327 빅토리아빌딩 1702호<br>문의 ggorilla11@gmail.com · 010-5424-5332 · 평일 10:00~18:00</p>
+    </div>
+    <p class="ai">본 서비스는 AI를 활용해 업무를 보조합니다. 모든 발송·발행·계약은 사용자 승인 후 진행되며, AI 생성물은 오류가 있을 수 있어 최종 책임은 사용자에게 있습니다. © 2026 오원트금융연구소.</p>
+  </div>
+</div>
+
+<script>
+function esc(s){return String(s==null?'':s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+// 비전 회전 배너
+var i=0,r=document.getElementById('rot');
+setInterval(function(){i++;r.style.transition='transform .5s ease';r.style.transform='translateY(-'+(i*30)+'px)';
+  if(i===4){setTimeout(function(){r.style.transition='none';i=0;r.style.transform='translateY(0)';},520);}},2000);
+
+// 시간대 인사(브라우저 로컬 시각)
+var g=new Date().getHours();
+document.getElementById('greet').textContent=(g<11?'좋은 아침이에요':g<17?'좋은 오후예요':'수고 많으셨어요');
+
+// 로그인 배지 + 이름
+fetch('/me').then(r=>r.json()).then(d=>{
+  var who=document.getElementById('who');
+  if(!d.ok){location.href='/login';return;}
+  who.textContent='● '+d.email;
+  var nm=d.name||String(d.email||'').split('@')[0];
+  document.getElementById('greet').textContent+=', '+nm+' 님';
+});
+
+// 오늘 할 일 + 지표1 (회원 캘린더 실데이터)
+fetch('/api/calendar').then(r=>r.json()).then(d=>{
+  var tCount=document.getElementById('todoCount'),s1=document.getElementById('s1');
+  if(d.needsGoogle){
+    tCount.textContent='구글을 연결하면 오늘 할 일을 챙겨드려요';
+    s1.innerHTML='<small>연결 필요</small>';
+    var tc=document.getElementById('todoCard');tc.style.display='block';
+    document.getElementById('todoT1').textContent='🔗 내 구글 연결하기';
+    document.getElementById('todoT2').innerHTML='<a href="/auth/google" style="color:var(--teal);font-weight:700;text-decoration:none;">캘린더·시트·드라이브 연결</a>';
+    document.getElementById('todoRow').style.display='none';
+    return;
+  }
+  if(!d.ok){tCount.textContent='일정 불러오기 오류';return;}
+  s1.textContent=d.count;
+  if(d.count){
+    tCount.innerHTML='오늘 할 일은 <span class="t">'+d.count+'가지</span>예요';
+    var ev=(d.events||[]).find(e=>e.prep&&e.prep.length)||d.events[0];
+    var tc=document.getElementById('todoCard');tc.style.display='block';
+    document.getElementById('todoT1').innerHTML=esc(ev.time)+' <span class="n">'+esc(ev.title)+'</span>';
+    document.getElementById('todoT2').textContent=(ev.prep&&ev.prep[0])?ev.prep[0]+' · 발송은 대표님 승인 후':'준비를 도와드릴게요 · 발송은 대표님 승인 후';
+  }else{
+    tCount.textContent='오늘은 예정된 일정이 없어요';
+  }
+});
+
+// 지표2: 이번주 만기 (회원 시트 실데이터)
+fetch('/api/sheets').then(r=>r.json()).then(d=>{
+  var s2=document.getElementById('s2');
+  if(d.needsGoogle){s2.innerHTML='<small>연결 필요</small>';return;}
+  var n=(d.q1_7월만기&&d.q1_7월만기.length)||0;
+  s2.textContent=n+'명';
+}).catch(()=>{document.getElementById('s2').innerHTML='<small>—</small>';});
+
+// 지표3: 연결된 도구 (커넥터 실데이터)
+fetch('/api/connectors').then(r=>r.json()).then(d=>{
+  document.getElementById('s3').innerHTML=d.connectedCount+'<small>/'+d.list.length+'</small>';
+}).catch(()=>{document.getElementById('s3').innerHTML='<small>—</small>';});
+</script>
+</body>
+</html>

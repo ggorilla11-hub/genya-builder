@@ -1,0 +1,25 @@
+{
+  "name": "genya-builder",
+  "version": "1.0.0",
+  "private": true,
+  "description": "지니야빌더 — 주문제작 AI 비서 (배포판). 회원 데이터 서버 저장 0.",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node main_server.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "@pinecone-database/pinecone": "^4.1.0",
+    "docx": "^9.7.1",
+    "dotenv": "^16.6.1",
+    "express": "^4.22.2",
+    "googleapis": "^173.0.0",
+    "openai": "^4.104.0",
+    "pdf-parse": "^2.4.5",
+    "pdfkit": "^0.19.1",
+    "pptxgenjs": "^4.0.1",
+    "xlsx": "^0.18.5"
+  }
+}
