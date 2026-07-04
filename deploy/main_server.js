@@ -42,10 +42,12 @@ const crypto = require('crypto');
 const OA_ID = process.env.GOOGLE_OAUTH_CLIENT_ID || '';
 const OA_SECRET = process.env.GOOGLE_OAUTH_CLIENT_SECRET || '';
 // ★배포 콜백 자동화: env 미설정 시 Render 배포 도메인(RENDER_EXTERNAL_URL)으로 콜백 → 로그인 후 배포 서버(genya.html)로 복귀
-// ★배포 콜백 확정: RENDER_EXTERNAL_URL이 없어도 RENDER 환경이면 배포 도메인으로 고정(로그인 후 localhost 옛날서버 방지)
-const _BASE = (process.env.RENDER_EXTERNAL_URL || (process.env.RENDER ? 'https://genya-builder.onrender.com' : '')).replace(/\/$/, '');
-// ★redirect_uri 확정: env 우선 → RENDER 도메인 → 배포 도메인 하드코딩(RENDER 변수 미제공 대비). 로컬은 GOOGLE_OAUTH_REDIRECT env로.
-const OA_REDIRECT = process.env.GOOGLE_OAUTH_REDIRECT || (_BASE ? _BASE + '/auth/google/callback' : 'https://genya-builder.onrender.com/auth/google/callback');
+// ★redirect_uri 확정: 배포에선 무조건 배포 도메인. Render env에 localhost가 잘못 들어있어도 무시(env 최우선의 함정 방어).
+const _DEPLOY = 'https://genya-builder.onrender.com';
+const _isLocalDev = /^809[012]$/.test(String(process.env.PORT || ''));  // 로컬 개발 포트(8090/8091/8092)만 localhost
+let _envRedirect = process.env.GOOGLE_OAUTH_REDIRECT;
+if (_envRedirect && /localhost/i.test(_envRedirect) && !_isLocalDev) _envRedirect = null; // 배포인데 localhost env면 무시
+const OA_REDIRECT = _envRedirect || (_isLocalDev ? `http://localhost:${process.env.PORT}/auth/google/callback` : _DEPLOY + '/auth/google/callback');
 // ★"확인 안 된 앱" 경고 제거: 로그인은 openid·email·profile만(민감 스코프 없음 → 경고 안 뜸).
 //   캘린더·시트·드라이브(민감)는 그 기능 쓸 때 /auth/google/connect 로 별도 동의(incremental).
 const LOGIN_SCOPES = ['openid', 'email', 'profile'];
@@ -75,7 +77,9 @@ function gateGoogle(req, res) {
 //   ★카카오 = "누구인지"(신원)만. 회원 구글 데이터(캘린더·시트·드라이브)는 카카오로 못 얻음
 //   → 카카오 로그인 후에도 데이터 기능은 [구글 연결]이 필요(원칙1). 정직히 분리.
 const KA_KEY = process.env.KAKAO_REST_KEY || '';
-const KA_REDIRECT = process.env.KAKAO_REDIRECT || (_BASE ? _BASE + '/auth/kakao/callback' : 'https://genya-builder.onrender.com/auth/kakao/callback');
+let _envKa = process.env.KAKAO_REDIRECT;
+if (_envKa && /localhost/i.test(_envKa) && !_isLocalDev) _envKa = null;
+const KA_REDIRECT = _envKa || (_isLocalDev ? `http://localhost:${process.env.PORT}/auth/kakao/callback` : _DEPLOY + '/auth/kakao/callback');
 const KA_CONFIGURED = !!KA_KEY;
 
 // ── SA 폴백(데모). 로그인 시엔 memberAuth가 우선 ──
