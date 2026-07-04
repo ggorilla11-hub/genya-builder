@@ -42,7 +42,8 @@ const crypto = require('crypto');
 const OA_ID = process.env.GOOGLE_OAUTH_CLIENT_ID || '';
 const OA_SECRET = process.env.GOOGLE_OAUTH_CLIENT_SECRET || '';
 // ★배포 콜백 자동화: env 미설정 시 Render 배포 도메인(RENDER_EXTERNAL_URL)으로 콜백 → 로그인 후 배포 서버(genya.html)로 복귀
-const _BASE = (process.env.RENDER_EXTERNAL_URL || '').replace(/\/$/, '');
+// ★배포 콜백 확정: RENDER_EXTERNAL_URL이 없어도 RENDER 환경이면 배포 도메인으로 고정(로그인 후 localhost 옛날서버 방지)
+const _BASE = (process.env.RENDER_EXTERNAL_URL || (process.env.RENDER ? 'https://genya-builder.onrender.com' : '')).replace(/\/$/, '');
 const OA_REDIRECT = process.env.GOOGLE_OAUTH_REDIRECT || (_BASE ? _BASE + '/auth/google/callback' : `http://localhost:${process.env.PORT || 8090}/auth/google/callback`);
 // ★"확인 안 된 앱" 경고 제거: 로그인은 openid·email·profile만(민감 스코프 없음 → 경고 안 뜸).
 //   캘린더·시트·드라이브(민감)는 그 기능 쓸 때 /auth/google/connect 로 별도 동의(incremental).
