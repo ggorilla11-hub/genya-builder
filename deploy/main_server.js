@@ -422,6 +422,22 @@ app.get('/work', (req, res) => {
   res.redirect('/'); // ★옛날 작업공간 축소판 제거 → v4(genya.html)로 통일
 });
 // ★기본 URL / → v4 통합 페이지(genya.html). 로그인 화면0부터. "Not Found" 없음.
-app.get('/', (req, res) => { res.setHeader('Cache-Control', 'no-store'); res.sendFile(path.join(__dirname, 'genya.html'), { etag: false }); });
+// ★기본 URL / → v4 통합 페이지(genya.html) + OG 태그 주입(카톡 썸네일). genya.html 파일은 무수정, 서버가 <head>에 끼워 서빙.
+const OG_TAGS = [
+  '<meta property="og:type" content="website">',
+  '<meta property="og:url" content="https://genya-builder.onrender.com">',
+  '<meta property="og:title" content="당신의 사업을 더 걱정하는 1인사업자를 위한 AI 비서">',
+  '<meta property="og:description" content="사람이 해야 하는 일을 제외한 나머지 모든 일은 AI가 합니다 · 오상열 CFP 오원트금융연구소">',
+  '<meta property="og:image" content="https://firebasestorage.googleapis.com/v0/b/moneya-72fe6.firebasestorage.app/o/%EC%A7%80%EB%8B%88%EC%95%BC%EB%B9%8C%EB%8D%94_%EC%B9%B4%ED%86%A1_OG_final.png?alt=media&token=1df332a4-56ee-46c0-b174-a3453d98324e">',
+  '<meta property="og:image:width" content="1200">',
+  '<meta property="og:image:height" content="630">',
+  '<meta name="twitter:card" content="summary_large_image">'
+].join('\n');
+app.get('/', (req, res) => {
+  let html = fs.readFileSync(path.join(__dirname, 'genya.html'), 'utf8');
+  html = html.replace('</head>', OG_TAGS + '\n</head>');
+  res.setHeader('Cache-Control', 'no-store');
+  res.send(html);
+});
 
 app.listen(PORT, () => console.log(`[공통 메인+로그인] http://localhost:${PORT}/login (OAuth ${OA_CONFIGURED ? 'ON' : 'OFF'}, 약관 ${YAK.pageCount}p) — 회원토큰 우선·SA 폴백`));
