@@ -490,7 +490,9 @@ app.get('/login', (req, res) => {
 });
 app.get('/auth/google', (req, res) => {
   if (!OA_CONFIGURED) return res.status(503).send('OAuth 미설정');
-  res.redirect(oaClient().generateAuthUrl({ access_type: 'offline', prompt: 'consent', scope: LOGIN_SCOPES }));
+  // ★로그인은 비민감 스코프(openid·email·profile)만 → 강제 동의(consent)·refresh토큰(offline) 불필요.
+  //   계정 선택(select_account)만 → 매번 뜨는 동의 화면 제거. (데이터 연결에서만 consent 유지)
+  res.redirect(oaClient().generateAuthUrl({ prompt: 'select_account', scope: LOGIN_SCOPES }));
 });
 // ★데이터 연결(캘린더·시트·드라이브) — 그 기능 실제로 쓸 때만 별도 동의(incremental). 여기서만 민감 스코프 요청.
 app.get('/auth/google/connect', (req, res) => {
