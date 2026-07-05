@@ -41,6 +41,25 @@ function genyaPersona(job) {
 5. 중요한 결과물(문서·문자·제출용)은 항상 "보내기/제출 전에 한번 확인해 주세요"를 붙인다(사람이 최종 결정).
 6. 발송·수정·삭제는 반드시 사람 승인 후. 고객 개인정보는 함부로 되풀이하지 않는다.`;
 }
+// ★공통: 모든 대화를 Claude Sonnet 5로. system 별도·role은 user/assistant만·연속 동일role 병합·첫줄 user 보장.
+//   Claude 실패(키·에러) 시 OpenAI 폴백 → 대화가 절대 끊기지 않게.
+async function askClaude(systemPrompt, messages, maxTokens) {
+  maxTokens = maxTokens || 1500;
+  const fmt = (messages || []).map((m) => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: String(m.content || m.text || '').slice(0, 2000) })).filter((m) => m.content);
+  const cleaned = [];
+  for (const m of fmt) { if (cleaned.length && cleaned[cleaned.length - 1].role === m.role) cleaned[cleaned.length - 1].content += '\n' + m.content; else cleaned.push(m); }
+  if (!cleaned.length) cleaned.push({ role: 'user', content: '(대화 시작)' });
+  if (cleaned[0].role === 'assistant') cleaned.unshift({ role: 'user', content: '(대화 시작)' });
+  try {
+    const r = await _anthropic.messages.create({ model: WS_CHAT_MODEL, max_tokens: maxTokens, system: systemPrompt, messages: cleaned });
+    const t = (r.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
+    if (t) return t;
+    throw new Error('빈 응답');
+  } catch (e) {
+    const or = await _openai.chat.completions.create({ model: CHAT_MODEL, temperature: 0.5, max_tokens: maxTokens, messages: [{ role: 'system', content: systemPrompt }].concat(cleaned) });
+    return (or.choices[0].message.content || '').trim();
+  }
+}
 const SKILL_OUT = require('path').join(__dirname, 'out');
 
 const KEY_FILE = process.env.GOOGLE_SA_JSON || '{}';
@@ -262,23 +281,11 @@ async function orderHandler(req, res) {
     } else if (/일정|브리핑|오늘.*(뭐|일정)|아침/.test(q)) {
       if (!canData) { out = needConnect; } else { const c = await connectors.calendar(ma); out = { kind: '🔌 캘린더 커넥터', text: c.map((e) => `${e.time} ${e.title}${e.prep[0] ? ' → ' + e.prep[0] : ''}`).join('\n') || '오늘 일정 없음' }; }
     } else {
-      // ★워크스페이스 대화 = Claude Sonnet 5 + 대화 히스토리(-10) + 직업 맞춤 페르소나
+      // ★워크스페이스 대화 = Claude Sonnet 5(askClaude 공통) + 히스토리(-10) + 직업 페르소나
       const job = String((req.body && req.body.job) || req.query.job || '');
-      const hist = Array.isArray(req.body && req.body.history) ? req.body.history.slice(-10).map((m) => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: String(m.content || m.text || '').slice(0, 1000) })) : [];
-      const sys = genyaPersona(job);
-      let text = '', engine = 'claude-sonnet-5';
-      try {
-        // Anthropic: system은 별도 파라미터, messages는 user/assistant만
-        const ar = await _anthropic.messages.create({ model: WS_CHAT_MODEL, max_tokens: 1500, system: sys, messages: hist.concat([{ role: 'user', content: q }]) });
-        text = (ar.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
-        if (!text) throw new Error('빈 응답');
-      } catch (e) {
-        // ★폴백: Claude 실패(키 미설정·에러) 시 OpenAI로 — 대화가 끊기지 않게
-        engine = 'openai-fallback';
-        const or = await _openai.chat.completions.create({ model: CHAT_MODEL, temperature: 0.5, max_tokens: 1500, messages: [{ role: 'system', content: sys }, ...hist, { role: 'user', content: q }] });
-        text = (or.choices[0].message.content || '').trim();
-      }
-      out = { kind: '💬 지니야', text, engine };
+      const hist = Array.isArray(req.body && req.body.history) ? req.body.history.slice(-10) : [];
+      const text = await askClaude(genyaPersona(job), hist.concat([{ role: 'user', content: q }]), 1500);
+      out = { kind: '💬 지니야', text, engine: 'claude-sonnet-5' };
     }
     // ★연결1: 결정·요청이면 회원 구글시트에 자동 기억(서버 저장 0) — 데이터 스코프 있는 회원만(없으면 조용히 건너뜀)
     let saved = null;
@@ -342,8 +349,8 @@ app.get('/api/agents/assign', async (req, res) => {
     if (!goals.length) return res.json({ ok: true, agents: [] });
     const CATALOG = '가능한 실제 능력(우리 엔진): 발굴(유튜브 공개댓글 Hot/Warm), 리스닝(공개 커뮤니티 보험고민 탐지), 시트(고객명단 만기·자산가 정리), 캘린더(일정+준비물 브리핑), 드라이브(증권·서류 검색·읽기), 약관(약관 근거+출처 답), 스킬(PDF·엑셀·PPT·문서 생성), 기억(정한 것 기억·먼저 리딩), 웹조사(실시간 상품·시세).';
     const sys = `너는 온보딩 배정기다. 사용자의 목표 각각에 대해 위 "실제 능력" 중 맞는 것을 1~2개 배정한다. 목록에 있는 이름만 쓴다. JSON 배열만: [{"goal":"목표","agents":["능력명"],"why":"짧은근거"}]. ${CATALOG}`;
-    const r = await _openai.chat.completions.create({ model: 'gpt-4o-mini', temperature: 0.2, max_tokens: 500, messages: [{ role: 'system', content: sys }, { role: 'user', content: '목표들:\n' + goals.map((g, i) => (i + 1) + '. ' + g).join('\n') }] });
-    let raw = (r.choices[0].message.content || '').trim(); raw = raw.slice(raw.indexOf('['), raw.lastIndexOf(']') + 1);
+    const r0 = await askClaude(sys, [{ role: 'user', content: '목표들:\n' + goals.map((g, i) => (i + 1) + '. ' + g).join('\n') }], 500);
+    let raw = (r0 || '').trim(); raw = raw.slice(raw.indexOf('['), raw.lastIndexOf(']') + 1);
     let agents = []; try { agents = JSON.parse(raw); } catch (e) {}
     res.json({ ok: true, agents });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
@@ -370,8 +377,8 @@ async function _extractHandler(req, res) {
     if (!text) return res.json({ ok: true, profile: {} });
     if (text.length > 4000) text = text.slice(0, 4000); // 초장문 방어(크래시 없이 앞부분만)
     const sys = `너는 온보딩 도우미다. 사용자가 자기 일을 설명한 글에서 아래 필드를 뽑아 JSON만 출력한다(없으면 빈칸): {"job":"직업","work":"하는 일","clients":"주 고객","pain":"반복 업무","tasks":"맡길 기능","rule":"철칙"}. tasks는 서로 다른 목표가 여럿이면 세미콜론(;)으로 구분해 한 줄로. 지어내지 말고 글에 있는 것만.`;
-    const r = await _openai.chat.completions.create({ model: 'gpt-4o-mini', temperature: 0.2, max_tokens: 400, messages: [{ role: 'system', content: sys }, { role: 'user', content: text }] });
-    let raw = (r.choices[0].message.content || '').trim(); raw = raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1);
+    const r0 = await askClaude(sys, [{ role: 'user', content: text }], 400);
+    let raw = (r0 || '').trim(); raw = raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1);
     let profile = {}; try { profile = JSON.parse(raw); } catch (e) {}
     res.json({ ok: true, profile });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
@@ -386,11 +393,10 @@ app.post('/api/onboard/chat', async (req, res) => {
     if (!text) return res.json({ ok: true, reply: '편하게 말씀해 주세요. 어떤 일을 하시나요?' });
     const history = Array.isArray(req.body && req.body.history) ? req.body.history.slice(-8) : [];
     const sys = genyaPersona(String((req.body && req.body.job) || '')) + '\n[지금 상황] 맞춤 비서를 만드는 온보딩 대화 중. 고객의 직업·제일 힘든 일·맡기고 싶은 일·꼭 지켜야 할 철칙을 한 번에 하나씩 자연스럽게 파악한다(짧고 다정하게 2~3문장). 이미 들은 건 다시 묻지 않는다. 정보가 어느 정도 모이면 아래 \'이 정보로 지니야 만들기\' 버튼을 누르시면 만들어 드린다고 안내한다.';
-    const messages = [{ role: 'system', content: sys }];
-    history.forEach((m) => { if (m && m.text) messages.push({ role: m.role === 'assistant' ? 'assistant' : 'user', content: String(m.text).slice(0, 800) }); });
-    messages.push({ role: 'user', content: text.slice(0, 800) });
-    const r = await _openai.chat.completions.create({ model: CHAT_MODEL, temperature: 0.6, max_tokens: 500, messages });
-    res.json({ ok: true, reply: (r.choices[0].message.content || '').trim() || '네, 알겠어요. 조금 더 말씀해 주세요.' });
+    const msgs = history.filter((m) => m && m.text).map((m) => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: String(m.text).slice(0, 800) }));
+    msgs.push({ role: 'user', content: text.slice(0, 800) });
+    const reply = await askClaude(sys, msgs, 500);
+    res.json({ ok: true, reply: reply || '네, 알겠어요. 조금 더 말씀해 주세요.' });
   } catch (e) { res.json({ ok: false, reply: '지금 잠깐 응답이 어려워요. 다시 한 번 말씀해 주세요.', error: e.message }); }
 });
 
@@ -402,14 +408,28 @@ app.post('/api/coverage/analyze', async (req, res) => {
     if (!dataUrl) return res.json({ ok: false, error: '파일이 없어요.' });
     if (/pdf/i.test(mime) || /^data:application\/pdf/i.test(dataUrl)) return res.json({ ok: true, needsImage: true, message: '지금은 증권 "사진"(JPG·PNG)만 읽어요. PDF는 화면 캡처해서 이미지로 올려주세요.' });
     if (!/^data:image\//i.test(dataUrl)) return res.json({ ok: true, needsImage: true, message: '이미지 파일(JPG·PNG)로 올려주세요.' });
-    const r = await _openai.chat.completions.create({
-      model: 'gpt-4o', temperature: 0.2, max_tokens: 800,
-      messages: [
-        { role: 'system', content: '너는 보험 증권 분석가 지니야다. 주어진 이미지는 보험 증권이다. 글자를 읽어(OCR) 담보별 가입 여부·가입금액을 정리하고, 보장의 빈틈(부족·누락·중복)과 A/B/C 재설계 방향을 비전문가도 알기 쉽게 제시하라. 이미지에서 확실히 안 보이는 수치는 지어내지 말고 "증권에서 확인 필요"라고 하라. 마지막 줄에 반드시 "※ 제출·발송 전 반드시 검토하세요"를 붙여라.' },
-        { role: 'user', content: [{ type: 'text', text: '이 증권을 보장분석해줘.' }, { type: 'image_url', image_url: { url: dataUrl } }] },
-      ],
-    });
-    res.json({ ok: true, analysis: (r.choices[0].message.content || '').trim() }); // ★결과만 반환, 이미지·결과 서버 저장 안 함
+    const ocrSys = '너는 보험 증권 분석가 지니야다. 주어진 이미지는 보험 증권이다. 글자를 읽어(OCR) 담보별 가입 여부·가입금액을 정리하고, 보장의 빈틈(부족·누락·중복)과 A/B/C 재설계 방향을 비전문가도 알기 쉽게 제시하라. 이미지에서 확실히 안 보이는 수치는 지어내지 말고 "증권에서 확인 필요"라고 하라. 마지막 줄에 반드시 "※ 제출·발송 전 반드시 검토하세요"를 붙여라.';
+    let analysis = '';
+    try {
+      // ★Claude Sonnet 5 비전: dataUrl(data:image/xxx;base64,...)을 media_type+base64로 분해
+      const m = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+      const mediaType = (m && m[1]) || (mime || 'image/jpeg');
+      const b64 = m ? m[2] : dataUrl.replace(/^data:[^,]*,/, '');
+      const ar = await _anthropic.messages.create({
+        model: WS_CHAT_MODEL, max_tokens: 900, system: ocrSys,
+        messages: [{ role: 'user', content: [{ type: 'text', text: '이 증권을 보장분석해줘.' }, { type: 'image', source: { type: 'base64', media_type: mediaType, data: b64 } }] }],
+      });
+      analysis = (ar.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
+      if (!analysis) throw new Error('빈 응답');
+    } catch (e) {
+      // ★폴백: OpenAI gpt-4o 비전 — OCR이 끊기지 않게
+      const r = await _openai.chat.completions.create({
+        model: 'gpt-4o', temperature: 0.2, max_tokens: 800,
+        messages: [{ role: 'system', content: ocrSys }, { role: 'user', content: [{ type: 'text', text: '이 증권을 보장분석해줘.' }, { type: 'image_url', image_url: { url: dataUrl } }] }],
+      });
+      analysis = (r.choices[0].message.content || '').trim();
+    }
+    res.json({ ok: true, analysis }); // ★결과만 반환, 이미지·결과 서버 저장 안 함
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
@@ -418,14 +438,9 @@ app.get('/api/draft/message', async (req, res) => {
   try {
     const topic = String(req.query.topic || '자동차보험 만기 안내');
     const rule = String(req.query.rule || '발송 전 반드시 확인');
-    const r = await _openai.chat.completions.create({
-      model: CHAT_MODEL, temperature: 0.6, max_tokens: 400,
-      messages: [
-        { role: 'system', content: '너는 보험설계사의 비서 지니야다. 고객에게 보낼 짧고 따뜻한 안내 문자 "초안"만 쓴다(실제 발송 안 함). 과장·단정 금지, 부담 주지 않기. 고객 이름은 OOO로. 마지막에 "(발송 전 확인)"을 붙인다.' },
-        { role: 'user', content: '주제: ' + topic + '\n꼭 지킬 철칙: ' + rule },
-      ],
-    });
-    res.json({ ok: true, draft: (r.choices[0].message.content || '').trim() });
+    const draftSys = '너는 보험설계사의 비서 지니야다. 고객에게 보낼 짧고 따뜻한 안내 문자 "초안"만 쓴다(실제 발송 안 함). 과장·단정 금지, 부담 주지 않기. 고객 이름은 OOO로. 마지막에 "(발송 전 확인)"을 붙인다.';
+    const draft = await askClaude(draftSys, [{ role: 'user', content: '주제: ' + topic + '\n꼭 지킬 철칙: ' + rule }], 400);
+    res.json({ ok: true, draft });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
