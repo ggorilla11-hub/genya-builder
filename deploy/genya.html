@@ -500,13 +500,14 @@
 
         <!-- ★ 상시 자연어 대화창 -->
         <div class="home-chat" style="margin-top:22px;">
-          <div class="hc-t">💬 지니야와 대화하기 — 무엇이든 말하세요 (Order Made)</div>
-          <div class="hc-i">
-            <span style="font-size:19px;">➕</span>
-            <input id="wsChatInput" placeholder='예: "이번 주 만기 고객 정리해서 안내 문자 초안 만들어줘"' style="flex:1;border:none;background:transparent;font-size:13.5px;font-family:inherit;outline:none;" onkeydown="if(event.key==='Enter')wsAsk()">
+          <div class="hc-t">💬 지니야와 대화하기 — 무엇이든 말하세요 (Order Made) <span style="font-size:11px;color:#98a4b2;">Claude Sonnet · 장문·파일 첨부 가능</span></div>
+          <div id="wsFilePreview" style="display:none;padding:4px 0 2px;"></div>
+          <div class="hc-i" style="align-items:flex-end;">
+            <label title="파일 첨부" style="font-size:22px;color:var(--teal);cursor:pointer;flex-shrink:0;line-height:1;">＋<input type="file" id="wsChatFile" multiple accept=".pdf,.xlsx,.xls,.csv,.jpg,.jpeg,.png,.doc,.docx,.pptx,.txt" style="display:none" onchange="onChatFiles(this)"></label>
+            <textarea id="wsChatInput" rows="1" placeholder="지니야에게 무엇이든 요청하세요… (Shift+Enter 줄바꿈)" style="flex:1;border:none;background:transparent;font-size:13.5px;font-family:inherit;outline:none;resize:none;max-height:140px;line-height:1.5;padding:3px 0;" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();wsAsk();}" oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,140)+'px';"></textarea>
             <span class="micbtn" style="font-size:19px;color:var(--teal);" onclick="startVoice('wsChatInput',this)" title="음성 입력">🎤</span><span style="font-size:19px;color:var(--teal);cursor:pointer;" onclick="wsAsk()">📤</span>
           </div>
-          <div id="wsChatOut" style="margin-top:10px;font-size:13px;color:#2a3540;line-height:1.6;white-space:pre-wrap;"></div>
+          <div id="wsChatOut" style="margin-top:10px;font-size:13px;color:#2a3540;line-height:1.6;"></div>
         </div>
 
         <!-- 데이터 안전 -->
@@ -785,12 +786,45 @@
       else if(msg){ msg.style.color='#c0392b'; msg.textContent='저장 실패: '+(d.error||''); }
     }).catch(function(){ if(msg){msg.style.color='#c0392b';msg.textContent='저장 오류';} });
   }
-  function wsAsk(){var inp=document.getElementById('wsChatInput');var q=(inp&&inp.value||'').trim();if(!q)return;
-    var out=document.getElementById('wsChatOut');if(out)out.textContent='지니야가 처리하는 중…';
-    fetch('/api/order?q='+enc(q)).then(r=>r.json()).then(function(d){if(!out)return;
-      if(d&&d.needsConnect){try{sessionStorage.setItem('genya_pendingQ',q);}catch(e){} out.innerHTML='<b>'+esc(d.kind||'구글 데이터 연결 필요')+'</b> '+esc(d.text||'')+'<div style="margin-top:8px;"><a href="#" onclick="connectGoogle();return false;" style="display:inline-block;background:#0d7a52;color:#fff;padding:8px 14px;border-radius:9px;text-decoration:none;font-size:12.5px;font-weight:600;">🔗 구글 데이터 연결하기 →</a></div>';return;}
-      out.innerHTML='<b>'+esc(d.kind||'')+'</b> '+esc(d.text||d.error||'');
-    }).catch(function(){if(out)out.textContent='오류';});
+  // ── ★워크스페이스 대화(Claude Sonnet): 장문·히스토리·파일첨부·마크다운 출력 ──
+  var wsHistory=[]; var wsFiles=[];
+  function _esc2(s){return String(s==null?'':s).replace(/[&<>]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c];});}
+  function _inl(s){return _esc2(s).replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').replace(/`([^`]+)`/g,'<code style="background:#eef1f4;padding:1px 5px;border-radius:4px;">$1</code>');}
+  function renderMd(src){ src=String(src||''); var codes=[]; src=src.replace(/```([\s\S]*?)```/g,function(_,c){codes.push(c);return ' C'+(codes.length-1)+' ';});
+    var lines=src.split('\n'), out=[], i=0;
+    while(i<lines.length){ var ln=lines[i];
+      if(/\|/.test(ln) && i+1<lines.length && /^\s*\|?[\s:\-]+\|[\s:|\-]*$/.test(lines[i+1])){
+        var hd=ln.split('|').map(function(c){return c.trim();}); if(hd[0]==='')hd.shift(); if(hd[hd.length-1]==='')hd.pop(); i+=2; var rows=[];
+        while(i<lines.length && /\|/.test(lines[i])){ var r=lines[i].split('|').map(function(c){return c.trim();}); if(r[0]==='')r.shift(); if(r[r.length-1]==='')r.pop(); rows.push(r); i++; }
+        out.push('<div style="overflow-x:auto;"><table style="border-collapse:collapse;margin:8px 0;font-size:12.5px;width:100%;"><thead><tr>'+hd.map(function(h){return '<th style="border:1px solid #dde3ea;padding:6px 9px;background:#f6f8fa;text-align:left;">'+_inl(h)+'</th>';}).join('')+'</tr></thead><tbody>'+rows.map(function(rr){return '<tr>'+hd.map(function(_,ci){return '<td style="border:1px solid #dde3ea;padding:6px 9px;">'+_inl(rr[ci]||'')+'</td>';}).join('')+'</tr>';}).join('')+'</tbody></table></div>'); continue;
+      }
+      if(/^\s*[-*] /.test(ln)){ var it=[]; while(i<lines.length && /^\s*[-*] /.test(lines[i])){ it.push('<li>'+_inl(lines[i].replace(/^\s*[-*] /,''))+'</li>'); i++; } out.push('<ul style="margin:6px 0 6px 18px;">'+it.join('')+'</ul>'); continue; }
+      if(/^\s*\d+\. /.test(ln)){ var oi=[]; while(i<lines.length && /^\s*\d+\. /.test(lines[i])){ oi.push('<li>'+_inl(lines[i].replace(/^\s*\d+\.\s/,''))+'</li>'); i++; } out.push('<ol style="margin:6px 0 6px 20px;">'+oi.join('')+'</ol>'); continue; }
+      out.push(ln===''?'<div style="height:6px;"></div>':('<div>'+_inl(ln)+'</div>')); i++;
+    }
+    return out.join('').replace(/ C(\d+) /g,function(_,n){return '<pre style="background:#f5f5f5;padding:10px;border-radius:8px;overflow-x:auto;font-size:12.5px;">'+_esc2(codes[+n])+'</pre>';});
+  }
+  function onChatFiles(inp){ Array.prototype.slice.call(inp.files||[]).forEach(function(f){wsFiles.push(f);}); inp.value=''; renderChatFiles(); }
+  function renderChatFiles(){ var el=document.getElementById('wsFilePreview'); if(!el)return; if(!wsFiles.length){el.style.display='none';el.innerHTML='';return;} el.style.display='block'; el.innerHTML=wsFiles.map(function(f,i){return '<span style="display:inline-flex;align-items:center;gap:5px;background:#eef1f4;border-radius:8px;padding:4px 9px;margin:0 6px 4px 0;font-size:12px;">📎 '+esc(f.name)+' <span style="cursor:pointer;color:#c0392b;font-weight:700;" onclick="delChatFile('+i+')">✕</span></span>';}).join(''); }
+  function delChatFile(i){ wsFiles.splice(i,1); renderChatFiles(); }
+  function wsAsk(){ var inp=document.getElementById('wsChatInput'); var q=(inp&&inp.value||'').trim(); if(!q && !wsFiles.length) return;
+    var out=document.getElementById('wsChatOut'); if(!out)return;
+    var pending=wsFiles.slice(); wsFiles=[]; renderChatFiles();
+    var shownQ=q+(pending.length?(' 📎'+pending.map(function(f){return f.name;}).join(', ')):'');
+    if(!q) q='(첨부 파일을 봐줘)';
+    wsHistory.push({role:'user', content:q});
+    if(inp){inp.value='';inp.style.height='auto';}
+    out.innerHTML='<div style="color:#98a4b2;">지니야가 생각하는 중…</div>';
+    function ask(extra){ var qFull=q+(extra?('\n\n[첨부 증권 OCR 판독]\n'+extra):'');
+      fetch('/api/order',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({q:qFull, message:qFull, history:wsHistory.slice(0,-1), job:(PROFILE&&PROFILE.job)||''})}).then(r=>r.json()).then(function(d){ if(!out)return;
+        if(d&&d.needsConnect){try{sessionStorage.setItem('genya_pendingQ',q);}catch(e){} out.innerHTML='<b>'+esc(d.kind||'구글 데이터 연결 필요')+'</b> '+esc(d.text||'')+'<div style="margin-top:8px;"><a href="#" onclick="connectGoogle();return false;" style="display:inline-block;background:#0d7a52;color:#fff;padding:8px 14px;border-radius:9px;text-decoration:none;font-size:12.5px;font-weight:600;">🔗 구글 데이터 연결하기 →</a></div>'; return;}
+        var reply=d.text||d.error||'(응답 없음)'; wsHistory.push({role:'assistant',content:reply});
+        out.innerHTML='<div style="background:#f7f7f5;border-radius:12px;padding:12px 14px;">'+renderMd(reply)+'</div>';
+      }).catch(function(){ if(out)out.innerHTML='<div style="color:#c0392b;">오류(잠시 후 다시)</div>'; });
+    }
+    var img=pending.filter(function(f){return /^image\//.test(f.type);})[0];
+    if(img){ var rd=new FileReader(); rd.onload=function(){ fetch('/api/coverage/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dataUrl:rd.result,mime:img.type,name:img.name})}).then(r=>r.json()).then(function(d){ ask(d.analysis||d.message||''); }).catch(function(){ask('');}); }; rd.readAsDataURL(img); }
+    else ask('');
   }
   function openStore(kind,ev){ if(ev)ev.stopPropagation();
     var out=document.getElementById('wsChatOut');
