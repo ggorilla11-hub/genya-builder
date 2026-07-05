@@ -408,12 +408,17 @@ app.post('/api/connect/solapi/save', async (req, res) => {
 
 // ── 미연결 능력(대기) 상태 ──
 app.get('/api/status', (req, res) => {
+  // ★실제 상태를 정직 반영(런타임 확인 가능한 것 위주)
   res.json({
     ok: true,
     abilities: {
-      calendar: 'active', sheets: 'active', yakgwan: 'active',
-      drive: 'pending(대표님 증권 공유 대기)', gmail: 'pending(OAuth /mcp)',
-      leads: 'planned', listening: 'planned', kakao: 'planned',
+      yakgwan: 'active(약관RAG)',
+      openai: process.env.OPENAI_API_KEY ? 'active' : 'no-key',
+      googleOAuth: OA_CONFIGURED ? 'active' : 'no-key',
+      kakaoLogin: KA_CONFIGURED ? 'active' : 'no-key',
+      calendar: '회원 구글 연결 시 active', sheets: '회원 구글 연결 시 active', drive: '회원 구글 연결 시 active',
+      skills: 'active(PDF·엑셀·PPT·문서 생성)',
+      gmail: '인증 대기', solapi: '회원 키 저장 시', leads: '준비 중(서버 브라우저 미설치)', listening: '준비 중(검색API)',
     },
   });
 });
@@ -439,17 +444,19 @@ app.get('/auth/google', (req, res) => {
 // ★데이터 연결(캘린더·시트·드라이브) — 그 기능 실제로 쓸 때만 별도 동의(incremental). 여기서만 민감 스코프 요청.
 app.get('/auth/google/connect', (req, res) => {
   if (!OA_CONFIGURED) return res.status(503).send('OAuth 미설정');
-  res.redirect(oaClient().generateAuthUrl({ access_type: 'offline', prompt: 'consent', include_granted_scopes: true, scope: LOGIN_SCOPES.concat(DATA_SCOPES) }));
+  // ★state=connect → 동의 후 워크스페이스로 자동복귀(UI-8)
+  res.redirect(oaClient().generateAuthUrl({ access_type: 'offline', prompt: 'consent', include_granted_scopes: true, scope: LOGIN_SCOPES.concat(DATA_SCOPES), state: 'connect' }));
 });
 app.get('/auth/google/callback', async (req, res) => {
   try {
     const code = req.query.code; if (!code) return res.status(400).send('code 없음');
+    const isConnect = req.query.state === 'connect';
     const c = oaClient(); const { tokens } = await c.getToken(code); c.setCredentials(tokens);
     const ui = await google.oauth2({ version: 'v2', auth: c }).userinfo.get();
     const s = crypto.randomBytes(16).toString('hex');
     sessions.set(s, { email: ui.data.email, name: ui.data.name, tokens, scope: tokens.scope || '', provider: 'google' });
     res.setHeader('Set-Cookie', `genya_sid=${s}; HttpOnly; Path=/; SameSite=Lax${process.env.RENDER ? '; Secure' : ''}`);
-    res.redirect('/'); // 로그인 → 통합 페이지(genya.html), /me 확인 후 직업 화면부터
+    res.redirect(isConnect ? '/?connected=1' : '/'); // 데이터 연결이면 워크스페이스 자동복귀
   } catch (e) { res.status(500).send('로그인 오류: ' + e.message); }
 });
 app.get('/logout', (req, res) => { const s = sidOf(req); if (s) sessions.delete(s); res.setHeader('Set-Cookie', 'genya_sid=; Path=/; Max-Age=0'); res.redirect('/login'); });

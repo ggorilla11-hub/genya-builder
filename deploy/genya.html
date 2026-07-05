@@ -577,8 +577,12 @@
   function pickJob(el){document.querySelectorAll('.job').forEach(j=>j.classList.remove('sel'));el.classList.add('sel');PROFILE.job=(el.querySelector('b')||{}).textContent||'';}
   function tg(el){el.classList.toggle('on');}
 
-  // 로그인돼 있으면 직업(화면1)부터 시작
-  fetch('/me').then(r=>r.json()).then(d=>{ if(d&&d.ok){ go(1); } }).catch(()=>{});
+  // 로그인돼 있으면 직업(화면1)부터. ★데이터 연결 후 복귀(connected=1)면 워크스페이스로 + 대기 질문 자동 재실행(UI-8)
+  var _params=new URLSearchParams(location.search);
+  fetch('/me').then(r=>r.json()).then(d=>{ if(d&&d.ok){
+    if(_params.get('connected')){ go(10); var pq=sessionStorage.getItem('genya_pendingQ'); if(pq){ sessionStorage.removeItem('genya_pendingQ'); setTimeout(function(){ var wi=document.getElementById('wsChatInput'); if(wi){wi.value=pq; wsAsk();} }, 500); } }
+    else { go(1); }
+  } }).catch(()=>{});
 
   // ── 프로필 저장(회원 구글시트, 서버 저장 0) ──
   function saveProfile(mode){
@@ -720,7 +724,7 @@
   function solveAsk(){ var inp=document.getElementById('solveInput'); var q=(inp&&inp.value||'').trim(); if(!q)return;
     var out=document.getElementById('solveAskOut'); if(out)out.textContent='지니야가 처리하는 중…';
     fetch('/api/order?q='+enc(q)).then(r=>r.json()).then(function(d){ if(!out)return;
-      if(d&&d.needsConnect){out.innerHTML='<b>'+esc(d.kind||'구글 데이터 연결 필요')+'</b> '+esc(d.text||'')+'<div style="margin-top:8px;"><a href="'+(d.connectUrl||'/auth/google/connect')+'" style="display:inline-block;background:#0d7a52;color:#fff;padding:7px 13px;border-radius:9px;text-decoration:none;font-size:12px;font-weight:600;">🔗 구글 데이터 연결하기 →</a></div>';return;}
+      if(d&&d.needsConnect){try{sessionStorage.setItem('genya_pendingQ',q);}catch(e){} out.innerHTML='<b>'+esc(d.kind||'구글 데이터 연결 필요')+'</b> '+esc(d.text||'')+'<div style="margin-top:8px;"><a href="'+(d.connectUrl||'/auth/google/connect')+'" style="display:inline-block;background:#0d7a52;color:#fff;padding:7px 13px;border-radius:9px;text-decoration:none;font-size:12px;font-weight:600;">🔗 구글 데이터 연결하기 →</a></div>';return;}
       out.innerHTML='<b>'+esc(d.kind||'')+'</b> '+esc(d.text||d.error||'');
     }).catch(function(){if(out)out.textContent='오류';});
   }
@@ -778,7 +782,7 @@
   function wsAsk(){var inp=document.getElementById('wsChatInput');var q=(inp&&inp.value||'').trim();if(!q)return;
     var out=document.getElementById('wsChatOut');if(out)out.textContent='지니야가 처리하는 중…';
     fetch('/api/order?q='+enc(q)).then(r=>r.json()).then(function(d){if(!out)return;
-      if(d&&d.needsConnect){out.innerHTML='<b>'+esc(d.kind||'구글 데이터 연결 필요')+'</b> '+esc(d.text||'')+'<div style="margin-top:8px;"><a href="'+(d.connectUrl||'/auth/google/connect')+'" style="display:inline-block;background:#0d7a52;color:#fff;padding:8px 14px;border-radius:9px;text-decoration:none;font-size:12.5px;font-weight:600;">🔗 구글 데이터 연결하기 →</a></div>';return;}
+      if(d&&d.needsConnect){try{sessionStorage.setItem('genya_pendingQ',q);}catch(e){} out.innerHTML='<b>'+esc(d.kind||'구글 데이터 연결 필요')+'</b> '+esc(d.text||'')+'<div style="margin-top:8px;"><a href="'+(d.connectUrl||'/auth/google/connect')+'" style="display:inline-block;background:#0d7a52;color:#fff;padding:8px 14px;border-radius:9px;text-decoration:none;font-size:12.5px;font-weight:600;">🔗 구글 데이터 연결하기 →</a></div>';return;}
       out.innerHTML='<b>'+esc(d.kind||'')+'</b> '+esc(d.text||d.error||'');
     }).catch(function(){if(out)out.textContent='오류';});
   }
