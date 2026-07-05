@@ -92,6 +92,15 @@
   .c6 .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:13px;cursor:pointer;transition:.15s;}
   .c6 .card:hover{border-color:var(--teal);background:var(--teal-l);}
   .c6 .card b{font-size:13px;color:var(--navy);display:block;} .c6 .card span{font-size:11px;color:var(--gray);}
+  /* 이전 버튼(헤더) */
+  .backbtn{width:32px;height:32px;border-radius:10px;border:1px solid #d0d6dd;background:#fff;color:var(--navy);font-size:17px;line-height:1;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-family:inherit;margin-right:2px;}
+  .backbtn:hover{background:var(--teal-l);border-color:var(--teal);}
+  /* 히어로 네/아니요 버튼 */
+  .hero-yn{display:flex;gap:8px;margin-top:8px;}
+  .hero-yn button{padding:7px 16px;border-radius:9px;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.12);color:#fff;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;}
+  .hero-yn button:hover{background:rgba(255,255,255,.25);}
+  /* 음성 아이콘 활성 */
+  .micbtn{cursor:pointer;user-select:none;} .micbtn.rec{color:#e0392b;animation:ps 1s infinite;}
 
   .conn{display:flex;align-items:center;gap:13px;padding:14px;border:1px solid var(--line2);border-radius:12px;margin-bottom:10px;}
   .conn .e{font-size:21px;width:32px;text-align:center;} .conn .tx{flex:1;} .conn .tx b{font-size:14px;display:block;} .conn .tx span{font-size:11.5px;color:var(--gray);}
@@ -223,7 +232,7 @@
 
   <!-- 1. 직업 -->
   <div class="screen" data-s="1">
-    <div class="top"><div class="logo">🤖</div><div class="bn">지니야빌더</div>
+    <div class="top"><button class="backbtn" onclick="goBack()" title="이전">←</button><div class="logo">🤖</div><div class="bn">지니야빌더</div>
       <div class="prog"><span class="done"></span><span></span><span></span><span></span><span></span><span></span><span></span></div></div>
     <div class="body">
       <div class="step-lb">1/7 · 직업 선택</div>
@@ -250,7 +259,7 @@
 
   <!-- 2. 설문 방식 3갈래 ★ -->
   <div class="screen" data-s="2">
-    <div class="top"><div class="logo">🤖</div><div class="bn">지니야빌더</div>
+    <div class="top"><button class="backbtn" onclick="goBack()" title="이전">←</button><div class="logo">🤖</div><div class="bn">지니야빌더</div>
       <div class="prog"><span class="done"></span><span class="done"></span><span></span><span></span><span></span><span></span><span></span></div></div>
     <div class="body">
       <div class="step-lb">2/7 · 나에 대해 알려주기</div>
@@ -274,7 +283,7 @@
 
   <!-- 3. 설문 업로드 -->
   <div class="screen" data-s="3">
-    <div class="top"><div class="logo">🤖</div><div class="bn">지니야빌더</div>
+    <div class="top"><button class="backbtn" onclick="goBack()" title="이전">←</button><div class="logo">🤖</div><div class="bn">지니야빌더</div>
       <div class="prog"><span class="done"></span><span class="done"></span><span class="done"></span><span></span><span></span><span></span><span></span></div></div>
     <div class="body">
       <div class="step-lb">설문지 업로드</div>
@@ -295,7 +304,7 @@
 
   <!-- 4. 직접 입력 폼 ★ (설문지 간추림) -->
   <div class="screen" data-s="4" id="s4">
-    <div class="top"><div class="logo">🤖</div><div class="bn">지니야빌더</div>
+    <div class="top"><button class="backbtn" onclick="goBack()" title="이전">←</button><div class="logo">🤖</div><div class="bn">지니야빌더</div>
       <div class="prog"><span class="done"></span><span class="done"></span><span class="done"></span><span></span><span></span><span></span><span></span></div></div>
     <div class="body">
       <div class="step-lb">직접 입력 (설문지 핵심만)</div>
@@ -325,7 +334,7 @@
 
   <!-- 5. 자연어 대화 ★★ (비서와 대화) -->
   <div class="screen" data-s="5">
-    <div class="top"><div class="logo">🤖</div><div class="bn">지니야빌더</div>
+    <div class="top"><button class="backbtn" onclick="goBack()" title="이전">←</button><div class="logo">🤖</div><div class="bn">지니야빌더</div>
       <div class="prog"><span class="done"></span><span class="done"></span><span class="done"></span><span></span><span></span><span></span><span></span></div></div>
     <div class="body">
       <div class="step-lb">지니야와 대화하며 만들기</div>
@@ -335,7 +344,7 @@
         <div class="dm you"><div class="av">🤖</div><div class="bb">안녕하세요! 어떤 일을 도와드릴 비서를 만들까요? 하시는 일, 요즘 제일 힘든 것, 맡기고 싶은 일을 편하게 말씀해 주세요.</div></div>
       </div>
       <div class="ws-chat" style="margin-top:0;">
-        <div class="inp"><span style="font-size:18px;">💬</span><input id="chatInput" placeholder="지니야에게 말하기… (예: 저는 보험설계사인데 만기관리와 약관검색을 맡기고 싶어요)" onkeydown="if(event.key==='Enter'){event.preventDefault();onbSend();}" style="flex:1;border:none;background:transparent;font-size:13.5px;font-family:inherit;outline:none;"><span style="font-size:18px;color:var(--teal);cursor:pointer;" onclick="onbSend()">📤</span></div>
+        <div class="inp"><span style="font-size:18px;">💬</span><input id="chatInput" placeholder="지니야에게 말하기… (예: 저는 보험설계사인데 만기관리와 약관검색을 맡기고 싶어요)" onkeydown="if(event.key==='Enter'){event.preventDefault();onbSend();}" style="flex:1;border:none;background:transparent;font-size:13.5px;font-family:inherit;outline:none;"><span class="micbtn" style="font-size:18px;color:var(--teal);" onclick="startVoice('chatInput',this)" title="음성 입력">🎤</span><span style="font-size:18px;color:var(--teal);cursor:pointer;" onclick="onbSend()">📤</span></div>
       </div>
       <div style="height:14px;"></div>
       <button class="btn btn-primary" onclick="onbBuild()">이 정보로 지니야 만들기</button>
@@ -358,7 +367,7 @@
 
   <!-- 7. 자료 -->
   <div class="screen" data-s="7">
-    <div class="top"><div class="logo">🤖</div><div class="bn">지니야빌더</div>
+    <div class="top"><button class="backbtn" onclick="goBack()" title="이전">←</button><div class="logo">🤖</div><div class="bn">지니야빌더</div>
       <div class="prog"><span class="done"></span><span class="done"></span><span class="done"></span><span class="done"></span><span></span><span></span><span></span></div></div>
     <div class="body">
       <div class="step-lb">4/7 · 업무 자료 넣기</div>
@@ -378,17 +387,17 @@
 
   <!-- 8. 연결 -->
   <div class="screen" data-s="8">
-    <div class="top"><div class="logo">🤖</div><div class="bn">지니야빌더</div>
+    <div class="top"><button class="backbtn" onclick="goBack()" title="이전">←</button><div class="logo">🤖</div><div class="bn">지니야빌더</div>
       <div class="prog"><span class="done"></span><span class="done"></span><span class="done"></span><span class="done"></span><span class="done"></span><span></span><span></span></div></div>
     <div class="body">
       <div class="step-lb">5/7 · 도구 연결</div>
       <h2 class="big">한 번만 연결하면<br>계속 써요</h2>
       <p class="sub">연결한 도구만 지니야가 써요. 언제든 끊을 수 있어요.</p>
-      <div class="conn"><span class="e">📅</span><div class="tx"><b>구글 캘린더</b><span>일정·준비물 브리핑</span></div><span class="st st-done">연결됨</span></div>
-      <div class="conn"><span class="e">📊</span><div class="tx"><b>구글 시트</b><span>고객명단 정리</span></div><span class="st st-done">연결됨</span></div>
-      <div class="conn"><span class="e">📁</span><div class="tx"><b>구글 드라이브</b><span>증권·서류 검색</span></div><span class="st st-done">연결됨</span></div>
-      <div class="conn"><span class="e">📧</span><div class="tx"><b>Gmail</b><span>메일 정리·초안</span></div><span class="st st-go" onclick="this.className='st st-done';this.textContent='연결됨'">연결</span></div>
-      <div class="conn"><span class="e">💬</span><div class="tx"><b>카카오톡</b><span>고객 알림톡 발송</span></div><span class="st st-go" onclick="this.className='st st-done';this.textContent='연결됨'">연결</span></div>
+      <div class="conn"><span class="e">📅</span><div class="tx"><b>구글 캘린더</b><span>일정·준비물 브리핑</span></div><span class="st st-go" id="connCal">연결</span></div>
+      <div class="conn"><span class="e">📊</span><div class="tx"><b>구글 시트</b><span>고객명단 정리</span></div><span class="st st-go" id="connSheet">연결</span></div>
+      <div class="conn"><span class="e">📁</span><div class="tx"><b>구글 드라이브</b><span>증권·서류 검색</span></div><span class="st st-go" id="connDrive">연결</span></div>
+      <div class="conn"><span class="e">📧</span><div class="tx"><b>Gmail</b><span>메일 정리·초안</span></div><span class="st" style="background:#f0e6d0;color:#8a6d3b;cursor:default;">연결 대기</span></div>
+      <div class="conn"><span class="e">💬</span><div class="tx"><b>카카오톡</b><span>고객 알림톡 발송</span></div><span class="st" style="background:#f0e6d0;color:#8a6d3b;cursor:default;">연결 대기</span></div>
       <div class="conn"><span class="e">📱</span><div class="tx"><b>솔라피(Solapi) 문자</b><span>일반 문자(SMS) 발송</span></div><span class="st st-go" id="solapiToggle" onclick="toggleSolapi()">연결</span></div>
       <div id="solapiForm" style="display:none;margin:2px 0 10px;padding:14px;background:#f6f8fa;border-radius:12px;">
         <div class="field" style="margin-bottom:9px;"><label style="font-size:12.5px;">솔라피 API Key</label><input id="solapiKey" placeholder="API Key" autocomplete="off"></div>
@@ -404,7 +413,7 @@
 
   <!-- 9. 문제해결 6화면 ★★ NEW -->
   <div class="screen" data-s="9">
-    <div class="top"><div class="logo">🤖</div><div class="bn">지니야빌더</div>
+    <div class="top"><button class="backbtn" onclick="goBack()" title="이전">←</button><div class="logo">🤖</div><div class="bn">지니야빌더</div>
       <div class="prog"><span class="done"></span><span class="done"></span><span class="done"></span><span class="done"></span><span class="done"></span><span class="done"></span><span></span></div></div>
     <div class="body">
       <div class="step-lb">6/7 · 내 문제 해결 체험 (설문에서 나온 고민)</div>
@@ -439,7 +448,7 @@
         <div class="hero-brief">
           <div class="bl">☀️ 오늘 아침 브리핑</div>
           <p id="wsBrief">오늘 일정을 불러오는 중…</p>
-          <div class="ask">비교표 먼저 볼까요? (네 / 아니요)</div>
+          <div class="ask" id="heroAsk">비교표 먼저 볼까요?<div class="hero-yn"><button onclick="heroYes()">네, 만들어줘</button><button onclick="heroNo()">아니요</button></div></div>
         </div>
       </div>
 
@@ -453,7 +462,7 @@
             <b>약관 창고</b>
             <div class="sd">보험 약관을 근거·출처로 답해요. 밤·휴일에도 물어보면 즉시.</div>
             <div class="schips"><span class="schip">삼성 자동차약관 276p</span><span class="schip">출처 표시</span><span class="schip">지어내지 않음</span></div>
-            <div class="smeta">📄 8개 약관 연결됨 · 열기 →</div>
+            <div class="smeta">📄 삼성 자동차약관 1종 · 열기 →</div>
           </div>
           <div class="store store-skill" onclick="openStore('skill',event)">
             <div class="si">🛠️</div>
@@ -474,14 +483,14 @@
         <!-- 기존 능력들 제자리 -->
         <div class="home-sec">⚡ 지니야가 할 수 있는 일 <span class="cnt">눌러서 바로 시키기</span></div>
         <div class="abils">
-          <div class="abil"><div class="ai">☀️</div><b>아침 브리핑</b><span>오늘 할 일 먼저</span></div>
-          <div class="abil"><div class="ai">📁</div><b>증권 분석</b><span>보장 빈틈 찾기</span></div>
-          <div class="abil"><div class="ai">📄</div><b>약관 검색</b><span>근거+출처로</span></div>
-          <div class="abil"><div class="ai">📊</div><b>비교표 제작</b><span>3사 한 표로</span></div>
-          <div class="abil"><div class="ai">📅</div><b>만기 관리</b><span>자동 정리·알림</span></div>
-          <div class="abil"><div class="ai">💬</div><b>문자 초안</b><span>발송 전 확인</span></div>
-          <div class="abil"><div class="ai">📇</div><b>명단 정리</b><span>시트 자동</span></div>
-          <div class="abil hot"><div class="ai">🎯</div><b>고객 발굴 🔥</b><span>스스로 찾음</span></div>
+          <div class="abil" onclick="abilRun('brief')"><div class="ai">☀️</div><b>아침 브리핑</b><span>오늘 할 일 먼저</span></div>
+          <div class="abil" onclick="abilRun('ocr')"><div class="ai">📁</div><b>증권 분석</b><span>보장 빈틈 찾기</span></div>
+          <div class="abil" onclick="abilRun('yakgwan')"><div class="ai">📄</div><b>약관 검색</b><span>근거+출처로</span></div>
+          <div class="abil" onclick="abilRun('excel')"><div class="ai">📊</div><b>비교표 제작</b><span>3사 한 표로</span></div>
+          <div class="abil" onclick="abilRun('sheet')"><div class="ai">📅</div><b>만기 관리</b><span>자동 정리·알림</span></div>
+          <div class="abil" onclick="abilRun('draft')"><div class="ai">💬</div><b>문자 초안</b><span>발송 전 확인</span></div>
+          <div class="abil" onclick="abilRun('roster')"><div class="ai">📇</div><b>명단 정리</b><span>시트 자동</span></div>
+          <div class="abil hot" onclick="abilRun('leads')"><div class="ai">🎯</div><b>고객 발굴 🔥</b><span>준비 중</span></div>
         </div>
 
         <!-- ★ 내 문제 6가지 바로 해결 (문제6) -->
@@ -495,7 +504,7 @@
           <div class="hc-i">
             <span style="font-size:19px;">➕</span>
             <input id="wsChatInput" placeholder='예: "이번 주 만기 고객 정리해서 안내 문자 초안 만들어줘"' style="flex:1;border:none;background:transparent;font-size:13.5px;font-family:inherit;outline:none;" onkeydown="if(event.key==='Enter')wsAsk()">
-            <span style="font-size:19px;color:var(--teal);cursor:pointer;" onclick="wsAsk()">📤</span>
+            <span class="micbtn" style="font-size:19px;color:var(--teal);" onclick="startVoice('wsChatInput',this)" title="음성 입력">🎤</span><span style="font-size:19px;color:var(--teal);cursor:pointer;" onclick="wsAsk()">📤</span>
           </div>
           <div id="wsChatOut" style="margin-top:10px;font-size:13px;color:#2a3540;line-height:1.6;white-space:pre-wrap;"></div>
         </div>
@@ -508,11 +517,11 @@
 
       <!-- 하단 탭바 -->
       <div class="tabbar">
-        <div class="tb on"><i>🏠</i>홈</div>
-        <div class="tb"><i>✅</i>할 일·승인</div>
-        <div class="tb"><i>🗄️</i>창고</div>
-        <div class="tb"><i>📈</i>성과</div>
-        <div class="tb"><i>⚙️</i>설정</div>
+        <div class="tb on" onclick="switchTab(this,'home')"><i>🏠</i>홈</div>
+        <div class="tb" onclick="switchTab(this,'todo')"><i>✅</i>할 일·승인</div>
+        <div class="tb" onclick="switchTab(this,'store')"><i>🗄️</i>창고</div>
+        <div class="tb" onclick="switchTab(this,'result')"><i>📈</i>성과</div>
+        <div class="tb" onclick="switchTab(this,'settings')"><i>⚙️</i>설정</div>
       </div>
     </div>
   </div>
@@ -545,16 +554,26 @@
   var PROFILE={job:'',work:'',clients:'',tasks:[],rule:''};
   function enc(s){return encodeURIComponent(s==null?'':s);}
   function esc(s){return String(s==null?'':s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
-  function go(n){
+  // ── ★화면 전환 + 이전(히스토리) 배선 ──
+  var navStack=[]; window._cur=null;
+  function _show(n){
     screens.forEach(s=>s.classList.remove('on'));
     const t=document.querySelector(`.screen[data-s="${n}"]`);
     if(t){t.classList.add('on');t.scrollTop=0;}
     ctrlBtns.forEach(b=>b.classList.remove('active'));
+    window._cur=n;
+    // 이전 버튼은 온보딩 단계(2~9)에서만 보임(1=첫단계, 0=로그인, 10=워크스페이스 탭바)
+    document.querySelectorAll('.backbtn').forEach(function(b){ b.style.visibility=(n>=2&&n<=9)?'visible':'hidden'; });
     if(n===6) buildGenya();
+    if(n===8) refreshConnState();
     if(n===9) renderSolve();
     if(n===10) loadWorkspace();
     window.scrollTo(0,0);
   }
+  function go(n){ if(window._cur!=null && n!==window._cur) navStack.push(window._cur); _show(n); }
+  function goBack(){ if(navStack.length){ _show(navStack.pop()); } else { _show(1); } }
+  // 개발용 하단 네비바는 ?dev=1 일 때만 노출(실사용자에겐 숨김)
+  (function(){ var c=document.querySelector('.ctrl'), note=document.querySelector('.note'); var dev=/[?&]dev=1/.test(location.search); if(c&&!dev)c.style.display='none'; if(note&&!dev)note.style.display='none'; })();
   function pickJob(el){document.querySelectorAll('.job').forEach(j=>j.classList.remove('sel'));el.classList.add('sel');PROFILE.job=(el.querySelector('b')||{}).textContent||'';}
   function tg(el){el.classList.toggle('on');}
 
@@ -696,7 +715,7 @@
     document.getElementById('solveBtn').textContent = si<5 ? '해결됐어요 · 다음 문제 →' : '6개 다 해결! 워크스페이스 열기 →';
   }
   function nextSolve(){ if(si<5){si++;renderSolve();}else{go(10);} }
-  function prevSolve(){ if(si>0){si--;renderSolve();} }
+  function prevSolve(){ if(si>0){si--;renderSolve();} else { goBack(); } }
   // ── ★6카드 안 대화창: 입력→엔터→실제 응답(/api/order · 구글 없이도 응답, 데이터 필요시 연결버튼) ──
   function solveAsk(){ var inp=document.getElementById('solveInput'); var q=(inp&&inp.value||'').trim(); if(!q)return;
     var out=document.getElementById('solveAskOut'); if(out)out.textContent='지니야가 처리하는 중…';
@@ -767,9 +786,69 @@
     var out=document.getElementById('wsChatOut');
     if(kind==='yak'){ if(out)out.textContent='약관 창고 검색 중…'; fetch('/api/yakgwan?q='+enc('무보험차상해가 뭐야')).then(r=>r.json()).then(function(d){if(out)out.innerHTML='<b>📄 약관 창고</b> '+esc(d.answer||'')+' <span style="color:#0d7a52">('+((d.sources||[]).join(', ')||'출처 없음')+')</span>';}); }
     else if(kind==='conn'){ if(out)out.textContent='커넥터 확인 중…'; fetch('/api/connectors').then(r=>r.json()).then(function(d){if(out)out.innerHTML='<b>🔌 커넥터 창고</b> 연결됨 '+d.connectedCount+'/'+d.list.length+' — '+d.list.map(function(c){return c.name+':'+c.status;}).join(', ');}); }
-    else { if(out)out.innerHTML='<b>🛠️ 스킬 창고</b> PDF·엑셀·PPT·문서 생성 — 능력 카드의 비교표 등에서 실행됩니다.'; }
+    else { if(out)out.innerHTML='<b>🛠️ 스킬 창고</b> 무엇을 만들까요?<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">'+
+      '<button class="btn btn-line" style="width:auto;padding:8px 13px;" onclick="genSkill(\'pdf\')">📄 PDF 안내문</button>'+
+      '<button class="btn btn-line" style="width:auto;padding:8px 13px;" onclick="genSkill(\'excel\')">📊 3사 비교표</button>'+
+      '<button class="btn btn-line" style="width:auto;padding:8px 13px;" onclick="genSkill(\'ppt\')">📽 제안 PPT</button>'+
+      '<button class="btn btn-line" style="width:auto;padding:8px 13px;" onclick="genSkill(\'doc\')">📝 보고서 DOC</button></div>'; }
+  }
+  // ── ★[7] 스킬 실제 생성(다운로드 링크) ──
+  function genSkill(type){ var out=document.getElementById('wsChatOut'); if(out){out.scrollIntoView({block:'center'}); out.textContent=type.toUpperCase()+' 생성 중…';}
+    fetch('/api/skills/gen?type='+type).then(r=>r.json()).then(function(d){ if(!out)return;
+      if(!d.ok){ out.innerHTML='<b>🛠️ 스킬</b> '+(/로그인/.test(d.error||'')?'로그인 후 생성돼요. <a href="/auth/google" style="color:#0d7a52;font-weight:700;">로그인 →</a>':esc(d.error||'생성 실패')); return; }
+      out.innerHTML='<b>🛠️ '+esc(d.file)+' 생성됨</b> <a href="'+d.url+'" style="color:#0d7a52;font-weight:700;">내려받기 ('+d.sizeKB+'KB) →</a>';
+    }).catch(function(){if(out)out.textContent='생성 오류';});
+  }
+  // ── ★[1] 능력카드 8개 실배선 — 실제 엔진 호출, 결과는 상시 대화창 출력에 ──
+  function abilRun(key){
+    var o=document.getElementById('wsChatOut'); if(!o)return; o.scrollIntoView({block:'center'}); o.textContent='지니야가 처리하는 중…';
+    if(key==='ocr'){ o.innerHTML='<div style="margin-bottom:6px;color:#5a6674;">증권 사진(JPG·PNG)을 올리면 지니야가 읽어(OCR) 보장분석해요.</div><input type="file" id="abilOcr" accept="image/*" style="display:none" onchange="ocrAnalyze(this,\'wsChatOut\')"><button class="btn btn-primary" style="padding:11px;max-width:260px;" onclick="document.getElementById(\'abilOcr\').click()">📄 증권 올려 분석(OCR)</button>'; return; }
+    if(key==='yakgwan'){ document.getElementById('wsChatInput').value='무보험차상해가 뭐야?'; wsAsk(); return; }
+    if(key==='draft'){ fetch('/api/draft/message?topic='+enc('자동차보험 만기 안내')+'&rule='+enc(PROFILE.rule||'발송 전 확인')).then(r=>r.json()).then(function(d){o.innerHTML='<b>💬 문자 초안</b> '+esc(d.draft||d.error||'')+' <span style="color:#0d7a52">(발송 전 확인)</span>';}).catch(function(){o.textContent='초안 오류';}); return; }
+    if(key==='excel'){ genSkill('excel'); return; }
+    if(key==='brief'){ document.getElementById('wsChatInput').value='오늘 일정 브리핑해줘'; wsAsk(); return; }
+    if(key==='sheet'){ document.getElementById('wsChatInput').value='이번 주 만기 고객 정리해줘'; wsAsk(); return; }
+    if(key==='roster'){ document.getElementById('wsChatInput').value='자산가 고객만 정리해줘'; wsAsk(); return; }
+    if(key==='leads'){ o.innerHTML='<b>🎯 고객 발굴</b> 유튜브·커뮤니티 공개글 발굴 엔진은 <b>서버 준비 중</b>이에요(정직 표시). 준비되면 Hot🔥/Warm🌤 분류해 드려요.'; return; }
+  }
+  // ── ★[2] 하단 탭바 실배선 — 실제 화면/기능 전환 ──
+  function switchTab(el, name){
+    document.querySelectorAll('.tabbar .tb').forEach(function(t){t.classList.remove('on');}); if(el)el.classList.add('on');
+    var out=document.getElementById('wsChatOut');
+    if(name==='home'){ document.querySelector('.hero').scrollIntoView({block:'start'}); return; }
+    if(name==='store'){ document.querySelector('.stores').scrollIntoView({block:'start'}); return; }
+    if(!out)return; out.scrollIntoView({block:'center'});
+    if(name==='todo'){ out.textContent='할 일·승인 불러오는 중…'; fetch('/api/memory/recent').then(r=>r.json()).then(function(d){ if(d.needsConnect){out.innerHTML='<b>✅ 할 일·승인</b> 내 기억을 보려면 <a href="/auth/google/connect" style="color:#0d7a52;font-weight:700;">구글 데이터 연결 →</a>';return;} var list=d.list||[]; out.innerHTML='<b>✅ 할 일·승인 (지니야가 기억한 결정·요청)</b>\n'+(list.length? list.map(function(m){return '· '+esc((m.type||'')+' '+(m.subject||'')+' '+(m.text||''));}).join('\n') : '아직 기억한 항목이 없어요. 대화로 "○○ 준비해줘" 하면 기억해요.'); }).catch(function(){out.textContent='불러오기 오류';}); }
+    else if(name==='result'){ out.innerHTML='<b>📈 성과</b> 성과 대시보드(발송·전환 집계)는 <b>준비 중</b>이에요. 정직하게 표시합니다.'; }
+    else if(name==='settings'){ out.textContent='설정 불러오는 중…'; fetch('/me').then(r=>r.json()).then(function(d){ if(d&&d.ok){ out.innerHTML='<b>⚙️ 설정</b>\n로그인: '+esc(d.email||'')+' ('+esc(d.provider||'')+')\n구글 데이터: '+(d.hasData?'연결됨':'미연결')+'\n<a href="/logout" style="color:#c0392b;font-weight:700;">로그아웃 →</a>'; } else { out.innerHTML='<b>⚙️ 설정</b> 로그인 안 됨. <a href="/login" style="color:#0d7a52;font-weight:700;">로그인 →</a>'; } }).catch(function(){out.textContent='설정 오류';}); }
+  }
+  // ── ★[6] 히어로 네/아니요 ──
+  function heroYes(){ var t=document.querySelector('.tabbar .tb'); abilRun('excel'); }
+  function heroNo(){ var a=document.getElementById('heroAsk'); if(a)a.innerHTML='알겠어요. 필요하실 때 말씀해 주세요 👍'; }
+  // ── ★[5] 음성 입력(Web Speech, 실제). 미지원 브라우저면 아이콘 숨김 ──
+  function startVoice(inputId, micEl){
+    var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+    if(!SR){ if(micEl)micEl.style.display='none'; return; }
+    try{ var rec=new SR(); rec.lang='ko-KR'; rec.interimResults=false; rec.maxAlternatives=1;
+      if(micEl)micEl.classList.add('rec');
+      rec.onresult=function(e){ var tr=e.results[0][0].transcript; var inp=document.getElementById(inputId); if(inp){inp.value=(inp.value?inp.value+' ':'')+tr; inp.focus();} };
+      rec.onend=function(){ if(micEl)micEl.classList.remove('rec'); };
+      rec.onerror=function(){ if(micEl)micEl.classList.remove('rec'); };
+      rec.start();
+    }catch(e){ if(micEl)micEl.classList.remove('rec'); }
+  }
+  (function(){ var SR=window.SpeechRecognition||window.webkitSpeechRecognition; if(!SR){ document.querySelectorAll('.micbtn').forEach(function(m){m.style.display='none';}); } })();
+  // ── ★[4] 구글 3종 연결 라벨을 실제 상태로(로그인·스코프 확인) ──
+  function refreshConnState(){
+    fetch('/me').then(r=>r.json()).then(function(d){ var connected=!!(d&&d.ok&&d.hasData);
+      ['connCal','connSheet','connDrive'].forEach(function(id){ var el=document.getElementById(id); if(!el)return;
+        if(connected){ el.className='st st-done'; el.textContent='연결됨'; el.onclick=null; }
+        else { el.className='st st-go'; el.textContent='연결'; el.onclick=function(){ location.href='/auth/google/connect'; }; }
+      });
+    }).catch(function(){});
   }
   go(0);
+  refreshConnState();
 </script>
 </body>
 </html>

@@ -71,9 +71,9 @@ function isScopeError(e) { return /insufficient.*scope|ACCESS_TOKEN_SCOPE_INSUFF
 //   없으면(카카오·미로그인) SA로 폴백하지 않고 "구글 연결 필요"로 정직히 게이트(대표 SA 데이터 노출 0).
 function gateGoogle(req, res) {
   const ma = memberAuth(req);
-  if (ma) return ma;
+  if (ma && hasDataScope(req)) return ma; // ★로그인만 하고 데이터 스코프 없으면 통과 안 함(500 방지)
   const s = sessionOf(req);
-  res.json({ ok: true, needsGoogle: true, provider: s ? s.provider : null, message: s ? '내 데이터를 보려면 구글 연결이 필요해요 (카카오 로그인은 신원까지)' : '로그인이 필요해요' });
+  res.json({ ok: true, needsGoogle: true, needsConnect: true, connectUrl: '/auth/google/connect', provider: s ? s.provider : null, message: s ? '내 데이터(캘린더·시트·드라이브)를 보려면 구글 데이터 연결이 필요해요' : '로그인이 필요해요' });
   return null;
 }
 
@@ -453,7 +453,7 @@ app.get('/auth/google/callback', async (req, res) => {
   } catch (e) { res.status(500).send('로그인 오류: ' + e.message); }
 });
 app.get('/logout', (req, res) => { const s = sidOf(req); if (s) sessions.delete(s); res.setHeader('Set-Cookie', 'genya_sid=; Path=/; Max-Age=0'); res.redirect('/login'); });
-app.get('/me', (req, res) => { const s = sessionOf(req); res.json(s ? { ok: true, email: s.email, name: s.name, provider: s.provider, hasGoogleData: !!s.tokens } : { ok: false }); });
+app.get('/me', (req, res) => { const s = sessionOf(req); res.json(s ? { ok: true, email: s.email, name: s.name, provider: s.provider, hasGoogleData: !!s.tokens, hasData: hasDataScope(req) } : { ok: false }); });
 
 // ── 💬 카카오 로그인 라우트 (구글과 동일 구조: authorize → callback) ──
 app.get('/auth/kakao', (req, res) => {

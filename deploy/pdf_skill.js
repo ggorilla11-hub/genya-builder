@@ -12,7 +12,19 @@ const path = require('path');
 const PDFDocument = require('pdfkit');
 const { PDFParse } = require('pdf-parse');
 
-const KR_FONT = 'C:\\Windows\\Fonts\\malgun.ttf';
+// ★한글 폰트: OS별 후보를 탐색(Windows 로컬 + 리눅스 배포). 없으면 기본폰트 폴백(크래시 방지).
+function krFont() {
+  const cands = [
+    process.env.KR_FONT_PATH,
+    'C:\\Windows\\Fonts\\malgun.ttf',
+    '/usr/share/fonts/truetype/nanum/NanumGothic.ttf',
+    '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
+    '/usr/share/fonts/truetype/noto/NotoSansCJKkr-Regular.otf',
+    path.join(__dirname, 'fonts', 'NanumGothic.ttf'),
+  ].filter(Boolean);
+  for (const p of cands) { try { if (fs.existsSync(p)) return p; } catch (e) {} }
+  return null;
+}
 
 /** PDF 읽기: 텍스트 + (자동차보험이면) 핵심 보장 추출 */
 async function readPdf(input) {
@@ -32,7 +44,7 @@ async function readPdf(input) {
 function makePdf(spec, outPath) {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: 'A4', margin: 54 });
-    doc.registerFont('KR', KR_FONT); doc.font('KR');
+    const f = krFont(); if (f) { try { doc.registerFont('KR', f); doc.font('KR'); } catch (e) {} } // 폰트 없으면 기본폰트(크래시 방지)
     const stream = fs.createWriteStream(outPath);
     doc.pipe(stream);
     doc.fontSize(22).fillColor('#0B1F3A').text(spec.title || '문서');
