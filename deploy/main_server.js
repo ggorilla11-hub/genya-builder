@@ -498,6 +498,10 @@ app.get('/auth/google/connect', (req, res) => {
   // ★state에 returnTo(돌아올 화면번호) 저장 → 동의 후 원래 화면으로 복귀. 기본=워크스페이스(10)
   const returnTo = String(req.query.returnTo || '10');
   const state = Buffer.from(JSON.stringify({ connect: true, returnTo: returnTo })).toString('base64');
+  // ★디버그: 실제 사용되는 redirect_uri와 판정 근거를 Render 로그에 출력
+  console.log('[OAUTH connect] redirect_uri =', OA_REDIRECT,
+    '| env GOOGLE_OAUTH_REDIRECT =', process.env.GOOGLE_OAUTH_REDIRECT || '(none)',
+    '| isLocalDev =', _isLocalDev, '| PORT =', process.env.PORT || '(none)');
   res.redirect(oaClient().generateAuthUrl({ access_type: 'offline', prompt: 'consent', include_granted_scopes: true, scope: LOGIN_SCOPES.concat(DATA_SCOPES), state: state }));
 });
 app.get('/auth/google/callback', async (req, res) => {
