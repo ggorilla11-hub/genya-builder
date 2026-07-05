@@ -434,25 +434,42 @@
 
   <!-- 10. 워크스페이스 (반영구) -->
   <div class="screen" data-s="10">
-    <div class="ws-head">
-      <div class="lg">🤖</div>
-      <div class="nm"><b id="wsName">지니야</b><span>기억하고 먼저 리딩하는 비서 · 기억 영구 보존</span></div>
-      <div class="badge">● 온보딩 완료</div>
-    </div>
+    <div class="wsroot" style="display:flex;flex-direction:column;height:100vh;max-height:100vh;overflow:hidden;background:#f7f7f5;width:100%;">
 
-    <div class="home">
-      <!-- 히어로: 지니야 인사 + 아침 브리핑 -->
-      <div class="hero">
-        <div class="greet">좋은 아침이에요 👋</div>
-        <div class="greet-s">오늘도 제가 먼저 챙겨뒀어요. 함께 시작해요.</div>
-        <div class="hero-brief">
-          <div class="bl">☀️ 오늘 아침 브리핑</div>
-          <p id="wsBrief">오늘 일정을 불러오는 중…</p>
-          <div class="ask" id="heroAsk">비교표 먼저 볼까요?<div class="hero-yn"><button onclick="heroYes()">네, 만들어줘</button><button onclick="heroNo()">아니요</button></div></div>
+      <!-- ===== 홈(대화) 뷰 = 대화가 주인공 ===== -->
+      <div class="wsview" data-view="home" style="display:flex;flex-direction:column;flex:1;min-height:0;">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 18px;background:#fff;border-bottom:1px solid #eee;flex-shrink:0;">
+          <div style="font-weight:600;font-size:16px;color:#1a1a1a;">🤖 <b id="wsName">지니야</b></div>
+          <div style="font-size:12px;color:#888;" id="wsStatus">기억하고 먼저 리딩하는 비서</div>
+        </div>
+        <div id="chatMessages" style="flex:1;min-height:0;overflow-y:auto;padding:16px 18px;display:flex;flex-direction:column;gap:12px;">
+          <div style="background:#fff;border-radius:16px;padding:16px;border:1px solid #eee;max-width:88%;">
+            <div style="font-size:13px;color:#185FA5;font-weight:600;margin-bottom:8px;">☀️ 아침 브리핑</div>
+            <div id="briefingContent" style="font-size:14px;color:#333;line-height:1.6;">오늘 일정을 불러오는 중…</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;padding:8px 18px;overflow-x:auto;border-top:1px solid #f0f0f0;background:#fff;flex-shrink:0;">
+          <button onclick="quickAction('briefing')" style="white-space:nowrap;padding:6px 14px;border-radius:20px;border:1px solid #ddd;background:#fff;font-size:12px;cursor:pointer;color:#333;flex-shrink:0;">☀️ 브리핑</button>
+          <button onclick="quickAction('coverage')" style="white-space:nowrap;padding:6px 14px;border-radius:20px;border:1px solid #ddd;background:#fff;font-size:12px;cursor:pointer;color:#333;flex-shrink:0;">📁 증권분석</button>
+          <button onclick="quickAction('yakgwan')" style="white-space:nowrap;padding:6px 14px;border-radius:20px;border:1px solid #ddd;background:#fff;font-size:12px;cursor:pointer;color:#333;flex-shrink:0;">📄 약관검색</button>
+          <button onclick="quickAction('compare')" style="white-space:nowrap;padding:6px 14px;border-radius:20px;border:1px solid #ddd;background:#fff;font-size:12px;cursor:pointer;color:#333;flex-shrink:0;">📊 비교표</button>
+          <button onclick="quickAction('message')" style="white-space:nowrap;padding:6px 14px;border-radius:20px;border:1px solid #ddd;background:#fff;font-size:12px;cursor:pointer;color:#333;flex-shrink:0;">💬 문자초안</button>
+          <button onclick="quickAction('client')" style="white-space:nowrap;padding:6px 14px;border-radius:20px;border:1px solid #ddd;background:#fff;font-size:12px;cursor:pointer;color:#333;flex-shrink:0;">📇 명단정리</button>
+        </div>
+        <div id="chatFilePreview" style="display:none;padding:8px 18px;background:#fafafa;border-top:1px solid #eee;flex-wrap:wrap;gap:8px;"></div>
+        <div style="padding:10px 18px;background:#fff;border-top:1px solid #eee;flex-shrink:0;">
+          <div style="display:flex;align-items:flex-end;gap:8px;">
+            <label title="파일 첨부" style="width:36px;height:36px;min-width:36px;border-radius:50%;background:#f0f0f0;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;"><span style="font-size:20px;color:#555;line-height:1;">＋</span><input type="file" id="chatFileInput" multiple accept=".pdf,.xlsx,.xls,.csv,.jpg,.jpeg,.png,.doc,.docx,.pptx,.txt" style="display:none;" onchange="handleChatFileUpload(this)"></label>
+            <textarea id="chatTextarea" rows="1" placeholder="지니야에게 무엇이든 요청하세요… (Shift+Enter 줄바꿈)" style="flex:1;border:1px solid #e3e3e0;border-radius:18px;padding:9px 14px;font-size:14px;font-family:inherit;outline:none;resize:none;max-height:120px;line-height:1.5;" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChatMessage();}" oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,120)+'px';"></textarea>
+            <span onclick="startVoice('chatTextarea',this)" style="font-size:20px;color:var(--teal);cursor:pointer;flex-shrink:0;" title="음성 입력">🎤</span>
+            <button onclick="sendChatMessage()" style="width:38px;height:38px;min-width:38px;border-radius:50%;border:none;background:#185FA5;color:#fff;font-size:15px;cursor:pointer;flex-shrink:0;">➤</button>
+          </div>
         </div>
       </div>
 
-      <div class="home-body">
+      <!-- ===== 창고 뷰 (3대 창고·능력카드·문제6) ===== -->
+      <div class="wsview" data-view="store" style="display:none;flex:1;min-height:0;overflow-y:auto;">
+        <div class="home-body">
 
         <!-- ★★ 3대 창고 -->
         <div class="home-sec">🗄️ 내 비서의 창고 <span class="cnt">지니야가 이 창고들을 갖추고 일해요</span></div>
@@ -498,28 +515,28 @@
         <div class="c6" id="ws6cards"></div>
         <div id="ws6out" style="margin-top:10px;font-size:13px;color:#2a3540;line-height:1.6;white-space:pre-wrap;"></div>
 
-        <!-- ★ 상시 자연어 대화창 -->
-        <div class="home-chat" style="margin-top:22px;">
-          <div class="hc-t">💬 지니야와 대화하기 — 무엇이든 말하세요 (Order Made) <span style="font-size:11px;color:#98a4b2;">Claude Sonnet · 장문·파일 첨부 가능</span></div>
-          <div id="wsFilePreview" style="display:none;padding:4px 0 2px;"></div>
-          <div class="hc-i" style="align-items:flex-end;">
-            <label title="파일 첨부" style="font-size:22px;color:var(--teal);cursor:pointer;flex-shrink:0;line-height:1;">＋<input type="file" id="wsChatFile" multiple accept=".pdf,.xlsx,.xls,.csv,.jpg,.jpeg,.png,.doc,.docx,.pptx,.txt" style="display:none" onchange="onChatFiles(this)"></label>
-            <textarea id="wsChatInput" rows="1" placeholder="지니야에게 무엇이든 요청하세요… (Shift+Enter 줄바꿈)" style="flex:1;border:none;background:transparent;font-size:13.5px;font-family:inherit;outline:none;resize:none;max-height:140px;line-height:1.5;padding:3px 0;" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();wsAsk();}" oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,140)+'px';"></textarea>
-            <span class="micbtn" style="font-size:19px;color:var(--teal);" onclick="startVoice('wsChatInput',this)" title="음성 입력">🎤</span><span style="font-size:19px;color:var(--teal);cursor:pointer;" onclick="wsAsk()">📤</span>
-          </div>
-          <div id="wsChatOut" style="margin-top:10px;font-size:13px;color:#2a3540;line-height:1.6;"></div>
-        </div>
+        
+        <!-- 창고·능력카드 클릭 결과 -->
+        <div id="wsChatOut" style="margin-top:14px;font-size:13px;color:#2a3540;line-height:1.6;"></div>
 
         <!-- 데이터 안전 -->
         <div class="home-safe">
           🔒 <b>데이터 안전 · 제로 인그레스</b> — 모든 고객 데이터는 본인 Google Drive에만 저장 · AI는 무보존·비학습 · 오원트 서버에 미저장 · 발송·수정은 사람 승인 후에만
         </div>
+        </div>
       </div>
 
+      <!-- ===== 할 일 뷰 ===== -->
+      <div class="wsview" data-view="todo" style="display:none;flex:1;min-height:0;overflow-y:auto;padding:18px;"><div id="wsTodoOut" style="font-size:13.5px;color:#2a3540;line-height:1.7;">✅ '할 일' 탭을 누르면 지니야가 기억한 결정·요청을 보여드려요.</div></div>
+      <!-- ===== 성과 뷰 ===== -->
+      <div class="wsview" data-view="result" style="display:none;flex:1;min-height:0;overflow-y:auto;padding:18px;"><div style="font-size:13.5px;color:#5a6470;line-height:1.7;">📈 <b>성과 대시보드</b><br><br>발송·전환·반응 지표는 준비 중이에요. 실제 활동 데이터가 쌓이면 여기에 정직하게 보여드릴게요.</div></div>
+      <!-- ===== 설정 뷰 ===== -->
+      <div class="wsview" data-view="settings" style="display:none;flex:1;min-height:0;overflow-y:auto;padding:18px;"><div style="font-size:13.5px;color:#2a3540;line-height:2;">⚙️ <b>설정</b><br>· 계정: 구글 로그인<br>· <a href="#" onclick="connectGoogle();return false;" style="color:#0d7a52;font-weight:700;text-decoration:none;">구글 데이터 연결 / 재연결 →</a><br>· <a href="/logout" style="color:#c0392b;text-decoration:none;">로그아웃 →</a></div></div>
+
       <!-- 하단 탭바 -->
-      <div class="tabbar">
+      <div class="tabbar" style="flex-shrink:0;">
         <div class="tb on" onclick="switchTab(this,'home')"><i>🏠</i>홈</div>
-        <div class="tb" onclick="switchTab(this,'todo')"><i>✅</i>할 일·승인</div>
+        <div class="tb" onclick="switchTab(this,'todo')"><i>✅</i>할 일</div>
         <div class="tb" onclick="switchTab(this,'store')"><i>🗄️</i>창고</div>
         <div class="tb" onclick="switchTab(this,'result')"><i>📈</i>성과</div>
         <div class="tb" onclick="switchTab(this,'settings')"><i>⚙️</i>설정</div>
@@ -740,7 +757,7 @@
   function loadWorkspace(){
     var nm=document.getElementById('wsName'); if(nm&&PROFILE.job)nm.textContent=PROFILE.job+' 지니야';
     fetch('/api/profile').then(r=>r.json()).then(function(d){if(d.ok&&d.profile&&d.profile['직업']){var e=document.getElementById('wsName');if(e)e.textContent=d.profile['직업']+' 지니야';}}).catch(()=>{});
-    fetch('/api/calendar').then(r=>r.json()).then(function(d){var el=document.getElementById('wsBrief');if(!el)return;
+    fetch('/api/calendar').then(r=>r.json()).then(function(d){var el=document.getElementById('briefingContent');if(!el)return;
       if(d.needsGoogle||!d.ok||d.count==null){el.innerHTML='<a href="#" onclick="connectGoogle();return false;" style="color:#7FD9B0;font-weight:700;text-decoration:none;">📅 캘린더·드라이브 연결하기 →</a> 연결하면 오늘 일정을 브리핑해드려요.';return;}
       var b='오늘 일정 '+d.count+'건이에요. '+(d.events||[]).map(function(e){return e.time+' '+e.title+(e.prep&&e.prep[0]?'('+e.prep[0]+')':'');}).join(' · ');
       el.textContent=b||'오늘 예정된 일정이 없어요.';}).catch(()=>{});
@@ -897,6 +914,38 @@
   function connectGoogle(q){ try{ if(q) sessionStorage.setItem('genya_pendingQ', q); }catch(e){} location.href='/auth/google/connect?returnTo='+(window._cur!=null?window._cur:10); }
   go(0);
   refreshConnState();
-</script>
+
+  /* === 제니야 스타일 대화 메인(2026-07-06) — 기존 엔진 재사용(wsHistory·renderMd·/api/order·OCR) === */
+  var chatFiles = [];
+  function renderChatFilePreview(){ var el=document.getElementById("chatFilePreview"); if(!el)return; if(!chatFiles.length){el.style.display="none";el.innerHTML="";return;} el.style.display="flex"; el.innerHTML=chatFiles.map(function(f,i){return '<span style="display:inline-flex;align-items:center;gap:5px;background:#eef1f4;border-radius:8px;padding:4px 9px;font-size:12px;">📎 '+esc(f.name)+' <span style="cursor:pointer;color:#c0392b;font-weight:700;" onclick="delChatFile2('+i+')">✕</span></span>';}).join(""); }
+  function delChatFile2(i){ chatFiles.splice(i,1); renderChatFilePreview(); }
+  function handleChatFileUpload(inp){ Array.prototype.slice.call(inp.files||[]).forEach(function(f){chatFiles.push(f);}); inp.value=""; renderChatFilePreview(); }
+  function addChatBubble(html, who){ var box=document.getElementById("chatMessages"); if(!box)return null; var w=document.createElement("div"); if(who==="user"){ w.style.cssText="align-self:flex-end;max-width:85%;background:#185FA5;color:#fff;border-radius:16px;border-bottom-right-radius:4px;padding:11px 14px;font-size:14px;line-height:1.55;word-break:break-word;white-space:pre-wrap;"; } else { w.style.cssText="align-self:flex-start;max-width:88%;background:#fff;border:1px solid #eee;color:#1a1a1a;border-radius:16px;border-bottom-left-radius:4px;padding:12px 15px;font-size:14px;line-height:1.6;word-break:break-word;"; } w.innerHTML=html; box.appendChild(w); box.scrollTop=box.scrollHeight; return w; }
+  function sendChatMessage(){ var inp=document.getElementById("chatTextarea"); var q=(inp&&inp.value||"").trim(); if(!q && !chatFiles.length) return;
+    var pending=chatFiles.slice(); chatFiles=[]; renderChatFilePreview();
+    var shownQ=(q||"(첨부 파일을 봐주세요)")+(pending.length?("  📎"+pending.map(function(f){return f.name;}).join(", ")):"");
+    addChatBubble(esc(shownQ), "user");
+    if(!q) q="(첨부 파일을 봐줘)";
+    if(typeof wsHistory==="undefined"){ window.wsHistory=[]; }
+    wsHistory.push({role:"user", content:q});
+    if(inp){inp.value="";inp.style.height="auto";}
+    var think=addChatBubble('<span style="color:#98a4b2;">지니야가 생각하는 중…</span>', "ai");
+    function ask(extra){ var qFull=q+(extra?("\n\n[첨부 증권 OCR 판독]\n"+extra):"");
+      fetch("/api/order",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({q:qFull,message:qFull,history:wsHistory.slice(0,-1),job:(typeof PROFILE!=="undefined"&&PROFILE.job)||""})}).then(function(r){return r.json();}).then(function(d){
+        if(d&&d.needsConnect){ try{sessionStorage.setItem("genya_pendingQ",q);}catch(e){}
+          if(think)think.innerHTML='<b>'+esc(d.kind||"구글 데이터 연결 필요")+'</b> '+esc(d.text||"")+'<div style="margin-top:8px;"><a href="#" onclick="connectGoogle();return false;" style="display:inline-block;background:#0d7a52;color:#fff;padding:8px 14px;border-radius:9px;text-decoration:none;font-size:12.5px;font-weight:600;">🔗 구글 데이터 연결하기 →</a></div>'; return; }
+        var reply=d.text||d.error||"(응답 없음)"; wsHistory.push({role:"assistant",content:reply});
+        if(think)think.innerHTML=renderMd(reply);
+        var box=document.getElementById("chatMessages"); if(box)box.scrollTop=box.scrollHeight;
+      }).catch(function(){ if(think)think.innerHTML='<span style="color:#c0392b;">오류(잠시 후 다시)</span>'; }); }
+    var img=pending.filter(function(f){return /^image\//.test(f.type);})[0];
+    if(img){ var rd=new FileReader(); rd.onload=function(){ fetch("/api/coverage/analyze",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({dataUrl:rd.result,mime:img.type,name:img.name})}).then(function(r){return r.json();}).then(function(d){ ask(d.analysis||d.message||""); }).catch(function(){ ask(""); }); }; rd.readAsDataURL(img); }
+    else ask(""); }
+  function quickAction(type){ var prompts={ briefing:"오늘 아침 브리핑 해줘", coverage:"보험증권 분석해줘 (파일을 + 버튼으로 올려주세요)", yakgwan:"약관에서 검색할게 있어", compare:"보험 비교표 만들어줘", message:"고객에게 보낼 문자 초안 써줘", client:"고객 명단 정리해줘" }; var ta=document.getElementById("chatTextarea"); if(ta){ ta.value=prompts[type]||""; } if(type==="coverage"){ var fi=document.getElementById("chatFileInput"); if(fi)fi.click(); return; } sendChatMessage(); }
+  function switchTab(el, name){ document.querySelectorAll(".tabbar .tb").forEach(function(t){t.classList.remove("on");}); if(el)el.classList.add("on");
+    document.querySelectorAll('.screen[data-s="10"] .wsview').forEach(function(v){ var vn=v.getAttribute("data-view"); v.style.display=(vn===name)?(name==="home"?"flex":"block"):"none"; });
+    if(name==="todo"){ var o=document.getElementById("wsTodoOut"); if(o){ o.innerHTML="할 일·승인 불러오는 중…"; fetch("/api/memory/recent").then(function(r){return r.json();}).then(function(d){ if(d.needsConnect){o.innerHTML='<b>✅ 할 일·승인</b><br>내 기억을 보려면 <a href="#" onclick="connectGoogle();return false;" style="color:#0d7a52;font-weight:700;">구글 데이터 연결 →</a>';return;} var list=d.list||[]; o.innerHTML='<b>✅ 할 일·승인 (지니야가 기억한 결정·요청)</b><br>'+(list.length?list.map(function(m){return "· "+esc((m.type||"")+" "+(m.subject||"")+" "+(m.text||m.content||""));}).join("<br>"):"아직 기억한 항목이 없어요."); }).catch(function(){o.innerHTML="불러오기 오류";}); } } }
+
+  </script>
 </body>
 </html>
