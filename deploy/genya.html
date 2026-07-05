@@ -416,19 +416,28 @@
     <div class="top"><button class="backbtn" onclick="goBack()" title="이전">←</button><div class="logo">🤖</div><div class="bn">지니야빌더</div>
       <div class="prog"><span class="done"></span><span class="done"></span><span class="done"></span><span class="done"></span><span class="done"></span><span class="done"></span><span></span></div></div>
     <div class="body">
-      <div class="step-lb">6/7 · 내 문제 해결 체험 (설문에서 나온 고민)</div>
-      <div class="solve-dots"><i class="on" id="sd0"></i><i id="sd1"></i><i id="sd2"></i><i id="sd3"></i><i id="sd4"></i><i id="sd5"></i></div>
-
-      <div id="solveContent">
-        <!-- JS로 6문제 채움 -->
+      <!-- ★요약 카드 1장(6개 체험 대체) → 바로 워크스페이스 -->
+      <div style="padding:22px 4px; text-align:center;">
+        <div style="font-size:20px; font-weight:700; color:#1a1a1a; margin-bottom:8px;">🤖 지니야가 준비됐어요!</div>
+        <div style="font-size:14px; color:#666; margin-bottom:20px;">설문 내용을 분석해서 맞춤 비서를 만들었어요</div>
+        <div id="solutionSummary" style="background:#fff; border-radius:16px; padding:18px 20px; text-align:left; border:1px solid #eee; margin-bottom:22px; font-size:14px; line-height:1.9; color:#2a3540;">준비 내용을 불러오는 중…</div>
+        <button onclick="goToWorkspace()" style="width:100%; padding:16px; background:#185FA5; color:#fff; border:none; border-radius:12px; font-size:16px; font-weight:600; cursor:pointer;">지니야 시작하기 →</button>
       </div>
 
-      <div style="height:6px;"></div>
-      <div style="display:flex;gap:10px;">
-        <button class="btn btn-line" style="flex:1;" onclick="prevSolve()">이전</button>
-        <button class="btn btn-primary" style="flex:2;" id="solveBtn" onclick="nextSolve()">해결됐어요 · 다음 문제 →</button>
+      <!-- 기존 6개 체험(삭제 안 함, display:none 숨김) -->
+      <div id="solveOldExp" style="display:none;">
+        <div class="step-lb">6/7 · 내 문제 해결 체험 (설문에서 나온 고민)</div>
+        <div class="solve-dots"><i class="on" id="sd0"></i><i id="sd1"></i><i id="sd2"></i><i id="sd3"></i><i id="sd4"></i><i id="sd5"></i></div>
+        <div id="solveContent">
+          <!-- JS로 6문제 채움 -->
+        </div>
+        <div style="height:6px;"></div>
+        <div style="display:flex;gap:10px;">
+          <button class="btn btn-line" style="flex:1;" onclick="prevSolve()">이전</button>
+          <button class="btn btn-primary" style="flex:2;" id="solveBtn" onclick="nextSolve()">해결됐어요 · 다음 문제 →</button>
+        </div>
+        <button class="btn btn-ghost" onclick="go(10)">건너뛰고 워크스페이스로</button>
       </div>
-      <button class="btn btn-ghost" onclick="go(10)">건너뛰고 워크스페이스로</button>
     </div>
   </div>
 
@@ -585,7 +594,7 @@
     document.querySelectorAll('.backbtn').forEach(function(b){ b.style.visibility=(n>=2&&n<=9)?'visible':'hidden'; });
     if(n===6) buildGenya();
     if(n===8) refreshConnState();
-    if(n===9) renderSolve();
+    if(n===9) renderSolveSummary();
     if(n===10) loadWorkspace();
     window.scrollTo(0,0);
   }
@@ -945,6 +954,19 @@
   function switchTab(el, name){ document.querySelectorAll(".tabbar .tb").forEach(function(t){t.classList.remove("on");}); if(el)el.classList.add("on");
     document.querySelectorAll('.screen[data-s="10"] .wsview').forEach(function(v){ var vn=v.getAttribute("data-view"); v.style.display=(vn===name)?(name==="home"?"flex":"block"):"none"; });
     if(name==="todo"){ var o=document.getElementById("wsTodoOut"); if(o){ o.innerHTML="할 일·승인 불러오는 중…"; fetch("/api/memory/recent").then(function(r){return r.json();}).then(function(d){ if(d.needsConnect){o.innerHTML='<b>✅ 할 일·승인</b><br>내 기억을 보려면 <a href="#" onclick="connectGoogle();return false;" style="color:#0d7a52;font-weight:700;">구글 데이터 연결 →</a>';return;} var list=d.list||[]; o.innerHTML='<b>✅ 할 일·승인 (지니야가 기억한 결정·요청)</b><br>'+(list.length?list.map(function(m){return "· "+esc((m.type||"")+" "+(m.subject||"")+" "+(m.text||m.content||""));}).join("<br>"):"아직 기억한 항목이 없어요."); }).catch(function(){o.innerHTML="불러오기 오류";}); } } }
+  /* === 수정1: 6개 체험 대체 요약 카드 → 바로 워크스페이스 === */
+  function goToWorkspace(){ go(10); }
+  function renderSolveSummary(){ var el=document.getElementById("solutionSummary"); if(!el)return;
+    var P=(typeof PROFILE!=="undefined"&&PROFILE)||{}; var rows=[];
+    if(P.job) rows.push('<div>👤 <b>직업</b> · '+esc(P.job)+'</div>');
+    if(P.work) rows.push('<div>🛠️ <b>하는 일</b> · '+esc(P.work)+'</div>');
+    if(P.clients) rows.push('<div>🤝 <b>주 고객</b> · '+esc(P.clients)+'</div>');
+    var t=Array.isArray(P.tasks)?P.tasks.filter(Boolean):(P.tasks?[P.tasks]:[]);
+    if(t.length) rows.push('<div>🎯 <b>맡기실 일</b> · '+esc(t.join(", "))+'</div>');
+    if(P.rule) rows.push('<div>📌 <b>꼭 지킬 철칙</b> · '+esc(P.rule)+'</div>');
+    rows.push('<div style="margin-top:10px;padding-top:10px;border-top:1px solid #f0f0f0;">✅ <b>바로 쓸 수 있는 능력</b><div style="margin-top:5px;color:#4a5563;font-size:13px;line-height:1.7;">📄 보장분석(증권 OCR) · 📚 약관 검색 · 💬 문자 초안 · 📊 비교표 · 📇 명단 정리 · 🗂️ 자료 정리</div></div>');
+    el.innerHTML=rows.length>1?rows.join(""):('설문 내용을 바탕으로 맞춤 비서를 준비했어요.'+rows.join(""));
+  }
 
   </script>
 </body>
