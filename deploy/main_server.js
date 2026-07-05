@@ -358,6 +358,54 @@ app.post('/api/onboard/chat', async (req, res) => {
   } catch (e) { res.json({ ok: false, reply: '지금 잠깐 응답이 어려워요. 다시 한 번 말씀해 주세요.', error: e.message }); }
 });
 
+// ── 📄 ★문제4: 증권 이미지 OCR → 보장분석(gpt-4o 비전). 구글 불필요. ★서버 저장 0: 메모리에서 OpenAI로만 전달, 디스크 미기록 ──
+app.post('/api/coverage/analyze', async (req, res) => {
+  try {
+    const dataUrl = String((req.body && req.body.dataUrl) || '');
+    const mime = String((req.body && req.body.mime) || '');
+    if (!dataUrl) return res.json({ ok: false, error: '파일이 없어요.' });
+    if (/pdf/i.test(mime) || /^data:application\/pdf/i.test(dataUrl)) return res.json({ ok: true, needsImage: true, message: '지금은 증권 "사진"(JPG·PNG)만 읽어요. PDF는 화면 캡처해서 이미지로 올려주세요.' });
+    if (!/^data:image\//i.test(dataUrl)) return res.json({ ok: true, needsImage: true, message: '이미지 파일(JPG·PNG)로 올려주세요.' });
+    const r = await _openai.chat.completions.create({
+      model: 'gpt-4o', temperature: 0.2, max_tokens: 800,
+      messages: [
+        { role: 'system', content: '너는 보험 증권 분석가 지니야다. 주어진 이미지는 보험 증권이다. 글자를 읽어(OCR) 담보별 가입 여부·가입금액을 정리하고, 보장의 빈틈(부족·누락·중복)과 A/B/C 재설계 방향을 비전문가도 알기 쉽게 제시하라. 이미지에서 확실히 안 보이는 수치는 지어내지 말고 "증권에서 확인 필요"라고 하라. 마지막 줄에 반드시 "※ 제출·발송 전 반드시 검토하세요"를 붙여라.' },
+        { role: 'user', content: [{ type: 'text', text: '이 증권을 보장분석해줘.' }, { type: 'image_url', image_url: { url: dataUrl } }] },
+      ],
+    });
+    res.json({ ok: true, analysis: (r.choices[0].message.content || '').trim() }); // ★결과만 반환, 이미지·결과 서버 저장 안 함
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// ── 💬 ★문제5: 안내 문자 초안(실제 LLM). 구글 불필요. 발송 안 함(초안만) ──
+app.get('/api/draft/message', async (req, res) => {
+  try {
+    const topic = String(req.query.topic || '자동차보험 만기 안내');
+    const rule = String(req.query.rule || '발송 전 반드시 확인');
+    const r = await _openai.chat.completions.create({
+      model: 'gpt-4o-mini', temperature: 0.6, max_tokens: 240,
+      messages: [
+        { role: 'system', content: '너는 보험설계사의 비서 지니야다. 고객에게 보낼 짧고 따뜻한 안내 문자 "초안"만 쓴다(실제 발송 안 함). 과장·단정 금지, 부담 주지 않기. 고객 이름은 OOO로. 마지막에 "(발송 전 확인)"을 붙인다.' },
+        { role: 'user', content: '주제: ' + topic + '\n꼭 지킬 철칙: ' + rule },
+      ],
+    });
+    res.json({ ok: true, draft: (r.choices[0].message.content || '').trim() });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// ── 📱 ★문제3: 솔라피 연결정보 저장 = ★회원 본인 구글시트에만(서버 저장 0). 데이터 스코프 없으면 연결 안내 ──
+app.post('/api/connect/solapi/save', async (req, res) => {
+  try {
+    const ma = memberAuth(req);
+    if (!ma || !hasDataScope(req)) return res.json({ ok: true, needsConnect: true, connectUrl: '/auth/google/connect', message: '내 시트에 저장하려면 구글 데이터 연결이 필요해요.' });
+    const key = String((req.body && req.body.key) || ''), secret = String((req.body && req.body.secret) || ''), from = String((req.body && req.body.from) || '');
+    const { id, sheets } = await findOrCreateMemberSheet(ma);
+    await ensureTab(sheets, id, '지니야_연결');
+    await sheets.spreadsheets.values.update({ spreadsheetId: id, range: '지니야_연결!A1', valueInputOption: 'RAW', requestBody: { values: [['솔라피_API_KEY', key], ['솔라피_SECRET', secret], ['솔라피_발신번호', from], ['솔라피_저장일', new Date().toISOString().slice(0, 10)]] } });
+    res.json({ ok: true, saved: true }); // ★오원트 서버엔 저장 안 함, 회원 구글시트에만
+  } catch (e) { if (isScopeError(e)) return res.json({ ok: true, needsConnect: true, connectUrl: '/auth/google/connect' }); res.status(500).json({ ok: false, error: e.message }); }
+});
+
 // ── 미연결 능력(대기) 상태 ──
 app.get('/api/status', (req, res) => {
   res.json({

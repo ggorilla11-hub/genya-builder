@@ -76,9 +76,22 @@
 
   .meet{text-align:center;margin:auto;max-width:460px;padding:20px;}
   .meet .spin{width:76px;height:76px;margin:0 auto 22px;border-radius:20px;background:var(--teal);display:flex;align-items:center;justify-content:center;font-size:40px;animation:ps 1.4s infinite;}
+  .meet .spin.done{animation:none;background:#0d7a52;}
   @keyframes ps{0%,100%{transform:scale(1)}50%{transform:scale(1.07)}}
-  .arow{display:flex;align-items:center;gap:11px;padding:12px 15px;background:#f6f8fa;border-radius:11px;margin-bottom:8px;text-align:left;font-size:13.5px;}
-  .arow .d{width:8px;height:8px;border-radius:50%;background:var(--teal);flex-shrink:0;}
+  .arow{display:flex;align-items:center;gap:11px;padding:12px 15px;background:#f6f8fa;border-radius:11px;margin-bottom:8px;text-align:left;font-size:13.5px;transition:.25s;}
+  .arow .d{width:8px;height:8px;border-radius:50%;background:#c3ccd6;flex-shrink:0;transition:.25s;}
+  .arow.ar-done{background:var(--teal-l);color:#2a5f47;}
+  .arow.ar-done .d{background:var(--teal);}
+  /* 자료 여러 개 목록(문제2) */
+  .filelist{margin-top:8px;}
+  .fli{display:flex;align-items:center;gap:8px;padding:9px 12px;background:#f6f8fa;border-radius:9px;margin-bottom:6px;font-size:12.5px;}
+  .fli .fst{margin-left:auto;color:var(--teal);font-size:11px;white-space:nowrap;}
+  .fli .fdel{cursor:pointer;color:#c0392b;font-weight:700;padding:0 4px;flex-shrink:0;}
+  /* 워크스페이스 6카드(문제6) */
+  .c6{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;}
+  .c6 .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:13px;cursor:pointer;transition:.15s;}
+  .c6 .card:hover{border-color:var(--teal);background:var(--teal-l);}
+  .c6 .card b{font-size:13px;color:var(--navy);display:block;} .c6 .card span{font-size:11px;color:var(--gray);}
 
   .conn{display:flex;align-items:center;gap:13px;padding:14px;border:1px solid var(--line2);border-radius:12px;margin-bottom:10px;}
   .conn .e{font-size:21px;width:32px;text-align:center;} .conn .tx{flex:1;} .conn .tx b{font-size:14px;display:block;} .conn .tx span{font-size:11.5px;color:var(--gray);}
@@ -332,14 +345,14 @@
   <!-- 6. 생성 -->
   <div class="screen" data-s="6">
     <div class="meet">
-      <div class="spin">🤖</div>
-      <h2 class="big" style="font-size:22px;">지니야를 만들고 있어요</h2>
-      <p class="sub" style="margin-bottom:22px;">내 정보를 바탕으로 나만의 비서가 태어나는 중…</p>
-      <div class="arow"><span class="d"></span>직업·고민·철칙 반영</div>
-      <div class="arow"><span class="d"></span>맡길 기능 → 문제해결 화면 준비</div>
-      <div class="arow"><span class="d"></span>약관 지식 창고 연결</div>
-      <div class="arow"><span class="d"></span>안전 장치(발송 전 확인) 심음</div>
-      <button class="btn btn-primary" style="margin-top:22px;max-width:300px;margin-left:auto;margin-right:auto;" onclick="go(7)">다음 → 자료 넣기</button>
+      <div class="spin" id="genyaSpin">🤖</div>
+      <h2 class="big" id="genyaTitle" style="font-size:22px;">지니야를 만들고 있어요</h2>
+      <p class="sub" id="genyaSub" style="margin-bottom:22px;">내 정보를 바탕으로 나만의 비서가 태어나는 중…</p>
+      <div class="arow" id="ar0"><span class="d"></span>직업·고민·철칙 반영</div>
+      <div class="arow" id="ar1"><span class="d"></span>맡길 기능 → 문제해결 화면 준비</div>
+      <div class="arow" id="ar2"><span class="d"></span>약관 지식 창고 연결</div>
+      <div class="arow" id="ar3"><span class="d"></span>안전 장치(발송 전 확인) 심음</div>
+      <button class="btn btn-primary" id="genyaNextBtn" style="margin-top:22px;max-width:300px;margin-left:auto;margin-right:auto;opacity:.5;pointer-events:none;" onclick="go(7)">완성되는 중…</button>
     </div>
   </div>
 
@@ -351,12 +364,12 @@
       <div class="step-lb">4/7 · 업무 자료 넣기</div>
       <h2 class="big">업무 자료를<br>올려주세요</h2>
       <p class="sub">고객명단·증권을 올리면 지니야가 바로 일해요. 내 드라이브에만 저장돼요.</p>
-      <input type="file" id="dataFile1" style="display:none" onchange="onDataFile(this, document.getElementById('dataDone1'))">
-      <div class="up" style="padding:24px;" onclick="document.getElementById('dataFile1').click()"><div class="ic">📊</div><div class="t1">고객명단 엑셀 / 구글시트</div></div>
-      <div class="up-done" id="dataDone1" style="margin-top:10px;display:none;"><div class="ic">✅</div><div class="tx"><b>파일</b><span>업로드 중…</span></div></div>
-      <input type="file" id="dataFile2" style="display:none" onchange="onDataFile(this, document.getElementById('dataDone2'))">
-      <div class="up" style="padding:18px;margin-top:12px;" onclick="document.getElementById('dataFile2').click()"><div class="ic">📄</div><div class="t1" style="font-size:14px;">보험증권 PDF (선택)</div></div>
-      <div class="up-done" id="dataDone2" style="margin-top:10px;display:none;"><div class="ic">✅</div><div class="tx"><b>파일</b><span>업로드 중…</span></div></div>
+      <input type="file" id="dataFile1" multiple style="display:none" onchange="onDataFiles(this,'명단')">
+      <div class="up" style="padding:24px;" onclick="document.getElementById('dataFile1').click()"><div class="ic">📊</div><div class="t1">고객명단 엑셀 / 구글시트 <span style="font-size:12px;color:#0d7a52;">(여러 개 가능)</span></div></div>
+      <div class="filelist" id="fileList1"></div>
+      <input type="file" id="dataFile2" multiple style="display:none" onchange="onDataFiles(this,'증권')">
+      <div class="up" style="padding:18px;margin-top:12px;" onclick="document.getElementById('dataFile2').click()"><div class="ic">📄</div><div class="t1" style="font-size:14px;">보험증권 PDF·이미지 <span style="font-size:11.5px;color:#0d7a52;">(여러 개 가능)</span></div></div>
+      <div class="filelist" id="fileList2"></div>
       <div style="height:20px;"></div>
       <button class="btn btn-primary" onclick="go(8)">다음</button>
       <button class="btn btn-ghost" onclick="go(8)">나중에 올릴게요</button>
@@ -375,7 +388,15 @@
       <div class="conn"><span class="e">📊</span><div class="tx"><b>구글 시트</b><span>고객명단 정리</span></div><span class="st st-done">연결됨</span></div>
       <div class="conn"><span class="e">📁</span><div class="tx"><b>구글 드라이브</b><span>증권·서류 검색</span></div><span class="st st-done">연결됨</span></div>
       <div class="conn"><span class="e">📧</span><div class="tx"><b>Gmail</b><span>메일 정리·초안</span></div><span class="st st-go" onclick="this.className='st st-done';this.textContent='연결됨'">연결</span></div>
-      <div class="conn"><span class="e">💬</span><div class="tx"><b>카카오톡</b><span>고객 문자 발송</span></div><span class="st st-go" onclick="this.className='st st-done';this.textContent='연결됨'">연결</span></div>
+      <div class="conn"><span class="e">💬</span><div class="tx"><b>카카오톡</b><span>고객 알림톡 발송</span></div><span class="st st-go" onclick="this.className='st st-done';this.textContent='연결됨'">연결</span></div>
+      <div class="conn"><span class="e">📱</span><div class="tx"><b>솔라피(Solapi) 문자</b><span>일반 문자(SMS) 발송</span></div><span class="st st-go" id="solapiToggle" onclick="toggleSolapi()">연결</span></div>
+      <div id="solapiForm" style="display:none;margin:2px 0 10px;padding:14px;background:#f6f8fa;border-radius:12px;">
+        <div class="field" style="margin-bottom:9px;"><label style="font-size:12.5px;">솔라피 API Key</label><input id="solapiKey" placeholder="API Key" autocomplete="off"></div>
+        <div class="field" style="margin-bottom:9px;"><label style="font-size:12.5px;">API Secret</label><input id="solapiSecret" type="password" placeholder="API Secret" autocomplete="off"></div>
+        <div class="field" style="margin-bottom:11px;"><label style="font-size:12.5px;">발신번호(사전 등록된 번호)</label><input id="solapiFrom" placeholder="010-0000-0000" autocomplete="off"></div>
+        <button class="btn btn-primary" style="padding:12px;" onclick="saveSolapi()">저장</button>
+        <div id="solapiMsg" style="font-size:11.5px;color:#0d7a52;margin-top:8px;line-height:1.5;">🔒 입력값은 <b>내 구글시트에만</b> 저장돼요(오원트 서버 저장 안 함).</div>
+      </div>
       <div style="height:20px;"></div>
       <button class="btn btn-primary" onclick="go(9)">연결 완료 → 내 문제 해결하기</button>
     </div>
@@ -463,8 +484,13 @@
           <div class="abil hot"><div class="ai">🎯</div><b>고객 발굴 🔥</b><span>스스로 찾음</span></div>
         </div>
 
+        <!-- ★ 내 문제 6가지 바로 해결 (문제6) -->
+        <div class="home-sec">🧩 내 문제 6가지 바로 해결 <span class="cnt">카드를 누르면 지니야가 실제로 처리해요</span></div>
+        <div class="c6" id="ws6cards"></div>
+        <div id="ws6out" style="margin-top:10px;font-size:13px;color:#2a3540;line-height:1.6;white-space:pre-wrap;"></div>
+
         <!-- ★ 상시 자연어 대화창 -->
-        <div class="home-chat">
+        <div class="home-chat" style="margin-top:22px;">
           <div class="hc-t">💬 지니야와 대화하기 — 무엇이든 말하세요 (Order Made)</div>
           <div class="hc-i">
             <span style="font-size:19px;">➕</span>
@@ -591,13 +617,30 @@
       go(6);
     }).catch(()=>go(6));
   }
-  // ── 화면6 생성: 실제 저장 + LLM 능력 배정 ──
+  // ── 화면6 생성: 실제 저장 + LLM 능력 배정 + ★완료 표시(문제1) ──
   function buildGenya(){
+    var spin=document.getElementById('genyaSpin'),title=document.getElementById('genyaTitle'),sub=document.getElementById('genyaSub'),btn=document.getElementById('genyaNextBtn');
+    var ars=['ar0','ar1','ar2','ar3'];
+    // 진행 중 상태로 초기화
+    if(spin){spin.classList.remove('done');spin.textContent='🤖';}
+    if(title)title.textContent='지니야를 만들고 있어요';
+    if(sub)sub.textContent='내 정보를 바탕으로 나만의 비서가 태어나는 중…';
+    if(btn){btn.style.opacity='.5';btn.style.pointerEvents='none';btn.textContent='완성되는 중…';}
+    ars.forEach(function(id){var e=document.getElementById(id);if(e)e.classList.remove('ar-done');});
+    // 진행 단계 애니메이션(시각적 구분)
+    ars.forEach(function(id,i){setTimeout(function(){var e=document.getElementById(id);if(e&&document.querySelector('.screen.on[data-s="6"]'))e.classList.add('ar-done');},350*(i+1));});
+    function finish(){
+      ars.forEach(function(id){var e=document.getElementById(id);if(e)e.classList.add('ar-done');});
+      if(spin){spin.classList.add('done');spin.textContent='✅';}
+      if(title)title.textContent='✅ 완성되었어요!';
+      if(sub)sub.textContent='이제 자료를 넣으면 지니야가 바로 일을 시작해요.';
+      if(btn){btn.style.opacity='1';btn.style.pointerEvents='auto';btn.textContent='다음 → 자료 넣기';}
+    }
     saveProfile('v4').then(function(){
       var goals=(PROFILE.tasks&&PROFILE.tasks.length?PROFILE.tasks:[PROFILE.work]).filter(Boolean).join('|');
       if(!goals)return null;
       return fetch('/api/agents/assign?goals='+enc(goals)).then(r=>r.json());
-    }).then(function(a){ window._assigned=a; }).catch(function(){});
+    }).then(function(a){ window._assigned=a; setTimeout(finish,1500); }).catch(function(){ setTimeout(finish,1500); });
   }
   // ── 화면7 자료 → 회원 드라이브 직행(drive.file, 서버 안 지남) ──
   function uploadToDrive(f, doneEl){
@@ -610,28 +653,58 @@
     }).then(function(g){ if(doneEl){doneEl.style.display='flex'; var s=doneEl.querySelector('span'); if(s)s.textContent=g&&g.id?'내 드라이브에 저장됨(브라우저→구글 직행)':'업로드 실패';} return g; })
     .catch(function(e){ if(doneEl){doneEl.style.display='flex'; var s=doneEl.querySelector('span'); if(s)s.textContent='실패: '+e.message;} });
   }
-  function onDataFile(inp, doneEl){var f=inp.files[0];if(!f)return; var b=doneEl&&doneEl.querySelector('b'); if(b)b.textContent=f.name; uploadToDrive(f, doneEl);}
+  // ── 화면7 자료: ★여러 개 업로드 + 목록 + 개별 삭제(문제2). 파일은 브라우저→드라이브 직행(서버 안 지남) ──
+  var _uploads={'명단':[],'증권':[]};
+  function onDataFiles(inp, kind){
+    Array.prototype.slice.call(inp.files||[]).forEach(function(f){
+      var item={name:f.name, status:'업로드 중…', id:null};
+      _uploads[kind].push(item); renderFileList(kind);
+      uploadToDrive(f).then(function(g){ item.id=g&&g.id||null; item.status=item.id?'✅ 내 드라이브 저장됨':'실패'; renderFileList(kind); })
+        .catch(function(){ item.status='실패'; renderFileList(kind); });
+    });
+    inp.value=''; // 같은 파일 재선택 가능
+  }
+  function renderFileList(kind){
+    var el=document.getElementById(kind==='명단'?'fileList1':'fileList2'); if(!el)return;
+    el.innerHTML=_uploads[kind].map(function(it,i){return '<div class="fli"><span>📎 '+esc(it.name)+'</span><span class="fst">'+esc(it.status)+'</span><span class="fdel" onclick="delFile(\''+kind+'\','+i+')">✕</span></div>';}).join('');
+  }
+  function delFile(kind,i){
+    var it=_uploads[kind][i]; if(!it){return;}
+    // 이미 드라이브에 올라간 파일이면 실제로 삭제(회원 드라이브에서 제거)
+    if(it.id){ fetch('/api/drive/token').then(r=>r.json()).then(function(d){ if(d.ok&&d.token){ fetch('https://www.googleapis.com/drive/v3/files/'+it.id,{method:'DELETE',headers:{'Authorization':'Bearer '+d.token}}); } }).catch(function(){}); }
+    _uploads[kind].splice(i,1); renderFileList(kind);
+  }
 
   // ── 화면9 문제해결 6 — 실제 엔진(약관·시트·캘린더 실호출) ──
   const solveDefs=[
-    {n:1,title:'보장분석 → 재설계 제안',q:'김철수님 자동차 증권 보장분석해줘.',run:function(cb){cb('증권은 회원 드라이브에서 읽어 대물·자기신체 등 보장 빈틈을 분석하고 A/B/C안을 만듭니다. 자료 화면에서 증권을 올리면 실제로 읽어요.','드라이브 증권 읽기 + 약관 근거');}},
+    {n:1,title:'보장분석 → 재설계 제안',q:'증권을 올리면 지니야가 읽어 분석해요.',run:function(cb){cb('증권 사진(JPG·PNG)을 올리면, 지니야가 글자를 읽어(OCR) 담보별 가입 여부·빈틈을 분석하고 재설계 방향을 제안해요. 아래 버튼을 눌러 증권을 올려주세요.','업로드 → OCR → 보장분석');
+      var res=document.getElementById('solveRes'); if(res)res.innerHTML='<input type="file" id="ocrFile" accept="image/*" style="display:none" onchange="ocrAnalyze(this,\'ocrOut\')"><button class="btn btn-primary" style="padding:11px;" onclick="document.getElementById(\'ocrFile\').click()">📄 증권 올려 분석(OCR)</button><div id="ocrOut" style="margin-top:10px;font-size:12.5px;color:#2a3540;line-height:1.6;white-space:pre-wrap;"></div>';}},
     {n:2,title:'약관 쉽게 물어보기',q:'무보험차상해가 뭐야?',run:function(cb){fetch('/api/yakgwan?q='+enc('무보험차상해가 뭐야')).then(r=>r.json()).then(function(d){cb(d.answer||'(응답 없음)',((d.sources||[])[0])||'약관 창고');}).catch(function(){cb('약관 창고 연결 오류','-');});}},
-    {n:3,title:'고객 문자 초안',q:'만기 고객 안내 문자 써줘.',run:function(cb){cb('"OOO님, 자동차보험 만기가 곧 다가와 미리 연락드려요. 편하실 때 봐드릴게요 😊" — ★보내기 전 확인받고 발송합니다.','철칙(발송 전 확인) 반영 · 발송 0');}},
+    {n:3,title:'고객 문자 초안',q:'만기 고객 안내 문자 써줘.',run:function(cb){fetch('/api/draft/message?topic='+enc('자동차보험 만기 안내')+'&rule='+enc(PROFILE.rule||'발송 전 반드시 확인')).then(r=>r.json()).then(function(d){cb(d.draft||'(초안 생성 실패)','철칙 반영 · 발송 0(사람 확인 후)');}).catch(function(){cb('초안 생성 오류','-');});}},
     {n:4,title:'만기 고객 자동 정리',q:'이번 주 만기 고객 정리해줘.',run:function(cb){fetch('/api/sheets').then(r=>r.json()).then(function(d){if(d.needsGoogle){cb('구글 연결이 필요해요.','구글 연결');return;}var n=(d.q1_7월만기||[]).length;var im=(d.q2_만기임박순||[]).map(function(o){return o.고객명+'('+o.만기일+')';}).join(' · ');cb('7월 만기 '+n+'명'+(im?': '+im:' — 명단 없음'),'구글시트 명단 자동 필터');}).catch(function(){cb('시트 연결 오류','-');});}},
     {n:5,title:'아침 브리핑',q:'(매일 아침 자동)',run:function(cb){fetch('/api/calendar').then(r=>r.json()).then(function(d){if(d.needsGoogle){cb('구글 연결이 필요해요.','구글 연결');return;}var b='오늘 일정 '+d.count+'건. '+(d.events||[]).map(function(e){return e.time+' '+e.title;}).join(' · ');cb(b||'오늘 일정 없음','캘린더 + 명단 자동 연결');}).catch(function(){cb('캘린더 연결 오류','-');});}},
-    {n:6,title:'첫 고객 발굴 🔥',q:'새 고객 좀 찾아줘.',run:function(cb){cb('유튜브 공개 댓글에서 관심 고객을 찾아 Hot🔥/Warm🌤 분류하고 첫 인사 초안까지 만듭니다. ★연락은 직접 하세요(발송 0).','유튜브 댓글 발굴 + 분류');}},
+    {n:6,title:'첫 고객 발굴 🔥',q:'새 고객 좀 찾아줘.',run:function(cb){cb('고객 발굴(유튜브·커뮤니티 공개글에서 관심 고객 탐지)은 아직 연결 전이에요. 준비되면 Hot🔥/Warm🌤 분류와 첫 인사 초안까지 만들어 드릴게요. (지금은 미연결 — 곧 준비)','준비 중 · 미연결(정직 표시)');}},
   ];
   let si=0;
   function renderSolve(){
     var s=solveDefs[si];
     var box=document.getElementById('solveContent'); if(!box)return;
-    box.innerHTML='<div class="solve-hd"><span class="num">'+s.n+'</span><h2 class="big" style="font-size:20px;margin:0;">'+esc(s.title)+'</h2></div><div style="height:14px;"></div><div class="demo-chat"><div class="dm me"><div class="av">나</div><div class="bb">'+esc(s.q)+'</div></div><div class="dm you"><div class="av">🤖</div><div class="bb" id="solveAns">지니야가 실제로 처리하는 중…</div></div></div><div class="solve-result" id="solveRes">…</div>';
-    s.run(function(ans,src){var a=document.getElementById('solveAns');if(a)a.innerHTML=esc(ans)+'<div class="src">→ '+esc(src)+'</div>';var r=document.getElementById('solveRes');if(r)r.innerHTML='✅ 실제 엔진으로 처리했어요.';});
+    box.innerHTML='<div class="solve-hd"><span class="num">'+s.n+'</span><h2 class="big" style="font-size:20px;margin:0;">'+esc(s.title)+'</h2></div><div style="height:14px;"></div><div class="demo-chat"><div class="dm me"><div class="av">나</div><div class="bb">'+esc(s.q)+'</div></div><div class="dm you"><div class="av">🤖</div><div class="bb" id="solveAns">지니야가 실제로 처리하는 중…</div></div></div><div class="solve-result" id="solveRes">…</div>'+
+      '<div class="ws-chat" style="margin-top:12px;"><div class="inp" style="display:flex;align-items:center;gap:9px;background:#f6f8fa;border-radius:11px;padding:11px 14px;"><span style="font-size:17px;">💬</span><input id="solveInput" placeholder="여기에 직접 물어보세요 (예: 무보험차상해가 뭐야?)" onkeydown="if(event.key===\'Enter\')solveAsk()" style="flex:1;border:none;background:transparent;font-size:13px;font-family:inherit;outline:none;"><span style="font-size:17px;cursor:pointer;color:var(--teal);" onclick="solveAsk()">📤</span></div><div id="solveAskOut" style="margin-top:8px;font-size:12.5px;white-space:pre-wrap;color:#2a3540;line-height:1.6;"></div></div>';
+    s.run(function(ans,src){var a=document.getElementById('solveAns');if(a)a.innerHTML=esc(ans)+'<div class="src">→ '+esc(src)+'</div>';var r=document.getElementById('solveRes');if(r&&r.innerHTML==='…')r.innerHTML='✅ 실제 엔진으로 처리했어요.';});
     for(let i=0;i<6;i++){var d=document.getElementById('sd'+i);if(d)d.className=(i===si?'on':'');}
     document.getElementById('solveBtn').textContent = si<5 ? '해결됐어요 · 다음 문제 →' : '6개 다 해결! 워크스페이스 열기 →';
   }
   function nextSolve(){ if(si<5){si++;renderSolve();}else{go(10);} }
   function prevSolve(){ if(si>0){si--;renderSolve();} }
+  // ── ★6카드 안 대화창: 입력→엔터→실제 응답(/api/order · 구글 없이도 응답, 데이터 필요시 연결버튼) ──
+  function solveAsk(){ var inp=document.getElementById('solveInput'); var q=(inp&&inp.value||'').trim(); if(!q)return;
+    var out=document.getElementById('solveAskOut'); if(out)out.textContent='지니야가 처리하는 중…';
+    fetch('/api/order?q='+enc(q)).then(r=>r.json()).then(function(d){ if(!out)return;
+      if(d&&d.needsConnect){out.innerHTML='<b>'+esc(d.kind||'구글 데이터 연결 필요')+'</b> '+esc(d.text||'')+'<div style="margin-top:8px;"><a href="'+(d.connectUrl||'/auth/google/connect')+'" style="display:inline-block;background:#0d7a52;color:#fff;padding:7px 13px;border-radius:9px;text-decoration:none;font-size:12px;font-weight:600;">🔗 구글 데이터 연결하기 →</a></div>';return;}
+      out.innerHTML='<b>'+esc(d.kind||'')+'</b> '+esc(d.text||d.error||'');
+    }).catch(function(){if(out)out.textContent='오류';});
+  }
 
   // ── 화면10 워크스페이스 실데이터 ──
   function loadWorkspace(){
@@ -643,6 +716,45 @@
       el.textContent=b||'오늘 예정된 일정이 없어요.';}).catch(()=>{});
     fetch('/api/connectors').then(r=>r.json()).then(function(d){var el=document.getElementById('wsConnMeta');if(el)el.textContent='🔌 '+d.connectedCount+'개 연결됨 · 관리 →';}).catch(()=>{});
     fetch('/api/skills').then(r=>r.json()).then(function(d){var el=document.getElementById('wsSkillMeta');if(el)el.textContent='🛠️ '+d.list.length+'개 스킬 장착됨 · 열기 →';}).catch(()=>{});
+    renderWs6(); // ★문제6: 워크스페이스에 6개 문제해결 카드 노출
+  }
+  // ── ★문제6: 워크스페이스 6카드(문제해결 6) 노출 + 각 카드 실제 작동 ──
+  function renderWs6(){
+    var box=document.getElementById('ws6cards'); if(!box)return;
+    box.innerHTML=solveDefs.map(function(s,i){return '<div class="card" onclick="ws6Run('+i+')"><b>'+esc(s.n+'. '+s.title)+'</b><span>'+esc(s.q)+'</span></div>';}).join('');
+  }
+  function ws6Run(i){
+    var out=document.getElementById('ws6out'); if(!out)return;
+    if(i===0){ // 보장분석 = 증권 업로드 → OCR(문제4)
+      out.innerHTML='<div style="margin-bottom:6px;color:#5a6674;">증권 사진(JPG·PNG)을 올리면 지니야가 읽어(OCR) 보장분석해요.</div><input type="file" id="ocrFile6" accept="image/*" style="display:none" onchange="ocrAnalyze(this,\'ws6res\')"><button class="btn btn-primary" style="padding:11px;max-width:260px;" onclick="document.getElementById(\'ocrFile6\').click()">📄 증권 올려 분석(OCR)</button><div id="ws6res" style="margin-top:10px;white-space:pre-wrap;"></div>'; return;
+    }
+    out.textContent='지니야가 처리하는 중…';
+    solveDefs[i].run(function(ans,src){ out.innerHTML='<b>'+esc(solveDefs[i].title)+'</b> '+esc(ans)+' <span style="color:#0d7a52">('+esc(src)+')</span>'; });
+  }
+  // ── ★문제4: 증권 이미지 OCR → 보장분석(gpt-4o 비전, 서버 저장 0) ──
+  function ocrAnalyze(inp, outId){
+    var f=inp.files&&inp.files[0]; if(!f)return;
+    var out=document.getElementById(outId); if(out)out.textContent='📖 증권을 읽는 중(OCR)…';
+    var rd=new FileReader();
+    rd.onload=function(){
+      fetch('/api/coverage/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dataUrl:rd.result,name:f.name,mime:f.type})}).then(r=>r.json()).then(function(d){
+        if(!out)return; if(d.needsImage){out.textContent=d.message;return;} out.innerHTML='<b>📋 보장분석</b>\n'+esc(d.analysis||d.error||'(분석 실패)');
+      }).catch(function(){if(out)out.textContent='분석 오류(잠시 후 다시 시도)';});
+    };
+    rd.readAsDataURL(f); inp.value='';
+  }
+  // ── ★문제3: 솔라피 연결 UI(내 구글시트에만 저장, 서버 저장 0) ──
+  function toggleSolapi(){ var f=document.getElementById('solapiForm'); if(f)f.style.display=(!f.style.display||f.style.display==='none')?'block':'none'; }
+  function saveSolapi(){
+    var key=((document.getElementById('solapiKey')||{}).value||'').trim(), secret=((document.getElementById('solapiSecret')||{}).value||'').trim(), from=((document.getElementById('solapiFrom')||{}).value||'').trim();
+    var msg=document.getElementById('solapiMsg');
+    if(!key||!from){ if(msg){msg.style.color='#c0392b';msg.textContent='API Key와 발신번호는 꼭 넣어주세요.';} return; }
+    if(msg){msg.style.color='#0d7a52';msg.textContent='저장 중…';}
+    fetch('/api/connect/solapi/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:key,secret:secret,from:from})}).then(r=>r.json()).then(function(d){
+      if(d.needsConnect){ if(msg){msg.style.color='#8a4d18';msg.innerHTML='먼저 <a href="'+(d.connectUrl||'/auth/google/connect')+'" style="color:#0d7a52;font-weight:700;">구글 데이터 연결</a>이 필요해요(내 시트에 저장하려면).'; } return; }
+      if(d.ok&&d.saved){ var t=document.getElementById('solapiToggle'); if(t){t.className='st st-done';t.textContent='연결됨';} if(msg){msg.style.color='#0d7a52';msg.textContent='✅ 저장됐어요(내 구글시트에만 · 오원트 서버 저장 안 함).';} }
+      else if(msg){ msg.style.color='#c0392b'; msg.textContent='저장 실패: '+(d.error||''); }
+    }).catch(function(){ if(msg){msg.style.color='#c0392b';msg.textContent='저장 오류';} });
   }
   function wsAsk(){var inp=document.getElementById('wsChatInput');var q=(inp&&inp.value||'').trim();if(!q)return;
     var out=document.getElementById('wsChatOut');if(out)out.textContent='지니야가 처리하는 중…';
