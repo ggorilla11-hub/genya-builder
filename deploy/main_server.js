@@ -444,19 +444,26 @@ app.get('/auth/google', (req, res) => {
 // ★데이터 연결(캘린더·시트·드라이브) — 그 기능 실제로 쓸 때만 별도 동의(incremental). 여기서만 민감 스코프 요청.
 app.get('/auth/google/connect', (req, res) => {
   if (!OA_CONFIGURED) return res.status(503).send('OAuth 미설정');
-  // ★state=connect → 동의 후 워크스페이스로 자동복귀(UI-8)
-  res.redirect(oaClient().generateAuthUrl({ access_type: 'offline', prompt: 'consent', include_granted_scopes: true, scope: LOGIN_SCOPES.concat(DATA_SCOPES), state: 'connect' }));
+  // ★state에 returnTo(돌아올 화면번호) 저장 → 동의 후 원래 화면으로 복귀. 기본=워크스페이스(10)
+  const returnTo = String(req.query.returnTo || '10');
+  const state = Buffer.from(JSON.stringify({ connect: true, returnTo: returnTo })).toString('base64');
+  res.redirect(oaClient().generateAuthUrl({ access_type: 'offline', prompt: 'consent', include_granted_scopes: true, scope: LOGIN_SCOPES.concat(DATA_SCOPES), state: state }));
 });
 app.get('/auth/google/callback', async (req, res) => {
   try {
     const code = req.query.code; if (!code) return res.status(400).send('code 없음');
-    const isConnect = req.query.state === 'connect';
+    // ★connect(데이터 스코프)일 때만 state 해석. 로그인(openid/email/profile)은 기존대로.
+    let isConnect = false, returnTo = '10';
+    if (req.query.state) {
+      try { const o = JSON.parse(Buffer.from(String(req.query.state), 'base64').toString()); if (o && o.connect) { isConnect = true; returnTo = o.returnTo || '10'; } }
+      catch (e) { if (req.query.state === 'connect') isConnect = true; } // 구버전 호환
+    }
     const c = oaClient(); const { tokens } = await c.getToken(code); c.setCredentials(tokens);
     const ui = await google.oauth2({ version: 'v2', auth: c }).userinfo.get();
     const s = crypto.randomBytes(16).toString('hex');
     sessions.set(s, { email: ui.data.email, name: ui.data.name, tokens, scope: tokens.scope || '', provider: 'google' });
     res.setHeader('Set-Cookie', `genya_sid=${s}; HttpOnly; Path=/; SameSite=Lax${process.env.RENDER ? '; Secure' : ''}`);
-    res.redirect(isConnect ? '/?connected=1' : '/'); // 데이터 연결이면 워크스페이스 자동복귀
+    res.redirect(isConnect ? ('/?connected=1&screen=' + encodeURIComponent(returnTo)) : '/'); // 데이터 연결이면 원래 화면으로 복귀
   } catch (e) { res.status(500).send('로그인 오류: ' + e.message); }
 });
 app.get('/logout', (req, res) => { const s = sidOf(req); if (s) sessions.delete(s); res.setHeader('Set-Cookie', 'genya_sid=; Path=/; Max-Age=0'); res.redirect('/login'); });

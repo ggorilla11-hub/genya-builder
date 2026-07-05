@@ -562,6 +562,7 @@
     if(t){t.classList.add('on');t.scrollTop=0;}
     ctrlBtns.forEach(b=>b.classList.remove('active'));
     window._cur=n;
+    try{ sessionStorage.setItem('genya_lastScreen', String(n)); }catch(e){} // ★구글 연결 후 이 화면으로 복귀
     // 이전 버튼은 온보딩 단계(2~9)에서만 보임(1=첫단계, 0=로그인, 10=워크스페이스 탭바)
     document.querySelectorAll('.backbtn').forEach(function(b){ b.style.visibility=(n>=2&&n<=9)?'visible':'hidden'; });
     if(n===6) buildGenya();
@@ -577,10 +578,15 @@
   function pickJob(el){document.querySelectorAll('.job').forEach(j=>j.classList.remove('sel'));el.classList.add('sel');PROFILE.job=(el.querySelector('b')||{}).textContent||'';}
   function tg(el){el.classList.toggle('on');}
 
-  // 로그인돼 있으면 직업(화면1)부터. ★데이터 연결 후 복귀(connected=1)면 워크스페이스로 + 대기 질문 자동 재실행(UI-8)
+  // 로그인돼 있으면 직업(화면1)부터. ★데이터 연결 후엔 서버가 준 screen(원래 화면)으로 복귀 + 대기 질문 자동 재실행
   var _params=new URLSearchParams(location.search);
+  var _preScreen=(function(){try{return sessionStorage.getItem('genya_lastScreen');}catch(e){return null;}})();
   fetch('/me').then(r=>r.json()).then(d=>{ if(d&&d.ok){
-    if(_params.get('connected')){ go(10); var pq=sessionStorage.getItem('genya_pendingQ'); if(pq){ sessionStorage.removeItem('genya_pendingQ'); setTimeout(function(){ var wi=document.getElementById('wsChatInput'); if(wi){wi.value=pq; wsAsk();} }, 500); } }
+    if(_params.get('connected')){
+      var sp=_params.get('screen'); var scr=(sp!=null&&sp!=='')?parseInt(sp,10):(_preScreen!=null?parseInt(_preScreen,10):10); if(isNaN(scr))scr=10;
+      go(scr);
+      var pq=sessionStorage.getItem('genya_pendingQ'); if(pq){ sessionStorage.removeItem('genya_pendingQ'); if(scr===10){ setTimeout(function(){ var wi=document.getElementById('wsChatInput'); if(wi){wi.value=pq; wsAsk();} }, 500); } }
+    }
     else { go(1); }
   } }).catch(()=>{});
 
@@ -724,7 +730,7 @@
   function solveAsk(){ var inp=document.getElementById('solveInput'); var q=(inp&&inp.value||'').trim(); if(!q)return;
     var out=document.getElementById('solveAskOut'); if(out)out.textContent='지니야가 처리하는 중…';
     fetch('/api/order?q='+enc(q)).then(r=>r.json()).then(function(d){ if(!out)return;
-      if(d&&d.needsConnect){try{sessionStorage.setItem('genya_pendingQ',q);}catch(e){} out.innerHTML='<b>'+esc(d.kind||'구글 데이터 연결 필요')+'</b> '+esc(d.text||'')+'<div style="margin-top:8px;"><a href="'+(d.connectUrl||'/auth/google/connect')+'" style="display:inline-block;background:#0d7a52;color:#fff;padding:7px 13px;border-radius:9px;text-decoration:none;font-size:12px;font-weight:600;">🔗 구글 데이터 연결하기 →</a></div>';return;}
+      if(d&&d.needsConnect){try{sessionStorage.setItem('genya_pendingQ',q);}catch(e){} out.innerHTML='<b>'+esc(d.kind||'구글 데이터 연결 필요')+'</b> '+esc(d.text||'')+'<div style="margin-top:8px;"><a href="#" onclick="connectGoogle();return false;" style="display:inline-block;background:#0d7a52;color:#fff;padding:7px 13px;border-radius:9px;text-decoration:none;font-size:12px;font-weight:600;">🔗 구글 데이터 연결하기 →</a></div>';return;}
       out.innerHTML='<b>'+esc(d.kind||'')+'</b> '+esc(d.text||d.error||'');
     }).catch(function(){if(out)out.textContent='오류';});
   }
@@ -734,7 +740,7 @@
     var nm=document.getElementById('wsName'); if(nm&&PROFILE.job)nm.textContent=PROFILE.job+' 지니야';
     fetch('/api/profile').then(r=>r.json()).then(function(d){if(d.ok&&d.profile&&d.profile['직업']){var e=document.getElementById('wsName');if(e)e.textContent=d.profile['직업']+' 지니야';}}).catch(()=>{});
     fetch('/api/calendar').then(r=>r.json()).then(function(d){var el=document.getElementById('wsBrief');if(!el)return;
-      if(d.needsGoogle||!d.ok||d.count==null){el.innerHTML='<a href="/auth/google/connect" style="color:#7FD9B0;font-weight:700;text-decoration:none;">📅 캘린더·드라이브 연결하기 →</a> 연결하면 오늘 일정을 브리핑해드려요.';return;}
+      if(d.needsGoogle||!d.ok||d.count==null){el.innerHTML='<a href="#" onclick="connectGoogle();return false;" style="color:#7FD9B0;font-weight:700;text-decoration:none;">📅 캘린더·드라이브 연결하기 →</a> 연결하면 오늘 일정을 브리핑해드려요.';return;}
       var b='오늘 일정 '+d.count+'건이에요. '+(d.events||[]).map(function(e){return e.time+' '+e.title+(e.prep&&e.prep[0]?'('+e.prep[0]+')':'');}).join(' · ');
       el.textContent=b||'오늘 예정된 일정이 없어요.';}).catch(()=>{});
     fetch('/api/connectors').then(r=>r.json()).then(function(d){var el=document.getElementById('wsConnMeta');if(el)el.textContent='🔌 '+d.connectedCount+'개 연결됨 · 관리 →';}).catch(()=>{});
@@ -774,7 +780,7 @@
     if(!key||!from){ if(msg){msg.style.color='#c0392b';msg.textContent='API Key와 발신번호는 꼭 넣어주세요.';} return; }
     if(msg){msg.style.color='#0d7a52';msg.textContent='저장 중…';}
     fetch('/api/connect/solapi/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:key,secret:secret,from:from})}).then(r=>r.json()).then(function(d){
-      if(d.needsConnect){ if(msg){msg.style.color='#8a4d18';msg.innerHTML='먼저 <a href="'+(d.connectUrl||'/auth/google/connect')+'" style="color:#0d7a52;font-weight:700;">구글 데이터 연결</a>이 필요해요(내 시트에 저장하려면).'; } return; }
+      if(d.needsConnect){ if(msg){msg.style.color='#8a4d18';msg.innerHTML='먼저 <a href="#" onclick="connectGoogle();return false;" style="color:#0d7a52;font-weight:700;">구글 데이터 연결</a>이 필요해요(내 시트에 저장하려면).'; } return; }
       if(d.ok&&d.saved){ var t=document.getElementById('solapiToggle'); if(t){t.className='st st-done';t.textContent='연결됨';} if(msg){msg.style.color='#0d7a52';msg.textContent='✅ 저장됐어요(내 구글시트에만 · 오원트 서버 저장 안 함).';} }
       else if(msg){ msg.style.color='#c0392b'; msg.textContent='저장 실패: '+(d.error||''); }
     }).catch(function(){ if(msg){msg.style.color='#c0392b';msg.textContent='저장 오류';} });
@@ -782,7 +788,7 @@
   function wsAsk(){var inp=document.getElementById('wsChatInput');var q=(inp&&inp.value||'').trim();if(!q)return;
     var out=document.getElementById('wsChatOut');if(out)out.textContent='지니야가 처리하는 중…';
     fetch('/api/order?q='+enc(q)).then(r=>r.json()).then(function(d){if(!out)return;
-      if(d&&d.needsConnect){try{sessionStorage.setItem('genya_pendingQ',q);}catch(e){} out.innerHTML='<b>'+esc(d.kind||'구글 데이터 연결 필요')+'</b> '+esc(d.text||'')+'<div style="margin-top:8px;"><a href="'+(d.connectUrl||'/auth/google/connect')+'" style="display:inline-block;background:#0d7a52;color:#fff;padding:8px 14px;border-radius:9px;text-decoration:none;font-size:12.5px;font-weight:600;">🔗 구글 데이터 연결하기 →</a></div>';return;}
+      if(d&&d.needsConnect){try{sessionStorage.setItem('genya_pendingQ',q);}catch(e){} out.innerHTML='<b>'+esc(d.kind||'구글 데이터 연결 필요')+'</b> '+esc(d.text||'')+'<div style="margin-top:8px;"><a href="#" onclick="connectGoogle();return false;" style="display:inline-block;background:#0d7a52;color:#fff;padding:8px 14px;border-radius:9px;text-decoration:none;font-size:12.5px;font-weight:600;">🔗 구글 데이터 연결하기 →</a></div>';return;}
       out.innerHTML='<b>'+esc(d.kind||'')+'</b> '+esc(d.text||d.error||'');
     }).catch(function(){if(out)out.textContent='오류';});
   }
@@ -822,7 +828,7 @@
     if(name==='home'){ document.querySelector('.hero').scrollIntoView({block:'start'}); return; }
     if(name==='store'){ document.querySelector('.stores').scrollIntoView({block:'start'}); return; }
     if(!out)return; out.scrollIntoView({block:'center'});
-    if(name==='todo'){ out.textContent='할 일·승인 불러오는 중…'; fetch('/api/memory/recent').then(r=>r.json()).then(function(d){ if(d.needsConnect){out.innerHTML='<b>✅ 할 일·승인</b> 내 기억을 보려면 <a href="/auth/google/connect" style="color:#0d7a52;font-weight:700;">구글 데이터 연결 →</a>';return;} var list=d.list||[]; out.innerHTML='<b>✅ 할 일·승인 (지니야가 기억한 결정·요청)</b>\n'+(list.length? list.map(function(m){return '· '+esc((m.type||'')+' '+(m.subject||'')+' '+(m.text||''));}).join('\n') : '아직 기억한 항목이 없어요. 대화로 "○○ 준비해줘" 하면 기억해요.'); }).catch(function(){out.textContent='불러오기 오류';}); }
+    if(name==='todo'){ out.textContent='할 일·승인 불러오는 중…'; fetch('/api/memory/recent').then(r=>r.json()).then(function(d){ if(d.needsConnect){out.innerHTML='<b>✅ 할 일·승인</b> 내 기억을 보려면 <a href="#" onclick="connectGoogle();return false;" style="color:#0d7a52;font-weight:700;">구글 데이터 연결 →</a>';return;} var list=d.list||[]; out.innerHTML='<b>✅ 할 일·승인 (지니야가 기억한 결정·요청)</b>\n'+(list.length? list.map(function(m){return '· '+esc((m.type||'')+' '+(m.subject||'')+' '+(m.text||''));}).join('\n') : '아직 기억한 항목이 없어요. 대화로 "○○ 준비해줘" 하면 기억해요.'); }).catch(function(){out.textContent='불러오기 오류';}); }
     else if(name==='result'){ out.innerHTML='<b>📈 성과</b> 성과 대시보드(발송·전환 집계)는 <b>준비 중</b>이에요. 정직하게 표시합니다.'; }
     else if(name==='settings'){ out.textContent='설정 불러오는 중…'; fetch('/me').then(r=>r.json()).then(function(d){ if(d&&d.ok){ out.innerHTML='<b>⚙️ 설정</b>\n로그인: '+esc(d.email||'')+' ('+esc(d.provider||'')+')\n구글 데이터: '+(d.hasData?'연결됨':'미연결')+'\n<a href="/logout" style="color:#c0392b;font-weight:700;">로그아웃 →</a>'; } else { out.innerHTML='<b>⚙️ 설정</b> 로그인 안 됨. <a href="/login" style="color:#0d7a52;font-weight:700;">로그인 →</a>'; } }).catch(function(){out.textContent='설정 오류';}); }
   }
@@ -847,10 +853,12 @@
     fetch('/me').then(r=>r.json()).then(function(d){ var connected=!!(d&&d.ok&&d.hasData);
       ['connCal','connSheet','connDrive'].forEach(function(id){ var el=document.getElementById(id); if(!el)return;
         if(connected){ el.className='st st-done'; el.textContent='연결됨'; el.onclick=null; }
-        else { el.className='st st-go'; el.textContent='연결'; el.onclick=function(){ location.href='/auth/google/connect'; }; }
+        else { el.className='st st-go'; el.textContent='연결'; el.onclick=function(){ connectGoogle(); }; }
       });
     }).catch(function(){});
   }
+  // ── ★구글 데이터 연결: 현재 화면을 returnTo로 전달 → 동의 후 원래 화면 복귀 ──
+  function connectGoogle(q){ try{ if(q) sessionStorage.setItem('genya_pendingQ', q); }catch(e){} location.href='/auth/google/connect?returnTo='+(window._cur!=null?window._cur:10); }
   go(0);
   refreshConnState();
 </script>
