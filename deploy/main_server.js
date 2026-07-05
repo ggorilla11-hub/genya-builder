@@ -62,6 +62,10 @@ function sessionOf(req) { const s = sidOf(req); return s && sessions.get(s); }
 // ★핵심: 로그인했으면 회원 구글 OAuth 클라이언트(회원 토큰), 아니면 null → 각 함수가 SA로 폴백
 //   카카오 로그인 세션은 구글 토큰이 없어(s.tokens 없음) → null → 데이터 기능엔 구글 연결 필요(정직).
 function memberAuth(req) { const s = sessionOf(req); if (!s || !s.tokens) return null; const c = oaClient(); c.setCredentials(s.tokens); return c; }
+// ★스코프 판별: 로그인만(email/profile) vs 데이터(캘린더·시트·드라이브) 동의 여부. 일반 대화는 데이터 불필요.
+function grantedScope(req) { const s = sessionOf(req); if (!s) return ''; return String(s.scope || (s.tokens && s.tokens.scope) || ''); }
+function hasDataScope(req) { return /calendar|spreadsheets|\/drive/.test(grantedScope(req)); }
+function isScopeError(e) { return /insufficient.*scope|ACCESS_TOKEN_SCOPE_INSUFFICIENT|Insufficient Permission|invalid_scope|PERMISSION_DENIED/i.test((e && e.message) || ''); }
 
 // ★구글 연결 게이트 + SA 잔재 제거: 데이터 기능은 "회원 구글 토큰"이 있을 때만.
 //   없으면(카카오·미로그인) SA로 폴백하지 않고 "구글 연결 필요"로 정직히 게이트(대표 SA 데이터 노출 0).
@@ -225,29 +229,35 @@ app.get('/api/order', async (req, res) => {
   try {
     const q = String(req.query.q || '').trim();
     const ma = memberAuth(req);
-    if (!q) return res.json({ ok: true, kind: 'idle', text: '무엇이든 말씀하세요 (예: "김철수님 만기 비교표 준비해줘" / "무보험차상해가 뭐야?")' });
-    const needG = { kind: '🔗 구글 연결 필요', text: '이 기능(캘린더·시트·드라이브)은 내 구글 데이터를 읽어요 — [구글 연결하기]를 먼저 해주세요.' };
+    const canData = !!(ma && hasDataScope(req)); // ★데이터 스코프까지 있는 회원만 캘린더·시트·드라이브 호출
+    if (!q) return res.json({ ok: true, kind: 'idle', text: '무엇이든 말씀하세요 (예: "무보험차상해가 뭐야?" / "이번 주 만기 고객 정리해줘")' });
+    // ★데이터가 필요한데 권한이 없으면 대화를 막지 말고 "연결하기" 안내(일반 대화는 아래 LLM으로 무조건 응답)
+    const needConnect = { kind: '🔗 구글 데이터 연결 필요', text: '이 질문은 캘린더·시트·드라이브를 읽어야 답할 수 있어요. 아래 버튼으로 한 번만 연결하면 바로 알려드릴게요. (일반 질문은 연결 없이도 대답해요)', needsConnect: true, connectUrl: '/auth/google/connect' };
     let out = {};
     if (/약관|무보험|대물|자기신체|자동차상해|담보|보장.*(뭐|무엇|차이)/.test(q)) {
       const r = await askYakgwan(q); out = { kind: '📄 약관창고', text: r.answer, sources: r.sources }; // 공통 지식(구글 불필요)
     } else if (/만기|명단|자산가|고객.*(정리|목록|누구)/.test(q)) {
-      if (!ma) { out = needG; } else { const s = await connectors.sheet(ma); out = { kind: '🔌 시트 커넥터', text: `7월 만기 ${s.july만기.length}명 · 임박순 ${s.임박순.join(' → ')}\n자산가: ${s.자산가.join(', ')}` }; }
+      if (!canData) { out = needConnect; } else { const s = await connectors.sheet(ma); out = { kind: '🔌 시트 커넥터', text: `7월 만기 ${s.july만기.length}명 · 임박순 ${s.임박순.join(' → ')}\n자산가: ${s.자산가.join(', ')}` }; }
     } else if (/증권|드라이브|서류|파일.*찾/.test(q)) {
-      if (!ma) { out = needG; } else { const d = await connectors.drive(q.replace(/찾아줘|보여줘|줘/g, '').trim() || '증권', ma); out = { kind: '🔌 드라이브 커넥터', text: d.length ? d.map((f) => '📄 ' + f.name).join('\n') : '해당 파일 없음' }; }
+      if (!canData) { out = needConnect; } else { const d = await connectors.drive(q.replace(/찾아줘|보여줘|줘/g, '').trim() || '증권', ma); out = { kind: '🔌 드라이브 커넥터', text: d.length ? d.map((f) => '📄 ' + f.name).join('\n') : '해당 파일 없음' }; }
     } else if (/일정|브리핑|오늘.*(뭐|일정)|아침/.test(q)) {
-      if (!ma) { out = needG; } else { const c = await connectors.calendar(ma); out = { kind: '🔌 캘린더 커넥터', text: c.map((e) => `${e.time} ${e.title}${e.prep[0] ? ' → ' + e.prep[0] : ''}`).join('\n') || '오늘 일정 없음' }; }
+      if (!canData) { out = needConnect; } else { const c = await connectors.calendar(ma); out = { kind: '🔌 캘린더 커넥터', text: c.map((e) => `${e.time} ${e.title}${e.prep[0] ? ' → ' + e.prep[0] : ''}`).join('\n') || '오늘 일정 없음' }; }
     } else {
       const r = await _openai.chat.completions.create({ model: 'gpt-4o-mini', temperature: 0.4, max_tokens: 300, messages: [{ role: 'system', content: '너는 보험설계사를 돕는 비서 지니야다. 일반 금융지식은 쉽게, 특정 상품·약관 수치는 단정말고 "약관 확인 필요". 짧게.' }, { role: 'user', content: q }] });
       out = { kind: '💬 지니야', text: (r.choices[0].message.content || '').trim() };
     }
-    // ★연결1: 결정·요청이면 회원 구글시트에 자동 기억(서버 저장 0)
+    // ★연결1: 결정·요청이면 회원 구글시트에 자동 기억(서버 저장 0) — 데이터 스코프 있는 회원만(없으면 조용히 건너뜀)
     let saved = null;
-    if (ma && /준비|해줘|만들어|보내|정리|초안|잡아|하기로|예약|하자|올려/.test(q)) { // ★구글 연결된 회원만 자기 시트에 기억
+    if (canData && /준비|해줘|만들어|보내|정리|초안|잡아|하기로|예약|하자|올려/.test(q)) {
       const nameM = q.match(/([가-힣]{2,4})님/);
       try { await memory.saveMemory({ type: '요청', subject: nameM ? nameM[1] : '', text: q }, ma); saved = { subject: nameM ? nameM[1] : '', text: q }; } catch (e) {}
     }
     res.json({ ok: true, ...out, saved });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch (e) {
+    // ★권한부족이 여기까지 새면 대화 전체가 막히지 않도록 "연결하기"로 정직히 안내(500 대신)
+    if (isScopeError(e)) return res.json({ ok: true, kind: '🔗 구글 데이터 연결 필요', text: '이 질문은 내 구글 데이터를 읽어야 해요. 아래 버튼으로 연결해 주세요. (일반 질문은 연결 없이도 대답해요)', needsConnect: true, connectUrl: '/auth/google/connect' });
+    res.status(500).json({ ok: false, error: e.message });
+  }
 });
 
 // ── 🧠 기억 엔진 (★로그인 회원 자기 구글시트에만 · 회원 간 격리 · SA 폴백 제거) ──
@@ -333,6 +343,21 @@ async function _extractHandler(req, res) {
 app.post('/api/onboard/extract', _extractHandler);
 app.get('/api/onboard/extract', _extractHandler);
 
+// ── 🗣️ 온보딩 대화: 지니야가 자연스럽게 응답(실제 LLM). ★구글 데이터 불필요 = 로그인·권한 없이도 무조건 대답 ──
+app.post('/api/onboard/chat', async (req, res) => {
+  try {
+    const text = String((req.body && req.body.text) || '').trim();
+    if (!text) return res.json({ ok: true, reply: '편하게 말씀해 주세요. 어떤 일을 하시나요?' });
+    const history = Array.isArray(req.body && req.body.history) ? req.body.history.slice(-8) : [];
+    const sys = '너는 "지니야"라는 따뜻한 AI 비서다. 지금은 고객의 맞춤 비서를 만들기 위한 온보딩 대화 중이다. 고객의 직업·제일 힘든 일·맡기고 싶은 일·꼭 지켜야 할 철칙을 자연스럽게 파악하되 한 번에 하나씩만 되묻는다. 짧고 다정하게 2~3문장. "클로드"나 AI 모델 이름은 절대 쓰지 말고 "지니야"로만 말한다. 이미 들은 건 다시 묻지 않는다. 정보가 어느 정도 모이면 아래 \'이 정보로 지니야 만들기\' 버튼을 누르시면 만들어 드린다고 안내한다.';
+    const messages = [{ role: 'system', content: sys }];
+    history.forEach((m) => { if (m && m.text) messages.push({ role: m.role === 'assistant' ? 'assistant' : 'user', content: String(m.text).slice(0, 800) }); });
+    messages.push({ role: 'user', content: text.slice(0, 800) });
+    const r = await _openai.chat.completions.create({ model: 'gpt-4o-mini', temperature: 0.6, max_tokens: 220, messages });
+    res.json({ ok: true, reply: (r.choices[0].message.content || '').trim() || '네, 알겠어요. 조금 더 말씀해 주세요.' });
+  } catch (e) { res.json({ ok: false, reply: '지금 잠깐 응답이 어려워요. 다시 한 번 말씀해 주세요.', error: e.message }); }
+});
+
 // ── 미연결 능력(대기) 상태 ──
 app.get('/api/status', (req, res) => {
   res.json({
@@ -374,7 +399,7 @@ app.get('/auth/google/callback', async (req, res) => {
     const c = oaClient(); const { tokens } = await c.getToken(code); c.setCredentials(tokens);
     const ui = await google.oauth2({ version: 'v2', auth: c }).userinfo.get();
     const s = crypto.randomBytes(16).toString('hex');
-    sessions.set(s, { email: ui.data.email, name: ui.data.name, tokens, provider: 'google' });
+    sessions.set(s, { email: ui.data.email, name: ui.data.name, tokens, scope: tokens.scope || '', provider: 'google' });
     res.setHeader('Set-Cookie', `genya_sid=${s}; HttpOnly; Path=/; SameSite=Lax${process.env.RENDER ? '; Secure' : ''}`);
     res.redirect('/'); // 로그인 → 통합 페이지(genya.html), /me 확인 후 직업 화면부터
   } catch (e) { res.status(500).send('로그인 오류: ' + e.message); }

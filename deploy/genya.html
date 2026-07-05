@@ -318,18 +318,14 @@
       <div class="step-lb">지니야와 대화하며 만들기</div>
       <h2 class="big">말로 설명해 주세요</h2>
       <p class="sub">직원에게 말하듯 편하게 이야기하면, 지니야가 알아듣고 맞춰갑니다.</p>
-      <div class="demo-chat" style="margin-bottom:14px;">
-        <div class="dm you"><div class="av">🤖</div><div class="bb">안녕하세요! 어떤 일을 도와드릴 비서를 만들까요? 편하게 말씀해 주세요.</div></div>
-        <div class="dm me"><div class="av">나</div><div class="bb">나는 보험설계사야. 매주 만기 오는 고객 정리해서 안내 문자 보내는 게 제일 귀찮아. 그리고 약관 찾는 것도 도와줬으면 좋겠어.</div></div>
-        <div class="dm you"><div class="av">🤖</div><div class="bb">알겠어요! 정리하면 — ① 만기 고객 자동 정리 ② 안내 문자 초안 ③ 약관 검색, 이 세 가지를 먼저 맡기고 싶으신 거죠? 문자는 보내기 전에 확인받을까요?<div class="src">→ 대화에서 기능·철칙을 자동 추출</div></div></div>
-        <div class="dm me"><div class="av">나</div><div class="bb">응 맞아. 꼭 나한테 먼저 보여주고 보내야 해.</div></div>
-        <div class="dm you"><div class="av">🤖</div><div class="bb">완벽해요. "발송 전 확인"을 철칙으로 넣었어요. 이대로 지니야를 만들까요?</div></div>
+      <div class="demo-chat" id="onbChat" style="margin-bottom:14px;max-height:320px;overflow-y:auto;">
+        <div class="dm you"><div class="av">🤖</div><div class="bb">안녕하세요! 어떤 일을 도와드릴 비서를 만들까요? 하시는 일, 요즘 제일 힘든 것, 맡기고 싶은 일을 편하게 말씀해 주세요.</div></div>
       </div>
       <div class="ws-chat" style="margin-top:0;">
-        <div class="inp"><span style="font-size:18px;">💬</span><input id="chatInput" placeholder="지니야에게 말하기… (예: 저는 보험설계사인데 만기관리와 약관검색을 맡기고 싶어요)" style="flex:1;border:none;background:transparent;font-size:13.5px;font-family:inherit;outline:none;"><span style="font-size:18px;color:var(--teal);">🎤</span></div>
+        <div class="inp"><span style="font-size:18px;">💬</span><input id="chatInput" placeholder="지니야에게 말하기… (예: 저는 보험설계사인데 만기관리와 약관검색을 맡기고 싶어요)" onkeydown="if(event.key==='Enter'){event.preventDefault();onbSend();}" style="flex:1;border:none;background:transparent;font-size:13.5px;font-family:inherit;outline:none;"><span style="font-size:18px;color:var(--teal);cursor:pointer;" onclick="onbSend()">📤</span></div>
       </div>
       <div style="height:14px;"></div>
-      <button class="btn btn-primary" onclick="submitChat()">대화한 대로 지니야 만들기</button>
+      <button class="btn btn-primary" onclick="onbBuild()">이 정보로 지니야 만들기</button>
     </div>
   </div>
 
@@ -570,12 +566,28 @@
     if(pain)PROFILE.tasks.unshift(pain);
     go(6);
   }
-  // ── 화면5 자연어 대화 → 실제 추출 ──
-  function submitChat(){
-    var inp=document.getElementById('chatInput'); var t=(inp&&inp.value||'').trim();
-    if(!t){go(6);return;}
-    fetch('/api/onboard/extract',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:t})}).then(r=>r.json()).then(function(d){
-      var p=d.profile||{}; if(p.job)PROFILE.job=p.job; PROFILE.work=p.work||t; PROFILE.clients=p.clients||''; PROFILE.tasks=p.tasks?String(p.tasks).split(/[;,·\/]/).map(s=>s.trim()).filter(Boolean):[]; PROFILE.rule=p.rule||'';
+  // ── 화면5 온보딩 대화: 입력→엔터→지니야 실제 응답(LLM). ★구글 데이터 불필요 ──
+  var onbLog=[]; // {role:'user'|'assistant', text}
+  function onbAppend(role,text){
+    var box=document.getElementById('onbChat'); if(!box)return null;
+    var d=document.createElement('div'); d.className='dm '+(role==='me'?'me':'you');
+    d.innerHTML='<div class="av">'+(role==='me'?'나':'🤖')+'</div><div class="bb"></div>';
+    d.querySelector('.bb').textContent=text; box.appendChild(d); box.scrollTop=box.scrollHeight;
+    return d.querySelector('.bb');
+  }
+  function onbSend(){
+    var inp=document.getElementById('chatInput'); var t=(inp&&inp.value||'').trim(); if(!t)return;
+    inp.value=''; onbAppend('me',t); onbLog.push({role:'user',text:t});
+    var bb=onbAppend('you','…');
+    fetch('/api/onboard/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:t,history:onbLog.slice(0,-1)})})
+      .then(r=>r.json()).then(function(d){var reply=(d&&d.reply)||'네, 알겠어요. 조금 더 말씀해 주세요.';if(bb)bb.textContent=reply;onbLog.push({role:'assistant',text:reply});})
+      .catch(function(){if(bb)bb.textContent='(연결이 잠깐 끊겼어요. 다시 말씀해 주세요.)';});
+  }
+  function onbBuild(){
+    var full=onbLog.filter(function(m){return m.role==='user';}).map(function(m){return m.text;}).join('\n');
+    if(!full){go(6);return;}
+    fetch('/api/onboard/extract',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:full})}).then(r=>r.json()).then(function(d){
+      var p=d.profile||{}; if(p.job)PROFILE.job=p.job; PROFILE.work=p.work||full; PROFILE.clients=p.clients||''; PROFILE.tasks=p.tasks?String(p.tasks).split(/[;,·\/]/).map(s=>s.trim()).filter(Boolean):[]; PROFILE.rule=p.rule||'';
       go(6);
     }).catch(()=>go(6));
   }
@@ -634,7 +646,10 @@
   }
   function wsAsk(){var inp=document.getElementById('wsChatInput');var q=(inp&&inp.value||'').trim();if(!q)return;
     var out=document.getElementById('wsChatOut');if(out)out.textContent='지니야가 처리하는 중…';
-    fetch('/api/order?q='+enc(q)).then(r=>r.json()).then(function(d){if(out)out.innerHTML='<b>'+esc(d.kind||'')+'</b> '+esc(d.text||d.error||'');}).catch(function(){if(out)out.textContent='오류';});
+    fetch('/api/order?q='+enc(q)).then(r=>r.json()).then(function(d){if(!out)return;
+      if(d&&d.needsConnect){out.innerHTML='<b>'+esc(d.kind||'구글 데이터 연결 필요')+'</b> '+esc(d.text||'')+'<div style="margin-top:8px;"><a href="'+(d.connectUrl||'/auth/google/connect')+'" style="display:inline-block;background:#0d7a52;color:#fff;padding:8px 14px;border-radius:9px;text-decoration:none;font-size:12.5px;font-weight:600;">🔗 구글 데이터 연결하기 →</a></div>';return;}
+      out.innerHTML='<b>'+esc(d.kind||'')+'</b> '+esc(d.text||d.error||'');
+    }).catch(function(){if(out)out.textContent='오류';});
   }
   function openStore(kind,ev){ if(ev)ev.stopPropagation();
     var out=document.getElementById('wsChatOut');
