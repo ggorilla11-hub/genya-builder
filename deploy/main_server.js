@@ -487,10 +487,11 @@ app.get('/login', (req, res) => {
       <a href="/auth/kakao" style="display:inline-flex;gap:10px;align-items:center;justify-content:center;width:260px;background:#FEE500;border:none;border-radius:10px;padding:13px 20px;color:#3a2a00;text-decoration:none;font-size:15px;font-weight:600;">💬 카카오로 시작하기</a>
     </div>
     <p style="color:#98a4b2;font-size:12px;margin-top:16px;line-height:1.6;">카카오는 로그인(신원)까지 — 캘린더·시트·드라이브 등 <b>내 데이터 기능은 [구글 연결]이 필요</b>합니다.</p>
-    <p style="margin-top:18px;font-size:12px;"><a href="/privacy" style="color:#98a4b2;">개인정보처리방침</a></p>`));
+    <p style="margin-top:18px;font-size:12px;"><a href="/privacy" style="color:#98a4b2;">개인정보처리방침</a> · <a href="/terms" style="color:#98a4b2;">이용약관</a></p>`));
 });
-// ── 📄 개인정보처리방침(구글 앱 인증용) — 정적 페이지 ──
+// ── 📄 개인정보처리방침 · 서비스 이용약관(구글 앱 인증용) — 정적 페이지 ──
 app.get(['/privacy', '/privacy.html', '/개인정보처리방침'], (req, res) => res.sendFile(path.join(__dirname, 'privacy.html')));
+app.get(['/terms', '/terms.html', '/이용약관'], (req, res) => res.sendFile(path.join(__dirname, 'terms.html')));
 
 app.get('/auth/google', (req, res) => {
   if (!OA_CONFIGURED) return res.status(503).send('OAuth 미설정');
