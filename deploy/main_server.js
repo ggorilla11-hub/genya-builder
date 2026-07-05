@@ -423,6 +423,21 @@ app.get('/work', (req, res) => {
 });
 // ★기본 URL / → v4 통합 페이지(genya.html). 로그인 화면0부터. "Not Found" 없음.
 // ★기본 URL / → v4 통합 페이지(genya.html) + OG 태그 주입(카톡 썸네일). genya.html 파일은 무수정, 서버가 <head>에 끼워 서빙.
+// ★카톡 인앱 브라우저 탈출: 카톡으로 링크를 열면 구글 로그인이 403(disallowed_useragent)로 막힘.
+//   → 페이지 뜨자마자(다른 JS·로그인 로직보다 먼저) 카톡 브라우저를 감지해 안드=크롬, iOS=사파리로 다시 연다.
+//   OG 태그와 동일하게 genya.html은 무수정, 서버가 <head> 최상단에 끼워 서빙.
+const KAKAO_ESCAPE = `<script>
+(function(){
+  var ua = navigator.userAgent || '';
+  if (ua.match(/KAKAOTALK/i)) {
+    if (ua.match(/Android/i)) {
+      location.href = 'intent://' + location.href.replace(/https?:\\/\\//, '') + '#Intent;scheme=https;package=com.android.chrome;end';
+    } else if (ua.match(/iPhone|iPad|iPod/i)) {
+      location.href = location.href + (location.href.indexOf('?') > -1 ? '&' : '?') + 'openExternalBrowser=1';
+    }
+  }
+})();
+</script>`;
 const OG_TAGS = [
   '<meta property="og:type" content="website">',
   '<meta property="og:url" content="https://genya-builder.onrender.com">',
@@ -435,6 +450,7 @@ const OG_TAGS = [
 ].join('\n');
 app.get('/', (req, res) => {
   let html = fs.readFileSync(path.join(__dirname, 'genya.html'), 'utf8');
+  html = html.replace('<head>', '<head>\n' + KAKAO_ESCAPE); // ★카톡 탈출 스크립트를 <head> 최상단(다른 JS보다 먼저)에
   html = html.replace('</head>', OG_TAGS + '\n</head>');
   res.setHeader('Cache-Control', 'no-store');
   res.send(html);
