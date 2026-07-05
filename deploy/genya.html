@@ -944,7 +944,7 @@
         if(d&&d.needsConnect){ try{sessionStorage.setItem("genya_pendingQ",q);}catch(e){}
           if(think)think.innerHTML='<b>'+esc(d.kind||"구글 데이터 연결 필요")+'</b> '+esc(d.text||"")+'<div style="margin-top:8px;"><a href="#" onclick="connectGoogle();return false;" style="display:inline-block;background:#0d7a52;color:#fff;padding:8px 14px;border-radius:9px;text-decoration:none;font-size:12.5px;font-weight:600;">🔗 구글 데이터 연결하기 →</a></div>'; return; }
         var reply=d.text||d.error||"(응답 없음)"; wsHistory.push({role:"assistant",content:reply});
-        if(think)think.innerHTML=renderMd(reply);
+        if(think){ think.innerHTML='<div class="bubble-body">'+renderMd(reply)+'</div>'; addBubbleActions(think, reply); }
         var box=document.getElementById("chatMessages"); if(box)box.scrollTop=box.scrollHeight;
       }).catch(function(){ if(think)think.innerHTML='<span style="color:#c0392b;">오류(잠시 후 다시)</span>'; }); }
     var img=pending.filter(function(f){return /^image\//.test(f.type);})[0];
@@ -967,6 +967,24 @@
     rows.push('<div style="margin-top:10px;padding-top:10px;border-top:1px solid #f0f0f0;">✅ <b>바로 쓸 수 있는 능력</b><div style="margin-top:5px;color:#4a5563;font-size:13px;line-height:1.7;">📄 보장분석(증권 OCR) · 📚 약관 검색 · 💬 문자 초안 · 📊 비교표 · 📇 명단 정리 · 🗂️ 자료 정리</div></div>');
     el.innerHTML=rows.length>1?rows.join(""):('설문 내용을 바탕으로 맞춤 비서를 준비했어요.'+rows.join(""));
   }
+  /* === 수정: AI 결과물 다운로드(브라우저 100% · 외부 CDN 없음 · 서버로 데이터 미전송 = 제로 인그레스) === */
+  var _bbtn='padding:4px 10px;border-radius:8px;border:1px solid #dfe4ea;background:#fff;font-size:11.5px;cursor:pointer;color:#33414f;';
+  function addBubbleActions(el, rawText){ if(!el)return; el.setAttribute('data-raw', rawText||'');
+    var hasTable=/\|.*\|/.test(rawText||'');
+    var bar=document.createElement('div'); bar.style.cssText='display:flex;gap:6px;flex-wrap:wrap;margin-top:9px;padding-top:8px;border-top:1px solid #f0f0f0;';
+    bar.innerHTML='<button onclick="copyBubble(this)" style="'+_bbtn+'">📋 복사</button>'
+      +'<button onclick="dlBubbleTxt(this)" style="'+_bbtn+'">📄 텍스트</button>'
+      +(hasTable?'<button onclick="dlBubbleCsv(this)" style="'+_bbtn+'">📊 엑셀(CSV)</button>':'')
+      +'<button onclick="printBubble(this)" style="'+_bbtn+'">🖨️ PDF·인쇄</button>';
+    el.appendChild(bar);
+  }
+  function _dl(name, mime, content){ var b=new Blob([content],{type:mime}); var u=URL.createObjectURL(b); var a=document.createElement('a'); a.href=u; a.download=name; document.body.appendChild(a); a.click(); setTimeout(function(){URL.revokeObjectURL(u); a.remove();}, 120); }
+  function _rawOf(btn){ var el=btn.closest('[data-raw]'); return el?el.getAttribute('data-raw'):''; }
+  function copyBubble(btn){ var t=_rawOf(btn); if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(t).then(function(){ var o=btn.textContent; btn.textContent='복사됨 ✓'; setTimeout(function(){btn.textContent=o;},1400); }); } else { var ta=document.createElement('textarea'); ta.value=t; document.body.appendChild(ta); ta.select(); try{document.execCommand('copy');}catch(e){} ta.remove(); btn.textContent='복사됨 ✓'; } }
+  function dlBubbleTxt(btn){ _dl('지니야_답변_'+(new Date().getTime())+'.txt','text/plain;charset=utf-8','﻿'+_rawOf(btn)); }
+  function _mdTableToCsv(text){ var lines=(text||'').split('\n').filter(function(l){ return l.indexOf('|')>=0 && !/^\s*\|?[\s:\-|]+\|?\s*$/.test(l); }); if(!lines.length)return ''; return lines.map(function(l){ var cells=l.split('|').map(function(c){return c.trim();}); if(cells.length&&cells[0]==='')cells.shift(); if(cells.length&&cells[cells.length-1]==='')cells.pop(); return cells.map(function(c){ return '"'+String(c).replace(/"/g,'""')+'"'; }).join(','); }).join('\r\n'); }
+  function dlBubbleCsv(btn){ var csv=_mdTableToCsv(_rawOf(btn)); if(!csv){ alert('이 답변에는 표가 없어요. 표가 있는 답변에서 눌러주세요.'); return; } _dl('지니야_표_'+(new Date().getTime())+'.csv','text/csv;charset=utf-8','﻿'+csv); }
+  function printBubble(btn){ var el=btn.closest('[data-raw]'); var body=el&&el.querySelector('.bubble-body'); var inner=body?body.innerHTML:(el?el.innerHTML:''); var w=window.open('','_blank'); if(!w){ alert('팝업이 차단됐어요. 팝업 허용 후 다시 눌러주세요.'); return; } w.document.write('<!doctype html><meta charset="utf-8"><title>지니야 결과물</title><style>body{font-family:-apple-system,\'Malgun Gothic\',sans-serif;padding:28px;line-height:1.7;color:#1a1a1a;}table{border-collapse:collapse;margin:8px 0;}td,th{border:1px solid #ccc;padding:6px 10px;font-size:13px;}h1,h2,h3{color:#185FA5;}</style><body>'+inner+'<hr style="margin-top:24px;border:none;border-top:1px solid #eee;"><p style="color:#999;font-size:12px;">지니야빌더 · 제출·발송 전 반드시 검토하세요</p></body>'); w.document.close(); w.focus(); setTimeout(function(){ try{w.print();}catch(e){} }, 350); }
 
   </script>
 </body>
