@@ -75,7 +75,7 @@ const PORT = process.env.PORT || 8080;
 const YAK = JSON.parse(fs.readFileSync(path.join(__dirname, 'yakgwan_pages.json'), 'utf8'));
 
 const app = express();
-app.use(express.json({ limit: '25mb' })); // 자료 업로드(base64) 파싱
+app.use(express.json({ limit: '50mb' })); // 자료 업로드(base64) 파싱 — 큰 제안서 PDF 다중 업로드 대비 상향
 
 // ── 🔑 구글 OAuth 로그인 통합 (auth-oauth/.env에서 자격, 하드코딩 0) ──
 try { require('dotenv').config(); } catch (e) {}
