@@ -1057,26 +1057,30 @@ function renderMd(src){
   }
   return out.join('');
 }
-// go 래핑: 온보딩 확인→메인(5) 진입 시 저장(로컬 + best-effort 서버). n==6 로드맵은 기존 래퍼가 처리
-var _goReal=go;
-go=function(n){ _goReal(n);
+// ★인증 게이트(라우팅) — 서버 세션이 유일한 로그인 판단 기준. localStorage로 로그인 판단 금지.
+//   서버가 주입한 window.__AUTHED로 로드 즉시 판정(레이스 제거) → /me로 재확인. 로그인 안 되면 무조건 로그인화면(0)만.
+var _AUTHED = (typeof window.__AUTHED !== 'undefined') ? !!window.__AUTHED : false;
+var _goReal = go;
+go = function(n){
+  // ★로그인 안 된 상태에선 로그인화면(0) 외 어떤 화면도 못 감(메인 직접호출·콘솔도 차단)
+  if(!_AUTHED && String(n) !== '0'){ _goReal(0); return; }
+  _goReal(n);
   if(String(n)==='5'){ try{localStorage.setItem('genya_onboarded','1');localStorage.setItem('genya_job',CUR_JOB);localStorage.setItem('genya_nick',CUR_NICK);}catch(e){}
-    // 서버 시트 저장(회원 데이터 스코프 있을 때만 성공, 없으면 조용히 건너뜀) — 기존 엔드포인트 재사용
     try{ var lb=(GENYA_JOBS[CUR_JOB]||{}).label||CUR_JOB; fetch('/api/profile/save?'+'job='+encodeURIComponent(lb)+'&nick='+encodeURIComponent(CUR_NICK)).catch(function(){}); }catch(e){}
   }
 };
-// 로그인 상태 라우팅: 로그인됨→온보딩완료면 메인, 아니면 온보딩 / 미로그인→로그인화면
-(function(){
-  fetch('/me').then(function(r){return r.json();}).then(function(d){
-    if(d&&d.ok){ window._ME=d;
-      var job=null,nick=null,done=false;
-      try{job=localStorage.getItem('genya_job');nick=localStorage.getItem('genya_nick');done=localStorage.getItem('genya_onboarded')==='1';}catch(e){}
-      if(job&&GENYA_JOBS[job])CUR_JOB=job;
-      if(nick){var ni=document.getElementById('nickInput'); if(ni)ni.value=nick; CUR_NICK=nick;}
-      if(done){ go(5); applyJob(); } else { go(1); }
-    } else { go(0); }
-  }).catch(function(){});
-})();
+// 로드 즉시: 로그인 안 됐으면 로그인화면부터 고정
+if(!_AUTHED) _goReal(0);
+// 서버 세션(/me) 재확인 → 권위있게 라우팅 (fail-closed: 실패해도 로그인화면). localStorage는 로그인된 뒤에만 온보딩 여부 참고
+fetch('/me').then(function(r){return r.json();}).then(function(d){
+  if(d&&d.ok){ _AUTHED=true; window._ME=d;
+    var job=null,nick=null,done=false;
+    try{job=localStorage.getItem('genya_job');nick=localStorage.getItem('genya_nick');done=localStorage.getItem('genya_onboarded')==='1';}catch(e){}
+    if(job&&GENYA_JOBS[job])CUR_JOB=job;
+    if(nick){var ni=document.getElementById('nickInput'); if(ni)ni.value=nick; CUR_NICK=nick;}
+    if(done){ _goReal(5); applyJob(); } else { _goReal(1); }
+  } else { _AUTHED=false; _goReal(0); }
+}).catch(function(){ _AUTHED=false; _goReal(0); });
 // 실제 대화 → /api/order (Claude Sonnet 5, 직업 페르소나 + 히스토리)
 var _HIST=[];
 window.sendMsg=function(){

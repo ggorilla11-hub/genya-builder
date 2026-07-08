@@ -646,7 +646,9 @@ const OG_TAGS = [
 ].join('\n');
 app.get('/', (req, res) => {
   let html = fs.readFileSync(path.join(__dirname, 'genya.html'), 'utf8');
-  html = html.replace('<head>', '<head>\n' + KAKAO_ESCAPE); // ★카톡 탈출 스크립트를 <head> 최상단(다른 JS보다 먼저)에
+  // ★인증 게이트: 서버가 실제 세션 여부를 권위있게 주입(클라 라우팅 레이스 제거). 로그인 안 됐으면 클라가 로그인화면만 보이게 강제.
+  const authed = !!sessionOf(req);
+  html = html.replace('<head>', '<head>\n' + KAKAO_ESCAPE + '\n<script>window.__AUTHED=' + (authed ? 'true' : 'false') + ';</script>'); // ★카톡 탈출 + 인증상태 주입(<head> 최상단, 다른 JS보다 먼저)
   html = html.replace('</head>', OG_TAGS + '\n</head>');
   res.setHeader('Cache-Control', 'no-store');
   res.send(html);
