@@ -134,7 +134,9 @@ async function compareProducts(input) {
   try {
     const { askYakgwan } = require('./yakgwan_module');
     const yr = await askYakgwan('암 진단비 지급 조건과 면책 기간');
-    if (yr && yr.found) { yak += yr.answer + '\n\n_근거: ' + ((yr.sources || []).join(', ') || '약관') + '_\n'; }
+    // ★현재 약관 창고=자동차보험만. 건강·생명 제안서엔 매칭 안 됨 → 미스매치 답(자동차/없어요) 노출 금지, 깔끔히 "준비 중". 관련 약관 생기면 자동으로 근거 표시
+    const 관련없음 = !yr || !yr.found || /없어요|원문 확인이 필요|관련이 없|자동차보험|자동차보험/.test(yr.answer || '');
+    if (!관련없음) { yak += yr.answer + '\n\n_근거: ' + ((yr.sources || []).join(', ') || '약관') + '_\n'; }
     else { yak += '위 제안서(건강·생명)의 약관 정밀 대조는 **아직 준비 중**이에요. 현재 약관 창고엔 삼성화재 자동차보험 약관만 있어, 해당 상품군 약관을 수집하면 근거·페이지까지 대조해드릴게요. (없는 내용을 지어내지 않습니다)\n'; }
   } catch (e) { yak += '약관 자료 준비 중입니다.\n'; }
 
