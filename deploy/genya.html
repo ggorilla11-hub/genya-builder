@@ -431,13 +431,14 @@
         </div>
       </div>
 
-      <!-- ★택1: 설문지 업로드 패널(만능 처리기 재사용) -->
+      <!-- ★택1: 설문지 업로드 패널(만능 처리기 재사용) — 고정 파일입력(폰 안정) -->
       <div id="upload2" style="margin-top:20px;display:block;">
-        <div style="border:2px dashed #c3d0dc;border-radius:14px;padding:26px;text-align:center;cursor:pointer;" onclick="onbUploadPick()">
+        <input type="file" id="obUploadInput" accept="image/*,.pdf,.xlsx,.xls,.csv,.txt" style="display:none" onchange="onbUploadFile(this)">
+        <label for="obUploadInput" style="display:block;border:2px dashed #c3d0dc;border-radius:14px;padding:26px;text-align:center;cursor:pointer;">
           <svg viewBox="0 0 24 24" fill="none" style="width:32px;height:32px;color:#9aa8b8;margin-bottom:8px"><path d="M12 15V4m0 0l-4 4m4-4l4 4M5 19h14" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
           <div style="font-size:13.5px;font-weight:600;color:var(--ink)">답한 설문지·자료 올리기</div>
           <div style="font-size:11.5px;color:var(--gray);margin-top:4px">PDF·이미지·엑셀·텍스트 · 지니야가 읽어서 당신을 파악해요</div>
-        </div>
+        </label>
         <div id="obUploadResult" style="font-size:12px;color:#33414f;margin-top:10px;line-height:1.5;"></div>
       </div>
 
@@ -799,23 +800,23 @@ function selWay(el){
   if(f) f.style.display = (way==='form')   ? 'block' : 'none';
   if(c) c.style.display = (way==='chat')   ? 'block' : 'none';
 }
-// ★설문지 업로드: 만능 처리기(/api/coverage/analyze) 재사용 → 결과를 온보딩 입력으로
-function onbUploadPick(){
-  var fi=document.createElement('input'); fi.type='file'; fi.accept='image/*,.pdf,.xlsx,.xls,.csv,.txt';
-  fi.onchange=function(){ var f=fi.files&&fi.files[0]; if(!f)return;
-    var st=document.getElementById('obUploadResult'); if(st)st.innerHTML='📎 '+_escOb(f.name)+' 분석 중… (10~20초)';
-    var rd=new FileReader(); rd.onload=function(){
-      fetch('/api/coverage/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dataUrl:rd.result,mime:f.type||'',name:f.name})})
-       .then(function(r){return r.json();}).then(function(d){
-         var txt=(d&&d.analysis)||''; var msg=(d&&d.message)||(d&&d.error)||'';
-         window.ONBOARD.uploadText = txt || '';
-         if(st){ st.innerHTML = txt
-           ? '✅ 분석 완료 — 아래 [다음]을 누르면 확인 화면에 반영돼요.<div style="margin-top:6px;color:#556;">'+_escOb(txt.slice(0,200))+'…</div>'
-           : (msg? _escOb(msg) : '분석 결과를 못 읽었어요. 다른 파일로 시도해 주세요.'); }
-       }).catch(function(){ if(st)st.innerHTML='<span style="color:#c0392b">분석 오류 — 잠시 후 다시</span>'; });
-    }; rd.readAsDataURL(f);
+// ★설문지 업로드: 고정 파일입력(onchange) → 만능 처리기(/api/coverage/analyze) → 결과를 온보딩 입력으로
+function onbUploadFile(inp){
+  var f=inp.files&&inp.files[0]; if(!f)return;
+  var st=document.getElementById('obUploadResult'); if(st)st.innerHTML='📎 '+_escOb(f.name)+' 분석 중… (10~20초)';
+  var rd=new FileReader();
+  rd.onload=function(){
+    fetch('/api/coverage/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dataUrl:rd.result,mime:f.type||'',name:f.name})})
+     .then(function(r){return r.json();}).then(function(d){
+       var txt=(d&&d.analysis)||''; var msg=(d&&d.message)||(d&&d.error)||'';
+       window.ONBOARD.uploadText = txt || '';
+       if(st){ st.innerHTML = txt
+         ? '✅ 분석 완료 — [다음]을 누르면 확인 화면에 반영돼요.<div style="margin-top:6px;color:#556;">'+_escOb(txt.slice(0,200))+'…</div>'
+         : (msg? _escOb(msg) : '분석 결과를 못 읽었어요. 다른 파일로 시도해 주세요.'); }
+     }).catch(function(){ if(st)st.innerHTML='<span style="color:#c0392b">분석 오류 — 잠시 후 다시</span>'; });
   };
-  fi.click();
+  rd.onerror=function(){ if(st)st.innerHTML='<span style="color:#c0392b">파일을 못 읽었어요. 다시 시도해 주세요.</span>'; };
+  rd.readAsDataURL(f);
 }
 // ★지니야 대화: 사용자 입력을 실제로 읽어 응답(/api/onboard/chat) + 내용 누적
 var _obHist=[];
@@ -837,22 +838,31 @@ function onbChatSend(){
    .then(function(r){return r.json();}).then(function(d){ var reply=(d&&d.reply)||'네, 알겠어요. 조금 더 말씀해 주세요.'; onbChatPush('gen',reply); _obHist.push({role:'assistant',text:reply}); })
    .catch(function(){ onbChatPush('gen','네, 알겠어요. 조금 더 말씀해 주세요.'); });
 }
-// ★다음: 선택한 방식의 입력을 구조화(/api/onboard/extract) → 확인화면에 실제 반영(기본값 덮어쓰지 않음)
+// ★다음: 선택 방식의 입력을 확인화면에 반영. 직접입력=LLM 없이 즉시·정확히. 대화·업로드=원문 즉시 반영 후 LLM 보강.
 function onbNext(){
-  var method=(window.ONBOARD&&window.ONBOARD.method)||'upload'; var text='';
-  if(method==='form'){
-    var c=(document.getElementById('obCareer')||{}).value||'';
-    var p=(document.getElementById('obConcern')||{}).value||'';
-    var t=(document.getElementById('obTasks')||{}).value||'';
-    text=[c&&('경력: '+c), p&&('고민: '+p), t&&('맡길 일: '+t)].filter(Boolean).join('\n');
-  } else if(method==='chat'){ text=window.ONBOARD.chatText||''; }
-  else { text=window.ONBOARD.uploadText||''; }
-  go(4); // 확인화면 진입(일단 기본값 표시)
-  if(!String(text).trim()){ window.ONBOARD.profile=null; applyJob(); return; }
+  var method=(window.ONBOARD&&window.ONBOARD.method)||'upload';
   var jobLabel=(GENYA_JOBS[CUR_JOB]||{}).label||'';
-  fetch('/api/onboard/extract',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:(jobLabel?('직업: '+jobLabel+'\n'):'')+text})})
-   .then(function(r){return r.json();}).then(function(d){ window.ONBOARD.profile=(d&&d.profile)||null; applyJob(); })
-   .catch(function(){});
+  if(method==='form'){
+    // ★사용자가 이미 구조화해 넣은 값 → LLM 라운드트립 없이 그대로(정확·즉시, 디폴트 안 뜸)
+    var c=((document.getElementById('obCareer')||{}).value||'').trim();
+    var p=((document.getElementById('obConcern')||{}).value||'').trim();
+    var t=((document.getElementById('obTasks')||{}).value||'').trim();
+    window.ONBOARD.profile = (c||p||t) ? { job:(c||jobLabel), pain:p, tasks:t } : null;
+    go(4); applyJob(); return;
+  }
+  // 대화·업로드 = 자유텍스트/분석결과 → 우선 원문 즉시 반영(디폴트 안 뜸) 후 LLM으로 구조 보강
+  var text = method==='chat' ? (window.ONBOARD.chatText||'') : (window.ONBOARD.uploadText||'');
+  text = String(text).trim();
+  if(!text){ window.ONBOARD.profile=null; go(4); applyJob(); return; }
+  var quickPain = text.length>70 ? text.slice(0,70)+'…' : text;
+  window.ONBOARD.profile = { job: jobLabel, pain:(method==='upload'?'업로드한 자료를 분석했어요':quickPain), tasks:'' };
+  go(4); applyJob(); // 즉시 반영
+  // LLM 구조화 보강(직업 강제 프리픽스 없음 = 편향 방지). 결과 있으면 덮어씀
+  fetch('/api/onboard/extract',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:text})})
+   .then(function(r){return r.json();}).then(function(d){
+     var pf=d&&d.profile;
+     if(pf && (pf.job||pf.pain||pf.tasks)){ window.ONBOARD.profile={ job:pf.job||jobLabel, pain:pf.pain||quickPain, tasks:pf.tasks||'' }; applyJob(); }
+   }).catch(function(){});
 }
 
 // ===== 직업 적용 (확인+메인) =====
