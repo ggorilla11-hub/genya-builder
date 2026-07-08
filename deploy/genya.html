@@ -1059,10 +1059,17 @@ function doOCR(){
     '<div style="padding:16px 20px;">'+
       '<div class="consent"><div class="cb" id="ocrCb" onclick="this.classList.toggle(\'on\')"><svg viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></div>'+
         '<p><b>고객 정보 처리 동의</b> — 본 자료는 고객 동의 하에 업로드하며, 지니야는 서버에 저장하지 않고 분석 후 즉시 폐기합니다. 고객 개인정보 처리 책임은 이용자에게 있습니다.</p></div>'+
-      '<div style="border:2px dashed #c3d0dc;border-radius:14px;padding:28px;text-align:center;cursor:pointer;" onclick="runOCR()">'+
-        '<svg viewBox="0 0 24 24" fill="none" style="width:34px;height:34px;color:#9aa8b8;margin-bottom:8px"><path d="M12 15V4m0 0l-4 4m4-4l4 4M5 19h14" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>'+
-        '<div style="font-size:13.5px;font-weight:600;color:var(--ink)">증권·계약서·진단서 사진 올리기</div>'+
-        '<div style="font-size:11.5px;color:var(--gray);margin-top:4px">jpg·png·pdf · 동의 후 분석됩니다</div></div>'+
+      '<div style="display:flex;gap:10px;">'+
+        '<button onclick="runOCR(\'camera\')" style="flex:1;padding:18px 8px;border:2px dashed #c3d0dc;border-radius:14px;background:#fff;cursor:pointer;text-align:center;font-family:inherit;">'+
+          '<svg viewBox="0 0 24 24" fill="none" style="width:30px;height:30px;color:#9aa8b8"><path d="M4 8h4l1.5-2h5L16 8h4v11H4z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><circle cx="12" cy="13" r="3" stroke="currentColor" stroke-width="1.7"/></svg>'+
+          '<div style="font-size:13px;font-weight:600;color:var(--ink);margin-top:6px">📷 사진 찍기</div>'+
+          '<div style="font-size:10.5px;color:var(--gray);margin-top:2px">폰 카메라로 바로</div></button>'+
+        '<button onclick="runOCR(\'files\')" style="flex:1;padding:18px 8px;border:2px dashed #c3d0dc;border-radius:14px;background:#fff;cursor:pointer;text-align:center;font-family:inherit;">'+
+          '<svg viewBox="0 0 24 24" fill="none" style="width:30px;height:30px;color:#9aa8b8"><path d="M12 15V4m0 0l-4 4m4-4l4 4M5 19h14" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>'+
+          '<div style="font-size:13px;font-weight:600;color:var(--ink);margin-top:6px">📎 파일 선택</div>'+
+          '<div style="font-size:10.5px;color:var(--gray);margin-top:2px">이미지·PDF·문서·엑셀</div></button>'+
+      '</div>'+
+      '<div style="font-size:11px;color:var(--gray);margin-top:10px;text-align:center">어떤 파일이든 분석해요 · 실패 시 정직하게 안내 · 서버 저장 0</div>'+
     '</div>');
 }
 function runOCR(){
@@ -1246,11 +1253,14 @@ window.sendMsg=function(){
    }).catch(function(){ w.remove(); pushMsg('gen','<span style="color:#c0392b">오류(잠시 후 다시)</span>'); });
 };
 // 실제 OCR/상품비교 → 파일 업로드 (1장=증권분석 /api/coverage/analyze, 2장+=상품비교 /api/compare). 서버 저장 0.
-window.runOCR=function(){
+window.runOCR=function(mode){
   var cb=document.getElementById('ocrCb'); if(cb&&!cb.classList.contains('on')){ toast('고객 정보 처리 동의에 체크해주세요'); return; }
-  var fi=document.createElement('input'); fi.type='file'; fi.accept='image/*,.pdf,.xlsx,.xls,.csv,.txt,.docx,.hwp'; fi.multiple=true;
+  var fi=document.createElement('input'); fi.type='file';
+  if(mode==='camera'){ fi.accept='image/*'; fi.setAttribute('capture','environment'); } // ★모바일 카메라 바로 촬영(단일)
+  else { fi.accept='image/*,.pdf,.docx,.xlsx,.xls,.csv,.txt'; fi.multiple=true; }       // ★모든 파일(여러 장 가능)
   fi.onchange=function(){ var fs=Array.prototype.slice.call(fi.files||[]); if(!fs.length)return; closeModal();
-    pushMsg('me','[제안서·증권 '+fs.length+'건 업로드]');
+    var names=fs.map(function(f){return f.name;}).join(', ');
+    pushMsg('me','📎 '+_escOb(names)+' 올림');
     var s=document.getElementById('chatScroll'); var w=document.createElement('div'); w.className='msg gen'; w.innerHTML='<div class="av"></div><div class="bubble" style="color:#98a4b2">지니야가 분석하는 중… (10~20초)</div>'; s.appendChild(w); s.scrollTop=s.scrollHeight;
     var imgs=[],done=0; fs.forEach(function(f){ var rd=new FileReader(); rd.onload=function(){ var b=String(rd.result||'').split(',')[1]||''; if(b)imgs.push({data:b,mime:f.type||'image/jpeg'}); done++; if(done===fs.length)send(); }; rd.onerror=function(){done++; if(done===fs.length)send();}; rd.readAsDataURL(f); });
     function send(){ if(!imgs.length){w.remove();pushMsg('gen','파일을 읽지 못했어요. 다시 시도해 주세요.');return;}
@@ -1258,6 +1268,9 @@ window.runOCR=function(){
       var body=multi?JSON.stringify({images:imgs}):JSON.stringify({dataUrl:'data:'+imgs[0].mime+';base64,'+imgs[0].data,mime:imgs[0].mime,name:(fs[0]&&fs[0].name)||'upload'});
       fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:body}).then(function(r){return r.json();}).then(function(d){ w.remove();
         var txt=(d&&(d.report||d.analysis||d.message||d.note))||(d&&d.error)||'(분석 결과 없음)';
+        // ★_HIST 기록 + 기능 맥락(후속 질문이 맥락 유지되게)
+        if(typeof _HIST!=='undefined'){ _HIST.push({role:'user', content:'[파일 업로드: '+names+']'}); _HIST.push({role:'assistant', content:String(txt).slice(0,1500)}); }
+        window._ACTIVE_SKILL = multi ? 'product_compare' : 'insurance_review';
         pushMsg('gen', renderMd(txt));
       }).catch(function(){ w.remove(); pushMsg('gen','<span style="color:#c0392b">분석 오류(잠시 후 다시)</span>'); });
     }
