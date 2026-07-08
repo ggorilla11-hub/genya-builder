@@ -48,7 +48,7 @@ function buildSystem(annualIncome, debt) {
   const 부채 = debt ? `${debt}` : '(미입력)';
   const 기준표 = Object.entries(적정보장기준).map(([k, v]) => `  - ${k}: ${v}`).join('\n');
   return `당신은 보험설계사를 돕는 비서 "지니야"입니다. 제안서(PDF/사진)들을 아래 순서로 비교합니다.
-말투: 70대 어르신도 알아듣게 쉽게. "클로드·AI모델·챗봇" 같은 말 금지 — 당신은 "지니야". 표·단계로 보기 쉽게.
+말투: 누구나 알기 쉽게, 전문용어는 풀어서. ★사용자를 "어르신"이라 부르지 마시오(나이 추정 호칭 금지, "안녕하세요 어르신" 같은 인사 금지). 호칭이 필요하면 "설계사님". "클로드·AI모델·챗봇" 금지 — 당신은 "지니야". 표·단계로 보기 쉽게.
 
 [1단계 — 담보 비교] 각 제안서의 담보를 같은 항목으로 정렬한다.
   - ★제안서에 그 담보가 아예 없으면 "미포함"으로, 있는데 값이 안 보이면 "확인 필요"로 구분해 정직하게 적는다. 지어내기 절대 금지.
@@ -78,7 +78,7 @@ ${기준표}
   - "추천·가입 권유"가 아니라 "중립 비교"다. "가입하세요" 대신 "이론상 이 안이 조건이 낫다"로.
   - 답변 끝에 고정 안내문은 시스템이 붙이니 당신은 넣지 마세요.
 
-[출력 형식(마크다운) — 1~4단계만]
+[출력 형식(마크다운) — ★1·2·3·4단계를 반드시 모두 출력한다(중간에 끊기지 않게). 1단계 표가 길면 핵심 담보(암·뇌·심·사망·실손·납입면제·보험료) 위주로 간결히 하고, 2·3·4단계는 절대 생략·축약하지 마라.]
 ## 📊 1단계 · 담보 비교
 (표: 항목 | 상품A | 상품B … / 없으면 "미포함", 안 보이면 "확인 필요")
 ## 🧮 2단계 · 재무 적정성 (오상열 CFP 공식)
@@ -121,7 +121,7 @@ async function compareProducts(input) {
   const system = buildSystem(annualIncome, debt);
   let report = '';
   try {
-    const r = await anthropic().messages.create({ model: ANSWER_MODEL, max_tokens: 3000, system, messages: [{ role: 'user', content }] });
+    const r = await anthropic().messages.create({ model: ANSWER_MODEL, max_tokens: 8000, system, messages: [{ role: 'user', content }] });
     report = (r.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
     if (!report) throw new Error('빈 응답');
   } catch (e) {

@@ -1269,6 +1269,36 @@ applyJob();
    ★코치/대표 지시: 화면만 바꾸고 기능 끊기면 안 됨. 서버 저장 0 원칙 유지.
    ============================================================ */
 // 간이 마크다운 렌더(표·굵게·목록·헤더·줄바꿈) — 대화·분석결과 표시용
+// ★버그3: 상품비교/분석 결과 다운로드 — 클라이언트에서 생성(서버 저장 0·외부 CDN 0). PDF=인쇄→저장, 엑셀=CSV
+function _dlBtns(){
+  return '<div style="display:flex;gap:8px;margin-top:10px;padding-top:9px;border-top:1px solid #eef2f6;flex-wrap:wrap;">'+
+    '<button onclick="dlResultPDF()" style="padding:7px 13px;border:1px solid #d0d8e2;border-radius:9px;background:#fff;cursor:pointer;font-size:12px;">📄 PDF로 저장</button>'+
+    '<button onclick="dlResultCSV()" style="padding:7px 13px;border:1px solid #d0d8e2;border-radius:9px;background:#fff;cursor:pointer;font-size:12px;">📊 엑셀로 저장</button></div>';
+}
+function _mdToCsv(md){
+  var out=[]; String(md||'').split('\n').forEach(function(ln){
+    if(/\|/.test(ln) && !/^\s*\|?[\s:\-|]+\|?\s*$/.test(ln)){
+      var cells=ln.split('|').map(function(c){return c.trim().replace(/\*\*/g,'');});
+      if(cells[0]==='')cells.shift(); if(cells.length&&cells[cells.length-1]==='')cells.pop();
+      if(cells.length) out.push(cells.map(function(c){return '"'+c.replace(/"/g,'""')+'"';}).join(','));
+    }
+  });
+  return out.join('\r\n');
+}
+function dlResultPDF(){
+  var t=(window._LASTRESULT&&window._LASTRESULT.text)||''; if(!t){ if(typeof toast==='function')toast('저장할 결과가 없어요'); return; }
+  var w=window.open('','_blank'); if(!w){ alert('팝업을 허용하면 PDF로 저장할 수 있어요'); return; }
+  var body=(typeof renderMd==='function')?renderMd(t):('<pre>'+String(t).replace(/[&<>]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c];})+'</pre>');
+  w.document.write('<html><head><meta charset="utf-8"><title>지니야 분석 결과</title><style>body{font-family:Pretendard,\'맑은 고딕\',sans-serif;padding:26px;line-height:1.6;color:#1a1a1a;}table{border-collapse:collapse;width:100%;margin:8px 0;}th,td{border:1px solid #ccc;padding:6px 9px;font-size:13px;text-align:left;}h1,h2,h3{color:#0B1F3A;}</style></head><body>'+body+'<p style="margin-top:22px;color:#999;font-size:11px;">지니야 자동 생성 · 제출·발송 전 담당 설계사 검토</p></body></html>');
+  w.document.close(); setTimeout(function(){ try{ w.focus(); w.print(); }catch(e){} }, 500);
+}
+function dlResultCSV(){
+  var t=(window._LASTRESULT&&window._LASTRESULT.text)||''; var csv=_mdToCsv(t);
+  if(!csv){ if(typeof toast==='function')toast('표가 없어 엑셀로 저장할 내용이 없어요'); return; }
+  var blob=new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8;'});
+  var a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='지니야_비교결과.csv';
+  document.body.appendChild(a); a.click(); setTimeout(function(){ document.body.removeChild(a); URL.revokeObjectURL(a.href); }, 1000);
+}
 function renderMd(src){
   var esc=function(s){return String(s==null?'':s).replace(/[&<>]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c];});};
   var inl=function(t){return esc(t).replace(/\*\*(.+?)\*\*/g,'<b>$1</b>');};
@@ -1407,7 +1437,8 @@ window.runOCR=function(mode){
         // ★_HIST 기록 + 기능 맥락(후속 질문이 맥락 유지되게)
         if(typeof _HIST!=='undefined'){ _HIST.push({role:'user', content:'[파일 업로드: '+names+']'}); _HIST.push({role:'assistant', content:String(txt).slice(0,1500)}); }
         window._ACTIVE_SKILL = multi ? 'product_compare' : 'insurance_review';
-        pushMsg('gen', renderMd(txt));
+        window._LASTRESULT = { text: txt };  // ★버그3: 결과 저장 → PDF/엑셀 다운로드용
+        pushMsg('gen', renderMd(txt) + _dlBtns());
       }).catch(function(){ w.remove(); pushMsg('gen','<span style="color:#c0392b">분석 오류(잠시 후 다시)</span>'); });
     }
   };
