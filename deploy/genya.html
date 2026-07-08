@@ -417,7 +417,7 @@
         <div class="way sel" data-way="upload" onclick="selWay(this)">
           <div class="wi"><svg viewBox="0 0 24 24" fill="none"><path d="M8 3v3M16 3v3M4 8h16M5 6h14v14H5z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M9 13l2 2 4-4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
           <div class="wt"><b>설문지 업로드</b><span>이미 답한 설문지·자료가 있으면 올리세요.</span></div>
-          <div class="wr"><span class="rec">가장 빠름</span><div class="dl-link" onclick="event.stopPropagation();alert('설문지 양식을 다운로드합니다 (실제 구현 시 PDF/DOCX 제공)')"><svg viewBox="0 0 24 24" fill="none"><path d="M12 4v10m0 0l-4-4m4 4l4-4M5 19h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>양식 받기</div></div>
+          <div class="wr"><span class="rec">가장 빠름</span></div>
         </div>
         <div class="way" data-way="form" onclick="selWay(this)">
           <div class="wi"><svg viewBox="0 0 24 24" fill="none"><path d="M5 4h14v16H5zM9 9h6M9 13h6M9 17h4" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg></div>
@@ -431,28 +431,35 @@
         </div>
       </div>
 
-      <!-- 직접입력 폼 2차 -->
-      <div id="form2" class="form-2" style="margin-top:20px;">
-        <div class="field"><label>경력 / 연차</label><input type="text" placeholder="예: 23년차 보험설계사 (GA)"></div>
-        <div class="field"><label>가장 큰 고민 (핵심 니즈)</label><textarea placeholder="예: 새 고객 발굴이 제일 막막하고, 제안서 준비에 시간이 오래 걸려요"></textarea></div>
-        <div class="field"><label>지니야에게 맡기고 싶은 일</label><input type="text" placeholder="예: 발굴, 증권분석, 만기관리"></div>
+      <!-- ★택1: 설문지 업로드 패널(만능 처리기 재사용) -->
+      <div id="upload2" style="margin-top:20px;display:block;">
+        <div style="border:2px dashed #c3d0dc;border-radius:14px;padding:26px;text-align:center;cursor:pointer;" onclick="onbUploadPick()">
+          <svg viewBox="0 0 24 24" fill="none" style="width:32px;height:32px;color:#9aa8b8;margin-bottom:8px"><path d="M12 15V4m0 0l-4 4m4-4l4 4M5 19h14" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <div style="font-size:13.5px;font-weight:600;color:var(--ink)">답한 설문지·자료 올리기</div>
+          <div style="font-size:11.5px;color:var(--gray);margin-top:4px">PDF·이미지·엑셀·텍스트 · 지니야가 읽어서 당신을 파악해요</div>
+        </div>
+        <div id="obUploadResult" style="font-size:12px;color:#33414f;margin-top:10px;line-height:1.5;"></div>
       </div>
 
-      <!-- 지니야 대화 2차 -->
-      <div id="chat2" class="chat-2" style="margin-top:20px;">
-        <div class="oc">
+      <!-- ★택1: 직접입력 폼 (내용 저장) -->
+      <div id="form2" class="form-2" style="margin-top:20px;display:none;">
+        <div class="field"><label>경력 / 연차</label><input id="obCareer" type="text" placeholder="예: 23년차 보험설계사 (GA)"></div>
+        <div class="field"><label>가장 큰 고민 (핵심 니즈)</label><textarea id="obConcern" placeholder="예: 새 고객 발굴이 제일 막막하고, 제안서 준비에 시간이 오래 걸려요"></textarea></div>
+        <div class="field"><label>지니야에게 맡기고 싶은 일</label><input id="obTasks" type="text" placeholder="예: 발굴, 증권분석, 만기관리"></div>
+      </div>
+
+      <!-- ★택1: 지니야 대화 (사용자 입력 실제 반영, 하드코딩 데모 제거) -->
+      <div id="chat2" class="chat-2" style="margin-top:20px;display:none;">
+        <div class="oc" id="obChatBox">
           <div class="om gen"><div class="av"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3l7 4v6c0 4-3 6.5-7 8-4-1.5-7-4-7-8V7l7-4z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><circle cx="12" cy="11" r="2.2" fill="currentColor"/></svg></div><div class="bb">안녕하세요! 편하게 말씀해주세요. 어떤 일을 하시고, 요즘 뭐가 제일 고민이세요?</div></div>
-          <div class="om me"><div class="av" id="chatNick">짜</div><div class="bb">23년차 보험설계사인데, 새 고객 발굴이 제일 막막하고 제안서 준비가 오래 걸려요.</div></div>
-          <div class="om gen"><div class="av"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3l7 4v6c0 4-3 6.5-7 8-4-1.5-7-4-7-8V7l7-4z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><circle cx="12" cy="11" r="2.2" fill="currentColor"/></svg></div><div class="bb">이해했어요. <b>발굴</b>과 <b>제안서 준비</b>가 핵심이시네요. 이 두 가지를 중심으로 준비할게요. 만기 관리도 함께 챙겨드릴까요?</div></div>
         </div>
         <div class="comp-in" style="border-radius:13px;">
-          <textarea rows="1" placeholder="지니야에게 답해보세요…"></textarea>
-          <button class="comp-btn mic" title="음성"><svg viewBox="0 0 24 24" fill="none"><rect x="9" y="3" width="6" height="11" rx="3" stroke="currentColor" stroke-width="1.8"/><path d="M5 11a7 7 0 0014 0M12 18v3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
-          <button class="comp-btn send" title="전송"><svg viewBox="0 0 24 24" fill="none"><path d="M5 12l14-7-5 14-3-5-6-2z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg></button>
+          <textarea id="obChatInput" rows="1" placeholder="지니야에게 답해보세요…" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();onbChatSend();}"></textarea>
+          <button class="comp-btn send" title="전송" onclick="onbChatSend()"><svg viewBox="0 0 24 24" fill="none"><path d="M5 12l14-7-5 14-3-5-6-2z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg></button>
         </div>
       </div>
 
-      <div class="nav-btns"><button class="btn btn-line" onclick="go(2)">이전</button><button class="btn btn-teal" onclick="go(4)">다음<svg viewBox="0 0 24 24" fill="none"><path d="M5 12h14m-6-6l6 6-6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div>
+      <div class="nav-btns"><button class="btn btn-line" onclick="go(2)">이전</button><button class="btn btn-teal" onclick="onbNext()">다음<svg viewBox="0 0 24 24" fill="none"><path d="M5 12h14m-6-6l6 6-6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div>
     </div>
   </div>
 
@@ -466,7 +473,7 @@
       <div class="summ" id="confirmSumm">
         <div class="summ-row"><span class="k">닉네임</span><span class="v"><span class="nick-slot">짜앙</span></span></div>
         <div class="summ-row"><span class="k">직업</span><span class="v" id="cfJob">보험설계사 (GA · 23년차)</span></div>
-        <div class="summ-row"><span class="k">핵심 고민</span><span class="v"><span class="pill">고객 발굴</span><span class="pill">제안서 준비</span></span></div>
+        <div class="summ-row"><span class="k">핵심 고민</span><span class="v" id="cfPains"><span class="pill">고객 발굴</span><span class="pill">제안서 준비</span></span></div>
         <div class="summ-row"><span class="k">지니야가 맡을 일</span><span class="v" id="cfTasks">24/7 발굴 · 증권분석 · 3사 제안서 종합 · 만기관리</span></div>
         <div class="summ-row"><span class="k">철칙</span><span class="v">발송·연락은 승인 후에만</span></div>
       </div>
@@ -779,13 +786,73 @@ function pickMore(k,n){
 }
 function closeJobMore(){ document.getElementById('jobBack').classList.remove('on'); }
 
-// ===== 입력 3방식 =====
+// ===== 입력 3방식 (택1 + 실배선) =====
+window.ONBOARD = { method:'upload', chatText:'', uploadText:'', profile:null };
+function _escOb(s){ return String(s==null?'':s).replace(/[&<>]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c];}); }
+// ★택1: 고른 방식의 입력만 보이고 나머지 숨김
 function selWay(el){
-  el.parentNode.querySelectorAll('.way').forEach(w=>w.classList.remove('sel'));
+  el.parentNode.querySelectorAll('.way').forEach(function(w){w.classList.remove('sel');});
   el.classList.add('sel');
-  const way = el.dataset.way;
-  document.getElementById('form2').classList.toggle('on', way==='form');
-  document.getElementById('chat2').classList.toggle('on', way==='chat');
+  var way = el.dataset.way; window.ONBOARD.method = way;
+  var u=document.getElementById('upload2'), f=document.getElementById('form2'), c=document.getElementById('chat2');
+  if(u) u.style.display = (way==='upload') ? 'block' : 'none';
+  if(f) f.style.display = (way==='form')   ? 'block' : 'none';
+  if(c) c.style.display = (way==='chat')   ? 'block' : 'none';
+}
+// ★설문지 업로드: 만능 처리기(/api/coverage/analyze) 재사용 → 결과를 온보딩 입력으로
+function onbUploadPick(){
+  var fi=document.createElement('input'); fi.type='file'; fi.accept='image/*,.pdf,.xlsx,.xls,.csv,.txt';
+  fi.onchange=function(){ var f=fi.files&&fi.files[0]; if(!f)return;
+    var st=document.getElementById('obUploadResult'); if(st)st.innerHTML='📎 '+_escOb(f.name)+' 분석 중… (10~20초)';
+    var rd=new FileReader(); rd.onload=function(){
+      fetch('/api/coverage/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dataUrl:rd.result,mime:f.type||'',name:f.name})})
+       .then(function(r){return r.json();}).then(function(d){
+         var txt=(d&&d.analysis)||''; var msg=(d&&d.message)||(d&&d.error)||'';
+         window.ONBOARD.uploadText = txt || '';
+         if(st){ st.innerHTML = txt
+           ? '✅ 분석 완료 — 아래 [다음]을 누르면 확인 화면에 반영돼요.<div style="margin-top:6px;color:#556;">'+_escOb(txt.slice(0,200))+'…</div>'
+           : (msg? _escOb(msg) : '분석 결과를 못 읽었어요. 다른 파일로 시도해 주세요.'); }
+       }).catch(function(){ if(st)st.innerHTML='<span style="color:#c0392b">분석 오류 — 잠시 후 다시</span>'; });
+    }; rd.readAsDataURL(f);
+  };
+  fi.click();
+}
+// ★지니야 대화: 사용자 입력을 실제로 읽어 응답(/api/onboard/chat) + 내용 누적
+var _obHist=[];
+function onbChatPush(who,text){
+  var box=document.getElementById('obChatBox'); if(!box)return;
+  var av = who==='me' ? '<div class="av">'+_escOb((CUR_NICK||'나').charAt(0))+'</div>'
+    : '<div class="av"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3l7 4v6c0 4-3 6.5-7 8-4-1.5-7-4-7-8V7l7-4z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><circle cx="12" cy="11" r="2.2" fill="currentColor"/></svg></div>';
+  var d=document.createElement('div'); d.className='om '+(who==='me'?'me':'gen');
+  d.innerHTML=av+'<div class="bb">'+_escOb(text)+'</div>';
+  box.appendChild(d); box.scrollTop=box.scrollHeight;
+}
+function onbChatSend(){
+  var inp=document.getElementById('obChatInput'); var v=(inp&&inp.value||'').trim(); if(!v)return;
+  onbChatPush('me', v); inp.value='';
+  _obHist.push({role:'user',text:v});
+  window.ONBOARD.chatText = (window.ONBOARD.chatText? window.ONBOARD.chatText+'\n':'')+v;
+  var job=(GENYA_JOBS[CUR_JOB]||{}).label||'';
+  fetch('/api/onboard/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:v,history:_obHist,job:job})})
+   .then(function(r){return r.json();}).then(function(d){ var reply=(d&&d.reply)||'네, 알겠어요. 조금 더 말씀해 주세요.'; onbChatPush('gen',reply); _obHist.push({role:'assistant',text:reply}); })
+   .catch(function(){ onbChatPush('gen','네, 알겠어요. 조금 더 말씀해 주세요.'); });
+}
+// ★다음: 선택한 방식의 입력을 구조화(/api/onboard/extract) → 확인화면에 실제 반영(기본값 덮어쓰지 않음)
+function onbNext(){
+  var method=(window.ONBOARD&&window.ONBOARD.method)||'upload'; var text='';
+  if(method==='form'){
+    var c=(document.getElementById('obCareer')||{}).value||'';
+    var p=(document.getElementById('obConcern')||{}).value||'';
+    var t=(document.getElementById('obTasks')||{}).value||'';
+    text=[c&&('경력: '+c), p&&('고민: '+p), t&&('맡길 일: '+t)].filter(Boolean).join('\n');
+  } else if(method==='chat'){ text=window.ONBOARD.chatText||''; }
+  else { text=window.ONBOARD.uploadText||''; }
+  go(4); // 확인화면 진입(일단 기본값 표시)
+  if(!String(text).trim()){ window.ONBOARD.profile=null; applyJob(); return; }
+  var jobLabel=(GENYA_JOBS[CUR_JOB]||{}).label||'';
+  fetch('/api/onboard/extract',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:(jobLabel?('직업: '+jobLabel+'\n'):'')+text})})
+   .then(function(r){return r.json();}).then(function(d){ window.ONBOARD.profile=(d&&d.profile)||null; applyJob(); })
+   .catch(function(){});
 }
 
 // ===== 직업 적용 (확인+메인) =====
@@ -814,6 +881,21 @@ function applyJob(){
   // 칩
   const chips=document.getElementById('chatChips');
   if(chips) chips.innerHTML = j.chips.map(c=>'<div class="chip">'+c+'</div>').join('');
+  // ★온보딩 사용자 입력 반영(STEP3 확인화면) — 있으면 기본값 대신 실제 입력으로. 없으면 그대로 둠(덮어쓰지 않음)
+  applyOnboardToConfirm();
+}
+// 사용자가 STEP2에서 실제 입력한 내용을 확인화면에 반영(추출 결과 우선, 없으면 직업 기본값 유지)
+function applyOnboardToConfirm(){
+  var ob = window.ONBOARD && window.ONBOARD.profile; if(!ob) return;
+  if(ob.job){ var cj=document.getElementById('cfJob'); if(cj) cj.textContent=ob.job; }
+  var tasks = ob.tasks || '';
+  if(tasks){ var ct=document.getElementById('cfTasks'); if(ct) ct.textContent=String(tasks).replace(/\s*;\s*/g,' · '); }
+  var pain = ob.pain || ob.work || '';
+  if(pain){ var cp=document.getElementById('cfPains'); if(cp) cp.innerHTML=String(pain).split(/[,;·]/).map(function(x){x=x.trim(); return x?'<span class="pill">'+_escOb(x)+'</span>':'';}).join(''); }
+  var confP=document.getElementById('confirmText');
+  if(confP){ confP.innerHTML='<span class="nick-slot">'+_escOb(CUR_NICK||'')+'</span>님은 '
+    + (ob.job?'<em>'+_escOb(ob.job)+'</em>':'') + (pain?', 가장 큰 고민은 <em>'+_escOb(pain)+'</em>':'')
+    + '네요. 이 내용을 바탕으로 지니야를 준비했어요. 맞으면 승인해주세요.'; }
 }
 
 // ===== 2차 시나리오 팝업 (기술 엮기 = 해자) =====
