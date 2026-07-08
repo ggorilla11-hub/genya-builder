@@ -278,6 +278,14 @@ app.post('/api/compare', async (req, res) => {
 // ── 🔌 커넥터창고: 목록 + 연결 수 ──
 app.get('/api/connectors', (req, res) => res.json({ ok: true, connectedCount: connectors.connectedCount, list: connectors.list }));
 
+// ★카드→대화 맥락: 프론트가 보낸 activeSkill 코드 → 사람이 읽는 작업명(시스템 프롬프트 주입용). 카드에서 시작한 작업을 지니야가 기억·이어감.
+const SKILL_CTX = {
+  insurance_review: '보험 증권 분석(보장 진단)',
+  product_compare: '상품 비교(제안서 담보·보험료·인수 비교)',
+  yakgwan: '약관 해석(근거·출처로 쉽게 설명)',
+  lead_gen: '고객 발굴',
+  renewal: '만기·생일 관리',
+};
 // ── 💬 Order Made: 자연어 → 실제 모듈 라우팅 + ★결정·요청 자동 기억(회원 구글) ──
 async function orderHandler(req, res) {
   try {
@@ -287,8 +295,16 @@ async function orderHandler(req, res) {
     if (!q) return res.json({ ok: true, kind: 'idle', text: '무엇이든 말씀하세요 (예: "무보험차상해가 뭐야?" / "이번 주 만기 고객 정리해줘")' });
     // ★데이터가 필요한데 권한이 없으면 대화를 막지 말고 "연결하기" 안내(일반 대화는 아래 LLM으로 무조건 응답)
     const needConnect = { kind: '🔗 구글 데이터 연결 필요', text: '이 질문은 캘린더·시트·드라이브를 읽어야 답할 수 있어요. 아래 버튼으로 한 번만 연결하면 바로 알려드릴게요. (일반 질문은 연결 없이도 대답해요)', needsConnect: true, connectUrl: '/auth/google/connect' };
+    const activeSkill = String((req.body && req.body.activeSkill) || '');
     let out = {};
-    if (/약관|무보험|대물|자기신체|자동차상해|담보|보장.*(뭐|무엇|차이)/.test(q)) {
+    if (activeSkill && SKILL_CTX[activeSkill]) {
+      // ★카드에서 시작한 작업 맥락: 키워드 라우팅(증권→드라이브 "해당 파일 없음") 건너뛰고 LLM이 맥락 유지해 이어서 답한다
+      const job = String((req.body && req.body.job) || req.query.job || '');
+      const hist = Array.isArray(req.body && req.body.history) ? req.body.history.slice(-10) : [];
+      const sys = genyaPersona(job) + `\n[현재 작업] 지금 사용자는 "${SKILL_CTX[activeSkill]}" 작업을 진행 중이다. 앞서 지니야가 안내한 내용(예: 사진·파일 업로드 요청)을 기억한 채 맥락을 유지하고 그 작업을 이어서 돕는다. 맥락을 잃고 "해당 파일 없음" 같은 엉뚱한 답을 하지 마라. 파일이 필요하면 화면 아래 ＋ 버튼으로 올려달라고 자연스럽게 안내한다.`;
+      const text = await askClaude(sys, hist.concat([{ role: 'user', content: q }]), 1500);
+      out = { kind: '💬 지니야', text, engine: 'claude-sonnet-5' };
+    } else if (/약관|무보험|대물|자기신체|자동차상해|담보|보장.*(뭐|무엇|차이)/.test(q)) {
       const r = await askYakgwan(q); out = { kind: '📄 약관창고', text: r.answer, sources: r.sources }; // 공통 지식(구글 불필요)
     } else if (/만기|명단|자산가|고객.*(정리|목록|누구)/.test(q)) {
       if (!canData) { out = needConnect; } else { const s = await connectors.sheet(ma); out = { kind: '🔌 시트 커넥터', text: `7월 만기 ${s.july만기.length}명 · 임박순 ${s.임박순.join(' → ')}\n자산가: ${s.자산가.join(', ')}` }; }

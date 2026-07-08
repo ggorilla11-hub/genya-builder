@@ -962,11 +962,24 @@ function firstMsgForCard(p){
   var action = byIcon[(p&&p.icon)] || ('「'+title+'」부터 시작해볼까요? 편하게 말씀해 주세요.');
   return '<b>'+_escOb(title)+'</b><br>'+action;
 }
-// ★작업1: 카드 → 대화 연결. 팝업 닫고 대화창으로 이동 + 카드 맞춤 첫 메시지를 지니야 발화로 주입
+// ★카드 종류(icon) → 기능 스킬 코드(서버가 맥락 이어받게)
+function skillForCard(p){
+  var byIcon={ 'file-search':'insurance_review','scan':'insurance_review','camera':'insurance_review',
+    'files':'product_compare','diff':'product_compare',
+    'book':'yakgwan','help':'yakgwan','quote':'yakgwan',
+    'radar':'lead_gen','moon':'lead_gen','users-plus':'lead_gen','star':'lead_gen',
+    'calendar-due':'renewal','bell':'renewal' };
+  return byIcon[(p&&p.icon)] || '';
+}
+// ★작업2: 카드 → 대화 연결 + 맥락. 팝업 닫고 첫 메시지를 화면(pushMsg)+대화기록(_HIST) 양쪽에 + 기능맥락(_ACTIVE_SKILL) 세팅
 function startFromCard(jobKey, idx){
   closeSc();
   var j=GENYA_JOBS[jobKey]||GENYA_JOBS.insurance; var p=j.pains[idx];
-  pushMsg('gen', firstMsgForCard(p));
+  var html=firstMsgForCard(p);
+  var plain=String(html).replace(/<br\s*\/?>/gi,' ').replace(/<[^>]+>/g,'').trim();
+  pushMsg('gen', html);
+  if(typeof _HIST!=='undefined') _HIST.push({role:'assistant', content: plain}); // ★맥락 유지: 카드 첫 메시지를 LLM 대화기록에도
+  window._ACTIVE_SKILL = skillForCard(p);                                          // ★기능 맥락(서버 /api/order가 이어받음)
   var box=document.getElementById('chatScroll'); if(box){ box.scrollTop=box.scrollHeight; box.scrollIntoView({block:'center'}); }
   var inp=document.getElementById('chatInput'); if(inp) inp.focus();
 }
@@ -1022,12 +1035,7 @@ function pushMsg(who, html){
   d.innerHTML=av+'<div class="bubble">'+html+'</div>';
   s.appendChild(d); s.scrollTop=s.scrollHeight;
 }
-function sendMsg(){
-  const inp=document.getElementById('chatInput'); const v=(inp.value||'').trim();
-  if(!v) return;
-  pushMsg('me', v); inp.value=''; inp.style.height='auto';
-  setTimeout(()=>{ pushMsg('gen','<span class="lead">'+CUR_NICK+'</span>, 알겠어요. 바로 준비할게요. (실제 서비스에선 지니야가 지시를 실행하고 결과를 여기 보여드려요.)'); },500);
-}
+// ★가짜 sendMsg(toast만) 제거 — 진짜 대화는 아래 window.sendMsg(/api/order·claude-sonnet-5)로 단일화
 
 // ===== 파일 첨부 (+) =====
 let files=[];
@@ -1229,7 +1237,7 @@ window.sendMsg=function(){
   w.innerHTML='<div class="av"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3l7 4v6c0 4-3 6.5-7 8-4-1.5-7-4-7-8V7l7-4z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><circle cx="12" cy="11" r="2.2" fill="currentColor"/></svg></div><div class="bubble" style="color:#98a4b2">지니야가 생각하는 중…</div>';
   s.appendChild(w); s.scrollTop=s.scrollHeight;
   var job=(GENYA_JOBS[CUR_JOB]||{}).label||'';
-  fetch('/api/order',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({q:v,message:v,job:job,history:_HIST.slice(-10)})})
+  fetch('/api/order',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({q:v,message:v,job:job,history:_HIST.slice(-10),activeSkill:(window._ACTIVE_SKILL||'')})})
    .then(function(r){return r.json();}).then(function(d){ w.remove();
      if(d&&d.needsConnect){ pushMsg('gen',(d.text||'구글 데이터 연결이 필요해요')+' <a href="/auth/google/connect" style="color:var(--teal-d);font-weight:700">연결하기 →</a>'); return; }
      var reply=(d&&(d.text||d.answer))||(d&&d.error)||'(응답 없음)';
