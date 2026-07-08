@@ -1264,6 +1264,39 @@ go = function(n){
     try{ var lb=(GENYA_JOBS[CUR_JOB]||{}).label||CUR_JOB; fetch('/api/profile/save?'+'job='+encodeURIComponent(lb)+'&nick='+encodeURIComponent(CUR_NICK)).catch(function(){}); }catch(e){}
   }
 };
+// ★작업A: 구글 연결(OAuth 전체 리다이렉트) 시 대화·상태 보존 → 복귀 후 복원(데이터 안 날아가게)
+function _saveState(){
+  try{
+    var v=(document.querySelector('.view.on')&&document.querySelector('.view.on').getAttribute('data-v'))||'5';
+    localStorage.setItem('genya_state', JSON.stringify({
+      hist:(typeof _HIST!=='undefined'?_HIST:[]).slice(-20),
+      skill:window._ACTIVE_SKILL||'', work:window._WORKDATA||null,
+      job:CUR_JOB, nick:CUR_NICK, view:v
+    }));
+  }catch(e){}
+}
+function _restoreState(){
+  try{
+    var raw=localStorage.getItem('genya_state'); if(!raw) return null;
+    var st=JSON.parse(raw);
+    if(st.job&&GENYA_JOBS[st.job])CUR_JOB=st.job;
+    if(st.nick){CUR_NICK=st.nick; var ni=document.getElementById('nickInput'); if(ni)ni.value=st.nick;}
+    if(st.skill)window._ACTIVE_SKILL=st.skill;
+    if(st.work)window._WORKDATA=st.work;
+    if(Array.isArray(st.hist)&&typeof _HIST!=='undefined'){ _HIST.length=0; st.hist.forEach(function(h){_HIST.push(h);}); }
+    return st;
+  }catch(e){ return null; }
+}
+function _replayChat(){
+  var box=document.getElementById('chatScroll'); if(!box||typeof _HIST==='undefined')return;
+  _HIST.forEach(function(h){ if(!h||!h.content)return; pushMsg(h.role==='user'?'me':'gen', h.role==='user'?_escOb(h.content):renderMd(h.content)); });
+}
+// ★구글 연결: 리다이렉트 전에 현재 상태 저장(복귀 후 복원). returnTo 없으면 현재 화면 유지
+function connectGoogle(returnTo){
+  _saveState();
+  var v=(document.querySelector('.view.on')&&document.querySelector('.view.on').getAttribute('data-v'))||'5';
+  location.href='/auth/google/connect?returnTo='+encodeURIComponent(returnTo||v||'5');
+}
 // 로드 즉시: 로그인 안 됐으면 로그인화면부터 고정
 if(!_AUTHED) _goReal(0);
 // 서버 세션(/me) 재확인 → 권위있게 라우팅 (fail-closed: 실패해도 로그인화면). localStorage는 로그인된 뒤에만 온보딩 여부 참고
@@ -1273,7 +1306,16 @@ fetch('/me').then(function(r){return r.json();}).then(function(d){
     try{job=localStorage.getItem('genya_job');nick=localStorage.getItem('genya_nick');done=localStorage.getItem('genya_onboarded')==='1';}catch(e){}
     if(job&&GENYA_JOBS[job])CUR_JOB=job;
     if(nick){var ni=document.getElementById('nickInput'); if(ni)ni.value=nick; CUR_NICK=nick;}
+    // ★작업A: 구글 연결 복귀(connected=1) → 저장 상태 복원 + 원래 화면(메인)으로. 로그인/온보딩 처음으로 안 튕김
+    var params=new URLSearchParams(location.search);
+    if(params.get('connected')==='1'){
+      var st=_restoreState();
+      _goReal(5); applyJob(); if(st) _replayChat();
+      if(typeof refreshConnState==='function') refreshConnState();
+      return;
+    }
     if(done){ _goReal(5); applyJob(); } else { _goReal(1); }
+    if(typeof refreshConnState==='function') refreshConnState();
   } else { _AUTHED=false; _goReal(0); }
 }).catch(function(){ _AUTHED=false; _goReal(0); });
 // 실제 대화 → /api/order (Claude Sonnet 5, 직업 페르소나 + 히스토리)
@@ -1288,7 +1330,7 @@ window.sendMsg=function(){
   var job=(GENYA_JOBS[CUR_JOB]||{}).label||'';
   fetch('/api/order',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({q:v,message:v,job:job,history:_HIST.slice(-10),activeSkill:(window._ACTIVE_SKILL||'')})})
    .then(function(r){return r.json();}).then(function(d){ w.remove();
-     if(d&&d.needsConnect){ pushMsg('gen',(d.text||'구글 데이터 연결이 필요해요')+' <a href="/auth/google/connect" style="color:var(--teal-d);font-weight:700">연결하기 →</a>'); return; }
+     if(d&&d.needsConnect){ pushMsg('gen',(d.text||'구글 데이터 연결이 필요해요')+' <a href="#" onclick="connectGoogle();return false;" style="color:var(--teal-d);font-weight:700">연결하기 →</a>'); return; }
      var reply=(d&&(d.text||d.answer))||(d&&d.error)||'(응답 없음)';
      _HIST.push({role:'user',content:v}); _HIST.push({role:'assistant',content:reply});
      pushMsg('gen', renderMd(reply));
