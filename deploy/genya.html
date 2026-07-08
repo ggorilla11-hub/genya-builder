@@ -478,7 +478,31 @@
         <div class="summ-row"><span class="k">지니야가 맡을 일</span><span class="v" id="cfTasks">24/7 발굴 · 증권분석 · 3사 제안서 종합 · 만기관리</span></div>
         <div class="summ-row"><span class="k">철칙</span><span class="v">발송·연락은 승인 후에만</span></div>
       </div>
-      <div class="nav-btns"><button class="btn btn-line" onclick="go(3)">고칠래요</button><button class="btn btn-teal" onclick="go(5)"><svg viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>맞아요, 지니야 시작하기</button></div>
+      <div class="nav-btns"><button class="btn btn-line" onclick="go(3)">고칠래요</button><button class="btn btn-teal" onclick="go(8)"><svg viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>맞아요, 다음</button></div>
+    </div>
+  </div>
+
+  <!-- 8. 업무 자료 넣기 (V4 복원) — 확인(4) 뒤, 메인(5) 앞 -->
+  <div class="view" data-v="8">
+    <div class="ob-top"><div class="gmark"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3l7 4v6c0 4-3 6.5-7 8-4-1.5-7-4-7-8V7l7-4z" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/><circle cx="12" cy="11" r="2.2" fill="#fff"/></svg></div><div class="bn">지니야 만들기</div><div class="prog"><span class="done"></span><span class="done"></span><span class="done"></span></div></div>
+    <div class="ob-body">
+      <div class="ob-lb">STEP 4 · 업무 자료</div>
+      <h2 class="ob-h">업무 자료를 올려주세요</h2>
+      <p class="ob-sub">고객명단·증권을 올리면 지니야가 바로 일해요. 자료는 <b>대표님 본인 구글 드라이브에만</b> 저장되고, 오원트 서버엔 저장하지 않아요(분석 후 폐기).</p>
+      <input type="file" id="wdRoster" accept=".xlsx,.xls,.csv" style="display:none" onchange="onbWorkUpload('roster',this)">
+      <input type="file" id="wdPolicy" accept="image/*,.pdf" style="display:none" onchange="onbWorkUpload('policy',this)">
+      <div class="ways" style="margin-bottom:14px;">
+        <label for="wdRoster" class="way" style="cursor:pointer;">
+          <div class="wi"><svg viewBox="0 0 24 24" fill="none"><rect x="4" y="4" width="16" height="16" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M4 9h16M9 4v16" stroke="currentColor" stroke-width="1.7"/></svg></div>
+          <div class="wt"><b>고객명단 업로드</b><span>엑셀·CSV — 만기·생일·발굴에 바로 활용</span></div>
+        </label>
+        <label for="wdPolicy" class="way" style="cursor:pointer;">
+          <div class="wi"><svg viewBox="0 0 24 24" fill="none"><path d="M6 3h9l4 4v14H6z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+          <div class="wt"><b>보험증권 업로드</b><span>PDF·이미지 (선택) — 보장 분석에 활용</span></div>
+        </label>
+      </div>
+      <div id="wdResult" style="font-size:12.5px;color:#33414f;line-height:1.6;margin-bottom:8px;"></div>
+      <div class="nav-btns"><button class="btn btn-line" onclick="go(5)">건너뛰기 (나중에 올려도 돼요)</button><button class="btn btn-teal" onclick="go(5)">지니야 시작하기 →</button></div>
     </div>
   </div>
 
@@ -790,6 +814,24 @@ function closeJobMore(){ document.getElementById('jobBack').classList.remove('on
 // ===== 입력 3방식 (택1 + 실배선) =====
 window.ONBOARD = { method:'upload', chatText:'', uploadText:'', profile:null };
 function _escOb(s){ return String(s==null?'':s).replace(/[&<>]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c];}); }
+// ★업무 자료 넣기(V4 복원): 업로드 → 만능처리기 분석(서버 메모리·저장0) → "명단 확인/증권 분석" 즉시 피드백. 실제 파일은 회원 드라이브 원칙.
+function onbWorkUpload(kind, input){
+  var f=input && input.files && input.files[0]; if(!f) return;
+  var res=document.getElementById('wdResult'); var label=(kind==='roster'?'고객명단':'보험증권');
+  if(res) res.innerHTML='📎 '+_escOb(f.name)+' 분석 중… (오원트 서버 저장 안 함)';
+  var rd=new FileReader();
+  rd.onload=function(){
+    var dataUrl=rd.result, quickN='';
+    if(kind==='roster' && /\.csv$/i.test(f.name)){ try{ var raw=atob(String(dataUrl).split(',')[1]||''); var lines=decodeURIComponent(escape(raw)).split(/\r?\n/).filter(function(x){return x.trim();}); quickN=Math.max(0,lines.length-1)+'명'; }catch(e){} }
+    fetch('/api/coverage/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dataUrl:dataUrl,mime:f.type||'',name:f.name})})
+     .then(function(r){return r.json();}).then(function(d){
+       var t=(d&&(d.analysis||d.message))||(d&&d.error)||'';
+       window._WORKDATA=window._WORKDATA||{}; window._WORKDATA[kind]={name:f.name, summary:t};
+       if(res) res.innerHTML='✅ '+label+' 확인'+(quickN?(' — '+quickN):'')+' <span style="color:#0d7a52">(지니야가 준비됨 · 서버 저장 0)</span>'+(t?('<div style="margin-top:6px;color:#556;">'+_escOb(String(t).slice(0,150))+'…</div>'):'');
+     }).catch(function(){ if(res)res.innerHTML='<span style="color:#c0392b">'+label+' 분석 오류 — 잠시 후 다시</span>'; });
+  };
+  rd.readAsDataURL(f);
+}
 // ★택1: 고른 방식의 입력만 보이고 나머지 숨김
 function selWay(el){
   el.parentNode.querySelectorAll('.way').forEach(function(w){w.classList.remove('sel');});
