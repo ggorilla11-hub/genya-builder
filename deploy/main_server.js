@@ -563,16 +563,21 @@ app.get('/auth/google', (req, res) => {
   res.redirect(oaClient().generateAuthUrl({ prompt: 'select_account', scope: LOGIN_SCOPES }));
 });
 // ★데이터 연결(캘린더·시트·드라이브) — 그 기능 실제로 쓸 때만 별도 동의(incremental). 여기서만 민감 스코프 요청.
+// ★작업A2: 도구별 최소권한 스코프(incremental 누적). scope 파라미터 없으면 기존 일괄(하위호환)
+const CONNECT_SCOPES = {
+  calendar: ['https://www.googleapis.com/auth/calendar.readonly'],
+  sheets: ['https://www.googleapis.com/auth/spreadsheets'],
+  drive: ['https://www.googleapis.com/auth/drive.file'],
+  gmail: ['https://www.googleapis.com/auth/gmail.readonly', 'https://www.googleapis.com/auth/gmail.compose'],
+};
 app.get('/auth/google/connect', (req, res) => {
   if (!OA_CONFIGURED) return res.status(503).send('OAuth 미설정');
-  // ★state에 returnTo(돌아올 화면번호) 저장 → 동의 후 원래 화면으로 복귀. 기본=워크스페이스(10)
-  const returnTo = String(req.query.returnTo || '10');
+  const returnTo = String(req.query.returnTo || '5');
+  const tool = String(req.query.scope || '');
+  const scopes = (tool && CONNECT_SCOPES[tool]) ? LOGIN_SCOPES.concat(CONNECT_SCOPES[tool]) : LOGIN_SCOPES.concat(DATA_SCOPES);
   const state = Buffer.from(JSON.stringify({ connect: true, returnTo: returnTo })).toString('base64');
-  // ★디버그: 실제 사용되는 redirect_uri와 판정 근거를 Render 로그에 출력
-  console.log('[OAUTH connect] redirect_uri =', OA_REDIRECT,
-    '| env GOOGLE_OAUTH_REDIRECT =', process.env.GOOGLE_OAUTH_REDIRECT || '(none)',
-    '| isLocalDev =', _isLocalDev, '| PORT =', process.env.PORT || '(none)');
-  res.redirect(oaClient().generateAuthUrl({ access_type: 'offline', prompt: 'consent', include_granted_scopes: true, scope: LOGIN_SCOPES.concat(DATA_SCOPES), state: state }));
+  console.log('[OAUTH connect] tool =', tool || '(all)', '| redirect_uri =', OA_REDIRECT, '| isLocalDev =', _isLocalDev, '| PORT =', process.env.PORT || '(none)');
+  res.redirect(oaClient().generateAuthUrl({ access_type: 'offline', prompt: 'consent', include_granted_scopes: true, scope: scopes, state: state }));
 });
 app.get('/auth/google/callback', async (req, res) => {
   try {
@@ -586,13 +591,16 @@ app.get('/auth/google/callback', async (req, res) => {
     const c = oaClient(); const { tokens } = await c.getToken(code); c.setCredentials(tokens);
     const ui = await google.oauth2({ version: 'v2', auth: c }).userinfo.get();
     const s = crypto.randomBytes(16).toString('hex');
-    sessions.set(s, { email: ui.data.email, name: ui.data.name, tokens, scope: tokens.scope || '', provider: 'google' });
+    // ★작업A2: 도구별 incremental 연결 시 이전 스코프 누적(병합) — 새 연결이 기존 연결을 덮지 않게
+    const _old = sessionOf(req);
+    const _mergedScope = (((_old && _old.scope) || '') + ' ' + (tokens.scope || '')).trim();
+    sessions.set(s, { email: ui.data.email, name: ui.data.name, tokens, scope: _mergedScope, provider: 'google' });
     res.setHeader('Set-Cookie', `genya_sid=${s}; HttpOnly; Path=/; SameSite=Lax${process.env.RENDER ? '; Secure' : ''}`);
     res.redirect(isConnect ? ('/?connected=1&screen=' + encodeURIComponent(returnTo)) : '/'); // 데이터 연결이면 원래 화면으로 복귀
   } catch (e) { res.status(500).send('로그인 오류: ' + e.message); }
 });
 app.get('/logout', (req, res) => { const s = sidOf(req); if (s) sessions.delete(s); res.setHeader('Set-Cookie', 'genya_sid=; Path=/; Max-Age=0'); res.redirect('/login'); });
-app.get('/me', (req, res) => { const s = sessionOf(req); res.json(s ? { ok: true, email: s.email, name: s.name, provider: s.provider, hasGoogleData: !!s.tokens, hasData: hasDataScope(req) } : { ok: false }); });
+app.get('/me', (req, res) => { const s = sessionOf(req); res.json(s ? { ok: true, email: s.email, name: s.name, provider: s.provider, hasGoogleData: !!s.tokens, hasData: hasDataScope(req), scopes: (s.scope || (s.tokens && s.tokens.scope) || '') } : { ok: false }); });
 
 // ── 💬 카카오 로그인 라우트 (구글과 동일 구조: authorize → callback) ──
 app.get('/auth/kakao', (req, res) => {

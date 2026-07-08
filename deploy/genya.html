@@ -502,7 +502,40 @@
         </label>
       </div>
       <div id="wdResult" style="font-size:12.5px;color:#33414f;line-height:1.6;margin-bottom:8px;"></div>
-      <div class="nav-btns"><button class="btn btn-line" onclick="go(5)">건너뛰기 (나중에 올려도 돼요)</button><button class="btn btn-teal" onclick="go(5)">지니야 시작하기 →</button></div>
+      <div class="nav-btns"><button class="btn btn-line" onclick="go(9)">건너뛰기 (나중에 올려도 돼요)</button><button class="btn btn-teal" onclick="go(9)">다음 →</button></div>
+    </div>
+  </div>
+
+  <!-- 9. 도구 연결 (V4 5/7 복원) — 업무자료(8) 뒤, 메인(5) 앞 -->
+  <div class="view" data-v="9">
+    <div class="ob-top"><div class="gmark"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3l7 4v6c0 4-3 6.5-7 8-4-1.5-7-4-7-8V7l7-4z" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/><circle cx="12" cy="11" r="2.2" fill="#fff"/></svg></div><div class="bn">지니야 만들기</div><div class="prog"><span class="done"></span><span class="done"></span><span class="done"></span></div></div>
+    <div class="ob-body">
+      <div class="ob-lb">STEP 5 · 도구 연결</div>
+      <h2 class="ob-h">지니야가 쓸 도구를 연결해요</h2>
+      <p class="ob-sub">한 번만 연결하면 계속 써요. <b>연결한 도구만</b> 지니야가 씁니다. 언제든 끊을 수 있어요. (자료는 대표님 본인 구글에만 · 최소 권한만 요청)</p>
+      <div class="ways" style="margin-bottom:14px;">
+        <div class="way" data-conn="calendar" data-on="0" onclick="if(this.getAttribute('data-on')!=='1')connectGoogle('9','calendar')" style="cursor:pointer;">
+          <div class="wi"><svg viewBox="0 0 24 24" fill="none"><rect x="4" y="5" width="16" height="15" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M8 3v4M16 3v4M4 10h16" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></div>
+          <div class="wt"><b>구글 캘린더</b><span>일정·준비물 브리핑</span></div>
+          <div class="wr"><span class="conn-badge" style="font-size:11px;font-weight:700;padding:5px 11px;border-radius:8px;background:#f0ead9;color:#8a6d2f;">연결하기</span></div>
+        </div>
+        <div class="way" data-conn="sheets" data-on="0" onclick="if(this.getAttribute('data-on')!=='1')connectGoogle('9','sheets')" style="cursor:pointer;">
+          <div class="wi"><svg viewBox="0 0 24 24" fill="none"><rect x="4" y="4" width="16" height="16" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M4 9h16M4 14h16M10 4v16" stroke="currentColor" stroke-width="1.7"/></svg></div>
+          <div class="wt"><b>구글 시트</b><span>고객명단·만기 관리</span></div>
+          <div class="wr"><span class="conn-badge" style="font-size:11px;font-weight:700;padding:5px 11px;border-radius:8px;background:#f0ead9;color:#8a6d2f;">연결하기</span></div>
+        </div>
+        <div class="way" data-conn="drive" data-on="0" onclick="if(this.getAttribute('data-on')!=='1')connectGoogle('9','drive')" style="cursor:pointer;">
+          <div class="wi"><svg viewBox="0 0 24 24" fill="none"><path d="M4 14l4-8h8l4 8M4 14l4 6h8l4-6M4 14h16" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></div>
+          <div class="wt"><b>구글 드라이브</b><span>증권·서류 검색</span></div>
+          <div class="wr"><span class="conn-badge" style="font-size:11px;font-weight:700;padding:5px 11px;border-radius:8px;background:#f0ead9;color:#8a6d2f;">연결하기</span></div>
+        </div>
+        <div class="way" data-conn="gmail" data-on="0" onclick="if(this.getAttribute('data-on')!=='1')connectGoogle('9','gmail')" style="cursor:pointer;">
+          <div class="wi"><svg viewBox="0 0 24 24" fill="none"><path d="M4 7h16v10H4z" stroke="currentColor" stroke-width="1.6"/><path d="M4 8l8 5 8-5" stroke="currentColor" stroke-width="1.6"/></svg></div>
+          <div class="wt"><b>Gmail</b><span>메일 정리·초안</span></div>
+          <div class="wr"><span class="conn-badge" style="font-size:11px;font-weight:700;padding:5px 11px;border-radius:8px;background:#f0ead9;color:#8a6d2f;">연결하기</span></div>
+        </div>
+      </div>
+      <div class="nav-btns"><button class="btn btn-line" onclick="go(5)">나중에 할게요</button><button class="btn btn-teal" onclick="go(5)">지니야 시작하기 →</button></div>
     </div>
   </div>
 
@@ -565,9 +598,10 @@
       <div class="col col-r">
         <div class="col-scroll">
           <div class="sect-t">커넥터 <span style="color:var(--teal-d);font-weight:600;font-size:9px;">연결됨</span></div>
-          <div class="tool"><div class="ti-ic"><svg viewBox="0 0 24 24" fill="none"><rect x="4" y="5" width="16" height="15" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M8 3v4M16 3v4M4 10h16" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></div><div class="tt"><b>구글 캘린더</b><span>아침 브리핑</span><div class="stack-tags"><span class="stk">Calendar API</span></div></div><span class="badge on">ON</span></div>
-          <div class="tool"><div class="ti-ic"><svg viewBox="0 0 24 24" fill="none"><rect x="4" y="4" width="16" height="16" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M4 9h16M4 14h16M10 4v16" stroke="currentColor" stroke-width="1.7"/></svg></div><div class="tt"><b>구글 시트</b><span>고객 명단</span><div class="stack-tags"><span class="stk">Sheets API</span></div></div><span class="badge on">ON</span></div>
-          <div class="tool"><div class="ti-ic"><svg viewBox="0 0 24 24" fill="none"><path d="M4 14l4-8h8l4 8M4 14l4 6h8l4-6M4 14h16" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></div><div class="tt"><b>구글 드라이브</b><span>자료 직행</span><div class="stack-tags"><span class="stk">Drive API</span></div></div><span class="badge on">ON</span></div>
+          <div class="tool" data-conn="calendar" data-on="0" onclick="if(this.getAttribute('data-on')!=='1')connectGoogle('5','calendar')" style="cursor:pointer;"><div class="ti-ic"><svg viewBox="0 0 24 24" fill="none"><rect x="4" y="5" width="16" height="15" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M8 3v4M16 3v4M4 10h16" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></div><div class="tt"><b>구글 캘린더</b><span>아침 브리핑</span><div class="stack-tags"><span class="stk">Calendar API</span></div></div><span class="badge conn-badge" style="background:#f0ead9;color:#8a6d2f;">연결하기</span></div>
+          <div class="tool" data-conn="sheets" data-on="0" onclick="if(this.getAttribute('data-on')!=='1')connectGoogle('5','sheets')" style="cursor:pointer;"><div class="ti-ic"><svg viewBox="0 0 24 24" fill="none"><rect x="4" y="4" width="16" height="16" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M4 9h16M4 14h16M10 4v16" stroke="currentColor" stroke-width="1.7"/></svg></div><div class="tt"><b>구글 시트</b><span>고객 명단</span><div class="stack-tags"><span class="stk">Sheets API</span></div></div><span class="badge conn-badge" style="background:#f0ead9;color:#8a6d2f;">연결하기</span></div>
+          <div class="tool" data-conn="drive" data-on="0" onclick="if(this.getAttribute('data-on')!=='1')connectGoogle('5','drive')" style="cursor:pointer;"><div class="ti-ic"><svg viewBox="0 0 24 24" fill="none"><path d="M4 14l4-8h8l4 8M4 14l4 6h8l4-6M4 14h16" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></div><div class="tt"><b>구글 드라이브</b><span>자료 직행</span><div class="stack-tags"><span class="stk">Drive API</span></div></div><span class="badge conn-badge" style="background:#f0ead9;color:#8a6d2f;">연결하기</span></div>
+          <div class="tool" data-conn="gmail" data-on="0" onclick="if(this.getAttribute('data-on')!=='1')connectGoogle('5','gmail')" style="cursor:pointer;"><div class="ti-ic"><svg viewBox="0 0 24 24" fill="none"><path d="M4 7h16v10H4z" stroke="currentColor" stroke-width="1.6"/><path d="M4 8l8 5 8-5" stroke="currentColor" stroke-width="1.6"/></svg></div><div class="tt"><b>Gmail</b><span>메일 정리·초안</span><div class="stack-tags"><span class="stk">Gmail API</span></div></div><span class="badge conn-badge" style="background:#f0ead9;color:#8a6d2f;">연결하기</span></div>
 
           <div class="sect-t mt">스킬 <span style="color:var(--gray);font-weight:600;font-size:9px;">분석·생성</span></div>
           <div class="tool" onclick="scrollToUpload()"><div class="ti-ic"><svg viewBox="0 0 24 24" fill="none"><path d="M4 8V5h3M20 8V5h-3M4 16v3h3M20 16v3h-3M6 12h12" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></div><div class="tt"><b>증권·계약서 OCR</b><span>사진→자동 분석</span><div class="stack-tags"><span class="stk">Claude Vision</span><span class="stk">약관 RAG</span></div></div><span class="badge on">ON</span></div>
@@ -1292,10 +1326,26 @@ function _replayChat(){
   _HIST.forEach(function(h){ if(!h||!h.content)return; pushMsg(h.role==='user'?'me':'gen', h.role==='user'?_escOb(h.content):renderMd(h.content)); });
 }
 // ★구글 연결: 리다이렉트 전에 현재 상태 저장(복귀 후 복원). returnTo 없으면 현재 화면 유지
-function connectGoogle(returnTo){
+function connectGoogle(returnTo, scope){
   _saveState();
   var v=(document.querySelector('.view.on')&&document.querySelector('.view.on').getAttribute('data-v'))||'5';
-  location.href='/auth/google/connect?returnTo='+encodeURIComponent(returnTo||v||'5');
+  var url='/auth/google/connect?returnTo='+encodeURIComponent(returnTo||v||'5');
+  if(scope) url+='&scope='+encodeURIComponent(scope);
+  location.href=url;
+}
+// ★작업A2/B: /me의 granted scopes로 도구 연결상태(온보딩·메인 우측)를 실제 ON/OFF 반영. 가짜 ON 제거.
+function refreshConnState(){
+  fetch('/me').then(function(r){return r.json();}).then(function(d){
+    var sc=(d&&d.scopes)||'';
+    var map={ calendar:/calendar/.test(sc), sheets:/spreadsheets/.test(sc), drive:/\/drive|drive\./.test(sc), gmail:/gmail/.test(sc) };
+    Object.keys(map).forEach(function(k){
+      Array.prototype.slice.call(document.querySelectorAll('[data-conn="'+k+'"]')).forEach(function(el){
+        var on=map[k]; el.setAttribute('data-on', on?'1':'0');
+        var b=el.querySelector('.conn-badge');
+        if(b){ b.textContent=on?'연결됨':'연결하기'; b.style.background=on?'var(--teal-l)':'#f0ead9'; b.style.color=on?'var(--teal-d)':'#8a6d2f'; }
+      });
+    });
+  }).catch(function(){});
 }
 // 로드 즉시: 로그인 안 됐으면 로그인화면부터 고정
 if(!_AUTHED) _goReal(0);
@@ -1310,8 +1360,10 @@ fetch('/me').then(function(r){return r.json();}).then(function(d){
     var params=new URLSearchParams(location.search);
     if(params.get('connected')==='1'){
       var st=_restoreState();
-      _goReal(5); applyJob(); if(st) _replayChat();
-      if(typeof refreshConnState==='function') refreshConnState();
+      var back=parseInt(params.get('screen')||'5',10)||5;
+      _goReal(back);
+      if(back===5){ applyJob(); if(st) _replayChat(); }
+      refreshConnState();
       return;
     }
     if(done){ _goReal(5); applyJob(); } else { _goReal(1); }
