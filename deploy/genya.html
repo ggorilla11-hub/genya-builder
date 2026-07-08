@@ -794,7 +794,7 @@ function _escOb(s){ return String(s==null?'':s).replace(/[&<>]/g,function(c){ret
 function selWay(el){
   el.parentNode.querySelectorAll('.way').forEach(function(w){w.classList.remove('sel');});
   el.classList.add('sel');
-  var way = el.dataset.way; window.ONBOARD.method = way;
+  var way = el.dataset.way; window.ONBOARD.method = way; window.ONBOARD.profile = null; // 방식 바꾸면 이전 값 초기화(누수 방지)
   var u=document.getElementById('upload2'), f=document.getElementById('form2'), c=document.getElementById('chat2');
   if(u) u.style.display = (way==='upload') ? 'block' : 'none';
   if(f) f.style.display = (way==='form')   ? 'block' : 'none';
@@ -810,6 +810,7 @@ function onbUploadFile(inp){
      .then(function(r){return r.json();}).then(function(d){
        var txt=(d&&d.analysis)||''; var msg=(d&&d.message)||(d&&d.error)||'';
        window.ONBOARD.uploadText = txt || '';
+       if(txt) _obStructure(txt); // ★"다음" 누르기 전에 미리 구조화 → 즉시 반영
        if(st){ st.innerHTML = txt
          ? '✅ 분석 완료 — [다음]을 누르면 확인 화면에 반영돼요.<div style="margin-top:6px;color:#556;">'+_escOb(txt.slice(0,200))+'…</div>'
          : (msg? _escOb(msg) : '분석 결과를 못 읽었어요. 다른 파일로 시도해 주세요.'); }
@@ -835,34 +836,43 @@ function onbChatSend(){
   window.ONBOARD.chatText = (window.ONBOARD.chatText? window.ONBOARD.chatText+'\n':'')+v;
   var job=(GENYA_JOBS[CUR_JOB]||{}).label||'';
   fetch('/api/onboard/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:v,history:_obHist,job:job})})
-   .then(function(r){return r.json();}).then(function(d){ var reply=(d&&d.reply)||'네, 알겠어요. 조금 더 말씀해 주세요.'; onbChatPush('gen',reply); _obHist.push({role:'assistant',text:reply}); })
+   .then(function(r){return r.json();}).then(function(d){ var reply=(d&&d.reply)||'네, 알겠어요. 조금 더 말씀해 주세요.'; onbChatPush('gen',reply); _obHist.push({role:'assistant',text:reply}); _obStructure(window.ONBOARD.chatText); }) // ★대화 내용 미리 구조화 → 다음 즉시 반영
    .catch(function(){ onbChatPush('gen','네, 알겠어요. 조금 더 말씀해 주세요.'); });
 }
-// ★다음: 선택 방식의 입력을 확인화면에 반영. 직접입력=LLM 없이 즉시·정확히. 대화·업로드=원문 즉시 반영 후 LLM 보강.
+// ★백그라운드 구조화: 업로드/대화 텍스트를 "다음" 누르기 전에 미리 profile로 만들어 둠 → 다음 순간 즉시 반영(플래시 없음)
+function _obStructure(text){
+  text=String(text||'').trim(); if(!text) return;
+  fetch('/api/onboard/extract',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:text})})
+   .then(function(r){return r.json();}).then(function(d){
+     var pf=d&&d.profile;
+     if(pf && (pf.job||pf.pain||pf.tasks)){
+       window.ONBOARD.profile={ job:pf.job||((GENYA_JOBS[CUR_JOB]||{}).label||''), pain:pf.pain||'', tasks:pf.tasks||'' };
+       var on=document.querySelector('.view.on'); if(on&&on.getAttribute('data-v')==='4') applyJob(); // 이미 확인화면이면 즉시 갱신
+     }
+   }).catch(function(){});
+}
+// ★다음: 직접입력=LLM 없이 즉시·정확. 대화·업로드=미리 구조화된 값 있으면 즉시, 없으면 원문 즉시 반영(디폴트 아님)
 function onbNext(){
   var method=(window.ONBOARD&&window.ONBOARD.method)||'upload';
   var jobLabel=(GENYA_JOBS[CUR_JOB]||{}).label||'';
   if(method==='form'){
-    // ★사용자가 이미 구조화해 넣은 값 → LLM 라운드트립 없이 그대로(정확·즉시, 디폴트 안 뜸)
+    // 사용자가 이미 구조화해 넣은 값 → 그대로(정확·즉시, 디폴트 안 뜸)
     var c=((document.getElementById('obCareer')||{}).value||'').trim();
     var p=((document.getElementById('obConcern')||{}).value||'').trim();
     var t=((document.getElementById('obTasks')||{}).value||'').trim();
     window.ONBOARD.profile = (c||p||t) ? { job:(c||jobLabel), pain:p, tasks:t } : null;
     go(4); applyJob(); return;
   }
-  // 대화·업로드 = 자유텍스트/분석결과 → 우선 원문 즉시 반영(디폴트 안 뜸) 후 LLM으로 구조 보강
   var text = method==='chat' ? (window.ONBOARD.chatText||'') : (window.ONBOARD.uploadText||'');
   text = String(text).trim();
   if(!text){ window.ONBOARD.profile=null; go(4); applyJob(); return; }
-  var quickPain = text.length>70 ? text.slice(0,70)+'…' : text;
-  window.ONBOARD.profile = { job: jobLabel, pain:(method==='upload'?'업로드한 자료를 분석했어요':quickPain), tasks:'' };
+  // 업로드/대화 중 미리 구조화됐으면 그대로 즉시. 아직이면 원문(사용자 값) 즉시 반영 + 지금 구조화
+  if(!window.ONBOARD.profile){
+    var quickPain = text.length>70 ? text.slice(0,70)+'…' : text;
+    window.ONBOARD.profile = { job: jobLabel, pain:(method==='upload'?'업로드한 자료를 분석했어요':quickPain), tasks:'' };
+    _obStructure(text);
+  }
   go(4); applyJob(); // 즉시 반영
-  // LLM 구조화 보강(직업 강제 프리픽스 없음 = 편향 방지). 결과 있으면 덮어씀
-  fetch('/api/onboard/extract',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:text})})
-   .then(function(r){return r.json();}).then(function(d){
-     var pf=d&&d.profile;
-     if(pf && (pf.job||pf.pain||pf.tasks)){ window.ONBOARD.profile={ job:pf.job||jobLabel, pain:pf.pain||quickPain, tasks:pf.tasks||'' }; applyJob(); }
-   }).catch(function(){});
 }
 
 // ===== 직업 적용 (확인+메인) =====
