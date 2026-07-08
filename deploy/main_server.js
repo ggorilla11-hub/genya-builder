@@ -417,35 +417,66 @@ app.post('/api/onboard/chat', async (req, res) => {
 });
 
 // ── 📄 ★문제4: 증권 이미지 OCR → 보장분석(gpt-4o 비전). 구글 불필요. ★서버 저장 0: 메모리에서 OpenAI로만 전달, 디스크 미기록 ──
+// ★만능 처리기: 어떤 파일이 와도(이미지·PDF·엑셀·텍스트) 판별→변환→분석. "이미지로 올려주세요 멈춤" 제거.
+//   서버 저장 0(메모리에서만 처리). 변환 불가 형식만 정직하게 안내. 새 의존성 없음(xlsx·pdf_skill 기존 사용).
 app.post('/api/coverage/analyze', async (req, res) => {
   try {
     const dataUrl = String((req.body && req.body.dataUrl) || '');
     const mime = String((req.body && req.body.mime) || '');
+    const name = String((req.body && req.body.name) || '');
     if (!dataUrl) return res.json({ ok: false, error: '파일이 없어요.' });
-    if (/pdf/i.test(mime) || /^data:application\/pdf/i.test(dataUrl)) return res.json({ ok: true, needsImage: true, message: '지금은 증권 "사진"(JPG·PNG)만 읽어요. PDF는 화면 캡처해서 이미지로 올려주세요.' });
-    if (!/^data:image\//i.test(dataUrl)) return res.json({ ok: true, needsImage: true, message: '이미지 파일(JPG·PNG)로 올려주세요.' });
-    const ocrSys = '너는 보험 증권 분석가 지니야다. 주어진 이미지는 보험 증권이다. 글자를 읽어(OCR) 담보별 가입 여부·가입금액을 정리하고, 보장의 빈틈(부족·누락·중복)과 A/B/C 재설계 방향을 비전문가도 알기 쉽게 제시하라. 이미지에서 확실히 안 보이는 수치는 지어내지 말고 "증권에서 확인 필요"라고 하라. 마지막 줄에 반드시 "※ 제출·발송 전 반드시 검토하세요"를 붙여라.';
-    let analysis = '';
-    try {
-      // ★Claude Sonnet 5 비전: dataUrl(data:image/xxx;base64,...)을 media_type+base64로 분해
-      const m = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
-      const mediaType = (m && m[1]) || (mime || 'image/jpeg');
-      const b64 = m ? m[2] : dataUrl.replace(/^data:[^,]*,/, '');
-      const ar = await _anthropic.messages.create({
-        model: WS_CHAT_MODEL, max_tokens: 900, system: ocrSys,
-        messages: [{ role: 'user', content: [{ type: 'text', text: '이 증권을 보장분석해줘.' }, { type: 'image', source: { type: 'base64', media_type: mediaType, data: b64 } }] }],
-      });
-      analysis = (ar.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
-      if (!analysis) throw new Error('빈 응답');
-    } catch (e) {
-      // ★폴백: OpenAI gpt-4o 비전 — OCR이 끊기지 않게
-      const r = await _openai.chat.completions.create({
-        model: 'gpt-4o', temperature: 0.2, max_tokens: 800,
-        messages: [{ role: 'system', content: ocrSys }, { role: 'user', content: [{ type: 'text', text: '이 증권을 보장분석해줘.' }, { type: 'image_url', image_url: { url: dataUrl } }] }],
-      });
-      analysis = (r.choices[0].message.content || '').trim();
+    const b64 = dataUrl.replace(/^data:[^,]*,/, '');
+    const ext = (name.split('.').pop() || '').toLowerCase();
+    const isImg = /^data:image\//i.test(dataUrl) || /^image\//i.test(mime) || ['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(ext);
+    const isPdf = /pdf/i.test(mime) || /^data:application\/pdf/i.test(dataUrl) || ext === 'pdf';
+    const isXls = /sheet|excel|spreadsheet|csv/i.test(mime) || ['xlsx', 'xls', 'csv'].includes(ext);
+    const isTxt = /^text\//i.test(mime) || ['txt', 'md'].includes(ext);
+    const isDoc = /wordprocessing|msword/i.test(mime) || ['docx', 'doc'].includes(ext);
+    const isHwp = ['hwp', 'hwpx'].includes(ext);
+    const sys = '너는 서류 분석 비서 "지니야"다. 주어진 자료가 무엇인지 먼저 파악하고(보험증권/제안서/고객명단/계약서/보상서류/견적서 등), 그에 맞게 핵심을 비전문가도 알기 쉽게 정리한다. 담보·금액·조건은 표로. 자료에서 확실히 안 보이는 수치는 지어내지 말고 "자료에서 확인 필요"라고 한다. 마지막 줄에 반드시 "※ 제출·발송 전 반드시 검토하세요"를 붙인다.';
+    async function claudeText(userText) {
+      const ar = await _anthropic.messages.create({ model: WS_CHAT_MODEL, max_tokens: 1400, system: sys, messages: [{ role: 'user', content: userText }] });
+      return (ar.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
     }
-    res.json({ ok: true, analysis }); // ★결과만 반환, 이미지·결과 서버 저장 안 함
+    let analysis = '';
+    if (isImg) {
+      const m = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+      const mediaType = (m && m[1]) || (/^image\//i.test(mime) ? mime : 'image/jpeg');
+      const data = m ? m[2] : b64;
+      try {
+        const ar = await _anthropic.messages.create({ model: WS_CHAT_MODEL, max_tokens: 1400, system: sys, messages: [{ role: 'user', content: [{ type: 'text', text: '이 자료를 분석해줘.' }, { type: 'image', source: { type: 'base64', media_type: mediaType, data: data } }] }] });
+        analysis = (ar.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
+        if (!analysis) throw new Error('빈 응답');
+      } catch (e) {
+        const r = await _openai.chat.completions.create({ model: 'gpt-4o', temperature: 0.2, max_tokens: 1200, messages: [{ role: 'system', content: sys }, { role: 'user', content: [{ type: 'text', text: '이 자료를 분석해줘.' }, { type: 'image_url', image_url: { url: dataUrl } }] }] });
+        analysis = (r.choices[0].message.content || '').trim();
+      }
+    } else if (isPdf) {
+      try {
+        // ★PDF = Claude 문서모드(표·담보를 시각적으로 정확히 봄, 서버 변환 라이브러리 불필요)
+        const ar = await _anthropic.messages.create({ model: WS_CHAT_MODEL, max_tokens: 1600, system: sys, messages: [{ role: 'user', content: [{ type: 'text', text: '이 문서를 분석해줘.' }, { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: b64 } }] }] });
+        analysis = (ar.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
+        if (!analysis) throw new Error('빈 응답');
+      } catch (e) {
+        // 폴백: 텍스트 추출 후 분석(표 정밀도는 낮지만 끊기지 않게)
+        try { const { readPdf } = require('./pdf_skill'); const pr = await readPdf(Buffer.from(b64, 'base64')); analysis = await claudeText('아래는 PDF에서 추출한 텍스트야. 무엇인지 파악하고 분석해줘:\n\n' + String(pr.text || '').slice(0, 12000)); } catch (e2) { analysis = ''; }
+      }
+    } else if (isXls) {
+      try {
+        const XLSX = require('xlsx');
+        const wb = XLSX.read(Buffer.from(b64, 'base64'), { type: 'buffer' });
+        let dump = ''; wb.SheetNames.slice(0, 3).forEach((nm) => { dump += '[' + nm + ']\n' + XLSX.utils.sheet_to_csv(wb.Sheets[nm]).slice(0, 6000) + '\n\n'; });
+        analysis = await claudeText('아래는 엑셀/CSV 내용이야(시트별). 무엇인지 파악하고 핵심을 분석·요약해줘:\n\n' + dump);
+      } catch (e) { analysis = ''; }
+    } else if (isTxt) {
+      try { analysis = await claudeText('아래 텍스트 자료를 분석해줘:\n\n' + Buffer.from(b64, 'base64').toString('utf8').slice(0, 12000)); } catch (e) { analysis = ''; }
+    } else if (isDoc || isHwp) {
+      return res.json({ ok: true, needsConvert: true, message: (isHwp ? '한글(hwp)' : '워드(docx)') + '는 곧 지원돼요. 지금은 PDF로 저장하거나 내용을 복사해서 올려주시면 바로 분석할게요.' });
+    } else {
+      return res.json({ ok: true, needsConvert: true, message: '이 형식은 아직 지원 안 돼요(' + (ext || mime || '알 수 없음') + '). 이미지·PDF·엑셀·텍스트로 올려주세요.' });
+    }
+    if (!analysis) return res.json({ ok: false, error: '분석에 실패했어요. 이미지·PDF로 올려주시면 바로 될 거예요.' });
+    res.json({ ok: true, analysis }); // ★결과만 반환, 파일·결과 서버 저장 안 함
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 

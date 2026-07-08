@@ -1098,14 +1098,14 @@ window.sendMsg=function(){
 // 실제 OCR/상품비교 → 파일 업로드 (1장=증권분석 /api/coverage/analyze, 2장+=상품비교 /api/compare). 서버 저장 0.
 window.runOCR=function(){
   var cb=document.getElementById('ocrCb'); if(cb&&!cb.classList.contains('on')){ toast('고객 정보 처리 동의에 체크해주세요'); return; }
-  var fi=document.createElement('input'); fi.type='file'; fi.accept='image/*,.pdf'; fi.multiple=true;
+  var fi=document.createElement('input'); fi.type='file'; fi.accept='image/*,.pdf,.xlsx,.xls,.csv,.txt,.docx,.hwp'; fi.multiple=true;
   fi.onchange=function(){ var fs=Array.prototype.slice.call(fi.files||[]); if(!fs.length)return; closeModal();
     pushMsg('me','[제안서·증권 '+fs.length+'건 업로드]');
     var s=document.getElementById('chatScroll'); var w=document.createElement('div'); w.className='msg gen'; w.innerHTML='<div class="av"></div><div class="bubble" style="color:#98a4b2">지니야가 분석하는 중… (10~20초)</div>'; s.appendChild(w); s.scrollTop=s.scrollHeight;
     var imgs=[],done=0; fs.forEach(function(f){ var rd=new FileReader(); rd.onload=function(){ var b=String(rd.result||'').split(',')[1]||''; if(b)imgs.push({data:b,mime:f.type||'image/jpeg'}); done++; if(done===fs.length)send(); }; rd.onerror=function(){done++; if(done===fs.length)send();}; rd.readAsDataURL(f); });
     function send(){ if(!imgs.length){w.remove();pushMsg('gen','파일을 읽지 못했어요. 다시 시도해 주세요.');return;}
       var multi=imgs.length>=2; var url=multi?'/api/compare':'/api/coverage/analyze';
-      var body=multi?JSON.stringify({images:imgs}):JSON.stringify({dataUrl:'data:'+imgs[0].mime+';base64,'+imgs[0].data,mime:imgs[0].mime,name:'upload'});
+      var body=multi?JSON.stringify({images:imgs}):JSON.stringify({dataUrl:'data:'+imgs[0].mime+';base64,'+imgs[0].data,mime:imgs[0].mime,name:(fs[0]&&fs[0].name)||'upload'});
       fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:body}).then(function(r){return r.json();}).then(function(d){ w.remove();
         var txt=(d&&(d.report||d.analysis||d.message||d.note))||(d&&d.error)||'(분석 결과 없음)';
         pushMsg('gen', renderMd(txt));
