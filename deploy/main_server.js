@@ -262,6 +262,19 @@ app.get('/api/skills/gen', async (req, res) => {
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
+// ── ⚖️ 상품비교 스킬: 제안서 사진(들) → 담보비교 + 적정성(오상열 CFP 공식) + 우선순위(이론상 최적) ──
+//   ★원칙1(Zero data ingress): 사진은 base64로 받아 메모리에서 지니야 눈에 넘기고 버린다(서버 디스크 저장 0).
+//   ★불변: 중립 비교(추천 아님) · 4·5단계 준비 중 · "실제 인수는 심사에서 확정"(휴먼인더루프).
+app.post('/api/compare', async (req, res) => {
+  try {
+    const b = req.body || {};
+    const images = Array.isArray(b.images) ? b.images : [];
+    if (!images.length) return res.json({ ok: true, note: '제안서 사진을 1~4장 올려주세요 (예: 삼성생명 The퍼스트 · 삼성화재 간편365). 연봉·부채를 함께 주시면 적정성까지 계산해요.' });
+    const r = await skills.compare.compareProducts({ images, annualIncome: b.annualIncome, debt: b.debt });
+    res.json({ ok: true, ...r });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
 // ── 🔌 커넥터창고: 목록 + 연결 수 ──
 app.get('/api/connectors', (req, res) => res.json({ ok: true, connectedCount: connectors.connectedCount, list: connectors.list }));
 

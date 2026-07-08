@@ -462,6 +462,7 @@
           <button onclick="quickAction('coverage')" style="white-space:nowrap;padding:6px 14px;border-radius:20px;border:1px solid #ddd;background:#fff;font-size:12px;cursor:pointer;color:#333;flex-shrink:0;">📁 증권분석</button>
           <button onclick="quickAction('yakgwan')" style="white-space:nowrap;padding:6px 14px;border-radius:20px;border:1px solid #ddd;background:#fff;font-size:12px;cursor:pointer;color:#333;flex-shrink:0;">📄 약관검색</button>
           <button onclick="quickAction('compare')" style="white-space:nowrap;padding:6px 14px;border-radius:20px;border:1px solid #ddd;background:#fff;font-size:12px;cursor:pointer;color:#333;flex-shrink:0;">📊 비교표</button>
+          <button onclick="compareRun()" style="white-space:nowrap;padding:6px 14px;border-radius:20px;border:1px solid #ddd;background:#fff;font-size:12px;cursor:pointer;color:#333;flex-shrink:0;">⚖️ 상품비교</button>
           <button onclick="quickAction('message')" style="white-space:nowrap;padding:6px 14px;border-radius:20px;border:1px solid #ddd;background:#fff;font-size:12px;cursor:pointer;color:#333;flex-shrink:0;">💬 문자초안</button>
           <button onclick="quickAction('client')" style="white-space:nowrap;padding:6px 14px;border-radius:20px;border:1px solid #ddd;background:#fff;font-size:12px;cursor:pointer;color:#333;flex-shrink:0;">📇 명단정리</button>
         </div>
@@ -951,6 +952,37 @@
     if(img){ var rd=new FileReader(); rd.onload=function(){ fetch("/api/coverage/analyze",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({dataUrl:rd.result,mime:img.type,name:img.name})}).then(function(r){return r.json();}).then(function(d){ ask(d.analysis||d.message||""); }).catch(function(){ ask(""); }); }; rd.readAsDataURL(img); }
     else ask(""); }
   function quickAction(type){ var prompts={ briefing:"오늘 아침 브리핑 해줘", coverage:"보험증권 분석해줘 (파일을 + 버튼으로 올려주세요)", yakgwan:"약관에서 검색할게 있어", compare:"보험 비교표 만들어줘", message:"고객에게 보낼 문자 초안 써줘", client:"고객 명단 정리해줘" }; var ta=document.getElementById("chatTextarea"); if(ta){ ta.value=prompts[type]||""; } if(type==="coverage"){ var fi=document.getElementById("chatFileInput"); if(fi)fi.click(); return; } sendChatMessage(); }
+  // ── ⚖️ 상품비교 스킬(S-5): 제안서 2장 업로드 → 담보비교+적정성+이론상 최적. 사진은 서버 저장 0(메모리로만) ──
+  var _cmpFiles=[];
+  function compareRun(){
+    var html='<b>⚖️ 상품비교</b><div style="margin:6px 0;color:#5a6674;font-size:13px;line-height:1.6;">제안서 2장(사진 또는 PDF)을 올리면 담보 비교 · 적정성(오상열 CFP 공식) · 이론상 최적안을 알려드려요. 연봉을 함께 주시면 "충분/부족"까지 계산해요.</div>'
+      +'<input type="file" id="cmpFiles" accept="image/*,.pdf" multiple style="display:none" onchange="cmpPick(this)">'
+      +'<button class="btn btn-line" style="width:auto;padding:8px 13px;" onclick="document.getElementById(\'cmpFiles\').click()">📎 제안서 올리기 (2장)</button>'
+      +'<div id="cmpList" style="font-size:12px;color:#33414f;margin:6px 0;"></div>'
+      +'<div style="display:flex;gap:8px;margin:6px 0;flex-wrap:wrap;">'
+      +'<input id="cmpIncome" placeholder="연봉(선택, 예: 5000만원)" style="border:1px solid #e3e3e0;border-radius:8px;padding:7px 10px;font-size:13px;flex:1;min-width:130px;">'
+      +'<input id="cmpDebt" placeholder="부채(선택, 예: 1억)" style="border:1px solid #e3e3e0;border-radius:8px;padding:7px 10px;font-size:13px;flex:1;min-width:110px;"></div>'
+      +'<button class="btn btn-primary" style="padding:10px 16px;" onclick="doCompare()">비교 분석 시작</button>';
+    addChatBubble(html,"ai");
+  }
+  function cmpPick(inp){ _cmpFiles=Array.prototype.slice.call(inp.files||[]); var el=document.getElementById("cmpList"); if(el)el.innerHTML=_cmpFiles.length?("올린 파일: "+_cmpFiles.map(function(f){return "📎 "+esc(f.name);}).join("　")):""; }
+  function doCompare(){
+    if(!_cmpFiles.length){ var el=document.getElementById("cmpList"); if(el)el.innerHTML='<span style="color:#c0392b;">먼저 제안서를 올려주세요.</span>'; return; }
+    var income=(document.getElementById("cmpIncome")||{}).value||"";
+    var debt=(document.getElementById("cmpDebt")||{}).value||"";
+    var files=_cmpFiles.slice();
+    var think=addChatBubble('<span style="color:#98a4b2;">지니야가 제안서를 비교하는 중… (10~20초 걸려요)</span>',"ai");
+    var imgs=[], done=0;
+    files.forEach(function(f){ var rd=new FileReader(); rd.onload=function(){ var b64=String(rd.result||"").split(",")[1]||""; if(b64)imgs.push({data:b64, mime:f.type||"image/jpeg"}); done++; if(done===files.length) send(); }; rd.onerror=function(){ done++; if(done===files.length) send(); }; rd.readAsDataURL(f); });
+    function send(){
+      if(!imgs.length){ if(think)think.innerHTML='<span style="color:#c0392b;">파일을 읽지 못했어요. 다시 시도해 주세요.</span>'; return; }
+      fetch("/api/compare",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({images:imgs, annualIncome:income, debt:debt})}).then(function(r){return r.json();}).then(function(d){
+        var txt=(d&&(d.report||d.note))||(d&&d.error)||"(응답 없음)";
+        if(think){ think.innerHTML='<div class="bubble-body">'+renderMd(txt)+'</div>'; if(d&&d.report)addBubbleActions(think, d.report); }
+        var box=document.getElementById("chatMessages"); if(box)box.scrollTop=box.scrollHeight;
+      }).catch(function(){ if(think)think.innerHTML='<span style="color:#c0392b;">오류(잠시 후 다시 시도)</span>'; });
+    }
+  }
   function switchTab(el, name){ document.querySelectorAll(".tabbar .tb").forEach(function(t){t.classList.remove("on");}); if(el)el.classList.add("on");
     document.querySelectorAll('.screen[data-s="10"] .wsview').forEach(function(v){ var vn=v.getAttribute("data-view"); v.style.display=(vn===name)?(name==="home"?"flex":"block"):"none"; });
     if(name==="todo"){ var o=document.getElementById("wsTodoOut"); if(o){ o.innerHTML="할 일·승인 불러오는 중…"; fetch("/api/memory/recent").then(function(r){return r.json();}).then(function(d){ if(d.needsConnect){o.innerHTML='<b>✅ 할 일·승인</b><br>내 기억을 보려면 <a href="#" onclick="connectGoogle();return false;" style="color:#0d7a52;font-weight:700;">구글 데이터 연결 →</a>';return;} var list=d.list||[]; o.innerHTML='<b>✅ 할 일·승인 (지니야가 기억한 결정·요청)</b><br>'+(list.length?list.map(function(m){return "· "+esc((m.type||"")+" "+(m.subject||"")+" "+(m.text||m.content||""));}).join("<br>"):"아직 기억한 항목이 없어요."); }).catch(function(){o.innerHTML="불러오기 오류";}); } } }

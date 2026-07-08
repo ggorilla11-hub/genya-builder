@@ -12,15 +12,17 @@ const pdf = require('./pdf_skill');     // { readPdf, makePdf }
 const excel = require('./excel_skill'); // { readXlsx, makeSheet }
 const ppt = require('./ppt_skill');     // { makeDeck }
 const doc = require('./doc_skill');     // { makeDoc }
+const compare = require('./product_compare_skill'); // { compareProducts } ★S-5 상품비교(제안서 담보비교+적정성+우선순위)
 
 const list = [
   { id: 'pdf', ico: '📄', name: 'PDF 스킬', desc: '증권·약관·청구서 읽기 + 생성', fns: Object.keys(pdf) },
   { id: 'excel', ico: '📊', name: '엑셀 스킬', desc: '고객명단·3사 비교표 자동 제작', fns: Object.keys(excel) },
   { id: 'ppt', ico: '📽️', name: 'PPT 스킬', desc: '세미나·제안서 슬라이드', fns: Object.keys(ppt) },
   { id: 'doc', ico: '📝', name: '문서 스킬', desc: '상담 보고서·안내문', fns: Object.keys(doc) },
+  { id: 'compare', ico: '⚖️', name: '상품비교 스킬', desc: '제안서 담보 비교 + 적정성·우선순위(이론상 최적)', fns: Object.keys(compare) },
 ];
 
-module.exports = { pdf, excel, ppt, doc, list };
+module.exports = { pdf, excel, ppt, doc, compare, list };
 
 if (require.main === module) {
   console.log('🛠️ 스킬창고 — 장착된 스킬 ' + list.length + '종:');
