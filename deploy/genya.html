@@ -568,6 +568,7 @@
           <div class="prof-row"><span>철칙</span><b>발송 전 승인</b></div>
           <div class="sect-t mt">내 고민 (클릭하면 해결법)</div>
           <div id="probList"></div>
+          <div class="add-tool" onclick="addAgentAsk()" style="margin-top:8px;"><svg viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>+ 비서 추가하기</div>
         </div>
       </div>
 
@@ -575,7 +576,7 @@
       <div class="col col-c">
         <div class="chat-head">
           <div class="brief"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3v2m0 14v2M3 12h2m14 0h2M5.6 5.6l1.4 1.4m10 10l1.4 1.4m0-12.8l-1.4 1.4m-10 10l-1.4 1.4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><circle cx="12" cy="12" r="3.5" stroke="currentColor" stroke-width="1.7"/></svg><span><b>모닝 브리핑</b> · 위 숫자나 왼쪽 고민을 클릭하면 지니야가 어떻게 푸는지 보여드려요.</span></div>
-          <div class="date">7월 6일 (월)</div>
+          <div class="date" id="chatDate"></div>
         </div>
         <div class="chat-scroll" id="chatScroll">
           <div class="msg gen"><div class="av"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3l7 4v6c0 4-3 6.5-7 8-4-1.5-7-4-7-8V7l7-4z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><circle cx="12" cy="11" r="2.2" fill="currentColor"/></svg></div><div class="bubble"><span class="lead nick-slot">짜앙</span><span class="lead">, 좋은 아침이에요.</span><br>어젯밤 발굴한 3명, 오늘 만기 고객까지 위에 정리해뒀어요. 왼쪽 <b>고민 카드</b>를 누르면 제가 어떤 도구로 어떻게 푸는지 바로 보여드릴게요.</div></div>
@@ -614,7 +615,7 @@
 
           <div class="sect-t mt">마케팅 도구</div>
           <div class="tool"><div class="ti-ic"><svg viewBox="0 0 24 24" fill="none"><path d="M4 7h16v10H4z" stroke="currentColor" stroke-width="1.6"/><path d="M10 9l5 3-5 3z" fill="currentColor"/></svg></div><div class="tt"><b>유튜브 발굴</b><span>24/7 자동</span><div class="stack-tags"><span class="stk">YouTube API</span><span class="stk auto">Cron</span></div></div><span class="badge on">ON</span></div>
-          <div class="add-tool"><svg viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>도구 추가하기</div>
+          <div class="add-tool" onclick="addToolAsk()"><svg viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>도구 추가하기</div>
           <div class="safe"><b><svg viewBox="0 0 24 24" fill="none"><path d="M12 3l7 3v6c0 4-3 6.5-7 8-4-1.5-7-4-7-8V6l7-3z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>데이터 안전</b><p>모든 자료는 본인 구글에만 저장돼요. 지니야 서버엔 저장 0. 발송·연락은 승인 후에만.</p></div>
         </div>
       </div>
@@ -970,10 +971,11 @@ function applyJob(){
     list.innerHTML = j.pains.map((p,i)=>
       '<div class="prob" onclick="openScenario(\''+CUR_JOB+'\','+i+')">'+
         '<div class="pi">'+ic(p.icon)+'</div>'+
-        '<div class="pt"><b>'+p.t+'</b><span>'+p.s+'</span></div>'+
+        '<div class="pt"><b>'+_secName(p)+'</b><span>'+p.t+'</span></div>'+  // ★수정4: ○○비서 크게, 고민(p.t) 부제
         '<span class="ax '+p.axis+'">'+p.axis+'</span>'+
       '</div>').join('');
   }
+  _setToday(); // ★수정2: 상단 날짜를 오늘로
   // 칩
   const chips=document.getElementById('chatChips');
   if(chips) chips.innerHTML = j.chips.map(c=>'<div class="chip">'+c+'</div>').join('');
@@ -1102,15 +1104,30 @@ function closeModal(){ document.getElementById('modalBack').classList.remove('on
 function showModal(html){ document.getElementById('modalBox').innerHTML=html; document.getElementById('modalBack').classList.add('on'); }
 
 // ===== 대화 (엔터 → 말풍선) =====
+// ★수정1: 아바타 이름 첫 글자만("원")→2글자("원장")로(님 제거). 모호함 해소
+function _nav(){ return String(CUR_NICK||'나').replace(/님$/,'').slice(0,2); }
 function pushMsg(who, html){
   const s=document.getElementById('chatScroll');
   const av = who==='me'
-    ? '<div class="av">'+CUR_NICK.charAt(0)+'</div>'
+    ? '<div class="av">'+_nav()+'</div>'
     : '<div class="av"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3l7 4v6c0 4-3 6.5-7 8-4-1.5-7-4-7-8V7l7-4z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><circle cx="12" cy="11" r="2.2" fill="currentColor"/></svg></div>';
   const d=document.createElement('div'); d.className='msg '+who;
   d.innerHTML=av+'<div class="bubble">'+html+'</div>';
   s.appendChild(d); s.scrollTop=s.scrollHeight;
 }
+// ★수정4: 카드 icon→"○○비서" 이름(직업 무관). ★수정2: 오늘 날짜. ★수정5: +비서/+도구 추가 대화
+function _secName(p){
+  var byIcon={ 'radar':'고객발굴비서','moon':'고객발굴비서','users-plus':'고객발굴비서','star':'리뷰관리비서',
+    'file-search':'증권분석비서','scan':'자료분석비서','camera':'자료분석비서',
+    'files':'상품비교추천비서','diff':'상품비교추천비서',
+    'calendar-due':'고객관리비서','bell':'고객관리비서',
+    'book':'약관해석비서','help':'약관해석비서','quote':'약관해석비서',
+    'chart':'시세분석비서','search':'조사비서','file-text':'자료정리비서','pencil':'콘텐츠비서','message':'콘텐츠비서','image':'콘텐츠비서' };
+  return byIcon[(p&&p.icon)] || (((p&&p.axis)||'맞춤')+'비서');
+}
+function _setToday(){ try{ var d=new Date(),wk=['일','월','화','수','목','금','토'],el=document.getElementById('chatDate'); if(el)el.textContent=(d.getMonth()+1)+'월 '+d.getDate()+'일 ('+wk[d.getDay()]+')'; }catch(e){} }
+function addAgentAsk(){ window._ACTIVE_SKILL='add_agent'; pushMsg('gen','어떤 비서를 만들고 싶으세요? 하시는 일에서 <b>반복되는 업무</b>를 말씀해 주시면, 제가 만들 수 있는 건 바로 준비하고 — 어려운 건 본사 오상열 대표님(ggorilla11@gmail.com)께 연결해 드릴게요.'); var i=document.getElementById('chatInput'); if(i)i.focus(); var b=document.getElementById('chatScroll'); if(b)b.scrollIntoView({block:'center'}); }
+function addToolAsk(){ window._ACTIVE_SKILL='add_tool'; pushMsg('gen','어떤 도구를 추가할까요? (예: 카카오 알림톡·노션·캘린더 등) 연결 가능한 건 바로 안내하고 — 아직 안 되는 도구는 본사 오상열 대표님(ggorilla11@gmail.com)께 요청하실 수 있게 알려드릴게요.'); var i=document.getElementById('chatInput'); if(i)i.focus(); var b=document.getElementById('chatScroll'); if(b)b.scrollIntoView({block:'center'}); }
 // ★가짜 sendMsg(toast만) 제거 — 진짜 대화는 아래 window.sendMsg(/api/order·claude-sonnet-5)로 단일화
 
 // ===== 파일 첨부 (+) =====

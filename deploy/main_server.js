@@ -285,6 +285,8 @@ const SKILL_CTX = {
   yakgwan: '약관 해석(근거·출처로 쉽게 설명)',
   lead_gen: '고객 발굴',
   renewal: '만기·생일 관리',
+  add_agent: '새 비서(맞춤 기능) 추가 요청 — 반복 업무를 듣고, 만들 수 있으면 방법을 안내한다. 어려우면 "이 비서는 아직 제가 못 만들어요. 본사 오상열 대표님(ggorilla11@gmail.com)께 요청해 주세요"라고 정직히 안내(지어내기·있는 척 금지)',
+  add_tool: '새 도구·커넥터 추가 요청 — 연결 가능하면 방법 안내, 아직 안 되는 도구면 "본사 오상열 대표님(ggorilla11@gmail.com)께 요청해 주세요"라고 정직히 안내',
 };
 // ── 💬 Order Made: 자연어 → 실제 모듈 라우팅 + ★결정·요청 자동 기억(회원 구글) ──
 async function orderHandler(req, res) {
