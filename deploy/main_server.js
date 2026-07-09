@@ -275,12 +275,39 @@ app.post('/api/compare', async (req, res) => {
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
+// ── 🛡️ 증권분석비서(배선A): 증권 사진/PDF → 유형판별 + 보장분석(필요·준비·부족) + 상품제안 + 코치 완성본 HTML ──
+//   ★원칙1(Zero data ingress): base64로 받아 메모리에서 지니야 눈에 넘기고 버린다(서버 디스크 저장 0).
+//   ★필요자금=오상열 금융집짓기 공식 · 정직(없는 값 지어내기 금지) · "제출 전 검토"(휴먼인더루프).
+app.post('/api/policy', async (req, res) => {
+  try {
+    const b = req.body || {};
+    const images = Array.isArray(b.images) ? b.images : [];
+    if (!images.length) return res.json({ ok: true, note: '분석할 증권을 사진(jpg·png)이나 PDF로 올려주세요. 연소득·직업·부채를 함께 주시면 필요자금까지 정확히 계산해요.' });
+    const r = await skills.policy.analyzePolicy({ images, annualIncome: b.annualIncome, job: b.job, debt: b.debt });
+    res.json({ ok: true, ...r });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// ── 📊 연금분석제안비서(배선B): 변액연금 설계서 2개 → 표지 있는 연금 제안서(2상품비교·수령시뮬·성향추천) ──
+//   ★Zero data ingress: base64 메모리 처리, 서버 저장 0. 연금액=예시, 원금손실/예금자보호 고지 포함(휴먼인더루프).
+app.post('/api/pension', async (req, res) => {
+  try {
+    const b = req.body || {};
+    const images = Array.isArray(b.images) ? b.images : [];
+    if (!images.length) return res.json({ ok: true, note: '변액연금 가입설계서 2개를 사진(jpg·png)이나 PDF로 올려주세요. 최저보증·수익률·연금액이 보이는 페이지면 좋아요.' });
+    const r = await skills.pension.analyzePension({ images, name: b.name });
+    res.json({ ok: true, ...r });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
 // ── 🔌 커넥터창고: 목록 + 연결 수 ──
 app.get('/api/connectors', (req, res) => res.json({ ok: true, connectedCount: connectors.connectedCount, list: connectors.list }));
 
 // ★카드→대화 맥락: 프론트가 보낸 activeSkill 코드 → 사람이 읽는 작업명(시스템 프롬프트 주입용). 카드에서 시작한 작업을 지니야가 기억·이어감.
 const SKILL_CTX = {
   insurance_review: '보험 증권 분석(보장 진단)',
+  policy_analysis: '증권분석비서 — 고객 증권(사진/PDF)을 받아 유형 판별 후 필요·준비·부족 보장분석과 1·2·3위 상품제안을 코치 완성본 리포트로 만든다. 증권을 화면 아래 ＋ 버튼으로 올려달라고 안내한다.',
+  pension_analysis: '연금분석제안비서 — 변액연금 가입설계서 2개를 받아 표지 있는 고객용 연금 제안서(노후공백·단리보증형 vs 투자형 비교·수령 시뮬·성향별 추천)를 만든다. 설계서 2개를 화면 아래 ＋ 버튼으로 올려달라고 안내한다.',
   product_compare: '상품 비교(제안서 담보·보험료·인수 비교)',
   yakgwan: '약관 해석(근거·출처로 쉽게 설명)',
   lead_gen: '고객 발굴',

@@ -581,12 +581,13 @@
         <div class="chat-scroll" id="chatScroll">
           <div class="msg gen"><div class="av"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3l7 4v6c0 4-3 6.5-7 8-4-1.5-7-4-7-8V7l7-4z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><circle cx="12" cy="11" r="2.2" fill="currentColor"/></svg></div><div class="bubble"><span class="lead nick-slot">짜앙</span><span class="lead">, 좋은 아침이에요.</span><br>어젯밤 발굴한 3명, 오늘 만기 고객까지 위에 정리해뒀어요. 왼쪽 <b>고민 카드</b>를 누르면 제가 어떤 도구로 어떻게 푸는지 바로 보여드릴게요.</div></div>
         </div>
-        <div class="chips" id="chatChips"></div>
+        <div class="chips" id="chatChips" style="display:none"></div><!-- ★대표 요청: 대화창 위 파란 추천칩(디폴트 안내) 삭제. 입력·전송·다른 라벨 무접촉 -->
+
         <div class="composer">
           <div class="up-chips" id="upChips"></div>
           <div class="comp-in">
             <button class="comp-btn up" title="파일·사진 첨부" onclick="addFile()"><svg viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
-            <textarea id="chatInput" rows="1" placeholder="지니야에게 지시하거나, 새 고민을 말해보세요…"></textarea>
+            <textarea id="chatInput" rows="1" placeholder="메시지를 입력하세요"></textarea>
             <button class="comp-btn up" title="증권·계약서 OCR 분석" onclick="doOCR()" style="background:var(--teal-l);color:var(--teal-d);"><svg viewBox="0 0 24 24" fill="none"><path d="M4 8V5h3M20 8V5h-3M4 16v3h3M20 16v3h-3M6 12h12" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></button>
             <button class="comp-btn mic" title="음성 입력"><svg viewBox="0 0 24 24" fill="none"><rect x="9" y="3" width="6" height="11" rx="3" stroke="currentColor" stroke-width="1.8"/><path d="M5 11a7 7 0 0014 0M12 18v3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
             <button class="comp-btn send" title="전송" onclick="sendMsg()"><svg viewBox="0 0 24 24" fill="none"><path d="M5 12l14-7-5 14-3-5-6-2z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" fill="none"/></svg></button>
@@ -642,7 +643,7 @@
 // ===== 직업별 데이터 (4개 대표직업 실제 채움 + 나머지 구조) =====
 const GENYA_JOBS = {
   insurance:{ label:"보험설계사", nick:"짜앙", title:"지니야 · 보험설계 전담", sub:"23년차 맞춤",
-    tags:["발굴","증권분석","제안서","만기관리","약관"], job_full:"보험설계사 (GA · 23년차)",
+    tags:["발굴","증권분석","제안서","연금","만기관리","약관"], job_full:"보험설계사 (GA · 23년차)",
     tasks:"24/7 발굴 · 증권분석 · 3사 제안서 종합 · 만기관리",
     chips:["어젯밤 발굴 3명 보여줘","김영수님 만기 문자 초안","이 증권 보장 분석해줘"],
     pains:[
@@ -687,6 +688,14 @@ const GENYA_JOBS = {
          {ic:"shield",st:"무장",sd:"상담 전 '이 논리로' 브리핑"}],
          stack:"Playwright 약관수집 + Pinecone RAG + Claude 쉬운설명",
          moat:"자산가 앞 위축 → 전문성으로 압도"}},
+      {icon:"pension",axis:"업무",t:"연금 제안서 만들기가 오래 걸려요",s:"변액연금 비교·제안이 복잡해요",
+       sc:{title:"변액연금 설계서 2개 → 표지 있는 제안서",steps:[
+         {ic:"files",st:"업로드",sd:"변액연금 가입설계서 2개(PDF·사진)"},
+         {ic:"scan",st:"추출",sd:"최저보증·사업비·수익률·연금액 자동 추출"},
+         {ic:"diff",st:"비교",sd:"단리보증형 vs 투자형 장단점 대조"},
+         {ic:"file-check",st:"생성",sd:"노후공백·수령 시뮬·성향추천까지 고객용 제안서"}],
+         stack:"Claude Vision/문서 + 금융집짓기 연금관점 + 스킬창고(HTML/PDF)",
+         moat:"코치 연금 완성본 포맷 = 못 흉내내는 제안 품질"}},
     ]},
   clinic:{ label:"병의원", nick:"원장님", title:"지니야 · 병의원 전담", sub:"원장님 맞춤",
     tags:["예약관리","리뷰관리","재방문","블로그","상담"], job_full:"병의원 원장",
@@ -772,6 +781,7 @@ const MORE_JOBS = [
 
 // SVG 아이콘 (라인)
 const ICON = {
+  pension:'<path d="M4 19h16M6 15l4-5 3 3 5-7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" fill="none"/><circle cx="18" cy="6" r="1.5" fill="currentColor"/>',
   radar:'<path d="M12 12l7-4M12 12v9M12 12a8 8 0 108 8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" fill="none"/><circle cx="12" cy="12" r="2" fill="currentColor"/>',
   moon:'<path d="M20 14a8 8 0 01-10-10 8 8 0 1010 10z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>',
   filter:'<path d="M4 5h16l-6 8v5l-4 2v-7z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>',
@@ -1020,6 +1030,7 @@ function firstMsgForCard(p){
     'radar':'어젯밤 찾은 잠재고객을 확인할까요? 지금 유튜브·웹에서 찾은 후보를 보여드릴게요. (연락은 승인 후)',
     'moon':'밤사이 모아둔 것을 확인할까요? 정리해서 보여드릴게요.',
     'file-search':'증권·서류 사진을 올려주세요. 아래 ＋ 버튼으로 올리면 3분 안에 보장·내용을 분석해드려요.',
+    'pension':'변액연금 가입설계서 2개를 올려주세요. 아래 ＋ 버튼으로 올리면 표지 있는 고객용 연금 제안서(2상품 비교·수령 시뮬·성향추천)를 만들어드려요.',
     'scan':'자료 사진을 올려주세요. ＋ 버튼으로 올리면 바로 읽어 정리해드려요.',
     'camera':'사진을 올려주세요. ＋ 버튼으로 올리면 지니야가 읽어드려요.',
     'files':'비교할 제안서를 2~4개 올려주세요. 담보·보험료·인수까지 비교해드려요.',
@@ -1042,7 +1053,7 @@ function firstMsgForCard(p){
 }
 // ★카드 종류(icon) → 기능 스킬 코드(서버가 맥락 이어받게)
 function skillForCard(p){
-  var byIcon={ 'file-search':'insurance_review','scan':'insurance_review','camera':'insurance_review',
+  var byIcon={ 'file-search':'policy_analysis','pension':'pension_analysis','scan':'insurance_review','camera':'insurance_review',
     'files':'product_compare','diff':'product_compare',
     'book':'yakgwan','help':'yakgwan','quote':'yakgwan',
     'radar':'lead_gen','moon':'lead_gen','users-plus':'lead_gen','star':'lead_gen',
@@ -1118,7 +1129,7 @@ function pushMsg(who, html){
 // ★수정4: 카드 icon→"○○비서" 이름(직업 무관). ★수정2: 오늘 날짜. ★수정5: +비서/+도구 추가 대화
 function _secName(p){
   var byIcon={ 'radar':'고객발굴비서','moon':'고객발굴비서','users-plus':'고객발굴비서','star':'리뷰관리비서',
-    'file-search':'증권분석비서','scan':'자료분석비서','camera':'자료분석비서',
+    'file-search':'증권분석비서','pension':'연금분석제안비서','scan':'자료분석비서','camera':'자료분석비서',
     'files':'상품비교추천비서','diff':'상품비교추천비서',
     'calendar-due':'고객관리비서','bell':'고객관리비서',
     'book':'약관해석비서','help':'약관해석비서','quote':'약관해석비서',
@@ -1435,7 +1446,32 @@ window.sendMsg=function(){
      pushMsg('gen', renderMd(reply));
    }).catch(function(){ w.remove(); pushMsg('gen','<span style="color:#c0392b">오류(잠시 후 다시)</span>'); });
 };
-// 실제 OCR/상품비교 → 파일 업로드 (1장=증권분석 /api/coverage/analyze, 2장+=상품비교 /api/compare). 서버 저장 0.
+// ★배선A: 증권분석 결과(코치 HTML) 렌더 + PDF(인쇄)/엑셀(CSV) 다운로드 + _HIST 요약
+function _policySummary(d){
+  try{ var dd=d.data||{}; var gap=(dd.보장분석||[]).filter(function(r){return r.판정==='부족';}).map(function(r){return r.항목+'(부족 '+r.부족+')';}).slice(0,4).join(', ');
+    var prop=(dd.상품제안||[]).slice(0,3).map(function(r){return r.순위+' '+r.회사+' '+r.상품;}).join(' / ');
+    return '[증권분석 결과·'+(d.type||'')+'] '+(dd.요약||'')+' | 부족담보: '+(gap||'없음')+' | 제안: '+(prop||'-'); }
+  catch(e){ return '[증권분석 결과] 리포트 생성됨'; }
+}
+function _csvFromRows(rows){
+  return '﻿'+(rows||[]).map(function(r){return r.map(function(c){var t=String(c==null?'':c);return /[",\n]/.test(t)?'"'+t.replace(/"/g,'""')+'"':t;}).join(',');}).join('\r\n');
+}
+function _renderPolicy(d, names, opts){
+  opts=opts||{}; window._LASTPOLICY=d;
+  var s=document.getElementById('chatScroll');
+  var wrap=document.createElement('div'); wrap.className='msg gen';
+  wrap.innerHTML='<div class="av"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3l7 4v6c0 4-3 6.5-7 8-4-1.5-7-4-7-8V7l7-4z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><circle cx="12" cy="11" r="2.2" fill="currentColor"/></svg></div>';
+  var bub=document.createElement('div'); bub.className='bubble';
+  bub.innerHTML='<div style="font-weight:700;margin-bottom:8px">'+(opts.title||('🛡️ 보장분석 리포트 ('+_escOb(d.type||'')+')'))+' <span style="color:#8a93a3;font-weight:400">· '+_escOb(names)+'</span></div>';
+  var frame=document.createElement('iframe'); frame.style.cssText='width:100%;height:520px;border:1px solid #dbe2ea;border-radius:12px;background:#fff'; frame.setAttribute('title','보장분석 리포트'); frame.srcdoc=d.html; bub.appendChild(frame);
+  var btns=document.createElement('div'); btns.style.cssText='display:flex;gap:8px;margin-top:10px;flex-wrap:wrap';
+  var pill='padding:8px 14px;border:1px solid var(--teal,#2a9d8f);background:var(--teal-l,#e8f4f2);color:var(--teal-d,#0f766e);border-radius:999px;font-weight:600;cursor:pointer;font-size:13px';
+  var bp=document.createElement('button'); bp.style.cssText=pill; bp.textContent='📄 PDF 저장'; bp.onclick=function(){ try{frame.contentWindow.focus();frame.contentWindow.print();}catch(e){var wnd=window.open('','_blank');wnd.document.write(d.html);wnd.document.close();wnd.focus();setTimeout(function(){wnd.print();},400);} };
+  var bc=document.createElement('button'); bc.style.cssText=pill; bc.textContent='📊 엑셀(CSV)'; bc.onclick=function(){ var blob=new Blob([_csvFromRows(d.rows)],{type:'text/csv;charset=utf-8'}); var a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=(opts.csv||('보장분석_'+(d.type||'리포트')))+'.csv'; a.click(); setTimeout(function(){URL.revokeObjectURL(a.href);},1500); };
+  btns.appendChild(bp); btns.appendChild(bc); bub.appendChild(btns);
+  wrap.appendChild(bub); s.appendChild(wrap); s.scrollTop=s.scrollHeight;
+}
+// 실제 OCR/상품비교 → 파일 업로드 (증권분석비서=/api/policy · 1장=/api/coverage/analyze · 2장+=/api/compare). 서버 저장 0.
 window.runOCR=function(mode){
   var cb=document.getElementById('ocrCb'); if(cb&&!cb.classList.contains('on')){ toast('고객 정보 처리 동의에 체크해주세요'); return; }
   var fi=document.createElement('input'); fi.type='file';
@@ -1447,6 +1483,20 @@ window.runOCR=function(mode){
     var s=document.getElementById('chatScroll'); var w=document.createElement('div'); w.className='msg gen'; w.innerHTML='<div class="av"></div><div class="bubble" style="color:#98a4b2">지니야가 분석하는 중… (10~20초)</div>'; s.appendChild(w); s.scrollTop=s.scrollHeight;
     var imgs=[],done=0; fs.forEach(function(f){ var rd=new FileReader(); rd.onload=function(){ var b=String(rd.result||'').split(',')[1]||''; if(b)imgs.push({data:b,mime:f.type||'image/jpeg'}); done++; if(done===fs.length)send(); }; rd.onerror=function(){done++; if(done===fs.length)send();}; rd.readAsDataURL(f); });
     function send(){ if(!imgs.length){w.remove();pushMsg('gen','파일을 읽지 못했어요. 다시 시도해 주세요.');return;}
+      // ★배선A/B: 증권분석(policy)·연금분석(pension) 맥락이면 전용 API로 (유형판별·보장분석 / 표지있는 연금 제안서)
+      if(window._ACTIVE_SKILL==='policy_analysis' || window._ACTIVE_SKILL==='pension_analysis'){
+        var _isPen=window._ACTIVE_SKILL==='pension_analysis';
+        var _url=_isPen?'/api/pension':'/api/policy';
+        var _pj=(GENYA_JOBS[CUR_JOB]||{}).label||'';
+        var _payload=_isPen?{images:imgs}:{images:imgs,job:_pj};
+        fetch(_url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(_payload)})
+         .then(function(r){return r.json();}).then(function(d){ w.remove();
+           if(!d||!d.ok||!d.html){ pushMsg('gen', renderMd((d&&(d.report||d.error))|| (_isPen?'연금 제안서 결과가 없어요. 변액연금 설계서 2개를 다시 올려주세요.':'증권 분석 결과가 없어요. 담보가 보이는 페이지로 다시 올려주세요.'))); return; }
+           _renderPolicy(d, names, _isPen?{title:'📊 연금 제안서', csv:'연금제안서'}:null);
+           if(typeof _HIST!=='undefined'){ _HIST.push({role:'user',content:'['+(_isPen?'연금 설계서':'증권')+' 업로드: '+names+']'}); _HIST.push({role:'assistant',content:_isPen?('[연금 제안서 생성] '+((d.data&&d.data.요약)||'')):_policySummary(d)}); }
+         }).catch(function(){ w.remove(); pushMsg('gen','<span style="color:#c0392b">'+(_isPen?'연금 분석':'증권 분석')+' 오류(잠시 후 다시)</span>'); });
+        return;
+      }
       var multi=imgs.length>=2; var url=multi?'/api/compare':'/api/coverage/analyze';
       var body=multi?JSON.stringify({images:imgs}):JSON.stringify({dataUrl:'data:'+imgs[0].mime+';base64,'+imgs[0].data,mime:imgs[0].mime,name:(fs[0]&&fs[0].name)||'upload'});
       fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:body}).then(function(r){return r.json();}).then(function(d){ w.remove();
