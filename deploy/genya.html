@@ -1047,14 +1047,14 @@ function dashOpen(i){
 function dashCopy(i,j){ try{ var c=window._DASH.metrics[i].cards[j]; navigator.clipboard.writeText(c.초안).then(function(){ toast('초안 복사됨 — 카톡에 붙여 승인 후 발송'); },function(){ toast('복사 실패'); }); }catch(e){ toast('복사 실패'); } }
 // ===== A: 관리 대시보드 → 카톡 발송(반자동, 휴먼인루프 승인) =====
 function _kakaoMsgClean(s){ return String(s||'').replace(/\r?\n/g,' ').replace(/"/g,'’').replace(/[`$]/g,'').trim(); }
-function _kakaoCmd(nm,msg){ return 'cd C:\\Users\\user\\Desktop\\kakao_rpa; $env:PYTHONIOENCODING=\'utf-8\'; python -X utf8 kakao_send_core.py --room "'+nm+'" --msg "'+_kakaoMsgClean(msg)+'"'; }
+function _kakaoCmd(nm,msg){ return 'cd C:\\Users\\user\\Desktop\\kakao_rpa; $env:PYTHONIOENCODING=\'utf-8\'; python -X utf8 kakao_send_core.py --to "'+nm+'" --msg "'+_kakaoMsgClean(msg)+'"'; }
 function _sendLogAdd(nm,msg){ try{ var k='genya_sendlog'; var a=JSON.parse(localStorage.getItem(k)||'[]'); a.unshift({who:nm,msg:_kakaoMsgClean(msg),at:new Date().toISOString()}); localStorage.setItem(k, JSON.stringify(a.slice(0,300))); }catch(e){} }
 function dashSend(i,j){ var c=(((window._DASH||{}).metrics||[])[i]||{}).cards; c=c&&c[j]; if(!c){ toast('대상을 찾지 못했어요'); return; }
   var nm=_escOb(c.이름||''); var draft=_escOb(_kakaoMsgClean(c.초안));
   showModal('<div style="max-width:520px"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px"><b style="font-size:16px;color:#0d1b2a">📨 카톡 발송 승인</b><span onclick="closeModal()" style="cursor:pointer;color:#8a93a3;font-size:20px">×</span></div>'
     +'<div style="font-size:13px;color:#0d1b2a;margin-bottom:6px">고객: <b>'+nm+'</b></div>'
     +'<div style="font-size:12px;color:#556;background:#f5f7fa;border-radius:8px;padding:10px;white-space:pre-wrap;margin-bottom:10px">'+draft+'</div>'
-    +'<div style="font-size:11px;color:#c0392b;line-height:1.6;margin-bottom:12px">⚠️ 발송 전 반드시 검토하세요(사람이 최종 확인).<br>· 현재는 카톡에 <b>'+nm+'</b> 대화방을 <b>미리 열어둔 경우</b>에만 발송됩니다.<br>· 카톡에 저장된 이름과 명단 이름이 같아야 방을 찾습니다.</div>'
+    +'<div style="font-size:11px;color:#c0392b;line-height:1.6;margin-bottom:12px">⚠️ 발송 전 반드시 검토하세요(사람이 최종 확인).<br>· 카톡에서 <b>'+nm+'</b>님과의 <b>대화방이 열려 있어야</b> 합니다(상담 중이면 이미 열림).<br>· 닫혀 있으면 명령 실행 때 “카톡에서 방을 열어주세요” 안내가 뜹니다.</div>'
     +'<div style="display:flex;gap:8px"><button onclick="dashSendApprove('+i+','+j+')" style="flex:1;padding:10px;border:none;border-radius:10px;background:#fee500;color:#3c1e1e;font-weight:700;cursor:pointer">✅ 승인 — 발송명령 만들기</button><button onclick="closeModal()" style="padding:10px 16px;border:1px solid #dbe2ea;border-radius:10px;background:#fff;color:#556;cursor:pointer">취소</button></div></div>'); }
 function dashSendApprove(i,j){ var c=(((window._DASH||{}).metrics||[])[i]||{}).cards; c=c&&c[j]; if(!c){ toast('대상을 찾지 못했어요'); return; }
   var nm=c.이름||''; var cmd=_kakaoCmd(nm, c.초안); _sendLogAdd(nm, c.초안); window._LASTCMD=cmd;
