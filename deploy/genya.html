@@ -1006,10 +1006,30 @@ function applyOnboardToConfirm(){
     + '네요. 이 내용을 바탕으로 지니야를 준비했어요. 맞으면 승인해주세요.'; }
 }
 
+// ===== 📡 고객발굴비서: 진단링크 임대(화이트라벨) 모델 — 발굴-1단계 =====
+// ★일반 설계사=진단링크 모델 / 대표(ggorilla11)=기존 유튜브·CRM 시나리오 유지
+function _isRep(){ try{ return String((window._ME&&window._ME.email)||'').toLowerCase()==='ggorilla11@gmail.com'; }catch(e){ return false; } }
+function _discLink(name){ return 'https://ohwant-class.netlify.app/desire?agent='+encodeURIComponent(String(name||'').trim()); }
+function _discKakao(name){ var n=String(name||'').trim()||'담당'; return '💰 내 재무건강 1분 진단 👉 '+_discLink(name)+'\n담당: '+n+' 설계사'; }
+function _discStep(no,t,s){ return '<div style="background:#0d1b2a;color:#fff;border-radius:10px;padding:10px 8px;text-align:center"><div style="width:22px;height:22px;border-radius:999px;background:#d4a017;color:#241a00;font-weight:700;font-size:12px;line-height:22px;margin:0 auto 6px">'+no+'</div><div style="font-size:11.5px;font-weight:700">'+t+'</div><div style="font-size:10px;color:#9db4d6;margin-top:2px">'+s+'</div></div>'; }
+function _discoveryHTML(name){
+  var n=String(name||'').trim(); var L=_discLink(n), K=_discKakao(n);
+  return '<div style="max-width:520px">'
+  +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px"><b style="font-size:16px;color:#0d1b2a">📡 고객발굴비서 · 내 진단 링크</b><span onclick="closeModal()" style="cursor:pointer;color:#8a93a3;font-size:20px">×</span></div>'
+  +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:14px">'+_discStep('1','내 진단링크 받기','이름만 넣으면 완성')+_discStep('2','카톡에 붙여 뿌리기','단톡·오픈채팅·프로필')+_discStep('3','아침마다 명단 받기','신청자가 내 시트에')+'</div>'
+  +'<div style="font-size:12px;color:#556;margin-bottom:6px">설계사 이름 (링크·문구에 표시)</div>'
+  +'<input id="discName" value="'+_escOb(n)+'" oninput="discoveryUpdate()" placeholder="예: 홍길동" style="width:100%;padding:11px 12px;border:1px solid #dbe2ea;border-radius:10px;font-size:14px;margin-bottom:12px;box-sizing:border-box">'
+  +'<div style="background:#f5f7fa;border:1px solid #dbe2ea;border-radius:10px;padding:12px;margin-bottom:8px"><div style="font-size:11px;color:#8a93a3;margin-bottom:4px">내 진단 링크</div><div id="discLink" style="font-size:13px;color:#0f766e;word-break:break-all;font-weight:600">'+_escOb(L)+'</div><button onclick="discoveryCopy(\'link\')" style="margin-top:8px;padding:8px 14px;border:1px solid #2a9d8f;background:#e8f4f2;color:#0f766e;border-radius:999px;font-weight:600;cursor:pointer;font-size:13px">🔗 URL 복사</button></div>'
+  +'<div style="background:#fdf6e3;border:1px solid #ecdca5;border-radius:10px;padding:12px"><div style="font-size:11px;color:#8a6d0f;margin-bottom:4px">카톡에 붙일 문구</div><div id="discKakao" style="font-size:13px;color:#5a4a12;white-space:pre-wrap">'+_escOb(K)+'</div><button onclick="discoveryCopy(\'kakao\')" style="margin-top:8px;padding:8px 14px;border:1px solid #d4a017;background:#fbf1cf;color:#8a6d0f;border-radius:999px;font-weight:600;cursor:pointer;font-size:13px">💬 카톡 문구 복사</button></div>'
+  +'<div style="font-size:11px;color:#8a93a3;margin-top:12px;line-height:1.6">신청자 정보는 <b>설계사 본인 구글시트에만</b> 쌓입니다(오원트 서버 저장 0). 아침마다 지니야가 명단으로 정리해드려요. <span style="color:#c0392b">연락은 직접(자동발송 없음).</span></div></div>';
+}
+function discoveryUpdate(){ var n=((document.getElementById('discName')||{}).value)||''; var a=document.getElementById('discLink'); if(a)a.textContent=_discLink(n); var b=document.getElementById('discKakao'); if(b)b.textContent=_discKakao(n); window._DISC={link:_discLink(n),kakao:_discKakao(n)}; }
+function discoveryCopy(which){ var v=(window._DISC||{})[which]||''; try{ navigator.clipboard.writeText(v).then(function(){ toast(which==='link'?'링크 복사됨':'카톡 문구 복사됨'); },function(){ toast('복사 실패 — 길게 눌러 복사하세요'); }); }catch(e){ toast('복사 실패 — 길게 눌러 복사하세요'); } }
+function discoveryPanel(){ window._ACTIVE_SKILL='client_discovery'; var nm=String(CUR_NICK||'').replace(/님$/,''); showModal(_discoveryHTML(nm)); setTimeout(discoveryUpdate,0); }
 // ===== 2차 시나리오 팝업 (기술 엮기 = 해자) =====
 function openScenario(jobKey, idx){
   const j = GENYA_JOBS[jobKey] || GENYA_JOBS.insurance;
-  const p = j.pains[idx]; const s = p.sc;
+  const p = j.pains[idx]; if(p&&p.icon==='radar'&&!_isRep()){ discoveryPanel(); return; } const s = p.sc;
   const steps = s.steps.map(st=>
     '<div class="sc-step"><div class="sn">'+ic(st.ic)+'</div><div class="sx"><div class="st">'+st.st+'</div><div class="sd">'+st.sd+'</div></div></div>'
   ).join('');
