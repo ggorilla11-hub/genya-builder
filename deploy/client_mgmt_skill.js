@@ -118,22 +118,29 @@ function buildDashboard(input) {
     const name = String(get(row, '이름') || '').trim(); if (!name) return;
     const phone = String(get(row, '전화') || '').trim();
     if (F.생일 != null) { const by = parseYMD(get(row, '생일')); if (by) { const d = daysUntilAnnual(by, today); if (d === 0) cards.birthday.push({ 이름: name, 전화: phone }); } }
-    if (F.만기 != null) { const mt = parseYMD(get(row, '만기')); if (mt) { const dd = mt.y ? daysUntil(mt, today) : daysUntilAnnual(mt, today); if (dd != null && dd >= 0 && dd <= 7) cards.maturity.push({ 이름: name, 전화: phone, dday: dd }); } }
+    if (F.만기 != null) { const mt = parseYMD(get(row, '만기')); if (mt) {
+      const inMonth = mt.y ? (mt.y === today.y && mt.m === today.m) : (mt.m === today.m); // ★이번달(현재 월) 만기 = 1일~말일 다 포함
+      if (inMonth) { const dd = mt.y ? daysUntil(mt, today) : daysUntilAnnual(mt, today); const mstr = `${mt.y || today.y}-${String(mt.m).padStart(2, '0')}-${String(mt.d).padStart(2, '0')}`; cards.maturity.push({ 이름: name, 전화: phone, dday: dd, 만기일: mstr }); } } }
     if (F.체결일 != null) { const c = parseYMD(get(row, '체결일')); if (c && c.y) { const since = daysUntil(c, today) * -1; if (since >= 80 && since <= 100) cards.intro.push({ 이름: name, 전화: phone, since: since }); } }
     if (F.최근상담 != null) { const lc = parseYMD(get(row, '최근상담')); if (lc && lc.y) { const gap = daysUntil(lc, today) * -1; if (gap >= 90) cards.contact.push({ 이름: name, 전화: phone, gap: gap }); } }
   });
   // 승인용 초안(결정적 템플릿 — 지니야는 대상·타이밍·초안만, 발송은 설계사 승인)
   const draftB = (n) => `${n}님, 생일 축하드립니다! 늘 건강하고 좋은 일 가득하시길 바랍니다. 편하실 때 안부 인사도 드릴게요. — 담당 설계사 드림`;
-  const draftM = (n, d) => `${n}님, 가입하신 보험 만기가 ${d === 0 ? '오늘' : 'D-' + d} 다가와 안내드려요. 갱신·보장 점검 도와드릴까요? 편하실 때 알려주세요.`;
+  const draftM = (n, d) => (d != null && d < 0)
+    ? `${n}님, 가입하신 보험 만기일이 ${-d}일 전 지났어요. 갱신·보장 점검 지금도 도와드릴 수 있으니 편하실 때 알려주세요.`
+    : `${n}님, 가입하신 보험 만기가 ${d === 0 ? '오늘' : 'D-' + d} 다가와 안내드려요. 갱신·보장 점검 도와드릴까요? 편하실 때 알려주세요.`;
   const draftI = (n) => `${n}님, 그동안 잘 이용해 주셔서 감사합니다. 혹시 주변에 보험 점검이 필요한 분 계시면 편하게 소개해 주세요 — 정성껏 도와드리겠습니다.`;
   const draftC = (n, g) => `${n}님, 오랜만에 안부 인사드려요(마지막 연락 ${g}일 전). 잘 지내시죠? 보험 관련 궁금한 점 있으면 언제든 편하게 연락 주세요.`;
   const listB = cards.birthday.map((c) => ({ 이름: c.이름, 왜: '오늘 생일', 언제: '오늘', 전화: c.전화, 초안: draftB(c.이름) }));
-  const listM = cards.maturity.sort((a, b) => a.dday - b.dday).map((c) => ({ 이름: c.이름, 왜: '만기 임박', 언제: c.dday === 0 ? '오늘 만기' : 'D-' + c.dday, 전화: c.전화, 초안: draftM(c.이름, c.dday) }));
+  const ddLabelM = (d) => d == null ? '' : (d === 0 ? '오늘 만기' : (d > 0 ? 'D-' + d : (-d) + '일 지남'));
+  const listM = cards.maturity
+    .sort((a, b) => { const ka = a.dday < 0 ? 1 : 0, kb = b.dday < 0 ? 1 : 0; return ka !== kb ? ka - kb : Math.abs(a.dday) - Math.abs(b.dday); }) // 다가올 순 먼저, 지난 건 뒤
+    .map((c) => ({ 이름: c.이름, 왜: '이번달 만기', 언제: ddLabelM(c.dday), 만기일: c.만기일, 전화: c.전화, 초안: draftM(c.이름, c.dday) }));
   const listI = cards.intro.map((c) => ({ 이름: c.이름, 왜: '계약 3개월·안정기(소개 적기)', 언제: c.since + '일차', 전화: c.전화, 초안: draftI(c.이름) }));
   const listC = cards.contact.sort((a, b) => b.gap - a.gap).map((c) => ({ 이름: c.이름, 왜: '장기 미접촉', 언제: c.gap + '일 미접촉', 전화: c.전화, 초안: draftC(c.이름, c.gap) }));
   const metrics = [
     { key: 'newproduct', color: '✨', label: '신상품·제도 대상자', count: 0, locked: true, need: '가입상품·보장', cards: [] },
-    { key: 'maturity', color: '🟡', label: '이번주 만기·갱신', count: listM.length, locked: F.만기 == null, need: '만기·갱신일', cards: listM },
+    { key: 'maturity', color: '🟡', label: '이번달 만기·갱신', count: listM.length, locked: F.만기 == null, need: '만기·갱신일', cards: listM },
     { key: 'birthday', color: '🔵', label: '오늘 생일', count: listB.length, locked: F.생일 == null, need: '생일', cards: listB },
     { key: 'contact', color: '🔴', label: '오늘 연락할 고객', count: listC.length, locked: F.최근상담 == null, need: '최근상담일', cards: listC },
     { key: 'intro', color: '🤝', label: '소개 요청 적기', count: listI.length, locked: F.체결일 == null, need: '체결일', cards: listI },
