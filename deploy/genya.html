@@ -1068,7 +1068,7 @@ function startFromCard(jobKey, idx){
   var plain=String(html).replace(/<br\s*\/?>/gi,' ').replace(/<[^>]+>/g,'').trim();
   pushMsg('gen', html);
   if(typeof _HIST!=='undefined') _HIST.push({role:'assistant', content: plain}); // ★맥락 유지: 카드 첫 메시지를 LLM 대화기록에도
-  window._ACTIVE_SKILL = skillForCard(p);                                          // ★기능 맥락(서버 /api/order가 이어받음)
+  window._ACTIVE_SKILL = skillForCard(p); _persistHist();                          // ★기능 맥락(서버 /api/order가 이어받음)
   var box=document.getElementById('chatScroll'); if(box){ box.scrollTop=box.scrollHeight; box.scrollIntoView({block:'center'}); }
   var inp=document.getElementById('chatInput'); if(inp) inp.focus();
 }
@@ -1424,12 +1424,31 @@ fetch('/me').then(function(r){return r.json();}).then(function(d){
       refreshConnState();
       return;
     }
-    if(done){ _goReal(5); applyJob(); } else { _goReal(1); }
+    if(done){ _goReal(5); applyJob(); _restoreHist(); } else { _goReal(1); }
     if(typeof refreshConnState==='function') refreshConnState();
   } else { _AUTHED=false; _goReal(0); }
 }).catch(function(){ _AUTHED=false; _goReal(0); });
 // 실제 대화 → /api/order (Claude Sonnet 5, 직업 페르소나 + 히스토리)
 var _HIST=[];
+// ★순서3-A 대화지속: _HIST를 localStorage(genya_hist_{userId})에 실시간 저장/복원 + 긴 대화 요약압축(토큰관리) + _ACTIVE_SKILL 저장
+function _histKey(){ try{ return 'genya_hist_'+((window._ME&&window._ME.email)||'anon'); }catch(e){ return 'genya_hist_anon'; } }
+function _persistHist(){ try{ localStorage.setItem(_histKey(), JSON.stringify({ hist:_HIST.slice(-40), skill:(window._ACTIVE_SKILL||''), t:Date.now() })); }catch(e){} } // 용량관리: 최근 40개
+function _restoreHist(){ try{
+    var raw=localStorage.getItem(_histKey()); if(!raw) return false;
+    var st=JSON.parse(raw); if(!st||!Array.isArray(st.hist)||!st.hist.length) return false;
+    _HIST.length=0; st.hist.forEach(function(h){ if(h&&h.content) _HIST.push(h); });
+    if(st.skill) window._ACTIVE_SKILL=st.skill;
+    var box=document.getElementById('chatScroll');
+    if(box){ _HIST.forEach(function(h){ pushMsg(h.role==='user'?'me':'gen', h.role==='user'?_escOb(h.content):renderMd(h.content)); }); box.scrollTop=box.scrollHeight; }
+    return true;
+  }catch(e){ return false; } }
+// 긴 대화(30개 초과): 최근 28개 원문 유지 + 오래된 것은 요약 1개로 압축해 앞에 붙여 전송(맥락 유지·토큰 폭주 방지)
+function _histForSend(){
+  if(_HIST.length<=30) return _HIST.slice(-30);
+  var recent=_HIST.slice(-28); var old=_HIST.slice(0,_HIST.length-28);
+  var digest=old.map(function(m){ return (m&&m.role==='user'?'고객: ':'지니야: ')+String((m&&m.content)||'').replace(/\s+/g,' ').slice(0,120); }).join(' / ').slice(0,1400);
+  return [{role:'user',content:'[이전 대화 요약] '+digest}].concat(recent);
+}
 window.sendMsg=function(){
   var inp=document.getElementById('chatInput'); var v=(inp.value||'').trim(); if(!v)return;
   pushMsg('me', String(v).replace(/[&<>]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c];}));
@@ -1438,11 +1457,11 @@ window.sendMsg=function(){
   w.innerHTML='<div class="av"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3l7 4v6c0 4-3 6.5-7 8-4-1.5-7-4-7-8V7l7-4z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><circle cx="12" cy="11" r="2.2" fill="currentColor"/></svg></div><div class="bubble" style="color:#98a4b2">지니야가 생각하는 중…</div>';
   s.appendChild(w); s.scrollTop=s.scrollHeight;
   var job=(GENYA_JOBS[CUR_JOB]||{}).label||'';
-  fetch('/api/order',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({q:v,message:v,job:job,history:_HIST.slice(-10),activeSkill:(window._ACTIVE_SKILL||'')})})
+  fetch('/api/order',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({q:v,message:v,job:job,history:_histForSend(),activeSkill:(window._ACTIVE_SKILL||'')})})
    .then(function(r){return r.json();}).then(function(d){ w.remove();
      if(d&&d.needsConnect){ pushMsg('gen',(d.text||'구글 데이터 연결이 필요해요')+' <a href="#" onclick="connectGoogle();return false;" style="color:var(--teal-d);font-weight:700">연결하기 →</a>'); return; }
      var reply=(d&&(d.text||d.answer))||(d&&d.error)||'(응답 없음)';
-     _HIST.push({role:'user',content:v}); _HIST.push({role:'assistant',content:reply});
+     _HIST.push({role:'user',content:v}); _HIST.push({role:'assistant',content:reply}); _persistHist();
      pushMsg('gen', renderMd(reply));
    }).catch(function(){ w.remove(); pushMsg('gen','<span style="color:#c0392b">오류(잠시 후 다시)</span>'); });
 };
@@ -1493,7 +1512,7 @@ window.runOCR=function(mode){
          .then(function(r){return r.json();}).then(function(d){ w.remove();
            if(!d||!d.ok||!d.html){ pushMsg('gen', renderMd((d&&(d.report||d.error))|| (_isPen?'연금 제안서 결과가 없어요. 변액연금 설계서 2개를 다시 올려주세요.':'증권 분석 결과가 없어요. 담보가 보이는 페이지로 다시 올려주세요.'))); return; }
            _renderPolicy(d, names, _isPen?{title:'📊 연금 제안서', csv:'연금제안서'}:null);
-           if(typeof _HIST!=='undefined'){ _HIST.push({role:'user',content:'['+(_isPen?'연금 설계서':'증권')+' 업로드: '+names+']'}); _HIST.push({role:'assistant',content:_isPen?('[연금 제안서 생성] '+((d.data&&d.data.요약)||'')):_policySummary(d)}); }
+           if(typeof _HIST!=='undefined'){ _HIST.push({role:'user',content:'['+(_isPen?'연금 설계서':'증권')+' 업로드: '+names+']'}); _HIST.push({role:'assistant',content:_isPen?('[연금 제안서 생성] '+((d.data&&d.data.요약)||'')):_policySummary(d)}); _persistHist(); }
          }).catch(function(){ w.remove(); pushMsg('gen','<span style="color:#c0392b">'+(_isPen?'연금 분석':'증권 분석')+' 오류(잠시 후 다시)</span>'); });
         return;
       }
@@ -1502,8 +1521,8 @@ window.runOCR=function(mode){
       fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:body}).then(function(r){return r.json();}).then(function(d){ w.remove();
         var txt=(d&&(d.report||d.analysis||d.message||d.note))||(d&&d.error)||'(분석 결과 없음)';
         // ★_HIST 기록 + 기능 맥락(후속 질문이 맥락 유지되게)
-        if(typeof _HIST!=='undefined'){ _HIST.push({role:'user', content:'[파일 업로드: '+names+']'}); _HIST.push({role:'assistant', content:String(txt).slice(0,1500)}); }
-        window._ACTIVE_SKILL = multi ? 'product_compare' : 'insurance_review';
+        if(typeof _HIST!=='undefined'){ _HIST.push({role:'user', content:'[파일 업로드: '+names+']'}); _HIST.push({role:'assistant', content:'['+(multi?'상품비교':'증권분석')+' 결과] '+String(txt).replace(/\s+/g,' ').slice(0,700)}); }
+        window._ACTIVE_SKILL = multi ? 'product_compare' : 'insurance_review'; _persistHist();
         window._LASTRESULT = { text: txt };  // ★버그3: 결과 저장 → PDF/엑셀 다운로드용
         pushMsg('gen', renderMd(txt) + _dlBtns());
       }).catch(function(){ w.remove(); pushMsg('gen','<span style="color:#c0392b">분석 오류(잠시 후 다시)</span>'); });
