@@ -1055,7 +1055,7 @@ function firstMsgForCard(p){
     'camera':'사진을 올려주세요. ＋ 버튼으로 올리면 지니야가 읽어드려요.',
     'files':'비교할 제안서를 2~4개 올려주세요. 담보·보험료·인수까지 비교해드려요.',
     'diff':'비교할 자료를 2개 이상 올려주세요. 항목별로 비교해드려요.',
-    'calendar-due':'이번 주 만기·생일·기한을 확인할까요? 놓친 것 없이 정리해드려요.',
+    'calendar-due':'고객 명단 엑셀(xlsx·csv)을 아래 ＋ 버튼으로 올려주세요. 관리에 필요한 항목이 다 있는지 진단하고, 부족한 것을 알려드려요.',
     'bell':'오늘 챙길 알림을 확인할까요? 만기·일정·기한을 먼저 알려드려요.',
     'book':'약관에서 궁금한 걸 물어보세요. 근거 문장과 출처 페이지로 쉽게 설명해드려요.',
     'help':'고객이 물어본 걸 여기 적어주세요. 약관 근거로 쉽게 답을 만들어드려요.',
@@ -1077,7 +1077,7 @@ function skillForCard(p){
     'files':'product_compare','diff':'product_compare',
     'book':'yakgwan','help':'yakgwan','quote':'yakgwan',
     'radar':'lead_gen','moon':'lead_gen','users-plus':'lead_gen','star':'lead_gen',
-    'calendar-due':'renewal','bell':'renewal' };
+    'calendar-due':'client_management','bell':'renewal' };
   return byIcon[(p&&p.icon)] || '';
 }
 // ★작업2: 카드 → 대화 연결 + 맥락. 팝업 닫고 첫 메시지를 화면(pushMsg)+대화기록(_HIST) 양쪽에 + 기능맥락(_ACTIVE_SKILL) 세팅
@@ -1522,6 +1522,16 @@ window.runOCR=function(mode){
     var s=document.getElementById('chatScroll'); var w=document.createElement('div'); w.className='msg gen'; w.innerHTML='<div class="av"></div><div class="bubble" style="color:#98a4b2">지니야가 분석하는 중… (10~20초)</div>'; s.appendChild(w); s.scrollTop=s.scrollHeight;
     var imgs=[],done=0; fs.forEach(function(f){ var rd=new FileReader(); rd.onload=function(){ var b=String(rd.result||'').split(',')[1]||''; if(b)imgs.push({data:b,mime:f.type||'image/jpeg'}); done++; if(done===fs.length)send(); }; rd.onerror=function(){done++; if(done===fs.length)send();}; rd.readAsDataURL(f); });
     function send(){ if(!imgs.length){w.remove();pushMsg('gen','파일을 읽지 못했어요. 다시 시도해 주세요.');return;}
+      // ★관리-1: 고객관리비서 맥락이면 엑셀 헤더 진단(부족 관리항목 리딩)
+      if(window._ACTIVE_SKILL==='client_management'){
+        fetch('/api/manage/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({file:imgs[0].data, mime:imgs[0].mime, name:(fs[0]&&fs[0].name)||'명단'})})
+         .then(function(r){return r.json();}).then(function(d){ w.remove();
+           var txt=(d&&(d.리딩||d.note||d.report))||(d&&d.error)||'명단을 읽지 못했어요.';
+           if(typeof _HIST!=='undefined'){ _HIST.push({role:'user',content:'[고객 명단 업로드: '+names+']'}); _HIST.push({role:'assistant',content:'[관리 리딩] '+String(txt).replace(/\s+/g,' ').slice(0,500)}); if(typeof _persistHist==='function')_persistHist(); }
+           pushMsg('gen', renderMd(txt));
+         }).catch(function(){ w.remove(); pushMsg('gen','<span style="color:#c0392b">명단 분석 오류(잠시 후 다시)</span>'); });
+        return;
+      }
       // ★배선A/B: 증권분석(policy)·연금분석(pension) 맥락이면 전용 API로 (유형판별·보장분석 / 표지있는 연금 제안서)
       if(window._ACTIVE_SKILL==='policy_analysis' || window._ACTIVE_SKILL==='pension_analysis'){
         var _isPen=window._ACTIVE_SKILL==='pension_analysis';

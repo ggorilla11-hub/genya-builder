@@ -20,7 +20,8 @@ const { PDFParse } = require('pdf-parse');
 const { askYakgwan } = require('./yakgwan_module');           // 📄 약관창고
 const skills = require('./skills_index');                 // 🛠️ 스킬창고
 const connectors = require('./connectors_index');     // 🔌 커넥터창고
-const memory = require('./memory_module');                   // 🧠 기억 엔진
+const memory = require('./memory_module');                   // 🧠 기억 엔진(회원 시트)
+const genyaMem = require('./genya_mem_module');               // 🧠 MEM 하이브리드C(Firestore genya_mem · 설계요약 저장/검색 · 주민번호·전화 마스킹 · userId 격리)
 const _openai = new (require('openai'))({ apiKey: process.env.OPENAI_API_KEY });
 // ★워크스페이스 대화 = Anthropic Claude Sonnet 5(대표 지시). 온보딩·OCR·약관·문자초안은 OpenAI 유지.
 //   대표가 준 'claude-sonnet-4-6-20250514'는 존재하지 않는 ID → 최신 Sonnet인 claude-sonnet-5로. 날짜접미사 금지.
@@ -284,6 +285,7 @@ app.post('/api/policy', async (req, res) => {
     const images = Array.isArray(b.images) ? b.images : [];
     if (!images.length) return res.json({ ok: true, note: '분석할 증권을 사진(jpg·png)이나 PDF로 올려주세요. 연소득·직업·부채를 함께 주시면 필요자금까지 정확히 계산해요.' });
     const r = await skills.policy.analyzePolicy({ images, annualIncome: b.annualIncome, job: b.job, debt: b.debt });
+    _memSaveDesign(req, r, '증권분석'); // ★MEM-1: 설계요약 Firestore 저장(마스킹·격리·fire-and-forget)
     res.json({ ok: true, ...r });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
@@ -296,7 +298,43 @@ app.post('/api/pension', async (req, res) => {
     const images = Array.isArray(b.images) ? b.images : [];
     if (!images.length) return res.json({ ok: true, note: '변액연금 가입설계서 2개를 사진(jpg·png)이나 PDF로 올려주세요. 최저보증·수익률·연금액이 보이는 페이지면 좋아요.' });
     const r = await skills.pension.analyzePension({ images, name: b.name });
+    _memSaveDesign(req, r, '연금'); // ★MEM-1: 설계요약 Firestore 저장(마스킹·격리·fire-and-forget)
     res.json({ ok: true, ...r });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// ── 📇 고객관리비서(관리-1): 엑셀(xlsx/csv) 헤더 → 부족 관리항목 리딩 (결정적·서버 저장0·헤더만 진단) ──
+app.post('/api/manage/analyze', async (req, res) => {
+  try {
+    const b = req.body || {};
+    const file = b.file || (Array.isArray(b.images) && b.images[0] && b.images[0].data) || '';
+    if (!file && !(Array.isArray(b.headers) && b.headers.length)) return res.json({ ok: true, note: '고객 명단 엑셀(xlsx/csv)을 올려주세요. 첫 줄에 항목명(이름·전화·만기일 등)이 있게 해주세요.' });
+    const r = skills.manage.analyzeManagement({ file: file, headers: b.headers, rowCount: b.rowCount });
+    res.json({ ok: true, ...r });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// ── 🧠 MEM 하이브리드C: 설계요약 Firestore(genya_mem) 저장/검색 (주민번호·전화 마스킹 · userId 격리 · SA=moneya-72fe6) ──
+//   ★제로 인그레스: 검색용 요약만 저장(원본·개인정보 서버 X). 저장 실패는 대화·분석을 막지 않는다(fire-and-forget).
+function _memSaveDesign(req, r, label) {
+  try {
+    const uid = (sessionOf(req) || {}).email; if (!uid || !r || !r.ok || !r.data) return;
+    const d = r.data; let 고객명 = '', summary = '', 담보금액 = '';
+    if (label === '증권분석') { 고객명 = (d.고객 && d.고객.이름) || ''; const gap = (d.보장분석 || []).filter((x) => x.판정 === '부족').map((x) => x.항목 + ' ' + x.부족).slice(0, 4).join(', '); summary = (d.요약 || '') + (gap ? (' | 부족: ' + gap) : ''); 담보금액 = gap; }
+    else if (label === '연금') { 고객명 = (d.표지 && d.표지.고객명) || ''; summary = d.요약 || ''; 담보금액 = (d.상품 || []).map((p) => p.상품명 + ' ' + (p.예상연금액 || '')).slice(0, 2).join(' / '); }
+    genyaMem.saveMem(googleAuth([genyaMem.SCOPE]), { userId: uid, 고객명: 고객명, skill: label, summary: summary, 담보금액: 담보금액 }).catch(function () {});
+  } catch (e) {}
+}
+app.post('/api/mem/save', async (req, res) => {
+  try { const uid = (sessionOf(req) || {}).email; if (!uid) return res.status(401).json({ ok: false, error: '로그인 필요' });
+    const b = req.body || {}; const doc = await genyaMem.saveMem(googleAuth([genyaMem.SCOPE]), { userId: uid, 고객명: b.고객명, skill: b.skill, summary: b.summary, 담보금액: b.담보금액, date: b.date });
+    res.json({ ok: true, saved: doc });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+app.get('/api/mem/search', async (req, res) => {
+  try { const uid = (sessionOf(req) || {}).email; if (!uid) return res.status(401).json({ ok: false, error: '로그인 필요' });
+    const rows = await genyaMem.searchMem(googleAuth([genyaMem.SCOPE]), { userId: uid, 고객명: req.query.name || req.query.q || '', date: req.query.date || '' });
+    res.json({ ok: true, list: rows });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
@@ -311,7 +349,9 @@ const SKILL_CTX = {
   product_compare: '상품 비교(제안서 담보·보험료·인수 비교)',
   yakgwan: '약관 해석(근거·출처로 쉽게 설명)',
   lead_gen: '고객 발굴',
+  client_discovery: '고객발굴비서(진단링크 임대) — 설계사에게 화이트라벨 진단링크(ohwant-class desire?agent=이름)와 카톡 문구를 만들어 준다. 링크를 뿌리면 신청자가 설계사 본인 구글시트에 쌓이고(오원트 서버 저장 0), 아침마다 지니야가 명단으로 정리한다. 링크·문구 복사와 뿌리는 방법을 안내한다. 연락은 설계사가 직접(자동발송 없음).',
   renewal: '만기·생일 관리',
+  client_management: '고객관리비서 — 설계사 엑셀 명단(xlsx/csv)을 받아 관리에 필요한 표준 항목이 있는지 진단하고, 부족 항목("만기일·체결일·생일·가입상품·월납료·가족" 등)을 채우라고 리딩한다. 채워지면 오늘 이벤트·소개까지 관리한다. 엑셀을 화면 아래 ＋ 버튼으로 올려달라고 안내한다.',
   add_agent: '새 비서(맞춤 기능) 추가 요청 — 반복 업무를 듣고, 만들 수 있으면 방법을 안내한다. 어려우면 "이 비서는 아직 제가 못 만들어요. 본사 오상열 대표님(ggorilla11@gmail.com)께 요청해 주세요"라고 정직히 안내(지어내기·있는 척 금지)',
   add_tool: '새 도구·커넥터 추가 요청 — 연결 가능하면 방법 안내, 아직 안 되는 도구면 "본사 오상열 대표님(ggorilla11@gmail.com)께 요청해 주세요"라고 정직히 안내',
 };
@@ -322,6 +362,25 @@ async function orderHandler(req, res) {
     const ma = memberAuth(req);
     const canData = !!(ma && hasDataScope(req)); // ★데이터 스코프까지 있는 회원만 캘린더·시트·드라이브 호출
     if (!q) return res.json({ ok: true, kind: 'idle', text: '무엇이든 말씀하세요 (예: "무보험차상해가 뭐야?" / "이번 주 만기 고객 정리해줘")' });
+    // ★MEM-2 과거 설계 재현: "예전/지난 ○○ 설계 불러줘" → genya_mem(userId 격리) 검색 → LLM이 그때처럼 재현/수정. 실패 시 아래 일반 흐름으로 폴백(정직).
+    if (/(예전|저번|지난|과거|이전|그때|작년|저번주|지난주).{0,8}(설계|보장|연금|제안|분석)|(불러|가져|찾아).{0,6}(설계|제안서|연금|보장분석)/.test(q)) {
+      const uid = (sessionOf(req) || {}).email || '';
+      if (uid) {
+        try {
+          const nameM = q.match(/([가-힣]{2,4})님/);
+          const rows = await genyaMem.searchMem(googleAuth([genyaMem.SCOPE]), { userId: uid, 고객명: nameM ? nameM[1] : '', limit: 5 });
+          if (rows.length) {
+            const ctx = rows.map((r2) => `· [${r2.date}] ${r2.고객명 || ''} ${r2.skill || ''}: ${r2.summary || ''}${r2.담보금액 ? (' | ' + r2.담보금액) : ''}`).join('\n');
+            const job = String((req.body && req.body.job) || req.query.job || '');
+            const sys = genyaPersona(job) + `\n[과거 설계 기억] 아래는 이 회원이 예전에 만든 설계 요약이다. 사용자가 "그때처럼/불러/수정"을 요청하면 이 요약을 근거로 그때 내용을 되살려 답하고, 요청한 수정만 반영한다. 없는 값은 지어내지 마라.\n${ctx}`;
+            const hist = Array.isArray(req.body && req.body.history) ? req.body.history.slice(-8) : [];
+            const text = await askClaude(sys, hist.concat([{ role: 'user', content: q }]), 1600);
+            return res.json({ ok: true, kind: '🧠 과거 설계 기억', text, engine: 'claude-sonnet-5', found: rows.length });
+          }
+          return res.json({ ok: true, kind: '🧠 과거 설계 기억', text: '저장된 과거 설계를 찾지 못했어요. 고객 별칭이나 날짜를 알려주시면 다시 찾아볼게요. (설계는 만들 때 자동 저장됩니다)' });
+        } catch (e) { /* Firestore 접근 실패 → 아래 일반 대화로 폴백 */ }
+      }
+    }
     // ★데이터가 필요한데 권한이 없으면 대화를 막지 말고 "연결하기" 안내(일반 대화는 아래 LLM으로 무조건 응답)
     const needConnect = { kind: '🔗 구글 데이터 연결 필요', text: '이 질문은 캘린더·시트·드라이브를 읽어야 답할 수 있어요. 아래 버튼으로 한 번만 연결하면 바로 알려드릴게요. (일반 질문은 연결 없이도 대답해요)', needsConnect: true, connectUrl: '/auth/google/connect' };
     const activeSkill = String((req.body && req.body.activeSkill) || '');
