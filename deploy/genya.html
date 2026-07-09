@@ -544,9 +544,9 @@
     <div class="topbar">
       <div class="brand"><div class="mk"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3l7 4v6c0 4-3 6.5-7 8-4-1.5-7-4-7-8V7l7-4z" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/><circle cx="12" cy="11" r="2.4" fill="#fff"/></svg></div><div class="nm"><b>지니야</b><span><span class="nick-slot">짜앙</span>님의 AI 비서실장</span></div></div>
       <div class="top-dash">
-        <div class="kpi f" onclick="openPop('find')"><div class="ic"><svg viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8"/><path d="M20 20l-3.5-3.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></div><div class="tx"><b>3명</b><span>어젯밤 발굴</span></div></div>
-        <div class="kpi s" onclick="openPop('sched')"><div class="ic"><svg viewBox="0 0 24 24" fill="none"><rect x="4" y="5" width="16" height="16" rx="2.5" stroke="currentColor" stroke-width="1.8"/><path d="M8 3v4M16 3v4M4 10h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></div><div class="tx"><b>2건</b><span>오늘 약속</span></div></div>
-        <div class="kpi u" onclick="openPop('due')"><div class="ic"><svg viewBox="0 0 24 24" fill="none"><path d="M12 8v5l3 2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="12" r="8.5" stroke="currentColor" stroke-width="1.8"/></svg></div><div class="tx"><b>4건</b><span>이번주 만기</span></div></div>
+        <div class="kpi f" onclick="openPop('find')"><div class="ic"><svg viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8"/><path d="M20 20l-3.5-3.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></div><div class="tx"><b id="kpiFind">0명</b><span>어젯밤 발굴</span></div></div>
+        <div class="kpi s" onclick="openPop('sched')"><div class="ic"><svg viewBox="0 0 24 24" fill="none"><rect x="4" y="5" width="16" height="16" rx="2.5" stroke="currentColor" stroke-width="1.8"/><path d="M8 3v4M16 3v4M4 10h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></div><div class="tx"><b id="kpiSched">0건</b><span>오늘 약속</span></div></div>
+        <div class="kpi u" onclick="openPop('due')"><div class="ic"><svg viewBox="0 0 24 24" fill="none"><path d="M12 8v5l3 2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="12" r="8.5" stroke="currentColor" stroke-width="1.8"/></svg></div><div class="tx"><b id="kpiDue">0건</b><span>이번달 만기</span></div></div>
       </div>
       <div class="top-act">
         <div class="tbtn" title="다운로드" onclick="openDownload()"><svg viewBox="0 0 24 24" fill="none"><path d="M12 4v10m0 0l-4-4m4 4l4-4M5 19h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
@@ -1032,7 +1032,7 @@ function managementDashboard(){
   var t=new Date(); var ts=t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0');
   showModal('<div style="text-align:center;padding:34px;color:#98a4b2">오늘 이벤트를 계산하는 중…</div>');
   fetch('/api/manage/dashboard',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({file:mf.file, today:ts})})
-   .then(function(r){return r.json();}).then(function(d){ if(!d||!d.ok){ showModal('<div style="padding:20px">대시보드를 만들지 못했어요. 다시 시도해주세요.</div>'); return; } window._DASH=d; showModal(_dashHTML(d)); })
+   .then(function(r){return r.json();}).then(function(d){ if(!d||!d.ok){ showModal('<div style="padding:20px">대시보드를 만들지 못했어요. 다시 시도해주세요.</div>'); return; } window._DASH=d; refreshTopKPIs(d); showModal(_dashHTML(d)); })
    .catch(function(){ showModal('<div style="padding:20px;color:#c0392b">오류 — 잠시 후 다시 시도해주세요.</div>'); });
 }
 function _dashHTML(d){
@@ -1133,23 +1133,21 @@ function startFromCard(jobKey, idx){
 
 // ===== KPI 팝업 =====
 const popData = {
-  find:{ cls:'f', icon:ICON.search, title:'어젯밤 발굴 3명', sub:'유튜브 댓글에서 발견 · 답글 초안 준비됨',
+  find:{ cls:'f', icon:ICON.search, title:'어젯밤 발굴 · 예시', sub:'예시 미리보기 — 발굴 연결 시 실데이터로 채워져요',
     items:[ {b:'김민수',s:'실손 인상 고민 · "보험료가 너무 올라서…"',tag:'Hot',hot:true},
             {b:'이수진',s:'은퇴 설계 관심 · "노후 준비 막막해요"',tag:'Warm'},
             {b:'정하늘',s:'자녀 보험 문의 · "아이 실비 어디가 좋나요"',tag:'Warm'} ],
     foot:'답글 초안 보기 (승인 후 직접 연락)', src:'유튜브 API · 밤사이 Cron 수집 → LLM 분류' },
-  sched:{ cls:'s', icon:ICON['calendar-due'], title:'오늘 약속 2건', sub:'준비 자료 함께 준비됨',
+  sched:{ cls:'s', icon:ICON['calendar-due'], title:'오늘 약속 · 예시', sub:'예시 미리보기 — 캘린더 연결 시 실데이터로 채워져요',
     items:[ {b:'14:00 · 강민호님 미팅',s:'강남 스타벅스 · 종신보험 상담',tag:'미팅'},
             {b:'16:00 · 윤서연님 전화',s:'실손 갱신 안내 · 자료 준비됨',tag:'전화'} ],
     foot:'준비 자료 열기', src:'구글 캘린더 · 오늘 일정' },
-  due:{ cls:'u', icon:'<path d="M12 8v5l3 2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="12" r="8.5" stroke="currentColor" stroke-width="1.8"/>', title:'이번주 만기 4건', sub:'안내 문자 초안 준비됨',
-    items:[ {b:'김영수 · 실손',s:'오늘 만기 · 가장 급함',tag:'오늘',hot:true},
-            {b:'이정미 · 종신',s:'2일 후 만기',tag:'D-2'},
-            {b:'박철수 · 암보험',s:'3일 후 만기',tag:'D-3'},
-            {b:'최나라 · 자동차',s:'5일 후 만기 · 무사고 할인 시점',tag:'D-5'} ],
-    foot:'만기 안내 문자 초안 보기', src:'구글 시트 · 만기일 열 자동 감지' }
+  due:{ cls:'u', icon:'<path d="M12 8v5l3 2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="12" r="8.5" stroke="currentColor" stroke-width="1.8"/>', title:'이번달 만기·갱신', sub:'고객 명단을 올리면 실제 만기 고객이 떠요',
+    items:[ {b:'고객 명단(엑셀·CSV)을 올려주세요',s:'만기일 열을 자동으로 읽어 이번달 만기 고객을 실제로 계산해요',tag:'안내'} ],
+    foot:'＋ 버튼으로 명단 올리기', src:'구글 시트 · 만기일 열 자동 감지' }
 };
 function openPop(key){
+  if(key==='due' && window._MGMTFILE && window._MGMTFILE.file){ closePop(); managementDashboard(); return; }  // ★만기: 명단 있으면 실제 대시보드(실데이터)
   const d = popData[key];
   const items = d.items.map(it=>'<div class="pop-item"><span class="di pi-'+d.cls+'"></span><div class="it"><b>'+it.b+'</b><span>'+it.s+'</span></div><span class="tag'+(it.hot?' hot':'')+'">'+it.tag+'</span></div>').join('');
   document.getElementById('popBox').innerHTML =
@@ -1461,7 +1459,22 @@ function refreshConnState(){
         if(b){ b.textContent=on?'연결됨':'연결하기'; b.style.background=on?'var(--teal-l)':'#f0ead9'; b.style.color=on?'var(--teal-d)':'#8a6d2f'; }
       });
     });
+    if(typeof refreshTopKPIs==='function') refreshTopKPIs();  // ★구글시트 연결·초기로드 시 상단 KPI 실데이터 갱신
   }).catch(function(){});
+}
+// ★상단 KPI 실데이터 계산 (하드코딩 제거·가짜 숫자 금지). 만기=업로드 명단 실값, 약속·발굴=소스 없으면 0 정직표시.
+function _setKpi(id,txt){ var el=document.getElementById(id); if(el) el.textContent=txt; }
+function refreshTopKPIs(dash){
+  function applyDue(d){ var due=0; try{ var m=((d&&d.metrics)||[]).filter(function(x){return x.key==='maturity';})[0]; if(m&&!m.locked) due=m.count||0; }catch(e){} _setKpi('kpiDue', due+'건'); }
+  if(dash){ window._DASH=dash; applyDue(dash); }
+  else if(window._MGMTFILE&&window._MGMTFILE.file){
+    var t=new Date(); var ts=t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0');
+    fetch('/api/manage/dashboard',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({file:window._MGMTFILE.file,today:ts})})
+      .then(function(r){return r.json();}).then(function(d){ if(d&&d.ok){ window._DASH=d; applyDue(d); } else { _setKpi('kpiDue','0건'); } }).catch(function(){ _setKpi('kpiDue','0건'); });
+  } else { _setKpi('kpiDue','0건'); }
+  // 오늘 약속·어젯밤 발굴: 실데이터 소스(캘린더·발굴 저장소) 미연결 → 0 정직표시. 소스 붙으면 여기서 실값으로 갱신.
+  _setKpi('kpiSched','0건');
+  _setKpi('kpiFind','0명');
 }
 // 로드 즉시: 로그인 안 됐으면 로그인화면부터 고정
 if(!_AUTHED) _goReal(0);
@@ -1567,6 +1580,7 @@ window.runOCR=function(mode){
            var txt=(d&&(d.리딩||d.note||d.report))||(d&&d.error)||'명단을 읽지 못했어요.';
            if(typeof _HIST!=='undefined'){ _HIST.push({role:'user',content:'[고객 명단 업로드: '+names+']'}); _HIST.push({role:'assistant',content:'[관리 리딩] '+String(txt).replace(/\s+/g,' ').slice(0,500)}); if(typeof _persistHist==='function')_persistHist(); }
            window._MGMTFILE={file:imgs[0].data, mime:imgs[0].mime};  // ★관리-2 대시보드용(메모리, 서버 저장0)
+           refreshTopKPIs();  // ★업로드 순간 상단 KPI(이번달 만기) 실데이터 갱신
            var startBtn=(d&&d.canStart!==false)?'<div style="margin-top:10px"><button onclick="managementDashboard()" style="padding:9px 16px;border:none;border-radius:999px;background:var(--teal);color:#fff;font-weight:700;cursor:pointer;font-size:13px">📊 있는 항목으로 관리 시작 →</button></div>':'';
            pushMsg('gen', renderMd(txt) + startBtn);
          }).catch(function(){ w.remove(); pushMsg('gen','<span style="color:#c0392b">명단 분석 오류(잠시 후 다시)</span>'); });
