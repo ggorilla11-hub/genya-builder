@@ -1026,6 +1026,25 @@ function _discoveryHTML(name){
 function discoveryUpdate(){ var n=((document.getElementById('discName')||{}).value)||''; var a=document.getElementById('discLink'); if(a)a.textContent=_discLink(n); var b=document.getElementById('discKakao'); if(b)b.textContent=_discKakao(n); window._DISC={link:_discLink(n),kakao:_discKakao(n)}; }
 function discoveryCopy(which){ var v=(window._DISC||{})[which]||''; try{ navigator.clipboard.writeText(v).then(function(){ toast(which==='link'?'링크 복사됨':'카톡 문구 복사됨'); },function(){ toast('복사 실패 — 길게 눌러 복사하세요'); }); }catch(e){ toast('복사 실패 — 길게 눌러 복사하세요'); } }
 function discoveryPanel(){ window._ACTIVE_SKILL='client_discovery'; var nm=String(CUR_NICK||'').replace(/님$/,''); showModal(_discoveryHTML(nm)); setTimeout(discoveryUpdate,0); }
+// ===== 📊 관리-2: 오늘 이벤트 대시보드 (있는 데이터 기반·결정적·초안 승인용) =====
+function managementDashboard(){
+  var mf=window._MGMTFILE; if(!mf||!mf.file){ toast('먼저 고객 명단 엑셀을 올려주세요'); return; }
+  var t=new Date(); var ts=t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0');
+  showModal('<div style="text-align:center;padding:34px;color:#98a4b2">오늘 이벤트를 계산하는 중…</div>');
+  fetch('/api/manage/dashboard',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({file:mf.file, today:ts})})
+   .then(function(r){return r.json();}).then(function(d){ if(!d||!d.ok){ showModal('<div style="padding:20px">대시보드를 만들지 못했어요. 다시 시도해주세요.</div>'); return; } window._DASH=d; showModal(_dashHTML(d)); })
+   .catch(function(){ showModal('<div style="padding:20px;color:#c0392b">오류 — 잠시 후 다시 시도해주세요.</div>'); });
+}
+function _dashHTML(d){
+  var tiles=(d.metrics||[]).map(function(m,i){ return '<div onclick="'+(m.locked?'':('dashOpen('+i+')'))+'" style="border:1px solid '+(m.locked?'#e5e9ee':'#dbe2ea')+';border-radius:12px;padding:12px;cursor:'+(m.locked?'default':'pointer')+';background:'+(m.locked?'#f3f5f7':'#fff')+';opacity:'+(m.locked?'0.65':'1')+'"><div style="font-size:20px">'+m.color+'</div><div style="font-size:12px;font-weight:700;color:#0d1b2a;margin-top:4px">'+_escOb(m.label)+'</div><div style="font-size:'+(m.locked?'10.5px':'20px')+';font-weight:700;color:'+(m.locked?'#8a93a3':'#0f766e')+';margin-top:2px">'+(m.locked?('🔒 '+_escOb(m.need)+' 채우면 켜져요'):(m.count+'명'))+'</div></div>'; }).join('');
+  return '<div style="max-width:560px"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px"><b style="font-size:16px;color:#0d1b2a">📊 오늘 이벤트 대시보드</b><span onclick="closeModal()" style="cursor:pointer;color:#8a93a3;font-size:20px">×</span></div><div style="font-size:11px;color:#8a93a3;margin-bottom:12px">'+_escOb(d.today||'')+' · 명단 '+(d.rowCount||0)+'명 · 우선순위: '+((d.우선순위||[]).join(' → '))+'</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+tiles+'</div><div id="dashCards" style="margin-top:12px"></div></div>';
+}
+function dashOpen(i){
+  var m=((window._DASH||{}).metrics||[])[i]; var box=document.getElementById('dashCards'); if(!box)return;
+  if(!m||!m.cards||!m.cards.length){ box.innerHTML='<div style="color:#8a93a3;font-size:12px;padding:10px">대상 고객이 없어요.</div>'; return; }
+  box.innerHTML='<div style="font-weight:700;color:#0d1b2a;margin:8px 0">'+m.color+' '+_escOb(m.label)+' — '+m.count+'명</div>'+m.cards.map(function(c,j){ return '<div style="border:1px solid #dbe2ea;border-radius:10px;padding:10px;margin-bottom:8px"><div><b>'+_escOb(c.이름)+'</b> <span style="color:#8a93a3;font-size:12px">· '+_escOb(c.왜)+' · '+_escOb(c.언제)+'</span></div><div style="font-size:12px;color:#556;background:#f5f7fa;border-radius:8px;padding:8px;margin-top:6px;white-space:pre-wrap">'+_escOb(c.초안)+'</div><button onclick="dashCopy('+i+','+j+')" style="margin-top:6px;padding:6px 12px;border:1px solid #2a9d8f;background:#e8f4f2;color:#0f766e;border-radius:999px;font-weight:600;cursor:pointer;font-size:12px">📋 초안 복사</button> <span style="font-size:11px;color:#c0392b">발송은 승인 후 직접(개인톡)</span></div>'; }).join('');
+}
+function dashCopy(i,j){ try{ var c=window._DASH.metrics[i].cards[j]; navigator.clipboard.writeText(c.초안).then(function(){ toast('초안 복사됨 — 카톡에 붙여 승인 후 발송'); },function(){ toast('복사 실패'); }); }catch(e){ toast('복사 실패'); } }
 // ===== 2차 시나리오 팝업 (기술 엮기 = 해자) =====
 function openScenario(jobKey, idx){
   const j = GENYA_JOBS[jobKey] || GENYA_JOBS.insurance;
@@ -1528,7 +1547,9 @@ window.runOCR=function(mode){
          .then(function(r){return r.json();}).then(function(d){ w.remove();
            var txt=(d&&(d.리딩||d.note||d.report))||(d&&d.error)||'명단을 읽지 못했어요.';
            if(typeof _HIST!=='undefined'){ _HIST.push({role:'user',content:'[고객 명단 업로드: '+names+']'}); _HIST.push({role:'assistant',content:'[관리 리딩] '+String(txt).replace(/\s+/g,' ').slice(0,500)}); if(typeof _persistHist==='function')_persistHist(); }
-           pushMsg('gen', renderMd(txt));
+           window._MGMTFILE={file:imgs[0].data, mime:imgs[0].mime};  // ★관리-2 대시보드용(메모리, 서버 저장0)
+           var startBtn=(d&&d.canStart!==false)?'<div style="margin-top:10px"><button onclick="managementDashboard()" style="padding:9px 16px;border:none;border-radius:999px;background:var(--teal);color:#fff;font-weight:700;cursor:pointer;font-size:13px">📊 있는 항목으로 관리 시작 →</button></div>':'';
+           pushMsg('gen', renderMd(txt) + startBtn);
          }).catch(function(){ w.remove(); pushMsg('gen','<span style="color:#c0392b">명단 분석 오류(잠시 후 다시)</span>'); });
         return;
       }

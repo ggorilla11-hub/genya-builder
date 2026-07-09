@@ -313,6 +313,16 @@ app.post('/api/manage/analyze', async (req, res) => {
     res.json({ ok: true, ...r });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
+// ── 📊 관리-2: 오늘 이벤트 대시보드(실제 날짜 비교·결정적, 서버 저장0, 초안=승인용 템플릿) ──
+app.post('/api/manage/dashboard', async (req, res) => {
+  try {
+    const b = req.body || {};
+    const file = b.file || (Array.isArray(b.images) && b.images[0] && b.images[0].data) || '';
+    if (!file) return res.json({ ok: false, error: '고객 명단 엑셀이 필요해요.' });
+    const r = skills.manage.buildDashboard({ file: file, today: b.today });
+    res.json({ ok: true, ...r });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
 
 // ── 🧠 MEM 하이브리드C: 설계요약 Firestore(genya_mem) 저장/검색 (주민번호·전화 마스킹 · userId 격리 · SA=moneya-72fe6) ──
 //   ★제로 인그레스: 검색용 요약만 저장(원본·개인정보 서버 X). 저장 실패는 대화·분석을 막지 않는다(fire-and-forget).
