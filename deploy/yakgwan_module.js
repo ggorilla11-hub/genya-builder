@@ -17,8 +17,7 @@ const OpenAI = require('openai');
 const INDEX = 'genya-knowledge';
 const NAMESPACE = 'yakgwan_samsung_auto_2025';
 const EMBED_MODEL = 'text-embedding-3-small';   // ★임베딩은 OpenAI 유지(Pinecone 벡터가 이 모델로 만들어짐 — 바꾸면 검색 깨짐)
-const CHAT_MODEL = 'gpt-4o-mini';               // 답변생성 폴백용(Claude 실패 시)
-const ANSWER_MODEL = 'claude-sonnet-5';         // ★답변 생성 = Claude Sonnet 5
+const ANSWER_MODEL = 'claude-sonnet-5';         // ★답변 생성 = Claude Sonnet 5(폴백도 동일 — 모든 LLM은 Claude Sonnet)
 const SOURCE = '삼성화재 개인용 자동차보험 2025-08-16';
 const MIN_SCORE = 0.28;
 
@@ -55,12 +54,14 @@ async function askYakgwan(question) {
     answer = (ar.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
     if (!answer) throw new Error('빈 응답');
   } catch (e) {
-    // ★폴백: OpenAI gpt-4o-mini — 약관 답변이 끊기지 않게
-    const r = await oa.chat.completions.create({
-      model: CHAT_MODEL, temperature: 0.3, max_tokens: 480,
-      messages: [{ role: 'system', content: SYS }, { role: 'user', content: userMsg }],
-    });
-    answer = (r.choices[0].message.content || '').trim();
+    // ★폴백도 Claude Sonnet(대표 절대규칙: 모든 LLM은 Claude Sonnet). 한 번 더 시도, 안 되면 정직하게 안내.
+    try {
+      if (!an) throw e;
+      const ar2 = await an.messages.create({ model: ANSWER_MODEL, max_tokens: 480, system: SYS, messages: [{ role: 'user', content: userMsg }] });
+      answer = (ar2.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
+    } catch (e2) {
+      answer = '지금 약관 답변 생성이 잠깐 어려워요 — 잠시 후 다시 시도해 주세요. (약관 근거 검색은 정상입니다)';
+    }
   }
   return {
     found: true,

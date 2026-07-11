@@ -11,8 +11,9 @@
 'use strict';
 const RAGSRV = '';
 try{require('dotenv').config();}catch(e){}
-const OpenAI = require('openai');
-const _oa = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+// ★답변 생성 = Claude Sonnet(대표 절대규칙: 모든 LLM은 Claude Sonnet). 웹 검색결과만 근거로 답.
+const _an = new (require('@anthropic-ai/sdk'))({ apiKey: process.env.ANTHROPIC_API_KEY });
+const ANSWER_MODEL = 'claude-sonnet-5';
 
 function domain(url) { try { return new URL(url).host.replace(/^www\./, ''); } catch (e) { return url; } }
 
@@ -28,13 +29,13 @@ async function research(question, sources) {
   const list = (sources || []).filter((s) => s && s.url);
   if (!list.length) return { answer: '웹 검색 결과가 없어요 — 확인이 필요해요.', used: [], asOf: null };
   const ctx = list.map((s, i) => `(${i + 1}) [${domain(s.url)}] ${s.title}\n${s.snippet || ''}`).join('\n\n');
-  const r = await _oa.chat.completions.create({
-    model: 'gpt-4o-mini', temperature: 0.3, max_tokens: 500,
-    messages: [{ role: 'system', content: SYS }, { role: 'user', content: `[질문] ${question}\n\n[웹 검색 결과]\n${ctx}` }],
+  const r = await _an.messages.create({
+    model: ANSWER_MODEL, max_tokens: 500, system: SYS,
+    messages: [{ role: 'user', content: `[질문] ${question}\n\n[웹 검색 결과]\n${ctx}` }],
   });
   const asOf = new Date().toISOString().slice(0, 10);
   return {
-    answer: (r.choices[0].message.content || '').trim(),
+    answer: (r.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('').trim(),
     used: list.map((s) => ({ site: domain(s.url), title: s.title, url: s.url })),
     asOf,
     note: `웹 검색 결과 기준(${asOf}) · 직접 크롤링 없음 · AI봇 차단 사이트 제외`,
