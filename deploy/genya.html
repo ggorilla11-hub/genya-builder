@@ -334,12 +334,12 @@
   @media(max-width:640px){
     body{padding:0;}
     .stage-nav{display:none;}
-    .frame{border-radius:0;min-height:100vh;box-shadow:none;border:none;}
+    .frame{border-radius:0;min-height:100dvh;box-shadow:none;border:none;}
     .ob-body,.roadmap{padding:24px 18px;}
     .ob-h{font-size:21px;} .rm-h{font-size:19px;}
     .jobs{grid-template-columns:repeat(2,1fr);}
-    .login{padding:32px 22px;min-height:100vh;} .login h1{font-size:26px;}
-    .nick{padding:32px 22px;min-height:100vh;}
+    .login{padding:32px 22px;min-height:100dvh;} .login h1{font-size:26px;}
+    .nick{padding:32px 22px;min-height:100dvh;}
     .topbar{padding:11px 15px;} .brand .nm b{font-size:14px;}
     .chat-scroll{padding:15px;}
     .composer{padding:10px 12px;}
@@ -374,10 +374,9 @@
       <div class="nav2"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3l7 4v6c0 4-3 6.5-7 8-4-1.5-7-4-7-8V7l7-4z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><circle cx="12" cy="11" r="2.2" fill="currentColor"/></svg></div>
       <h2>어떻게 불러드릴까요?</h2>
       <p>지니야가 당신을 부를 이름이에요.<br>편한 애칭이나 별명으로 정해주세요.</p>
-      <div class="in-wrap"><input id="nickInput" type="text" placeholder="예: 짜앙, 대표님, 원장님…" maxlength="12" value="짜앙"></div>
+      <div class="in-wrap"><input id="nickInput" type="text" placeholder="예: 대표님, 원장님, 선생님…" maxlength="12" value=""></div>
       <div class="hint">언제든 설정에서 바꿀 수 있어요</div>
       <div class="chips">
-        <div class="nchip" onclick="setNick('짜앙')">짜앙</div>
         <div class="nchip" onclick="setNick('대표님')">대표님</div>
         <div class="nchip" onclick="setNick('원장님')">원장님</div>
         <div class="nchip" onclick="setNick('소장님')">소장님</div>
@@ -470,9 +469,9 @@
     <div class="ob-body">
       <div class="ob-lb">STEP 3 · 확인</div>
       <h2 class="ob-h">이렇게 이해했어요. 맞나요?</h2>
-      <div class="confirm-hero"><div class="av"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3l7 4v6c0 4-3 6.5-7 8-4-1.5-7-4-7-8V7l7-4z" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/><circle cx="12" cy="11" r="2.2" fill="#fff"/></svg></div><div class="tx"><b><span class="nick-slot">짜앙</span>, 정리해봤어요.</b><p id="confirmText">당신은 <em>23년차 보험설계사</em>시고, 가장 큰 고민은 <em>고객 발굴</em>과 <em>제안서 준비</em>네요. 이 두 가지를 중심으로 지니야를 준비했어요. 맞으면 승인해주세요.</p></div></div>
+      <div class="confirm-hero"><div class="av"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3l7 4v6c0 4-3 6.5-7 8-4-1.5-7-4-7-8V7l7-4z" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/><circle cx="12" cy="11" r="2.2" fill="#fff"/></svg></div><div class="tx"><b><span class="nick-slot"></span>, 정리해봤어요.</b><p id="confirmText">당신은 <em>23년차 보험설계사</em>시고, 가장 큰 고민은 <em>고객 발굴</em>과 <em>제안서 준비</em>네요. 이 두 가지를 중심으로 지니야를 준비했어요. 맞으면 승인해주세요.</p></div></div>
       <div class="summ" id="confirmSumm">
-        <div class="summ-row"><span class="k">닉네임</span><span class="v"><span class="nick-slot">짜앙</span></span></div>
+        <div class="summ-row"><span class="k">닉네임</span><span class="v"><span class="nick-slot"></span></span></div>
         <div class="summ-row"><span class="k">직업</span><span class="v" id="cfJob">보험설계사 (GA · 23년차)</span></div>
         <div class="summ-row"><span class="k">핵심 고민</span><span class="v" id="cfPains"><span class="pill">고객 발굴</span><span class="pill">제안서 준비</span></span></div>
         <div class="summ-row"><span class="k">지니야가 맡을 일</span><span class="v" id="cfTasks">24/7 발굴 · 증권분석 · 3사 제안서 종합 · 만기관리</span></div>
@@ -542,7 +541,7 @@
   <!-- 5. 메인 -->
   <div class="view" data-v="5">
     <div class="topbar">
-      <div class="brand"><div class="mk"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3l7 4v6c0 4-3 6.5-7 8-4-1.5-7-4-7-8V7l7-4z" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/><circle cx="12" cy="11" r="2.4" fill="#fff"/></svg></div><div class="nm"><b>지니야</b><span><span class="nick-slot">짜앙</span>님의 AI 비서실장</span></div></div>
+      <div class="brand"><div class="mk"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3l7 4v6c0 4-3 6.5-7 8-4-1.5-7-4-7-8V7l7-4z" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/><circle cx="12" cy="11" r="2.4" fill="#fff"/></svg></div><div class="nm"><b>지니야</b><span><span class="nick-slot"></span>님의 AI 비서실장</span></div></div>
       <div class="top-dash">
         <div class="kpi f" onclick="openPop('find')"><div class="ic"><svg viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8"/><path d="M20 20l-3.5-3.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></div><div class="tx"><b id="kpiFind">0명</b><span>어젯밤 발굴</span></div></div>
         <div class="kpi s" onclick="openPop('sched')"><div class="ic"><svg viewBox="0 0 24 24" fill="none"><rect x="4" y="5" width="16" height="16" rx="2.5" stroke="currentColor" stroke-width="1.8"/><path d="M8 3v4M16 3v4M4 10h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></div><div class="tx"><b id="kpiSched">0건</b><span>오늘 약속</span></div></div>
@@ -579,7 +578,7 @@
           <div class="date" id="chatDate"></div>
         </div>
         <div class="chat-scroll" id="chatScroll">
-          <div class="msg gen"><div class="av"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3l7 4v6c0 4-3 6.5-7 8-4-1.5-7-4-7-8V7l7-4z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><circle cx="12" cy="11" r="2.2" fill="currentColor"/></svg></div><div class="bubble"><span class="lead nick-slot">짜앙</span><span class="lead">, 좋은 아침이에요.</span><br>어젯밤 발굴한 3명, 오늘 만기 고객까지 위에 정리해뒀어요. 왼쪽 <b>고민 카드</b>를 누르면 제가 어떤 도구로 어떻게 푸는지 바로 보여드릴게요.</div></div>
+          <div class="msg gen"><div class="av"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3l7 4v6c0 4-3 6.5-7 8-4-1.5-7-4-7-8V7l7-4z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><circle cx="12" cy="11" r="2.2" fill="currentColor"/></svg></div><div class="bubble"><span class="lead nick-slot"></span><span class="lead">, 좋은 아침이에요.</span><br>어젯밤 발굴한 3명, 오늘 만기 고객까지 위에 정리해뒀어요. 왼쪽 <b>고민 카드</b>를 누르면 제가 어떤 도구로 어떻게 푸는지 바로 보여드릴게요.</div></div>
         </div>
         <div class="chips" id="chatChips" style="display:none"></div><!-- ★대표 요청: 대화창 위 파란 추천칩(디폴트 안내) 삭제. 입력·전송·다른 라벨 무접촉 -->
 
@@ -642,7 +641,7 @@
 <script>
 // ===== 직업별 데이터 (4개 대표직업 실제 채움 + 나머지 구조) =====
 const GENYA_JOBS = {
-  insurance:{ label:"보험설계사", nick:"짜앙", title:"지니야 · 보험설계 전담", sub:"23년차 맞춤",
+  insurance:{ label:"보험설계사", nick:"", title:"지니야 · 보험설계 전담", sub:"23년차 맞춤",
     tags:["발굴","증권분석","제안서","연금","만기관리","약관"], job_full:"보험설계사 (GA · 23년차)",
     tasks:"24/7 발굴 · 증권분석 · 3사 제안서 종합 · 만기관리",
     chips:["어젯밤 발굴 3명 보여줘","김영수님 만기 문자 초안","이 증권 보장 분석해줘"],
@@ -770,6 +769,29 @@ const GENYA_JOBS = {
          stack:"Claude Vision + Drive + Sheets API",
          moat:"자료 정리 자동화 = 더 많은 고객 처리"}},
     ]},
+  // ★기타 1인사업(직접입력) 기본 세팅: 고객발굴비서 + 고객관리비서 2종(발굴 icon:radar / 관리 icon:calendar-due). 상세 페인은 최소.
+  etc:{ label:"1인사업", nick:"", title:"지니야 · 1인사업 전담", sub:"내 일 맞춤",
+    tags:["고객발굴","고객관리"], job_full:"1인사업 (직접입력)",
+    tasks:"고객 발굴 · 고객 관리",
+    chips:["새 고객 어떻게 찾지?","고객 명단 관리 도와줘","오늘 챙길 고객 있어?"],
+    pains:[
+      {icon:"radar",axis:"발굴",t:"새 고객 발굴이 막막",s:"어디서 고객을 찾을지 어려워요",
+       sc:{title:"내 진단링크로 고객 발굴",steps:[
+         {ic:"pencil",st:"링크",sd:"이름만 넣으면 내 진단링크 완성"},
+         {ic:"send",st:"뿌리기",sd:"카톡·단톡·프로필에 붙여 공유"},
+         {ic:"table",st:"수집",sd:"신청자가 내 시트에 자동으로"},
+         {ic:"sun",st:"브리핑",sd:"아침마다 명단 정리해서 알림"}],
+         stack:"진단링크(화이트라벨) + Google Sheets + Cron",
+         moat:"뿌릴수록 쌓이는 내 고객 데이터"}},
+      {icon:"calendar-due",axis:"관리",t:"고객 챙기기를 놓쳐요",s:"연락·관리 타이밍을 놓쳐요",
+       sc:{title:"고객 명단 → 오늘 챙길 사람 알림",steps:[
+         {ic:"table",st:"스캔",sd:"고객 명단 엑셀에서 일정 스캔"},
+         {ic:"bell",st:"알림",sd:'"오늘 챙길 고객" 먼저 알림'},
+         {ic:"pencil",st:"초안",sd:"안내 문자 초안 준비"},
+         {ic:"send",st:"승인발송",sd:"승인 → 발송"}],
+         stack:"Google Sheets API + 솔라피 + Cron",
+         moat:"놓침 0 = 신뢰 = 소개"}},
+    ]},
 };
 // 기타 12개 직업 (구조만 — 선택 시 공통 3축 안내)
 const MORE_JOBS = [
@@ -816,7 +838,7 @@ function ic(name){ return '<svg viewBox="0 0 24 24" fill="none">'+(ICON[name]||I
 
 // ===== 상태 =====
 let CUR_JOB = 'insurance';
-let CUR_NICK = '짜앙';
+let CUR_NICK = '';
 
 // ===== 화면 전환 =====
 function go(n){
@@ -831,9 +853,10 @@ document.querySelectorAll('.stage-nav button').forEach(b=>b.addEventListener('cl
 // ===== 닉네임 =====
 function setNick(v){ document.getElementById('nickInput').value=v; }
 function syncNick(){
-  CUR_NICK = (document.getElementById('nickInput').value||'짜앙').trim()||'짜앙';
-  document.querySelectorAll('.nick-slot').forEach(el=>el.textContent=CUR_NICK);
-  const cn=document.getElementById('chatNick'); if(cn) cn.textContent=CUR_NICK.charAt(0);
+  CUR_NICK = (document.getElementById('nickInput').value||'').trim();
+  var _nd = CUR_NICK || '고객'; // ★이름 미입력 시 안전 폴백('고객'+님='고객님')
+  document.querySelectorAll('.nick-slot').forEach(el=>el.textContent=_nd);
+  const cn=document.getElementById('chatNick'); if(cn) cn.textContent=_nd.charAt(0);
 }
 
 // ===== 직업 선택 =====
@@ -850,9 +873,9 @@ function openJobMore(){
   document.getElementById('jobBack').classList.add('on');
 }
 function pickMore(k,n){
-  CUR_JOB = GENYA_JOBS[k] ? k : 'insurance'; // 데이터 없으면 보험 데모로
+  CUR_JOB = GENYA_JOBS[k] ? k : 'etc'; // ★데이터 없으면 기타 1인사업 기본세팅(고객발굴+고객관리 2종)으로
   closeJobMore();
-  alert('"'+n+'" 선택됨.\n(이 직업의 맞춤 고통 카드는 160개 지식베이스에서 로드됩니다. 데모에서는 대표 4개 직업이 실제 채워져 있어요.)');
+  alert('"'+n+'" 선택됨.\n기본으로 고객발굴·고객관리 비서부터 시작하고, 대화하며 맞춰드려요.');
 }
 function closeJobMore(){ document.getElementById('jobBack').classList.remove('on'); }
 
@@ -1001,7 +1024,7 @@ function applyOnboardToConfirm(){
   var pain = ob.pain || ob.work || '';
   if(pain){ var cp=document.getElementById('cfPains'); if(cp) cp.innerHTML=String(pain).split(/[,;·]/).map(function(x){x=x.trim(); return x?'<span class="pill">'+_escOb(x)+'</span>':'';}).join(''); }
   var confP=document.getElementById('confirmText');
-  if(confP){ confP.innerHTML='<span class="nick-slot">'+_escOb(CUR_NICK||'')+'</span>님은 '
+  if(confP){ confP.innerHTML='<span class="nick-slot">'+_escOb(CUR_NICK||'고객')+'</span>님은 '
     + (ob.job?'<em>'+_escOb(ob.job)+'</em>':'') + (pain?', 가장 큰 고민은 <em>'+_escOb(pain)+'</em>':'')
     + '네요. 이 내용을 바탕으로 지니야를 준비했어요. 맞으면 승인해주세요.'; }
 }
