@@ -747,12 +747,17 @@ app.get('/work', (req, res) => {
 const KAKAO_ESCAPE = `<script>
 (function(){
   var ua = navigator.userAgent || '';
-  if (ua.match(/KAKAOTALK/i)) {
-    if (ua.match(/Android/i)) {
-      location.href = 'intent://' + location.href.replace(/https?:\\/\\//, '') + '#Intent;scheme=https;package=com.android.chrome;end';
-    } else if (ua.match(/iPhone|iPad|iPod/i)) {
-      location.href = location.href + (location.href.indexOf('?') > -1 ? '&' : '?') + 'openExternalBrowser=1';
-    }
+  if (!/KAKAOTALK/i.test(ua)) return;
+  // ★무한 리로드(깜빡임) 방지: iOS15+에서 openExternalBrowser 탈출이 실패하면 파라미터가 계속 붙으며 리로드 루프->화면 깜빡임.
+  //   이미 한 번 시도했으면(세션 플래그 또는 URL 파라미터) 재시도 안 함 -> 최대 1회만 탈출 시도.
+  var tried = false;
+  try { tried = !!sessionStorage.getItem('_kkoEsc'); } catch(e){}
+  if (tried || location.href.indexOf('openExternalBrowser=1') > -1) return;
+  try { sessionStorage.setItem('_kkoEsc', '1'); } catch(e){}
+  if (/Android/i.test(ua)) {
+    location.href = 'intent://' + location.href.replace(/https?:\\/\\//, '') + '#Intent;scheme=https;package=com.android.chrome;end';
+  } else if (/iPhone|iPad|iPod/i.test(ua)) {
+    location.href = location.href + (location.href.indexOf('?') > -1 ? '&' : '?') + 'openExternalBrowser=1';
   }
 })();
 </script>`;
