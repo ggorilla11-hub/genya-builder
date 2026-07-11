@@ -3110,6 +3110,18 @@ async function runYtLeadCollect(opts) {
 let YT_LAST_DAY = '';
 async function runDueYtLeads() { if (String(process.env.ORCH_AUTO || 'off').toLowerCase() === 'on') return; if (!process.env.YOUTUBE_API_KEY) return; const d = addDaysYMD(0); if (d === YT_LAST_DAY) return; YT_LAST_DAY = d; await runYtLeadCollect().catch(() => {}); }   // ★PHASE2-3: ORCH_AUTO=on이면 옛 경로 skip(중복제거). off면 무변화
 app.post('/ytleads/collect', async (req, res) => { try { res.json(await runYtLeadCollect({ reset: !!(req.body || {}).reset })); } catch (e) { res.status(500).json({ error: e.message }); } });
+// ── 📡 발굴비서 표시용: 유튜브·네이버 공개채널 발굴 리드 (ungated read · 핫🔥/웜🌤 정렬) ──
+//   ★기존 발굴엔진(runYtLeadCollect/collectNaver) 결과(YTLEADS/LEADS)를 화면에 보여주기만. 공개 댓글·글(개인정보 아님).
+app.get('/api/find/leads', (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  const ord = { '🔥핫': 0, '🌤웜': 1 };
+  const yt = (Array.isArray(YTLEADS) ? YTLEADS : []).slice()
+    .sort((a, b) => ((ord[a.tier] != null ? ord[a.tier] : 9) - (ord[b.tier] != null ? ord[b.tier] : 9)))
+    .map((l) => ({ tier: l.tier, author: l.author, text: l.text, link: l.link, videoTitle: l.videoTitle }));
+  const nv = (Array.isArray(LEADS) ? LEADS : []).slice(-60).reverse()
+    .map((l) => ({ source: l.source, author: l.author, text: l.text, link: l.link, keyword: l.keyword }));
+  res.json({ ok: true, youtube: yt, naver: nv, ytCount: yt.length, nvCount: nv.length });
+});
 app.get('/ytleads/today', (req, res) => {
   if (gateEmpty(req)) return res.json({ configured: !!process.env.YOUTUBE_API_KEY, handle: '@' + YT_HANDLE, todayCount: 0, total: 0, hot: 0, leads: [], gated: true });
   const today = addDaysYMD(0);

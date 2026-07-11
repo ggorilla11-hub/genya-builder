@@ -1061,14 +1061,14 @@ var _PROSPECT_PAGES=[
 function _agentName(){ return String(CUR_NICK||'').replace(/님$/,'').trim(); }               // ★현재 로그인 설계사 이름
 function _prospectLink(url){ var a=_agentName(); return url+(a?('?agent='+encodeURIComponent(a)):''); }  // ★자기 이름 자동 첨부
 function discoveryPanel(){ window._ACTIVE_SKILL='client_discovery'; window._PTAB='deploy'; showModal(_prospectHTML()); }
-function prospectTab(which){ window._PTAB=which; document.getElementById('modalBox').innerHTML=_prospectHTML(); if(which==='leads') prospectLoadLeads(); }
+function prospectTab(which){ window._PTAB=which; document.getElementById('modalBox').innerHTML=_prospectHTML(); if(which==='leads') prospectLoadLeads(); if(which==='find') prospectLoadFind(); }
 function _prospectHTML(){
   var tab=window._PTAB||'deploy';
   var tb=function(id,label){ var on=(tab===id); return '<button onclick="prospectTab(\''+id+'\')" style="flex:1;padding:9px 8px;border:none;background:none;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;color:'+(on?'var(--teal-d)':'#8a93a3')+';border-bottom:2px solid '+(on?'var(--teal)':'transparent')+'">'+label+'</button>'; };
   return '<div style="max-width:560px">'
    +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px"><b style="font-size:16px;color:#0d1b2a">📡 고객발굴비서</b><span onclick="closeModal()" style="cursor:pointer;color:#8a93a3;font-size:20px">×</span></div>'
-   +'<div style="display:flex;margin-bottom:14px;border-bottom:1px solid #e5e9ee">'+tb('deploy','📤 진단페이지 배포')+tb('leads','📥 진단 유입 리드')+'</div>'
-   +'<div id="prospectBody">'+(tab==='deploy'?_deployBody():_leadsBody())+'</div></div>';
+   +'<div style="display:flex;margin-bottom:14px;border-bottom:1px solid #e5e9ee;overflow-x:auto">'+tb('deploy','📤 진단페이지')+tb('find','🔍 발굴 리드')+tb('leads','📥 진단 유입')+'</div>'
+   +'<div id="prospectBody">'+(tab==='deploy'?_deployBody():(tab==='find'?_findBody():_leadsBody()))+'</div></div>';
 }
 // ── 탭1: 진단페이지 배포 (카드 2개 · 데스크톱 나란히 / 모바일 세로) ──
 function _deployBody(){
@@ -1129,6 +1129,49 @@ function prospectToggle(i){ var l=(window._PLEADS||[])[i]; if(!l)return; _setLea
 function _leadsEmpty(){ return '<div style="text-align:center;padding:30px 16px"><div style="font-size:32px">📭</div><div style="font-size:13px;font-weight:700;color:#556;margin-top:8px">아직 유입된 리드가 없어요</div><div style="font-size:11.5px;color:#8a93a3;margin-top:6px;line-height:1.6">위 <b>진단페이지 배포</b> 탭에서 링크를 복사해<br>카톡·유튜브·카페에 뿌려보세요.</div></div>'; }
 function _leadsError(){ return '<div style="text-align:center;padding:30px 16px"><div style="font-size:32px">⚠️</div><div style="font-size:13px;font-weight:700;color:#c0392b;margin-top:8px">리드를 불러오지 못했어요</div><button onclick="prospectLoadLeads()" style="margin-top:12px;padding:9px 18px;border:1px solid var(--teal);background:var(--teal-l);color:var(--teal-d);border-radius:10px;font-weight:700;cursor:pointer;font-size:13px;font-family:inherit">↻ 다시 시도</button></div>'; }
 function _leadsNotReady(){ return '<div style="text-align:center;padding:28px 16px"><div style="font-size:32px">🔧</div><div style="font-size:13px;font-weight:700;color:#556;margin-top:8px">리드 시트 연결 준비 중</div><div style="font-size:11.5px;color:#8a93a3;margin-top:6px;line-height:1.6">진단 신청은 이미 구글시트에 쌓이고 있어요.<br>본사에서 시트 연결만 켜면 여기에 바로 표시됩니다.</div></div>'; }
+// ── 탭: 발굴 리드 (유튜브·네이버 = server.js 발굴엔진 재사용 / 크몽 준비중) ──
+function _findBody(){
+  return '<div style="font-size:12px;color:#556;line-height:1.5;margin-bottom:8px">공개 채널에서 지니야가 찾은 잠재고객이에요. <span style="color:#c0392b">연락·답글은 설계사 직접</span>(자동댓글 없음).</div>'
+   +'<div style="display:flex;gap:6px;margin-bottom:10px"><button onclick="prospectRunFind()" id="findRunBtn" style="flex:1;padding:8px;border:1px solid var(--teal);background:var(--teal-l);color:var(--teal-d);border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">🔍 지금 발굴</button><button onclick="prospectLoadFind()" style="padding:8px 12px;border:1px solid #dbe2ea;background:#fff;border-radius:8px;font-size:12px;cursor:pointer;color:#556;font-family:inherit">↻ 새로고침</button></div>'
+   +'<div id="findList">'+_leadsSkeleton()+'</div>';
+}
+function _findTier(t){ var s=String(t||''); if(/핫|hot|🔥/i.test(s)) return '<span style="font-size:10px;color:#fff;background:#e0533d;border-radius:999px;padding:1px 7px">🔥핫</span>'; if(/웜|warm|🌤/i.test(s)) return '<span style="font-size:10px;color:#8a6d0f;background:#fbeec2;border-radius:999px;padding:1px 7px">🌤웜</span>'; return ''; }
+function _findCard(icon,name,sub,text,link,tier){
+  return '<div style="border:1px solid #e5e9ee;border-radius:10px;padding:10px 12px;margin-bottom:8px;background:#fff">'
+    +'<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><div style="font-size:13px;font-weight:700;color:#0d1b2a">'+icon+' '+_escOb(name||'(출처)')+'</div>'+_findTier(tier)+'</div>'
+    +(sub?('<div style="font-size:11px;color:#8a93a3;margin-top:2px">'+_escOb(sub)+'</div>'):'')
+    +'<div style="font-size:12px;color:#556;margin:5px 0 8px;line-height:1.5">'+_escOb(String(text||'').slice(0,120))+'</div>'
+    +(link?('<a href="'+_escOb(link)+'" target="_blank" rel="noopener" style="display:inline-block;padding:6px 12px;border:1px solid var(--teal);background:var(--teal-l);color:var(--teal-d);border-radius:8px;font-size:12px;font-weight:600;text-decoration:none">↗ 바로가기</a>'):'')
+    +'</div>';
+}
+function _findSection(title,list,render){
+  var hot=list.filter(function(l){return /핫|🔥/.test(l.tier||'');});
+  var warm=list.filter(function(l){return !/핫|🔥/.test(l.tier||'');});
+  var body=list.length ? (hot.map(render).join('')+warm.map(render).join('')) : '<div style="font-size:12px;color:#8a93a3;padding:4px 0 10px">아직 없어요.</div>';
+  return '<div style="font-size:12px;font-weight:800;color:#0d1b2a;margin:12px 0 8px">'+title+' ('+list.length+')</div>'+body;
+}
+function prospectLoadFind(){
+  var box=document.getElementById('findList'); if(!box)return;
+  box.innerHTML=_leadsSkeleton();                                   // ① 로딩
+  fetch(GENYA_API+'/api/find/leads').then(function(r){ if(!r.ok) throw 0; return r.json(); })
+   .then(function(d){
+     var yt=(d.youtube||[]), nv=(d.naver||[]);
+     if(!yt.length && !nv.length){ box.innerHTML=_findEmpty(); return; }   // ② 빈
+     var h=_findSection('📺 유튜브', yt, function(l){ return _findCard('📺', l.author, l.videoTitle, l.text, l.link, l.tier); });
+     h+=_findSection('🟢 네이버 카페·지식인', nv, function(l){ return _findCard('🟢', l.author||l.keyword, l.source, l.text, l.link, l.tier); });
+     h+='<div style="font-size:12px;font-weight:800;color:#0d1b2a;margin:12px 0 8px">🟡 크몽</div><div style="border:1px dashed #dbe2ea;border-radius:10px;padding:14px;text-align:center;color:#8a93a3;font-size:12px">준비 중 — 곧 연결됩니다</div>';
+     box.innerHTML=h;                                                // ④ 정상
+   })
+   .catch(function(){ box.innerHTML=_findError(); });                // ③ 에러
+}
+function prospectRunFind(){
+  var b=document.getElementById('findRunBtn'); if(b){ b.textContent='🔍 발굴 중…(최대 30초)'; b.disabled=true; }
+  var done=0, fin=function(){ done++; if(done>=2) prospectLoadFind(); };   // 두 발굴 끝나면 새로고침
+  fetch(GENYA_API+'/ytleads/collect',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}).then(fin,fin);
+  fetch(GENYA_API+'/leads/collect',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}).then(fin,fin);
+}
+function _findEmpty(){ return '<div style="text-align:center;padding:28px 16px"><div style="font-size:32px">🔍</div><div style="font-size:13px;font-weight:700;color:#556;margin-top:8px">아직 발굴된 리드가 없어요</div><div style="font-size:11.5px;color:#8a93a3;margin-top:6px;line-height:1.6">[🔍 지금 발굴]을 눌러 유튜브·네이버에서<br>잠재고객을 찾아보세요.</div></div>'; }
+function _findError(){ return '<div style="text-align:center;padding:26px 16px"><div style="font-size:30px">⚠️</div><div style="font-size:13px;font-weight:700;color:#c0392b;margin-top:8px">발굴 결과를 불러오지 못했어요</div><button onclick="prospectLoadFind()" style="margin-top:12px;padding:9px 18px;border:1px solid var(--teal);background:var(--teal-l);color:var(--teal-d);border-radius:10px;font-weight:700;cursor:pointer;font-size:13px;font-family:inherit">↻ 다시 시도</button></div>'; }
 // ===== 📊 관리-2: 오늘 이벤트 대시보드 (있는 데이터 기반·결정적·초안 승인용) =====
 function managementDashboard(){
   var mf=window._MGMTFILE; if(!mf||!mf.file){ toast('먼저 고객 명단 엑셀을 올려주세요'); return; }
