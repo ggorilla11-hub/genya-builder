@@ -1261,7 +1261,7 @@ function runOCR(){
   closeModal();
   pushMsg('me','[증권 사진 업로드]');
   setTimeout(()=>{
-    pushMsg('gen','<span class="lead">'+CUR_NICK+'</span>, 증권을 분석했어요. 아래 확인하시고 다음 지시를 내려주세요.'+
+    pushMsg('gen','<span class="lead">'+(CUR_NICK||'고객님')+'</span>, 증권을 분석했어요. 아래 확인하시고 다음 지시를 내려주세요.'+
       '<div class="ocr-card"><div class="oh"><svg viewBox="0 0 24 24" fill="none"><path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6"/></svg>증권 분석 결과</div>'+
       '<div class="ob"><div class="ocr-row"><span>피보험자</span><b>김영수 (45세)</b></div><div class="ocr-row"><span>상품</span><b>실손의료비 (2018년형)</b></div><div class="ocr-row"><span>입원 담보</span><b>5,000만원</b></div><div class="ocr-row"><span>부족 진단</span><b style="color:#0f7a5c">3대질병·간병 보강 필요</b></div></div>'+
       '<div class="ocr-ask"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3l7 4v6c0 4-3 6.5-7 8-4-1.5-7-4-7-8V7l7-4z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>이제 "이 사람에게 맞는 보험제안서 만들어줘" 처럼 지시해보세요</div></div>');
