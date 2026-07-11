@@ -875,7 +875,8 @@ function openJobMore(){
 function pickMore(k,n){
   CUR_JOB = GENYA_JOBS[k] ? k : 'etc'; // ★데이터 없으면 기타 1인사업 기본세팅(고객발굴+고객관리 2종)으로
   closeJobMore();
-  alert('"'+n+'" 선택됨.\n기본으로 고객발굴·고객관리 비서부터 시작하고, 대화하며 맞춰드려요.');
+  toast('"'+n+'" 선택됨 · 고객발굴·고객관리 비서로 시작해요');
+  go(3); // ★버그수정: 대표 4개 직업의 '다음' 버튼과 동일하게 스텝2(입력 3방식·view3)로 진입
 }
 function closeJobMore(){ document.getElementById('jobBack').classList.remove('on'); }
 
