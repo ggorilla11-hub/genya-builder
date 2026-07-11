@@ -1316,6 +1316,7 @@ const popData = {
 };
 function openPop(key){
   if(key==='send'){ closePop(); sendDashboard(); return; }   // ★오늘 발송: 서버(jenya) 폴링 실데이터 + 재발송(genyasend:)
+  if(key==='sched'){ schedPop(); return; }                   // ★오늘 약속: 구글캘린더 실데이터(읽기전용·4상태)
   if(key==='due' && window._MGMTFILE && window._MGMTFILE.file){ closePop(); managementDashboard(); return; }  // ★만기: 명단 있으면 실제 대시보드(실데이터)
   const d = popData[key];
   const items = d.items.map(it=>'<div class="pop-item"><span class="di pi-'+d.cls+'"></span><div class="it"><b>'+it.b+'</b><span>'+it.s+'</span></div><span class="tag'+(it.hot?' hot':'')+'">'+it.tag+'</span></div>').join('');
@@ -1329,6 +1330,26 @@ function openPop(key){
   document.getElementById('popBack').classList.add('on');
 }
 function closePop(){ document.getElementById('popBack').classList.remove('on'); }
+
+// ===== 📅 오늘 약속 — 구글 캘린더 실데이터(server.js /calendar/today · 서비스계정 읽기전용) =====
+function _schedTime(iso){ if(!iso) return '종일'; if(String(iso).length<=10) return '종일'; try{ var d=new Date(iso); var h=d.getHours(),m=d.getMinutes(); return (h<10?'0':'')+h+':'+(m<10?'0':'')+m; }catch(e){ return ''; } }
+function _schedMsg(ic,t,s){ return '<div style="padding:26px 18px;text-align:center"><div style="font-size:30px">'+ic+'</div><div style="font-size:14px;font-weight:700;color:#556;margin-top:8px">'+t+'</div>'+(s?'<div style="font-size:12px;color:#8a93a3;margin-top:6px;line-height:1.6">'+s+'</div>':'')+'</div>'; }
+function _schedShell(inner){ return '<div class="pop-h s"><div class="pic"><svg viewBox="0 0 24 24" fill="none">'+ICON['calendar-due']+'</svg></div><div class="pt"><b>오늘 약속</b><span>구글 캘린더 · 오늘 일정</span></div><div class="px" onclick="closePop()"><svg viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></div></div>'+inner+'<div class="pop-foot"><div class="pop-src"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3l7 4v6c0 4-3 6.5-7 8-4-1.5-7-4-7-8V7l7-4z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>구글 캘린더 · 읽기 전용(표시만)</div></div>'; }
+function schedPop(){
+  document.getElementById('popBox').innerHTML=_schedShell('<div style="padding:24px;text-align:center;color:#8a93a3;font-size:13px">불러오는 중…</div>');  // ① 로딩
+  document.getElementById('popBack').classList.add('on');
+  fetch(GENYA_API+'/calendar/today').then(function(r){ if(!r.ok) throw 0; return r.json(); }).then(function(d){
+    window._SCHED=d; _setKpi('kpiSched',((d&&d.events)?d.events.length:0)+'건');
+    var body;
+    if(!d||d.configured===false){ body=_schedMsg('🔧','캘린더 연결 준비 중','대표님 캘린더를 서비스계정에 공유하고 GCAL_ID를 설정하면 실제 일정이 떠요.'); }
+    else if(d.error||!Array.isArray(d.events)){ body=_schedMsg('⚠️','일정을 불러오지 못했어요',''); }        // ③ 에러
+    else if(!d.events.length){ body=_schedMsg('📭','오늘 약속 없음','오늘 잡힌 일정이 없어요.'); }             // ② 빈
+    else { body='<div class="pop-list">'+d.events.map(function(e){                                            // ④ 정상
+        return '<div class="pop-item"><span class="di pi-s"></span><div class="it"><b>'+_sEsc(_schedTime(e.start))+' · '+_sEsc(e.summary)+'</b>'+(e.location?('<span>'+_sEsc(e.location)+'</span>'):'')+'</div></div>'; }).join('')+'</div>'; }
+    document.getElementById('popBox').innerHTML=_schedShell(body);
+  }).catch(function(){ document.getElementById('popBox').innerHTML=_schedShell(_schedMsg('⚠️','일정을 불러오지 못했어요','다시 시도해 주세요.')); });
+}
+function loadSchedKpi(){ fetch(GENYA_API+'/calendar/today').then(function(r){return r.json();}).then(function(d){ window._SCHED=d; _setKpi('kpiSched',((d&&d.events)?d.events.length:0)+'건'); }).catch(function(){ _setKpi('kpiSched','0건'); }); }
 
 // ===== 📨 오늘 발송 현황(카톡) — 서버(jenya)에서 폴링, 재발송=검증된 genyasend: 링크 재사용 =====
 //   ★로컬 watcher(대표님 PC)가 발송할 때마다 서버로 요약을 올림 → 여기서 GET으로 읽어 표시.
@@ -1680,8 +1701,8 @@ function refreshTopKPIs(dash){
     fetch('/api/manage/dashboard',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({file:window._MGMTFILE.file,today:ts})})
       .then(function(r){return r.json();}).then(function(d){ if(d&&d.ok){ window._DASH=d; applyDue(d); } else { _setKpi('kpiDue','0건'); } }).catch(function(){ _setKpi('kpiDue','0건'); });
   } else { _setKpi('kpiDue','0건'); }
-  // 오늘 약속·어젯밤 발굴: 실데이터 소스(캘린더·발굴 저장소) 미연결 → 0 정직표시. 소스 붙으면 여기서 실값으로 갱신.
-  _setKpi('kpiSched','0건');
+  // 오늘 약속 = 구글캘린더 실데이터(server.js /calendar/today). 어젯밤 발굴은 아직 0 정직표시.
+  loadSchedKpi();   // ★하드코딩 제거 → 실제 오늘 일정 개수로 갱신
   _setKpi('kpiFind','0명');
   // 오늘 발송: 서버(jenya) 폴링 실데이터. 발송할 때마다 자동 갱신(7초 주기).
   _renderSendKpi(); _fetchSend();

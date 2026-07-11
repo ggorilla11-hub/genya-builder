@@ -1005,6 +1005,27 @@ async function calendarUpcoming(maxN) {
 app.get('/calendar/upcoming', async (req, res) => {
   res.json({ configured: calendarReady(), events: await calendarUpcoming(Number(req.query.n) || 10) });
 });
+// ── 오늘 약속: 오늘(KST) 하루치 일정만 (지니야 상단 "오늘 약속" KPI용 · 읽기 전용) ──
+app.get('/calendar/today', async (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  if (!calendarReady()) return res.json({ configured: false, count: 0, events: [] });
+  try {
+    const cal = calendarClient(); if (!cal) return res.json({ configured: false, count: 0, events: [] });
+    const kst = new Date(Date.now() + 9 * 3600 * 1000);
+    const y = kst.getUTCFullYear(), mo = kst.getUTCMonth(), da = kst.getUTCDate();
+    const startISO = new Date(Date.UTC(y, mo, da, 0, 0, 0) - 9 * 3600 * 1000).toISOString();   // 오늘 00:00 KST
+    const endISO = new Date(Date.UTC(y, mo, da, 23, 59, 59) - 9 * 3600 * 1000).toISOString();  // 오늘 23:59 KST
+    const r = await cal.events.list({ calendarId: GCAL_ID, timeMin: startISO, timeMax: endISO, singleEvents: true, orderBy: 'startTime', maxResults: 25 });
+    const events = (r.data.items || []).map((e) => ({
+      summary: e.summary || '(제목없음)',
+      start: (e.start && (e.start.dateTime || e.start.date)) || '',
+      end: (e.end && (e.end.dateTime || e.end.date)) || '',
+      location: e.location || '',
+      allDay: !!(e.start && e.start.date && !e.start.dateTime)
+    }));
+    res.json({ configured: true, count: events.length, events });
+  } catch (e) { res.json({ configured: true, error: e.message, count: 0, events: [] }); }
+});
 
 // ── 구글 드라이브 읽기 (공유 폴더 자료) — readonly·쓰기/삭제/공유/발송 0 ──────────────────────
 //   기존 서비스계정 재사용 + drive.readonly 스코프만(OAuth 0). 대표가 폴더를 SA 이메일
