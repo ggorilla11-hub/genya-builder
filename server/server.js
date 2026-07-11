@@ -405,6 +405,32 @@ app.get('/version', (req, res) => {
   res.json({ commit, short: commit ? commit.slice(0, 7) : 'local', startedAt: SERVER_START });
 });
 
+// ── 📨 카톡 발송 현황(지니야 대시보드 "오늘 발송" 칸) ──────────────────────
+//   로컬 watcher(대표님 PC)는 Render 파일을 못 씀 → 발송할 때마다 요약을 여기로 POST해 메모리에 보관.
+//   genya.html(genya-builder)이 GENYA_API로 크로스오리진 GET 폴링해서 표시. core·프로토콜·main_server 무접촉.
+//   ★에이전트별 보관 = 다른 회원에게 대표님 고객명이 새지 않게(에이전트 불일치=빈값).
+const SEND_STATUS = {};   // { [agent]: {ts, daily, dailyMax, success:[{name,time}], fail:[{name,reason,time,link}]} }
+app.post('/api/send/status', (req, res) => {
+  try {
+    const b = req.body || {};
+    const agent = String(b.agent || '').trim() || 'default';
+    SEND_STATUS[agent] = {
+      ts: b.ts || new Date().toISOString(),
+      daily: Number(b.daily) || 0,
+      dailyMax: Number(b.dailyMax) || 300,
+      success: Array.isArray(b.success) ? b.success.slice(0, 500) : [],
+      fail: Array.isArray(b.fail) ? b.fail.slice(0, 500) : [],
+    };
+    res.json({ ok: true, agent });
+  } catch (e) { res.status(400).json({ ok: false, error: String((e && e.message) || e) }); }
+});
+app.get('/api/send/status', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const agent = String(req.query.agent || '').trim();
+  const s = agent ? SEND_STATUS[agent] : null;   // 에이전트 불일치/미지정 = 빈값(고객명 유출 방지)
+  res.json(s || { ts: null, daily: 0, dailyMax: 300, success: [], fail: [] });
+});
+
 // ── /chat 창구: 말씀을 받아 클로드에 중계 ──────────────────
 // 받는 것: { message: "대표님 말씀", project: "부트캠프", agent: "고객발굴" }
 // 주는 것: { reply: "에이전트의 답" }
