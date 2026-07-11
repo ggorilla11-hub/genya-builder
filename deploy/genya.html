@@ -1101,11 +1101,14 @@ function _genyaSilentSave(nm, msg){
   try{
     var id=(Date.now().toString(36)+Math.random().toString(36).slice(2,8));
     var payload={ id:id, name:(nm||''), msg:(msg||''), ts:new Date().toISOString(), hmac:'' };
-    var blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
-    var a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='genyasend_'+id+'.json';
-    document.body.appendChild(a); a.click();
-    setTimeout(function(){ try{ document.body.removeChild(a); URL.revokeObjectURL(a.href); }catch(e){} },1000);
-  }catch(e){ /* 저장 실패해도 [📋 명령] 백업으로 발송 가능 */ }
+    var json=JSON.stringify(payload);
+    // ★다운로드·저장창·폴더 0: 커스텀 프로토콜 genyasend: 로 로컬 발송기(watcher) 호출.
+    //   base64(UTF-8) → URL-safe(-,_)·패딩제거. 핸들러(genyasend_open.pyw)가 outbox에 저장 → watcher 발송.
+    var b64=btoa(unescape(encodeURIComponent(json))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+    var a=document.createElement('a'); a.href='genyasend:'+b64; a.style.display='none';
+    document.body.appendChild(a); a.click();  // 최초 1회 "genyasend 열기?" → "항상 허용" 체크하면 이후 조용
+    setTimeout(function(){ try{ document.body.removeChild(a); }catch(e){} },1500);
+  }catch(e){ /* 실패해도 [📋 명령] 백업으로 발송 가능 */ }
 }
 // ===== 2차 시나리오 팝업 (기술 엮기 = 해자) =====
 function openScenario(jobKey, idx){
