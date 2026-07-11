@@ -1136,18 +1136,21 @@ function _findBody(){
    +'<div id="findList">'+_leadsSkeleton()+'</div>';
 }
 function _findTier(t){ var s=String(t||''); if(/핫|hot|🔥/i.test(s)) return '<span style="font-size:10px;color:#fff;background:#e0533d;border-radius:999px;padding:1px 7px">🔥핫</span>'; if(/웜|warm|🌤/i.test(s)) return '<span style="font-size:10px;color:#8a6d0f;background:#fbeec2;border-radius:999px;padding:1px 7px">🌤웜</span>'; return ''; }
-function _findCard(icon,name,sub,text,link,tier){
+function _findCard(i, l){
   return '<div style="border:1px solid #e5e9ee;border-radius:10px;padding:10px 12px;margin-bottom:8px;background:#fff">'
-    +'<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><div style="font-size:13px;font-weight:700;color:#0d1b2a">'+icon+' '+_escOb(name||'(출처)')+'</div>'+_findTier(tier)+'</div>'
-    +(sub?('<div style="font-size:11px;color:#8a93a3;margin-top:2px">'+_escOb(sub)+'</div>'):'')
-    +'<div style="font-size:12px;color:#556;margin:5px 0 8px;line-height:1.5">'+_escOb(String(text||'').slice(0,120))+'</div>'
-    +(link?('<a href="'+_escOb(link)+'" target="_blank" rel="noopener" style="display:inline-block;padding:6px 12px;border:1px solid var(--teal);background:var(--teal-l);color:var(--teal-d);border-radius:8px;font-size:12px;font-weight:600;text-decoration:none">↗ 바로가기</a>'):'')
-    +'</div>';
+    +'<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><div style="font-size:13px;font-weight:700;color:#0d1b2a">'+l.icon+' '+_escOb(l.name||'(출처)')+'</div>'+_findTier(l.tier)+'</div>'
+    +(l.sub?('<div style="font-size:11px;color:#8a93a3;margin-top:2px">'+_escOb(l.sub)+'</div>'):'')
+    +'<div style="font-size:12px;color:#556;margin:5px 0 8px;line-height:1.5">'+_escOb(String(l.text||'').slice(0,140))+'</div>'
+    +'<div style="display:flex;gap:6px;flex-wrap:wrap">'
+      +'<button onclick="findDraft('+i+')" style="padding:6px 12px;border:1px solid var(--teal);background:var(--teal-l);color:var(--teal-d);border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">✍️ 답글 초안</button>'
+      +(l.link?('<a href="'+_escOb(l.link)+'" target="_blank" rel="noopener" style="padding:6px 12px;border:1px solid #dbe2ea;background:#fff;color:#556;border-radius:8px;font-size:12px;font-weight:600;text-decoration:none">↗ 바로가기</a>'):'')
+    +'</div><div id="draft-'+i+'"></div></div>';
 }
-function _findSection(title,list,render){
-  var hot=list.filter(function(l){return /핫|🔥/.test(l.tier||'');});
-  var warm=list.filter(function(l){return !/핫|🔥/.test(l.tier||'');});
-  var body=list.length ? (hot.map(render).join('')+warm.map(render).join('')) : '<div style="font-size:12px;color:#8a93a3;padding:4px 0 10px">아직 없어요.</div>';
+function _findSection(title,list,offset){
+  var idx=list.map(function(l,i){ return {l:l, gi:offset+i}; });
+  var hot=idx.filter(function(x){return /핫|🔥/.test(x.l.tier||'');});
+  var warm=idx.filter(function(x){return !/핫|🔥/.test(x.l.tier||'');});
+  var body=list.length ? hot.concat(warm).map(function(x){ return _findCard(x.gi, x.l); }).join('') : '<div style="font-size:12px;color:#8a93a3;padding:4px 0 10px">아직 없어요.</div>';
   return '<div style="font-size:12px;font-weight:800;color:#0d1b2a;margin:12px 0 8px">'+title+' ('+list.length+')</div>'+body;
 }
 function prospectLoadFind(){
@@ -1155,15 +1158,37 @@ function prospectLoadFind(){
   box.innerHTML=_leadsSkeleton();                                   // ① 로딩
   fetch(GENYA_API+'/api/find/leads').then(function(r){ if(!r.ok) throw 0; return r.json(); })
    .then(function(d){
-     var yt=(d.youtube||[]), nv=(d.naver||[]);
+     var yt=(d.youtube||[]).map(function(l){ return {icon:'📺', name:l.author, sub:l.videoTitle, text:l.text, link:l.link, tier:l.tier, source:'유튜브'}; });
+     var nv=(d.naver||[]).map(function(l){ return {icon:'🟢', name:(l.author||l.keyword), sub:l.source, text:l.text, link:l.link, tier:l.tier, source:(l.source||'네이버')}; });
      if(!yt.length && !nv.length){ box.innerHTML=_findEmpty(); return; }   // ② 빈
-     var h=_findSection('📺 유튜브', yt, function(l){ return _findCard('📺', l.author, l.videoTitle, l.text, l.link, l.tier); });
-     h+=_findSection('🟢 네이버 카페·지식인', nv, function(l){ return _findCard('🟢', l.author||l.keyword, l.source, l.text, l.link, l.tier); });
+     window._FIND=yt.concat(nv);                                    // ★전역 인덱스(답글초안 대상)
+     var h=_findSection('📺 유튜브', yt, 0);
+     h+=_findSection('🟢 네이버 카페·지식인', nv, yt.length);
      h+='<div style="font-size:12px;font-weight:800;color:#0d1b2a;margin:12px 0 8px">🟡 크몽</div><div style="border:1px dashed #dbe2ea;border-radius:10px;padding:14px;text-align:center;color:#8a93a3;font-size:12px">준비 중 — 곧 연결됩니다</div>';
      box.innerHTML=h;                                                // ④ 정상
    })
    .catch(function(){ box.innerHTML=_findError(); });                // ③ 에러
 }
+// ── 답글 초안(LLM) — 원 댓글 읽고 맞춤 초안 → 편집 textarea + 복사. ★게시는 설계사 직접(자동 0) ──
+function _findDraftLink(){ var p=(typeof _PROSPECT_PAGES!=='undefined'&&_PROSPECT_PAGES[1])?_PROSPECT_PAGES[1]:{url:'https://ohwant-class.netlify.app/AI금융집짓기상담사_진단.html'}; try{ return _prospectLink(p.url); }catch(e){ return p.url; } }
+function findDraft(i){
+  var l=(window._FIND||[])[i]; if(!l)return;
+  var box=document.getElementById('draft-'+i); if(!box)return;
+  box.innerHTML='<div style="margin-top:8px;font-size:12px;color:var(--teal-d)">✍️ 지니야가 답글 초안 작성 중…</div>';
+  fetch(GENYA_API+'/api/find/reply-draft',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:l.text,author:l.name,source:l.source})})
+   .then(function(r){return r.json();}).then(function(d){
+     if(!d||!d.ok||!d.draft){ box.innerHTML='<div style="margin-top:8px;font-size:12px;color:#c0392b">초안 생성 실패 — <span onclick="findDraft('+i+')" style="text-decoration:underline;cursor:pointer">다시</span></div>'; return; }
+     var txt=String(d.draft).replace('[링크]', _findDraftLink());
+     box.innerHTML='<div style="margin-top:8px;background:#f5f9f8;border:1px solid var(--teal-bd);border-radius:8px;padding:9px 10px">'
+       +'<div style="font-size:11px;color:var(--teal-d);font-weight:700;margin-bottom:5px">✍️ 지니야 답글 초안 (수정 가능 · 게시는 직접)</div>'
+       +'<textarea id="draftTa-'+i+'" style="width:100%;min-height:80px;font-size:12.5px;font-family:inherit;line-height:1.6;color:#0d1b2a;background:#fff;border:1px solid #dbe2ea;border-radius:6px;padding:8px;box-sizing:border-box;resize:vertical">'+_escOb(txt)+'</textarea>'
+       +'<div style="display:flex;gap:6px;margin-top:6px"><button onclick="findDraftCopy('+i+')" style="padding:6px 12px;border:none;background:var(--teal);color:#fff;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">📋 답글 복사</button>'
+       +(l.link?('<a href="'+_escOb(l.link)+'" target="_blank" rel="noopener" style="padding:6px 12px;border:1px solid #dbe2ea;background:#fff;color:#556;border-radius:8px;font-size:12px;text-decoration:none">↗ 바로가기</a>'):'')+'</div>'
+       +'<div style="font-size:10.5px;color:#c0392b;margin-top:6px">복사 → 바로가기 → 붙여넣기 → <b>직접 게시</b>. 지니야는 자동 게시 안 함(계정 안전).</div></div>';
+   })
+   .catch(function(){ box.innerHTML='<div style="margin-top:8px;font-size:12px;color:#c0392b">초안 생성 실패 — <span onclick="findDraft('+i+')" style="text-decoration:underline;cursor:pointer">다시</span></div>'; });
+}
+function findDraftCopy(i){ var el=document.getElementById('draftTa-'+i); var t=el?el.value:''; try{ navigator.clipboard.writeText(t).then(function(){ toast('답글 초안 복사됨 — 바로가기 후 직접 붙여넣어 게시하세요'); },function(){ toast('복사 실패'); }); }catch(e){ toast('복사 실패'); } }
 function prospectRunFind(){
   var b=document.getElementById('findRunBtn'); if(b){ b.textContent='🔍 발굴 중…(최대 30초)'; b.disabled=true; }
   var done=0, fin=function(){ done++; if(done>=2) prospectLoadFind(); };   // 두 발굴 끝나면 새로고침

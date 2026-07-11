@@ -3143,6 +3143,20 @@ app.get('/api/find/leads', (req, res) => {
     .map((l) => ({ source: l.source, author: l.author, text: l.text, link: l.link, keyword: l.keyword }));
   res.json({ ok: true, youtube: yt, naver: nv, ytCount: yt.length, nvCount: nv.length });
 });
+// ── 📡 발굴 리드 답글 초안(LLM) — 공개 댓글/글에 달 답글을 미리 써줌. ★초안까지만·게시는 설계사 직접(자동 0) ──
+app.post('/api/find/reply-draft', async (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  try {
+    const b = req.body || {};
+    const text = String(b.text || '').slice(0, 500);
+    const source = String(b.source || '공개 채널');
+    if (!text) return res.json({ ok: false, error: '내용 없음' });
+    const sys = '너는 재무설계사를 돕는 어시스턴트다. 유튜브 댓글/카페 글에 달 "답글 초안"을 쓴다. 톤: 친절하고 전문적(오상열 CFP 톤). 규칙: ① 2~3문장, 짧게 ② 상대 고민에 진심으로 공감 ③ "무료 재무진단으로 지금 상황을 점검해보시라"고 자연스럽게 권함 ④ 마지막에 링크 자리로 [링크] 토큰 하나만 넣기 ⑤ 강매·전화번호·과장·이모지 남발 금지. 답글 본문만 출력(설명 없이).';
+    const cr = await anthropic.messages.create({ model: MODEL, max_tokens: 350, system: sys, messages: [{ role: 'user', content: `[출처: ${source}] 상대 글/댓글:\n"${text}"\n\n이 사람에게 달 답글 초안을 써줘.` }] });
+    const draft = cr.content.filter((x) => x.type === 'text').map((x) => x.text).join('').trim();
+    res.json({ ok: true, draft });
+  } catch (e) { res.json({ ok: false, error: e.message }); }
+});
 app.get('/ytleads/today', (req, res) => {
   if (gateEmpty(req)) return res.json({ configured: !!process.env.YOUTUBE_API_KEY, handle: '@' + YT_HANDLE, todayCount: 0, total: 0, hot: 0, leads: [], gated: true });
   const today = addDaysYMD(0);
