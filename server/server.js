@@ -2928,6 +2928,40 @@ app.get('/leads/today', (req, res) => {
 
 // ── 네이버 카페 리드 검증 — 특정 키워드로 카페글만 수집 + 핫/웜/제외 분류(유튜브 엔진 방식) + 카페명 포함 ──
 //    1차 검증용. 대량 시스템 아님. ?kw=콤마키워드 / ?display=N 로 조정.
+// ── 📡 고객발굴비서: 진단 유입 리드 (진단페이지 웹훅 시트 → 서비스계정 읽기 · 설계사별 필터) ──
+//   ★읽기 전용. 수집·표시=자동 / 연락=설계사 직접. 시트ID(PROSPECT_SHEET_ID) 미설정이면 configured:false.
+const PROSPECT_SHEET_ID = process.env.PROSPECT_SHEET_ID || '';
+const PROSPECT_SHEET_TAB = process.env.PROSPECT_SHEET_TAB || '';   // 비우면 첫 탭 자동
+app.get('/api/prospect/leads', async (req, res) => {
+  try {
+    res.setHeader('Access-Control-Allow-Origin', '*');   // genya.html(다른 도메인)에서 GET
+    const agent = String(req.query.agent || '').trim();
+    if (!PROSPECT_SHEET_ID) return res.json({ ok: true, configured: false, leads: [], note: 'PROSPECT_SHEET_ID 미설정' });
+    const sheets = sheetsClient();
+    if (!sheets) return res.json({ ok: true, configured: false, leads: [], note: '서비스계정 미설정' });
+    let tab = PROSPECT_SHEET_TAB;
+    if (!tab) { const meta = await sheets.spreadsheets.get({ spreadsheetId: PROSPECT_SHEET_ID, fields: 'sheets.properties.title' }); tab = (((meta.data.sheets || [])[0] || {}).properties || {}).title || 'Sheet1'; }
+    const got = await sheets.spreadsheets.values.get({ spreadsheetId: PROSPECT_SHEET_ID, range: `'${tab}'!A1:Z` });
+    const rows = got.data.values || [];
+    if (rows.length < 2) return res.json({ ok: true, configured: true, count: 0, leads: [] });
+    const head = rows[0].map((h) => String(h || '').trim());
+    const col = (names) => { for (const n of names) { const i = head.indexOf(n); if (i >= 0) return i; } return -1; };
+    const iName = col(['이름', '성명']), iPhone = col(['휴대폰', '연락처', '전화']), iAgent = col(['유입설계사', 'agent']),
+          iSrc = col(['source', '유입경로', '진단페이지']), iRes = col(['분류', '등급', '진단결과', '점수']),
+          iTime = col(['접수시각', '신청시각', 'timestamp']), iStat = col(['상태']);
+    const out = [];
+    for (let r = 1; r < rows.length; r++) {
+      const row = rows[r]; const g = (i) => (i >= 0 ? String(row[i] || '').trim() : '');
+      const rowAgent = g(iAgent);
+      if (agent && rowAgent !== agent) continue;   // ★현재 설계사(agent)의 리드만
+      if (!g(iName) && !g(iPhone)) continue;        // 빈 행 스킵
+      out.push({ 이름: g(iName), 연락처: g(iPhone), 유입경로: g(iSrc), 진단결과: g(iRes), 신청시각: g(iTime), 상태: g(iStat) || '신규', 유입설계사: rowAgent });
+    }
+    out.reverse();   // 최신순(append 시트 = 아래가 최신)
+    res.json({ ok: true, configured: true, count: out.length, agent, leads: out });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
 app.get('/naverleads/test', async (req, res) => {
   try {
     if (!process.env.NAVER_CLIENT_ID || !process.env.NAVER_CLIENT_SECRET) return res.status(400).json({ error: 'NAVER_CLIENT_ID/SECRET 미설정' });

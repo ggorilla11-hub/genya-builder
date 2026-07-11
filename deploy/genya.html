@@ -1033,23 +1033,83 @@ function applyOnboardToConfirm(){
 // ===== 📡 고객발굴비서: 진단링크 임대(화이트라벨) 모델 — 발굴-1단계 =====
 // ★일반 설계사=진단링크 모델 / 대표(ggorilla11)=기존 유튜브·CRM 시나리오 유지
 function _isRep(){ try{ return String((window._ME&&window._ME.email)||'').toLowerCase()==='ggorilla11@gmail.com'; }catch(e){ return false; } }
-function _discLink(name){ return 'https://ohwant-class.netlify.app/desire?agent='+encodeURIComponent(String(name||'').trim()); }
-function _discKakao(name){ var n=String(name||'').trim()||'담당'; return '💰 내 재무건강 1분 진단 👉 '+_discLink(name)+'\n담당: '+n+' 설계사'; }
-function _discStep(no,t,s){ return '<div style="background:#0d1b2a;color:#fff;border-radius:10px;padding:10px 8px;text-align:center"><div style="width:22px;height:22px;border-radius:999px;background:#d4a017;color:#241a00;font-weight:700;font-size:12px;line-height:22px;margin:0 auto 6px">'+no+'</div><div style="font-size:11.5px;font-weight:700">'+t+'</div><div style="font-size:10px;color:#9db4d6;margin-top:2px">'+s+'</div></div>'; }
-function _discoveryHTML(name){
-  var n=String(name||'').trim(); var L=_discLink(n), K=_discKakao(n);
-  return '<div style="max-width:520px">'
-  +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px"><b style="font-size:16px;color:#0d1b2a">📡 고객발굴비서 · 내 진단 링크</b><span onclick="closeModal()" style="cursor:pointer;color:#8a93a3;font-size:20px">×</span></div>'
-  +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:14px">'+_discStep('1','내 진단링크 받기','이름만 넣으면 완성')+_discStep('2','카톡에 붙여 뿌리기','단톡·오픈채팅·프로필')+_discStep('3','아침마다 명단 받기','신청자가 내 시트에')+'</div>'
-  +'<div style="font-size:12px;color:#556;margin-bottom:6px">설계사 이름 (링크·문구에 표시)</div>'
-  +'<input id="discName" value="'+_escOb(n)+'" oninput="discoveryUpdate()" placeholder="예: 홍길동" style="width:100%;padding:11px 12px;border:1px solid #dbe2ea;border-radius:10px;font-size:14px;margin-bottom:12px;box-sizing:border-box">'
-  +'<div style="background:#f5f7fa;border:1px solid #dbe2ea;border-radius:10px;padding:12px;margin-bottom:8px"><div style="font-size:11px;color:#8a93a3;margin-bottom:4px">내 진단 링크</div><div id="discLink" style="font-size:13px;color:#0f766e;word-break:break-all;font-weight:600">'+_escOb(L)+'</div><button onclick="discoveryCopy(\'link\')" style="margin-top:8px;padding:8px 14px;border:1px solid #2a9d8f;background:#e8f4f2;color:#0f766e;border-radius:999px;font-weight:600;cursor:pointer;font-size:13px">🔗 URL 복사</button></div>'
-  +'<div style="background:#fdf6e3;border:1px solid #ecdca5;border-radius:10px;padding:12px"><div style="font-size:11px;color:#8a6d0f;margin-bottom:4px">카톡에 붙일 문구</div><div id="discKakao" style="font-size:13px;color:#5a4a12;white-space:pre-wrap">'+_escOb(K)+'</div><button onclick="discoveryCopy(\'kakao\')" style="margin-top:8px;padding:8px 14px;border:1px solid #d4a017;background:#fbf1cf;color:#8a6d0f;border-radius:999px;font-weight:600;cursor:pointer;font-size:13px">💬 카톡 문구 복사</button></div>'
-  +'<div style="font-size:11px;color:#8a93a3;margin-top:12px;line-height:1.6">신청자 정보는 <b>설계사 본인 구글시트에만</b> 쌓입니다(오원트 서버 저장 0). 아침마다 지니야가 명단으로 정리해드려요. <span style="color:#c0392b">연락은 직접(자동발송 없음).</span></div></div>';
+// ★진단페이지 배포: 2개 페이지(인간 재무상담 / AI 재무진단). 링크복사 시 ?agent=현재설계사이름 자동첨부.
+var GENYA_API='https://jenya.onrender.com';   // 유입리드=서비스계정 시트읽기(server 기존방식). main_server 무접촉 → 크로스오리진 GET.
+var _PROSPECT_PAGES=[
+  {key:'human', name:'인간 재무상담', desc:'사람 상담사와 1:1 재무설계 상담 신청', url:'https://ohwant-class.netlify.app/개인상담진단페이지.html'},
+  {key:'ai',    name:'AI 재무진단',   desc:'AI가 1분 만에 금융집 9개 영역 무료 진단', url:'https://ohwant-class.netlify.app/AI금융집짓기상담사_진단.html'}
+];
+function _agentName(){ return String(CUR_NICK||'').replace(/님$/,'').trim(); }               // ★현재 로그인 설계사 이름
+function _prospectLink(url){ var a=_agentName(); return url+(a?('?agent='+encodeURIComponent(a)):''); }  // ★자기 이름 자동 첨부
+function discoveryPanel(){ window._ACTIVE_SKILL='client_discovery'; window._PTAB='deploy'; showModal(_prospectHTML()); }
+function prospectTab(which){ window._PTAB=which; document.getElementById('modalBox').innerHTML=_prospectHTML(); if(which==='leads') prospectLoadLeads(); }
+function _prospectHTML(){
+  var tab=window._PTAB||'deploy';
+  var tb=function(id,label){ var on=(tab===id); return '<button onclick="prospectTab(\''+id+'\')" style="flex:1;padding:9px 8px;border:none;background:none;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;color:'+(on?'var(--teal-d)':'#8a93a3')+';border-bottom:2px solid '+(on?'var(--teal)':'transparent')+'">'+label+'</button>'; };
+  return '<div style="max-width:560px">'
+   +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px"><b style="font-size:16px;color:#0d1b2a">📡 고객발굴비서</b><span onclick="closeModal()" style="cursor:pointer;color:#8a93a3;font-size:20px">×</span></div>'
+   +'<div style="display:flex;margin-bottom:14px;border-bottom:1px solid #e5e9ee">'+tb('deploy','📤 진단페이지 배포')+tb('leads','📥 진단 유입 리드')+'</div>'
+   +'<div id="prospectBody">'+(tab==='deploy'?_deployBody():_leadsBody())+'</div></div>';
 }
-function discoveryUpdate(){ var n=((document.getElementById('discName')||{}).value)||''; var a=document.getElementById('discLink'); if(a)a.textContent=_discLink(n); var b=document.getElementById('discKakao'); if(b)b.textContent=_discKakao(n); window._DISC={link:_discLink(n),kakao:_discKakao(n)}; }
-function discoveryCopy(which){ var v=(window._DISC||{})[which]||''; try{ navigator.clipboard.writeText(v).then(function(){ toast(which==='link'?'링크 복사됨':'카톡 문구 복사됨'); },function(){ toast('복사 실패 — 길게 눌러 복사하세요'); }); }catch(e){ toast('복사 실패 — 길게 눌러 복사하세요'); } }
-function discoveryPanel(){ window._ACTIVE_SKILL='client_discovery'; var nm=String(CUR_NICK||'').replace(/님$/,''); showModal(_discoveryHTML(nm)); setTimeout(discoveryUpdate,0); }
+// ── 탭1: 진단페이지 배포 (카드 2개 · 데스크톱 나란히 / 모바일 세로) ──
+function _deployBody(){
+  var a=_agentName();
+  var head='<div style="font-size:12px;color:#556;line-height:1.6;margin-bottom:12px">진단페이지 링크를 복사해 <b>카톡·유튜브·카페</b>에 붙여 뿌리세요. 신청자는 '+(a?('<b style="color:var(--teal-d)">'+_escOb(a)+'</b> 설계사'):'설계사')+'의 리드로 자동 분류됩니다.</div>';
+  var cards=_PROSPECT_PAGES.map(function(p,i){
+    return '<div style="border:1px solid #dbe2ea;border-radius:12px;padding:14px;background:#fff">'
+      +'<div style="font-size:15px;font-weight:800;color:#0d1b2a">'+_escOb(p.name)+'</div>'
+      +'<div style="font-size:12px;color:#8a93a3;margin:5px 0 11px;line-height:1.5">'+_escOb(p.desc)+'</div>'
+      +'<button onclick="prospectCopy('+i+')" style="width:100%;padding:10px;border:1px solid var(--teal);background:var(--teal-l);color:var(--teal-d);border-radius:10px;font-weight:700;cursor:pointer;font-size:13px;font-family:inherit">🔗 링크 복사</button></div>';
+  }).join('');
+  return head+'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px">'+cards+'</div>'
+   +(a?'':'<div style="font-size:11px;color:#c0392b;margin-top:10px;line-height:1.5">※ 설계사 이름이 없어 링크에 유입경로가 안 붙어요. 온보딩에서 이름을 설정하세요.</div>');
+}
+function prospectCopy(i){ var p=_PROSPECT_PAGES[i]; if(!p)return; var link=_prospectLink(p.url);
+  try{ navigator.clipboard.writeText(link).then(function(){ toast('복사됐어요! 카톡·유튜브·카페에 붙여넣으세요'); },function(){ toast('복사 실패 — 길게 눌러 복사하세요'); }); }
+  catch(e){ toast('복사 실패 — 길게 눌러 복사하세요'); } }
+// ── 탭2: 진단 유입 리드 (4상태: 로딩→빈/에러/정상 · 내 리드만 필터 · 연락=직접) ──
+function _leadsBody(){
+  return '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">'
+     +'<div style="font-size:12px;color:#556;line-height:1.5">내 진단 링크로 신청한 고객만 표시 · <span style="color:#c0392b">연락은 직접(자동발송 없음)</span></div>'
+     +'<button onclick="prospectLoadLeads()" style="padding:6px 10px;border:1px solid #dbe2ea;background:#fff;border-radius:8px;font-size:12px;cursor:pointer;color:#556;font-family:inherit;white-space:nowrap">↻ 새로고침</button></div>'
+   +'<div id="leadsList">'+_leadsSkeleton()+'</div>';   // 로딩상태(스켈레톤) 먼저
+}
+function _leadsSkeleton(){ var row='<div style="height:70px;border:1px solid #eef1f4;border-radius:10px;margin-bottom:8px;background:linear-gradient(90deg,#f4f6f8,#eceff2,#f4f6f8);opacity:.7"></div>'; return row+row+row; }
+function prospectLoadLeads(){
+  var box=document.getElementById('leadsList'); if(!box)return;
+  box.innerHTML=_leadsSkeleton();                                  // ① 로딩
+  fetch(GENYA_API+'/api/prospect/leads?agent='+encodeURIComponent(_agentName()))
+   .then(function(r){ if(!r.ok) throw new Error('http '+r.status); return r.json(); })
+   .then(function(d){
+     if(!d || d.configured===false){ box.innerHTML=_leadsNotReady(); return; }   // 시트 미연결
+     var list=(d.leads||[]); window._PLEADS=list;
+     box.innerHTML = list.length ? _leadsRows(list) : _leadsEmpty();              // ④ 정상 / ② 빈
+   })
+   .catch(function(){ box.innerHTML=_leadsError(); });                            // ③ 에러
+}
+function _leadKey(l){ return (l.이름||'')+'|'+(l.연락처||'')+'|'+(l.신청시각||''); }
+function _leadStatus(l){ try{ return (JSON.parse(localStorage.getItem('genya_prospect_status')||'{}'))[_leadKey(l)]||'신규'; }catch(e){ return '신규'; } }
+function _setLeadStatus(l,s){ try{ var m=JSON.parse(localStorage.getItem('genya_prospect_status')||'{}'); m[_leadKey(l)]=s; localStorage.setItem('genya_prospect_status',JSON.stringify(m)); }catch(e){} }
+function _leadsRows(list){
+  return list.map(function(l,i){
+    var isNew=(_leadStatus(l)==='신규');
+    var badge=isNew?' <span style="font-size:10px;color:#fff;background:var(--teal);border-radius:999px;padding:1px 7px;vertical-align:middle">NEW</span>':'';
+    var tel=String(l.연락처||'').replace(/[^0-9+]/g,'');
+    return '<div style="border:1px solid '+(isNew?'var(--teal-bd)':'#e5e9ee')+';border-left:4px solid '+(isNew?'var(--teal)':'#e5e9ee')+';border-radius:10px;padding:11px 12px;margin-bottom:8px;background:'+(isNew?'var(--teal-l)':'#fff')+'">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center"><div style="font-size:14px;font-weight:800;color:#0d1b2a">'+_escOb(l.이름||'(이름없음)')+badge+'</div><div style="font-size:11px;color:#8a93a3">'+_escOb(l.신청시각||'')+'</div></div>'
+      +'<div style="font-size:12px;color:#556;margin-top:5px;line-height:1.5">📞 '+_escOb(l.연락처||'-')+' · 🔎 '+_escOb(l.유입경로||'-')+(l.진단결과?(' · 📊 '+_escOb(l.진단결과)):'')+'</div>'
+      +'<div style="display:flex;gap:6px;margin-top:9px">'
+        +'<a href="tel:'+_escOb(tel)+'" style="flex:1;text-align:center;padding:8px;border:1px solid var(--teal);background:var(--teal-l);color:var(--teal-d);border-radius:8px;font-weight:700;font-size:12px;text-decoration:none">📞 전화 연락</a>'
+        +'<button onclick="prospectCopyPhone('+i+')" style="padding:8px 10px;border:1px solid #dbe2ea;background:#fff;border-radius:8px;font-size:12px;cursor:pointer;color:#556;font-family:inherit">📋 번호</button>'
+        +'<button onclick="prospectToggle('+i+')" style="padding:8px 10px;border:1px solid '+(isNew?'#dbe2ea':'var(--teal)')+';background:'+(isNew?'#fff':'var(--teal-l)')+';color:'+(isNew?'#556':'var(--teal-d)')+';border-radius:8px;font-size:12px;cursor:pointer;font-weight:600;font-family:inherit">'+(isNew?'✓ 연락함':'↩ 신규로')+'</button>'
+      +'</div></div>';
+  }).join('');
+}
+function prospectCopyPhone(i){ var l=(window._PLEADS||[])[i]; if(!l)return; try{ navigator.clipboard.writeText(l.연락처||'').then(function(){ toast('연락처 복사됨'); }); }catch(e){} }
+function prospectToggle(i){ var l=(window._PLEADS||[])[i]; if(!l)return; _setLeadStatus(l, _leadStatus(l)==='신규'?'연락함':'신규'); document.getElementById('leadsList').innerHTML=_leadsRows(window._PLEADS||[]); }
+function _leadsEmpty(){ return '<div style="text-align:center;padding:30px 16px"><div style="font-size:32px">📭</div><div style="font-size:13px;font-weight:700;color:#556;margin-top:8px">아직 유입된 리드가 없어요</div><div style="font-size:11.5px;color:#8a93a3;margin-top:6px;line-height:1.6">위 <b>진단페이지 배포</b> 탭에서 링크를 복사해<br>카톡·유튜브·카페에 뿌려보세요.</div></div>'; }
+function _leadsError(){ return '<div style="text-align:center;padding:30px 16px"><div style="font-size:32px">⚠️</div><div style="font-size:13px;font-weight:700;color:#c0392b;margin-top:8px">리드를 불러오지 못했어요</div><button onclick="prospectLoadLeads()" style="margin-top:12px;padding:9px 18px;border:1px solid var(--teal);background:var(--teal-l);color:var(--teal-d);border-radius:10px;font-weight:700;cursor:pointer;font-size:13px;font-family:inherit">↻ 다시 시도</button></div>'; }
+function _leadsNotReady(){ return '<div style="text-align:center;padding:28px 16px"><div style="font-size:32px">🔧</div><div style="font-size:13px;font-weight:700;color:#556;margin-top:8px">리드 시트 연결 준비 중</div><div style="font-size:11.5px;color:#8a93a3;margin-top:6px;line-height:1.6">진단 신청은 이미 구글시트에 쌓이고 있어요.<br>본사에서 시트 연결만 켜면 여기에 바로 표시됩니다.</div></div>'; }
 // ===== 📊 관리-2: 오늘 이벤트 대시보드 (있는 데이터 기반·결정적·초안 승인용) =====
 function managementDashboard(){
   var mf=window._MGMTFILE; if(!mf||!mf.file){ toast('먼저 고객 명단 엑셀을 올려주세요'); return; }
