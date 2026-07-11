@@ -1078,17 +1078,53 @@ function dashSend(i,j){ var c=(((window._DASH||{}).metrics||[])[i]||{}).cards; c
   var nm=_escOb(c.이름||''); var draft=_escOb(_kakaoMsgClean(c.초안));
   showModal('<div style="max-width:520px"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px"><b style="font-size:16px;color:#0d1b2a">📨 카톡 발송 승인</b><span onclick="closeModal()" style="cursor:pointer;color:#8a93a3;font-size:20px">×</span></div>'
     +'<div style="font-size:13px;color:#0d1b2a;margin-bottom:6px">고객: <b>'+nm+'</b></div>'
-    +'<div style="font-size:12px;color:#556;background:#f5f7fa;border-radius:8px;padding:10px;white-space:pre-wrap;margin-bottom:10px">'+draft+'</div>'
+    +'<div style="font-size:11px;color:#8a93a3;margin-bottom:4px">문구 (직접 수정 가능 — 편집한 내용이 그대로 발송됩니다)</div>'
+    +'<textarea id="sendDraft" style="width:100%;height:120px;font-size:13px;font-family:inherit;line-height:1.6;color:#0d1b2a;background:#f5f7fa;border:1px solid #dbe2ea;border-radius:8px;padding:10px;box-sizing:border-box;margin-bottom:10px;resize:vertical">'+_escOb(c.초안||'')+'</textarea>'
     +'<div style="font-size:11px;color:#c0392b;line-height:1.6;margin-bottom:12px">⚠️ 발송 전 반드시 검토하세요(사람이 최종 확인).<br>· <b>이제 방을 미리 열어두지 않아도</b> 이름으로 채팅을 검색해 발송됩니다.<br>· 카톡에 <b>'+nm+'</b>님과 대화 이력이 있으면 자동으로 찾아 엽니다(없으면 “검색 결과 없음” 안내).<br>· 최종 발송은 파워셸에서 <b>y</b>로 승인해야만 나갑니다.</div>'
     +'<div style="display:flex;gap:8px"><button onclick="dashSendApprove()" style="flex:1;padding:10px;border:none;border-radius:10px;background:#fee500;color:#3c1e1e;font-weight:700;cursor:pointer">✅ 승인 — 발송명령 만들기</button><button onclick="closeModal()" style="padding:10px 16px;border:1px solid #dbe2ea;border-radius:10px;background:#fff;color:#556;cursor:pointer">취소</button></div></div>'); }
 function dashSendApprove(){ var p=window._PENDING_SEND; if(!p||!p.nm){ toast('대상을 찾지 못했어요'); return; }
-  var nm=p.nm; var cmd=_kakaoCmd(nm, p.msg); _sendLogAdd(nm, p.msg); window._LASTCMD=cmd;   // ★스냅샷(_PENDING_SEND)만 사용 → 승인 대상=발송 대상 100% 일치
+  var nm=p.nm;
+  var _el=document.getElementById('sendDraft'); var msg=(_el && String(_el.value).trim()!=='') ? _el.value : p.msg; // ★편집된 최종본 우선(비었으면 원본). 이 값이 명령·발송파일 모두에 쓰임
+  window._PENDING_SEND.msg=msg; // 스냅샷을 최종본으로 갱신 → 명령복사=발송파일 100% 일치
+  var cmd=_kakaoCmd(nm, msg); _sendLogAdd(nm, msg); window._LASTCMD=cmd;
   showModal('<div style="max-width:540px"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px"><b style="font-size:16px;color:#0d1b2a">✅ 승인됨 — 발송 명령</b><span onclick="closeModal()" style="cursor:pointer;color:#8a93a3;font-size:20px">×</span></div>'
-    +'<div style="font-size:12px;color:#556;margin-bottom:8px">아래 명령을 복사해 <b>파워셸에 붙여넣기</b> → <b>이름으로 자동 검색·방 열림</b> → <b>[3] 입력 확인</b> 뜨면 <b>y</b>로 발송 → 카톡 도착 확인.</div>'
+    +'<div style="font-size:12.5px;color:#0d7a52;margin-bottom:6px">✅ <b>추천:</b> watcher를 켜두셨다면 아래 <b>[📤 발송 파일 저장]</b> 한 번이면 자동 발송됩니다.</div>'
+    +'<div style="font-size:11.5px;color:#8a93a3;margin-bottom:8px">또는 수동: 아래 명령 복사 → 파워셸 붙여넣기 → <b>y</b>로 발송.</div>'
     +'<textarea id="sendCmd" readonly style="width:100%;height:90px;font-size:11px;font-family:monospace;border:1px solid #dbe2ea;border-radius:8px;padding:8px;box-sizing:border-box;color:#0d1b2a">'+_escOb(window._LASTCMD)+'</textarea>'
-    +'<div style="display:flex;gap:8px;margin-top:10px"><button onclick="dashCmdCopy()" style="flex:1;padding:10px;border:none;border-radius:10px;background:var(--teal);color:#fff;font-weight:700;cursor:pointer">📋 명령 복사</button><button onclick="closeModal()" style="padding:10px 16px;border:1px solid #dbe2ea;border-radius:10px;background:#fff;color:#556;cursor:pointer">닫기</button></div>'
+    +'<div style="display:flex;gap:8px;margin-top:10px"><button onclick="dashSaveOutbox()" style="flex:1;padding:10px;border:none;border-radius:10px;background:#0d7a52;color:#fff;font-weight:700;cursor:pointer">📤 발송 파일 저장</button><button onclick="dashCmdCopy()" style="flex:1;padding:10px;border:none;border-radius:10px;background:var(--teal);color:#fff;font-weight:700;cursor:pointer">📋 명령 복사</button></div>'
+    +'<div style="margin-top:8px"><button onclick="closeModal()" style="width:100%;padding:9px;border:1px solid #dbe2ea;border-radius:10px;background:#fff;color:#556;cursor:pointer">닫기</button></div>'
     +'<div style="font-size:11px;color:#8a93a3;margin-top:10px">기록됨: '+_escOb(nm)+'님 · '+new Date().toLocaleString('ko-KR')+' (발송기록에 저장)</div></div>'); }
 function dashCmdCopy(){ try{ navigator.clipboard.writeText(window._LASTCMD||'').then(function(){ toast('발송 명령 복사됨 — 파워셸에 붙여넣기'); },function(){ toast('복사 실패'); }); }catch(e){ toast('복사 실패'); } }
+// ★2단계(v1): 발송요청 payload를 outbox 폴더에 저장 → watcher가 감지·발송. FSA 우선, 안 되면 다운로드 폴백. (클라만·배포서버 무접촉·기존 명령복사 병행)
+var _GENYA_OUTBOX_HANDLE=null; // FSA 폴더 핸들(세션 캐시)
+function _genyaPayload(){ var p=window._PENDING_SEND||{};
+  var id=(Date.now().toString(36)+Math.random().toString(36).slice(2,8));
+  return { id:id, name:(p.nm||''), msg:(p.msg||''), ts:new Date().toISOString(), hmac:'' }; } // msg=편집된 최종본(dashSendApprove에서 갱신됨)
+function dashSaveOutbox(){
+  var payload=_genyaPayload();
+  if(!payload.name || !String(payload.msg).trim()){ toast('발송할 대상/문구가 없어요'); return; }
+  var fname='genyasend_'+payload.id+'.json'; var text=JSON.stringify(payload,null,2);
+  if(window.showDirectoryPicker){ _saveViaFSA(fname,text,payload); } else { _saveViaDownload(fname,text,payload); }
+}
+function _saveViaFSA(fname,text,payload){ (async function(){
+  try{
+    if(!_GENYA_OUTBOX_HANDLE){ toast('발송 폴더(kakao_watcher\\outbox)를 한 번만 지정해주세요'); _GENYA_OUTBOX_HANDLE=await window.showDirectoryPicker({id:'genyaOutbox',mode:'readwrite'}); }
+    var fh=await _GENYA_OUTBOX_HANDLE.getFileHandle(fname,{create:true});
+    var w=await fh.createWritable(); await w.write(text); await w.close();
+    _saveDone(payload);
+  }catch(e){ _saveViaDownload(fname,text,payload); } // 취소/미지원 → 다운로드 폴백
+})(); }
+function _saveViaDownload(fname,text,payload){
+  try{
+    var blob=new Blob([text],{type:'application/json'});
+    var a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=fname;
+    document.body.appendChild(a); a.click();
+    setTimeout(function(){ document.body.removeChild(a); URL.revokeObjectURL(a.href); },1000);
+    _saveDone(payload);
+  }catch(e){ toast('발송 파일 저장 실패 — 명령 복사를 이용해주세요'); }
+}
+function _saveDone(payload){
+  showModal('<div style="max-width:460px;text-align:center;padding:8px"><div style="font-size:40px;margin-bottom:6px">📤</div><b style="font-size:16px;color:#0d1b2a">발송 요청됨 — watcher가 발송합니다</b><div style="font-size:12.5px;color:#556;margin-top:10px;line-height:1.7">'+_escOb(payload.name)+'님에게 보낼 문구를 발송 폴더에 저장했어요.<br><b>watcher가 켜져 있으면</b> 곧 카톡으로 나갑니다.<br><span style="color:#8a93a3">(watcher가 꺼져 있으면 켠 뒤 자동 발송돼요)</span></div><button onclick="closeModal()" style="margin-top:14px;padding:10px 24px;border:none;border-radius:10px;background:var(--teal);color:#fff;font-weight:700;cursor:pointer">확인</button></div>'); }
 // ===== 2차 시나리오 팝업 (기술 엮기 = 해자) =====
 function openScenario(jobKey, idx){
   const j = GENYA_JOBS[jobKey] || GENYA_JOBS.insurance;
