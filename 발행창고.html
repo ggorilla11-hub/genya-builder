@@ -158,6 +158,10 @@
 
     <div class="view" id="view"></div>
 
+    <!-- 📱 폰 재생 시험 — 3단계 검수 화면이 폰에서 영상을 재생할 수 있는지 미리 확인.
+         추측하지 말고 대표님이 직접 눌러보시게 한다. 보관함의 진짜 쇼츠를 씁니다. -->
+    <div class="view" id="vtest" style="margin-top:14px"></div>
+
   </div>
 
   <div class="foot">
@@ -342,7 +346,30 @@ async function upload(el){
 }
 function openSheet(){ if(SHEET_URL) window.open(SHEET_URL, '_blank'); }
 
+// ── 📱 폰 재생 시험 ───────────────────────────────────────────────────────
+//    3단계 검수는 "영상을 눈으로 보는 일"이다. 폰에서 파이어베이스 mp4가
+//    재생되는지가 그 화면의 전제다. 추측 대신 지금 눌러보시게 한다.
+async function vtest(){
+  const box = document.getElementById('vtest');
+  try{
+    const j = await (await fetch('/warehouse/sample-video')).json();
+    if(!j.ok){ box.innerHTML = '<h3>📱 폰 재생 시험</h3><div class="empty">보관함에 쇼츠가 없어 시험할 영상이 없습니다.</div>'; return; }
+    box.innerHTML =
+      '<h3>📱 폰 재생 시험 <span class="badge" style="background:rgba(59,143,212,.2);color:var(--blue)">3단계 검수 화면 전제</span></h3>'
+    + '<div class="note"><b>이게 폰에서 재생되면</b> 3단계 검수 화면(영상 보고 승인/반려)이 그대로 됩니다. '
+    + '안 되면 다른 방법을 찾아야 합니다. <b>추측하지 말고 지금 눌러보세요.</b></div>'
+    + '<video src="' + esc(j.url) + '" controls playsinline preload="metadata" '
+    + 'style="width:100%;max-width:340px;margin-top:12px;border-radius:10px;background:#000;display:block"></video>'
+    + '<div class="note" style="margin-top:10px">▶ 재생: <b>' + esc(j.name) + '</b> (보관함의 실제 쇼츠)<br>'
+    + '<span id="vres" style="color:var(--soft)">재생되면 ✅, 안 되면 ❌ 를 알려주세요.</span></div>';
+    const v = box.querySelector('video');
+    v.addEventListener('playing', () => { document.getElementById('vres').innerHTML = '<b style="color:var(--green)">✅ 재생됨 — 검수 화면 그대로 만들면 됩니다.</b>'; });
+    v.addEventListener('error',   () => { document.getElementById('vres').innerHTML = '<b style="color:#FFB4A5">❌ 재생 실패 — 다른 방법이 필요합니다. 이 화면을 알려주세요.</b>'; });
+  }catch(e){ box.innerHTML = '<h3>📱 폰 재생 시험</h3><div class="empty">시험 영상을 못 불러왔습니다 — ' + esc(e.message) + '</div>'; }
+}
+
 boot();
+vtest();
 </script>
 </body>
 </html>

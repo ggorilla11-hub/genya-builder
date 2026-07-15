@@ -5813,6 +5813,13 @@ app.get('/warehouse/copies', async (req, res) => {
   catch (e) { res.status(502).json({ error: e.message }); }
 });
 
+// 폰 재생 시험 — 검수 화면(3단계)이 파이어베이스 mp4를 폰에서 바로 재생할 수 있나?
+//   추측하지 말고 대표님이 눌러보시게 한다. 보관함의 실제 쇼츠를 그대로 쓴다(읽기만).
+app.get('/warehouse/sample-video', (req, res) => {
+  const v = myContents().find((c) => c.type === '쇼츠' && /^https?:\/\//i.test(c.link || ''));
+  res.json(v ? { ok: true, name: v.name, url: v.link } : { ok: false, note: '보관함에 쇼츠가 없습니다' });
+});
+
 app.post('/warehouse/copies', async (req, res) => {
   try {
     const b = req.body || {};
