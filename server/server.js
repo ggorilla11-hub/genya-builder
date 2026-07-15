@@ -5730,11 +5730,24 @@ const PUB_MIGRATE_ON = String(process.env.PUB_MIGRATE || 'on').toLowerCase() !==
 // 부팅 결과를 창구에서도 볼 수 있게 남긴다(Render 로그를 못 보는 경우 대비). ★토큰값 0노출.
 let PUB_BOOT = { at: '', migrate: '(아직 안 함)', channels: 0, error: '' };
 
+// ★ 라이브 실측으로 잡은 경합(2026-07-16): 기존 refresh_token은 부팅 때 '시트에서 비동기로' 복원된다
+//   (위 saveYtTokenToSheet 아래의 복원 IIFE). 내 이관 코드가 그보다 먼저 달리면 토큰이 아직 비어 있어
+//   '기존 토큰이 비어 있음'으로 건너뛴다 — 실제로 첫 배포에서 그렇게 됐다.
+//   로컬에선 시트에 토큰이 없어 같은 메시지가 나오므로 이 경합이 안 보인다(라이브에서만 드러남).
+//   → 토큰이 채워질 때까지 잠깐 기다린다. 못 기다려도 무해(폴백으로 발행 정상 + 다음 부팅에 재시도).
+async function waitForYtToken(maxMs = 90000, everyMs = 3000) {
+  const until = Date.now() + maxMs;
+  while (!YT_REFRESH_TOKEN && Date.now() < until) await new Promise((r) => setTimeout(r, everyMs));
+  return !!YT_REFRESH_TOKEN;
+}
+
 // 부팅 1회: 기존 '제니야_유튜브토큰' → '발행채널토큰' 복사(★원본 탭 보존·삭제 0) + 메모리 적재.
 //   실패해도 무해 — YT_CHANNEL_TOKENS가 비면 ytClient()가 기존 전역 토큰으로 폴백한다.
 (async () => {
   if (!PUB_MIGRATE_ON) { PUB_BOOT.migrate = 'PUB_MIGRATE=off — 건너뜀'; return; }
   try {
+    const waited = await waitForYtToken();
+    PUB_BOOT.tokenReady = waited;
     const r = await PUBSCHED.migrateToken({
       oldSheetId: RESV_SHEET_ID, oldTab: YT_TOKEN_TAB,
       channelId: YT_MAIN_CHANNEL_ID, channelName: '유튜브(금융집짓기) @OhSangRyul',
