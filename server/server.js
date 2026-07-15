@@ -14,6 +14,9 @@ const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
+// 📅 발행 스케줄러(예약표 읽기 전용). 여기선 불러만 둔다 — 실제 연결·시계는 이 파일 맨 아래.
+//    (위쪽 ytClient가 폴백 규칙 pickToken을 쓰므로 맨 위에서 불러야 한다)
+const PUBSCHED = require('./publish_scheduler');
 const Anthropic = require('@anthropic-ai/sdk');
 
 // ── 기본 설정 ──────────────────────────────────────────────
@@ -2014,9 +2017,16 @@ function ytOAuthClient() {
   return new google.auth.OAuth2(id, secret, YT_REDIRECT_URI);
 }
 function youtubeReady() { return !!(process.env.YT_CLIENT_ID && process.env.YT_CLIENT_SECRET && YT_REFRESH_TOKEN); }
-function ytClient() {
-  const o = ytOAuthClient(); if (!o || !YT_REFRESH_TOKEN) return null;
-  o.setCredentials({ refresh_token: YT_REFRESH_TOKEN });
+// ★ 3-4: 채널별 토큰 지원 + 폴백.
+//   · 인자 없이 ytClient()로 부르면(기존 9시 발행 경로 전부가 그렇다) 동작이 이전과 100% 동일하다.
+//   · 채널ID를 주면 그 채널 토큰을 쓰고, 그 채널이 없거나 적재 실패면 기존 전역 토큰으로 자동 복귀.
+//   · 동기 함수 유지(시트 조회를 여기서 하지 않고 부팅 때 메모리에 올려둔다) → 기존 호출부 수정 0.
+let YT_CHANNEL_TOKENS = {};   // { 채널ID: refresh_token } — 발행채널토큰 탭에서 복호화 적재
+function ytClient(channelId) {
+  const o = ytOAuthClient(); if (!o) return null;
+  const tok = PUBSCHED.pickToken(channelId, YT_CHANNEL_TOKENS, YT_REFRESH_TOKEN);   // ← 폴백 규칙(시험됨)
+  if (!tok) return null;
+  o.setCredentials({ refresh_token: tok });
   return google.youtube({ version: 'v3', auth: o });
 }
 // refresh_token 시트 영구보관 (SCHED와 동일 패턴)
@@ -5695,4 +5705,61 @@ app.listen(PORT, () => {
   console.log(`📨 고객관리 손 — 구글열쇠 ${googleCreds() ? 'O' : 'X'} / Solapi ${solapi ? 'O' : 'X'} / 발신번호 ${SOLAPI_SENDER ? 'O' : 'X'}`);
   console.log(`📤 발송 3종 — 카톡공유(JS키) ${KAKAO_JS_KEY ? 'O' : 'X'} / 나에게보내기(토큰) ${KAKAO_ACCESS_TOKEN ? 'O' : 'X'} / 문자(발신번호) ${(solapi && SOLAPI_SENDER) ? 'O' : 'X'}`);
   console.log(`🎙 녹음변환 Whisper(OPENAI_API_KEY) ${OPENAI_API_KEY ? 'O' : 'X'}`);
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 📅 발행 스케줄러 (작업 3) — 예약표(제니야_발행관제)를 읽는 시계. ★읽기 전용·발행 0.
+//
+//   ★ 60초 발행 setInterval(runYoutubeAutoPublish·runInstagramAuto)과 **완전 별개 타이머**.
+//     그 줄도 그 함수들도 한 글자 안 건드림. 병행으로만 깔린다(대표님 확인 후 전환).
+//   ★ 독립 try/catch — 여기서 무슨 일이 나도 기존 9시·19시 발행에 전파 0.
+//   ★ PUB_SCHED=off 로 통째로 끌 수 있음(끄면 완전 no-op).
+//   ★ 이 경로엔 발행 함수가 아예 없다(모듈에 없음) + DRY_RUN 자물쇠 = 2중 안전.
+// ═══════════════════════════════════════════════════════════════════════════
+PUBSCHED.init({ sheetsClient, encToken, decToken });   // (require는 파일 맨 위)
+// ★ 스위치 2개 (일부러 분리) ─────────────────────────────────────────────
+//   PUB_SCHED   = 시계(60초 예약표 읽기 타이머)·창구. ★기본 off — 켜려면 PUB_SCHED=on.
+//                 (새 기능은 기본 꺼짐 = 이 저장소 관례. MORNING_BRIEF·ORCH_AUTO와 동일)
+//                 → 환경변수를 아무것도 안 넣어도 꺼진 채 배포된다.
+//   PUB_MIGRATE = 토큰 이관·적재. 시계와 별개인 이유: 시계를 꺼둔 채 배포해도
+//                 '이관이 됐는지'는 대표님이 깨어 계실 때 확인해야 하기 때문.
+//                 이관은 새 시트(발행관제)에만 쓴다 — 기존 탭·발행 경로에 쓰기 0.
+const PUB_SCHED_ON   = String(process.env.PUB_SCHED   || 'off').toLowerCase() === 'on';
+const PUB_MIGRATE_ON = String(process.env.PUB_MIGRATE || 'on').toLowerCase() !== 'off';
+
+// 부팅 결과를 창구에서도 볼 수 있게 남긴다(Render 로그를 못 보는 경우 대비). ★토큰값 0노출.
+let PUB_BOOT = { at: '', migrate: '(아직 안 함)', channels: 0, error: '' };
+
+// 부팅 1회: 기존 '제니야_유튜브토큰' → '발행채널토큰' 복사(★원본 탭 보존·삭제 0) + 메모리 적재.
+//   실패해도 무해 — YT_CHANNEL_TOKENS가 비면 ytClient()가 기존 전역 토큰으로 폴백한다.
+(async () => {
+  if (!PUB_MIGRATE_ON) { PUB_BOOT.migrate = 'PUB_MIGRATE=off — 건너뜀'; return; }
+  try {
+    const r = await PUBSCHED.migrateToken({
+      oldSheetId: RESV_SHEET_ID, oldTab: YT_TOKEN_TAB,
+      channelId: YT_MAIN_CHANNEL_ID, channelName: '유튜브(금융집짓기) @OhSangRyul',
+      plainToken: YT_REFRESH_TOKEN,
+    });
+    PUB_BOOT.migrate = r.ok ? (r.already ? '이미 이관됨 — 건너뜀' : '복사 완료(기존 탭 그대로 보존)') : '건너뜀: ' + r.why;
+    console.log('📅 [토큰이관]', PUB_BOOT.migrate);
+    YT_CHANNEL_TOKENS = await PUBSCHED.loadChannelTokens();
+    PUB_BOOT.channels = Object.keys(YT_CHANNEL_TOKENS).length;
+    console.log(`📅 [채널토큰] ${PUB_BOOT.channels}개 적재${PUB_BOOT.channels ? '' : ' — 없음 → 기존 전역 토큰으로 폴백(발행 정상)'}`);
+  } catch (e) {
+    PUB_BOOT.error = e.message;
+    console.warn('📅 [발행스케줄러] 부팅 준비 실패(무해·폴백 작동):', e.message);
+  } finally { PUB_BOOT.at = new Date().toISOString().slice(0, 16).replace('T', ' ') + ' UTC'; }
+})();
+
+// ★ 발행 60초 루프와 별개 타이머. 읽기·로그만.
+if (PUB_SCHED_ON) setInterval(() => { PUBSCHED.tick(false).catch(() => {}); }, 60 * 1000);
+
+// 대표님 확인용 창구 (읽기 전용·★토큰값 0노출 — 채널ID 개수와 부팅 결과만)
+app.get('/publish/status', async (req, res) => {
+  const boot = { ...PUB_BOOT, channelIds: Object.keys(YT_CHANNEL_TOKENS) };
+  if (!PUB_SCHED_ON) return res.json({ on: false, note: '시계 꺼짐(PUB_SCHED=off) — 예약표 안 읽음·발행 0', boot });
+  try {
+    const snap = String(req.query.fresh || '') === '1' ? await PUBSCHED.tick(true) : PUBSCHED.last();
+    res.json({ on: true, dryRun: PUBSCHED.DRY_RUN, tab: PUBSCHED.RESV_TAB_NAME, boot, ...snap });
+  } catch (e) { res.status(502).json({ on: true, boot, error: e.message }); }
 });
