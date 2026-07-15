@@ -5790,6 +5790,47 @@ async function waitForYtToken(maxMs = 90000, everyMs = 3000) {
 // ★ 발행 60초 루프와 별개 타이머. 읽기·로그만.
 if (PUB_SCHED_ON) setInterval(() => { PUBSCHED.tick(false).catch(() => {}); }, 60 * 1000);
 
+// ═══════════════════════════════════════════════════════════════════════════
+// 🏭 발행창고 (1단계) — 캠페인 고르기 + 한줄카피 재료 넣기.
+//   ★ 발행 무접촉: 발행 함수·60초 스케줄러·예약표(발행예약) 전부 안 건드린다.
+//     이 블록이 통째로 죽어도 9시 발행은 그대로 돈다(독립 try/catch).
+//   ★ 진실은 시트다 — 캠페인 표를 코드에 안 박았다. 랜딩이 새로 생겨도
+//     대표님이 시트에 한 줄 추가하면 끝(개발자·배포 0).
+// ═══════════════════════════════════════════════════════════════════════════
+const WH = require('./warehouse');
+WH.init({ sheetsClient, sheetId: PUBSCHED.PUB_SHEET_ID });
+const WH_SHEET_URL = `https://docs.google.com/spreadsheets/d/${PUBSCHED.PUB_SHEET_ID}/edit`;
+
+app.get('/warehouse', (req, res) => res.sendFile(path.join(__dirname, '..', '발행창고.html')));
+
+app.get('/warehouse/campaigns', async (req, res) => {
+  try { res.json({ campaigns: await WH.readCampaigns(), sheetUrl: WH_SHEET_URL }); }
+  catch (e) { res.status(502).json({ error: e.message }); }
+});
+
+app.get('/warehouse/copies', async (req, res) => {
+  try { res.json({ copies: await WH.readCopies(String(req.query.key || '')) }); }
+  catch (e) { res.status(502).json({ error: e.message }); }
+});
+
+app.post('/warehouse/copies', async (req, res) => {
+  try {
+    const b = req.body || {};
+    const key = String(b.key || '').trim();
+    if (!key) return res.status(400).json({ error: '캠페인을 먼저 고르세요.' });
+    // 아무 캠페인 이름이나 받지 않는다 — 시트에 실제로 있는 캠페인만.
+    const camps = await WH.readCampaigns();
+    if (!camps.some((c) => c.key === key)) return res.status(400).json({ error: `시트 「캠페인」 탭에 없는 캠페인입니다: ${key}` });
+
+    const { copies, broken, error } = WH.parseCopies(b.text, b.filename);
+    if (error) return res.status(400).json({ error });
+    if (!copies.length) return res.status(400).json({ error: '읽을 수 있는 카피가 없습니다. txt 파일에 한 줄씩 넣어 주세요.' });
+
+    const out = await WH.saveCopies(key, copies);
+    res.json({ ok: true, broken, ...out });
+  } catch (e) { res.status(502).json({ error: e.message }); }
+});
+
 // 대표님 확인용 창구 (읽기 전용·★토큰값 0노출 — 채널ID 개수와 부팅 결과만)
 app.get('/publish/status', async (req, res) => {
   const boot = { ...PUB_BOOT, channelIds: Object.keys(YT_CHANNEL_TOKENS) };

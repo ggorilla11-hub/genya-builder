@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>제니야 발행창고 | 오원트</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0A1512; --panel:#0F211E; --panel2:#143029; --line:#254842;
+    --teal:#22C7B8; --mint:#7EE0D8; --deep:#0A5D5A;
+    --gold:#F2B23E; --red:#E5573D; --blue:#3B8FD4; --green:#2FBF71; --purple:#9B7EDE; --pink:#E06B9E;
+    --ink:#EAF3F1; --soft:#93AEA9;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:'Noto Sans KR',sans-serif;background:#050D0B;color:var(--ink);line-height:1.6;padding:14px 8px;-webkit-font-smoothing:antialiased}
+  .doc{max-width:1060px;margin:0 auto;background:var(--bg);border-radius:18px;overflow:hidden;box-shadow:0 8px 40px rgba(0,0,0,.55);border:1px solid var(--line)}
+
+  .hero{background:linear-gradient(150deg,#0A5D5A,#0A1512 72%);padding:26px 24px 22px;border-bottom:1px solid var(--line)}
+  .hero .tag{display:inline-flex;font-size:11px;font-weight:900;letter-spacing:.09em;background:rgba(34,199,184,.14);border:1px solid rgba(34,199,184,.4);color:var(--mint);padding:4px 11px;border-radius:5px}
+  .hero h1{font-size:23px;font-weight:900;line-height:1.3;margin:11px 0 6px}
+  .hero h1 .hl{color:var(--gold)}
+  .hero p{font-size:12.5px;color:var(--soft);max-width:660px}
+  .stage{display:inline-block;font-size:10px;font-weight:900;background:var(--blue);color:#fff;padding:2px 8px;border-radius:9px;margin-left:6px;vertical-align:middle}
+
+  .body{padding:22px 20px 30px}
+
+  .selbar{background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:16px 18px;margin-bottom:14px}
+  .selrow{display:grid;grid-template-columns:1fr 1fr 1.4fr auto;gap:11px;align-items:end}
+  .fld label{display:block;font-size:10.5px;font-weight:900;color:var(--soft);margin-bottom:5px;letter-spacing:.04em}
+  .fld label .num{display:inline-block;width:15px;height:15px;background:var(--teal);color:#04110F;border-radius:3px;text-align:center;line-height:15px;font-size:9.5px;margin-right:4px}
+  .fld select{width:100%;background:#04110F;border:1px solid var(--line);color:var(--ink);padding:10px 11px;border-radius:8px;font-size:13px;font-weight:700;font-family:inherit;cursor:pointer}
+  .fld select:focus{outline:none;border-color:var(--teal)}
+  .fld select.hot{border-color:var(--gold);box-shadow:0 0 0 2px rgba(242,178,62,.15)}
+  .upbtn{background:var(--gold);color:#04110F;border:none;padding:10px 16px;border-radius:8px;font-size:12.5px;font-weight:900;cursor:pointer;font-family:inherit;white-space:nowrap}
+  .upbtn:hover{background:#FFC95A}
+  .upbtn:disabled{background:#3A4B47;color:var(--soft);cursor:not-allowed}
+  .cta-line{margin-top:12px;background:rgba(34,199,184,.08);border:1px solid rgba(34,199,184,.35);border-radius:8px;padding:10px 12px;font-size:11.5px;line-height:1.7}
+  .cta-line b{color:var(--mint)}
+  .cta-line code{font-family:monospace;color:var(--gold);font-size:11px;background:rgba(0,0,0,.3);padding:2px 7px;border-radius:4px;word-break:break-all}
+  .cta-line a code{text-decoration:underline}
+  .cta-line a:hover code{background:rgba(242,178,62,.2)}
+  .cta-line .cid{font-family:monospace;color:var(--pink);font-size:11px}
+  .cta-line .dead{font-family:monospace;color:var(--soft);font-size:11px;background:rgba(0,0,0,.3);padding:2px 7px;border-radius:4px}
+
+  .camp{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px;font-size:11.5px}
+  .camp .cb{background:var(--panel2);border:1px solid var(--line);padding:4px 11px;border-radius:14px;font-weight:900}
+  .camp .ar{color:var(--soft)}
+  .camp .cn{background:rgba(242,178,62,.15);border-color:var(--gold);color:var(--gold)}
+
+  .pipe{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+  .pstep{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;cursor:pointer;transition:.15s;position:relative}
+  .pstep:hover{border-color:var(--teal)}
+  .pstep.active{border-color:var(--teal);background:rgba(34,199,184,.07)}
+  .pstep .pn{font-size:10px;font-weight:900;color:var(--soft);letter-spacing:.05em}
+  .pstep .pt{font-size:14px;font-weight:900;margin:4px 0 7px}
+  .pstep .cnt{font-size:22px;font-weight:900;line-height:1}
+  .pstep .cnt small{font-size:12px;color:var(--soft);font-weight:700}
+  .bar{height:5px;background:rgba(0,0,0,.35);border-radius:3px;margin-top:8px;overflow:hidden}
+  .bar i{display:block;height:100%;border-radius:3px;transition:width .2s}
+  .s1 .cnt{color:var(--gold)} .s1 .bar i{background:var(--gold)}
+  .s2 .cnt{color:var(--teal)} .s2 .bar i{background:var(--teal)}
+  .s3 .cnt{color:var(--purple)} .s3 .bar i{background:var(--purple)}
+  .s4 .cnt{color:var(--soft)} .s4 .bar i{background:var(--soft)}
+  .soon{position:absolute;top:11px;right:11px;font-size:9px;font-weight:900;background:rgba(147,174,169,.18);color:var(--soft);padding:3px 7px;border-radius:11px}
+
+  .view{background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:18px;min-height:260px}
+  .view h3{font-size:15px;font-weight:900;margin-bottom:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .view h3 .badge{font-size:9.5px;font-weight:900;padding:2px 8px;border-radius:9px;background:rgba(242,178,62,.18);color:var(--gold)}
+  table{width:100%;border-collapse:collapse;font-size:11.5px}
+  th{background:var(--panel2);color:var(--soft);padding:8px;text-align:left;font-weight:700;font-size:10.5px}
+  td{padding:8px;border-bottom:1px solid var(--line);vertical-align:top}
+  tr:hover td{background:rgba(255,255,255,.02)}
+  .st{font-size:9.5px;font-weight:900;padding:2px 7px;border-radius:9px;white-space:nowrap}
+  .st-done{background:rgba(47,191,113,.18);color:var(--green)}
+  .st-wait{background:rgba(147,174,169,.15);color:var(--soft)}
+  .st-none{background:rgba(229,87,61,.15);color:#FFB4A5}
+  .empty{text-align:center;padding:34px 20px;color:var(--soft);font-size:12.5px;line-height:1.7}
+  .empty .ic{font-size:30px;margin-bottom:8px}
+
+  .note{font-size:11.5px;color:var(--soft);background:rgba(0,0,0,.25);border:1px solid var(--line);border-radius:9px;padding:11px 13px;margin-top:12px;line-height:1.65}
+  .note b{color:var(--mint)}
+  .note.warn{background:rgba(242,178,62,.08);border-color:rgba(242,178,62,.4)} .note.warn b{color:var(--gold)}
+  .note code{font-family:monospace;color:var(--gold);font-size:10.5px}
+  .foot{text-align:center;font-size:10.5px;color:var(--soft);padding:16px;border-top:1px solid var(--line)}
+  .foot a{color:var(--mint)}
+
+  @media(max-width:820px){
+    .selrow{grid-template-columns:1fr 1fr} .upbtn{grid-column:1/-1}
+    .pipe{grid-template-columns:1fr 1fr} .hero h1{font-size:19px} .body{padding:18px 12px 24px}
+  }
+</style>
+</head>
+<body>
+<div class="doc">
+
+  <div class="hero">
+    <span class="tag">⬢ 제니야 · 발행창고</span><span class="stage">1단계 · 재료 넣기까지</span>
+    <h1>서비스 → 유형 → 내용 → <span class="hl">카피만 넣으면 끝</span></h1>
+    <p>네 칸을 고르고 한줄카피를 올리면, 그 캠페인의 도착지와 꼬리표가 자동으로 정해집니다.
+       <b style="color:var(--gold)">내용 하나 = 카피 60개 = 캠페인 하나.</b>
+       원고·콘텐츠·발행 자동화는 2단계부터 붙습니다.</p>
+  </div>
+
+  <div class="body">
+
+    <div class="selbar">
+      <div class="selrow">
+        <div class="fld">
+          <label><span class="num">1</span>서비스명</label>
+          <select id="svc" onchange="onSvc()"></select>
+        </div>
+        <div class="fld">
+          <label><span class="num">2</span>유형</label>
+          <select id="typ" onchange="onTyp()"></select>
+        </div>
+        <div class="fld">
+          <label><span class="num">3</span>내용 <span style="color:var(--gold)">← 유형 따라 바뀜</span></label>
+          <select id="cnt" class="hot" onchange="upd()"></select>
+        </div>
+        <button class="upbtn" id="upb" onclick="pick()">＋ 한줄카피</button>
+        <input type="file" id="file" accept=".txt,.csv,.json" style="display:none" onchange="upload(this)">
+      </div>
+      <div class="cta-line" id="ctaline">불러오는 중…</div>
+    </div>
+
+    <div class="camp" id="campline"></div>
+
+    <div class="pipe">
+      <div class="pstep s1 active" onclick="tab(1)">
+        <div class="pn">① 재료 · 대표님</div>
+        <div class="pt">📋 한줄카피</div>
+        <div class="cnt" id="c1">–<small>/60</small></div>
+        <div class="bar"><i id="b1" style="width:0%"></i></div>
+      </div>
+      <div class="pstep s2" onclick="tab(2)">
+        <span class="soon">2단계</span>
+        <div class="pn">② 자동</div>
+        <div class="pt">📝 원고</div>
+        <div class="cnt" id="c2">0<small>/60</small></div>
+        <div class="bar"><i id="b2" style="width:0%"></i></div>
+      </div>
+      <div class="pstep s3" onclick="tab(3)">
+        <span class="soon">3단계</span>
+        <div class="pn">③ 자동</div>
+        <div class="pt">🎬 콘텐츠</div>
+        <div class="cnt" id="c3">0<small>/60</small></div>
+        <div class="bar"><i id="b3" style="width:0%"></i></div>
+      </div>
+      <div class="pstep s4" onclick="tab(4)">
+        <span class="soon">4단계</span>
+        <div class="pn">④ 자동</div>
+        <div class="pt">🚀 발행·분석</div>
+        <div class="cnt" id="c4">0<small>/60</small></div>
+        <div class="bar"><i id="b4" style="width:0%"></i></div>
+      </div>
+    </div>
+
+    <div class="view" id="view"></div>
+
+  </div>
+
+  <div class="foot">
+    오원트금융연구소 · 오상열 CFP · 제니야 발행창고 1단계<br>
+    캠페인 = 서비스 × 유형 × 내용 · 캠페인마다 카피 60개 ·
+    <a href="#" onclick="openSheet();return false">📗 시트에서 직접 고치기</a>
+  </div>
+
+</div>
+
+<script>
+// ── 진실은 시트다. 화면은 시트를 비추기만 한다. ───────────────────────────
+//    캠페인 표를 코드에 안 박은 이유: 랜딩페이지가 새로 생겨도 대표님이 시트에
+//    한 줄 추가하면 끝. 개발자·배포를 안 거친다.
+let CAMPS = [], COPIES = [], SHEET_URL = '', t = 1, loading = true;
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+
+async function boot(){
+  try{
+    const r = await fetch('/warehouse/campaigns');
+    const j = await r.json();
+    if(j.error) throw new Error(j.error);
+    CAMPS = j.campaigns || []; SHEET_URL = j.sheetUrl || '';
+    loading = false;
+    fillSvc();
+  }catch(e){
+    loading = false;
+    $('ctaline').innerHTML = '⚠️ 캠페인 표를 못 읽었습니다 — ' + esc(e.message);
+    $('view').innerHTML = '<div class="empty"><div class="ic">⚠️</div>시트를 못 읽었습니다.<br>'+esc(e.message)+'</div>';
+  }
+}
+function uniq(a){ return [...new Set(a)]; }
+
+function fillSvc(){
+  const svc = $('svc');
+  svc.innerHTML = '';
+  uniq(CAMPS.map(c=>c.service)).forEach(s=>{
+    const o=document.createElement('option'); o.value=s; o.textContent=s; svc.appendChild(o);
+  });
+  onSvc();
+}
+function onSvc(){
+  // ★유형 목록도 시트에서 나온다(그 서비스에 실제로 있는 유형만)
+  const typ = $('typ'), s = $('svc').value;
+  typ.innerHTML = '';
+  uniq(CAMPS.filter(c=>c.service===s).map(c=>c.type)).forEach(v=>{
+    const o=document.createElement('option'); o.value=v; o.textContent=v; typ.appendChild(o);
+  });
+  onTyp();
+}
+function onTyp(){
+  const cnt = $('cnt'), s=$('svc').value, ty=$('typ').value;
+  cnt.innerHTML = '';
+  const rows = CAMPS.filter(c=>c.service===s && c.type===ty);
+  if(!rows.length){
+    const o=document.createElement('option'); o.value=''; o.textContent='(없음)'; cnt.appendChild(o);
+  } else rows.forEach(c=>{
+    const o=document.createElement('option'); o.value=c.name;
+    // ★없는 걸 있는 척하지 않는다 — 도착지 없으면 그대로 표시
+    o.textContent = c.name + (c.live ? '' : (c.url ? ' (주소확인필요)' : ' (미제작)'));
+    cnt.appendChild(o);
+  });
+  upd();
+}
+function cur(){
+  const s=$('svc').value, ty=$('typ').value, n=$('cnt').value;
+  return CAMPS.find(c=>c.service===s && c.type===ty && c.name===n) || null;
+}
+
+function upd(){
+  const c = cur();
+  if(!c){
+    $('ctaline').innerHTML = '이 조합에는 아직 만들어진 페이지가 없습니다.';
+    $('campline').innerHTML = ''; setPipe(0); render(); return;
+  }
+  // ★꼬리표는 ?from= 이다. (?src= 아님 — 진단페이지·Apps Script·통합리드 '유입경로'가
+  //   전부 from을 읽어 기록한다. src로 만들면 유입이 하나도 안 잡힌다.)
+  const 꼬리표 = '?from=yt_' + (c.code || '?') + '_001';
+  const 도착지 = c.live
+    ? '<a href="'+esc(c.url)+'" target="_blank" rel="noopener"><code>'+esc(c.url)+'</code></a> <span style="color:var(--green);font-weight:900">✓ 클릭하면 열립니다</span>'
+    : '<span class="dead">'+esc(c.url || (c.status==='대기' ? '(미제작)' : '(주소 없음)'))+'</span> <span style="color:#FFB4A5;font-weight:900">⚠ 도착지 없음</span>';
+
+  $('ctaline').innerHTML =
+    '🎯 <b>도착지:</b> ' + 도착지 +
+    ' <span style="color:var(--soft)">' + (c.note ? '— ' + esc(c.note) : '') + '</span><br>' +
+    '🏷️ <b>꼬리표:</b> <span class="cid">' + esc(꼬리표) + '</span> ' +
+    '<span style="color:var(--soft)">← 채널_캠페인_번호. 발행할 때 도착지 뒤에 자동으로 붙습니다</span>';
+
+  $('campline').innerHTML =
+    '<span class="cb">'+esc(c.service)+'</span><span class="ar">›</span>' +
+    '<span class="cb">'+esc(c.type)+'</span><span class="ar">›</span>' +
+    '<span class="cb cn">'+esc(c.name)+'</span>' +
+    '<span style="color:var(--soft);margin-left:4px">= 캠페인 1개 · 카피 60개</span>';
+
+  loadCopies(c.key);
+}
+
+async function loadCopies(key){
+  $('c1').innerHTML = '…<small>/60</small>';
+  try{
+    const r = await fetch('/warehouse/copies?key=' + encodeURIComponent(key));
+    const j = await r.json();
+    COPIES = j.copies || [];
+  }catch(e){ COPIES = []; }
+  setPipe(COPIES.length);
+  render();
+}
+function setPipe(n){
+  $('c1').innerHTML = n + '<small>/60</small>';
+  $('b1').style.width = Math.min(100, Math.round(n/60*100)) + '%';
+  // ②③④는 아직 안 만들었다. 가짜 숫자를 넣지 않는다 — 진짜로 0이다.
+  ['2','3','4'].forEach(i=>{ $('c'+i).innerHTML = '0<small>/60</small>'; $('b'+i).style.width='0%'; });
+}
+function tab(n){
+  t=n; document.querySelectorAll('.pstep').forEach((e,i)=>e.classList.toggle('active', i===n-1)); render();
+}
+
+function render(){
+  const v = $('view'), c = cur();
+  if(loading){ v.innerHTML = '<div class="empty"><div class="ic">⏳</div>불러오는 중…</div>'; return; }
+
+  if(t===1){
+    if(!COPIES.length){
+      v.innerHTML = '<div class="empty"><div class="ic">📋</div>'
+        + '아직 한줄카피가 없습니다.<br><b style="color:var(--gold)">＋ 한줄카피</b> 버튼으로 올려주세요.'
+        + '</div>'
+        + '<div class="note warn"><b>txt 파일을 권합니다</b> — 한 줄에 카피 하나, 60줄.<br>'
+        + 'csv는 카피 안의 쉼표에 쪼개지고(<code>국민연금 68만원, 이걸로…</code>), 엑셀이 저장하면 한글이 깨집니다. '
+        + 'json은 따옴표 하나 틀리면 60개가 통째로 안 들어갑니다. <b>txt는 규칙이 없어 실수할 게 없습니다.</b><br>'
+        + '올린 뒤에도 <b>시트에서 직접 고치실 수 있습니다</b> — 진실은 시트입니다.</div>';
+      return;
+    }
+    let h = '<h3>📋 한줄카피 <span class="badge">대표님이 올림</span> <span style="font-size:11px;color:var(--soft);font-weight:400">'+COPIES.length+'개</span></h3>';
+    h += '<table><thead><tr><th style="width:52px">번호</th><th>한줄카피</th><th style="width:78px">꼬리표</th><th style="width:60px">상태</th></tr></thead><tbody>';
+    COPIES.forEach(x=>{
+      const tag = 'yt_' + (c && c.code ? c.code : '?') + '_' + x.no;
+      h += '<tr><td style="color:var(--soft)">'+esc(x.no)+'</td><td>'+esc(x.copy)+'</td>'
+         + '<td><span style="font-family:monospace;font-size:10px;color:var(--pink)">'+esc(tag)+'</span></td>'
+         + '<td><span class="st st-wait">'+esc(x.status)+'</span></td></tr>';
+    });
+    h += '</tbody></table>';
+    h += '<div class="note">📗 이 목록은 <b>시트 「한줄카피」 탭</b>이 원본입니다. 시트에서 고치시면 여기 그대로 반영됩니다.</div>';
+    v.innerHTML = h;
+    return;
+  }
+
+  const 이름 = {2:['📝 원고','카피 하나를 채널별 원고 5종으로 자동 변환'],
+                3:['🎬 콘텐츠','원고를 쇼츠·카드뉴스·오디오로 자동 제작 + 퀄리티 게이트'],
+                4:['🚀 발행·분석','예약표에 자동 등록 → 발행 → 유입경로로 성과 집계']}[t];
+  v.innerHTML = '<h3>'+이름[0]+' <span class="badge" style="background:rgba(147,174,169,.18);color:var(--soft)">'+t+'단계에서 연결</span></h3>'
+    + '<div class="empty"><div class="ic">🚧</div>'+이름[1]+'<br><br>'
+    + '<span style="font-size:11.5px">아직 안 만들었습니다. <b style="color:var(--gold)">숫자 0은 진짜 0입니다</b> — 꾸며낸 값이 아닙니다.</span></div>';
+}
+
+function pick(){
+  const c = cur();
+  if(!c){ alert('먼저 캠페인을 고르세요.'); return; }
+  $('file').click();
+}
+async function upload(el){
+  const f = el.files[0]; if(!f) return;
+  const c = cur(); if(!c){ el.value=''; return; }
+  const btn = $('upb'); btn.disabled = true; btn.textContent = '올리는 중…';
+  try{
+    const text = await f.text();
+    const r = await fetch('/warehouse/copies', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ key: c.key, filename: f.name, text })
+    });
+    const j = await r.json();
+    if(j.error){ alert('올리지 못했습니다.\n\n' + j.error); }
+    else{
+      let msg = j.saved + '개를 저장했습니다.';
+      if(j.dropped) msg += '\n\n※ ' + j.dropped + '개는 넘겨서 못 넣었습니다(캠페인당 60개까지).';
+      if(j.broken)  msg += '\n\n⚠️ 한글이 깨져 보입니다. 엑셀 CSV는 한글이 깨집니다 — txt로 다시 올려주세요.';
+      alert(msg);
+      await loadCopies(c.key);
+    }
+  }catch(e){ alert('올리지 못했습니다.\n\n' + e.message); }
+  finally{ btn.disabled=false; btn.textContent='＋ 한줄카피'; el.value=''; }
+}
+function openSheet(){ if(SHEET_URL) window.open(SHEET_URL, '_blank'); }
+
+boot();
+</script>
+</body>
+</html>
