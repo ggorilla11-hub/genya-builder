@@ -5716,7 +5716,20 @@ app.listen(PORT, () => {
 //   ★ PUB_SCHED=off 로 통째로 끌 수 있음(끄면 완전 no-op).
 //   ★ 이 경로엔 발행 함수가 아예 없다(모듈에 없음) + DRY_RUN 자물쇠 = 2중 안전.
 // ═══════════════════════════════════════════════════════════════════════════
-PUBSCHED.init({ sheetsClient, encToken, decToken });   // (require는 파일 맨 위)
+// 발행 함수는 '넣어준다'(주입). → publish_scheduler.js는 server.js를 모른다(순환 없음).
+//   ★ 여기 넣는 함수들은 전부 기존 것 재사용 — 새로 짠 발행 로직 0.
+//   ★ DRY_RUN이 잠긴 동안 이 함수들은 한 번도 안 불린다(runJob이 먼저 막음).
+PUBSCHED.init({
+  sheetsClient, encToken, decToken,
+  pub: {
+    postReel:     (videoUrl, caption)  => postReelToInstagram(videoUrl, caption),
+    postCarousel: (imageUrls, caption) => postCarouselToInstagram(imageUrls, caption),
+    verifyIg:     (mediaId)            => verifyInstagramMedia(mediaId),
+    postYoutube:  (p, c, opts)         => postOneToYoutube(p, c, opts),
+    verifyYoutube:(videoId)            => verifyYoutubeVideo(videoId),
+    mainChannelId: YT_MAIN_CHANNEL_ID,
+  },
+});
 // ★ 스위치 2개 (일부러 분리) ─────────────────────────────────────────────
 //   PUB_SCHED   = 시계(60초 예약표 읽기 타이머)·창구. ★기본 off — 켜려면 PUB_SCHED=on.
 //                 (새 기능은 기본 꺼짐 = 이 저장소 관례. MORNING_BRIEF·ORCH_AUTO와 동일)

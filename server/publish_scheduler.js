@@ -111,7 +111,7 @@ async function findDue(now) {
       bad.push({ rowNo, id, label, why: raw ? `예약일시를 못 읽음: "${raw}" (예: 2026-07-20 09:00)` : '예약일시가 비어 있음' });
       return;
     }
-    (when <= now ? due : waiting).push({ rowNo, id, label, when, ch, content: cell(r, C.content) });
+    (when <= now ? due : waiting).push({ rowNo, id, label, when, ch, content: cell(r, C.content), job: toJob(r, cell) });
   });
 
   return { total: rows.length, due, waiting, bad, stuck };
@@ -179,6 +179,106 @@ async function migrateToken({ oldSheetId, oldTab, channelId, channelName, plainT
   return { ok: true, already: false, channelId, from: `${oldTab}(원본 그대로 보존)` };
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// 🔌 채널 어댑터 (작업 4) — 얇은 껍데기. 발행 로직은 하나도 새로 안 짠다.
+//
+//   ★ 채널 하나 추가할 때 건드릴 곳은 딱 2군데:
+//      ① ADAPTERS에 함수 1개 추가   ② CHANNELS에 1줄 추가
+//      시계·예약표 읽기·자물쇠·기록·검증은 채널을 몰라도 된다 → 안 건드림.
+//
+//   규격(모든 채널 동일):
+//     입력  job = { mediaUrls[], title, caption, visibility, whenKST, ytChannelId }
+//     출력        { ok, postUrl, verified: 'O'|'X'|'', why }
+//
+//   발행 함수는 server.js가 init()으로 넣어준다(_deps.pub) → 이 파일은 server.js를 모른다.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// 예약표 '채널' 칸 → 어떤 어댑터로 보낼지. ★채널 추가 = 여기 1줄.
+const CHANNELS = {
+  '인스타릴스':          { adapter: 'igReel' },
+  '인스타캐러셀':        { adapter: 'igCarousel' },
+  '유튜브(금융집짓기)':  { adapter: 'youtube', main: true },
+  '유튜브(뽀글이)':      { adapter: 'youtube', main: true },   // 같은 채널로 확정(2026-07-16) → 같은 토큰
+};
+
+const ADAPTERS = {
+  // 릴스 = 영상 1개
+  igReel: async (job, P) => {
+    if (!job.mediaUrls.length) return { ok: false, why: '미디어URL이 없습니다' };
+    const r = await P.postReel(job.mediaUrls[0], job.caption);
+    const v = await P.verifyIg(r.mediaId);
+    return finishIg(v);
+  },
+  // 캐러셀 = 이미지 2~10장
+  igCarousel: async (job, P) => {
+    if (job.mediaUrls.length < 2) return { ok: false, why: `캐러셀은 이미지가 2장 이상이어야 합니다(지금 ${job.mediaUrls.length}장)` };
+    const r = await P.postCarousel(job.mediaUrls, job.caption);
+    const v = await P.verifyIg(r.mediaId);
+    return finishIg(v);
+  },
+  // 유튜브 = 영상 1개 (+ 예약공개 publishAt)
+  youtube: async (job, P) => {
+    if (!job.mediaUrls.length) return { ok: false, why: '미디어URL이 없습니다' };
+    const r = await P.postYoutube(
+      { mediaUrl: job.mediaUrls[0], scheduledAt: null },
+      { title: job.title, caption: job.caption, hashtags: job.tags },
+      { privacy: job.visibility === '비공개' ? 'private' : job.visibility === '일부공개' ? 'unlisted' : 'public',
+        channelId: job.ytChannelId },
+    );
+    const v = await P.verifyYoutube(r.videoId);
+    if (!v.exists) return { ok: false, verified: 'X', why: v.note || '영상이 채널에 없음' };
+    const onMain = v.channelId === P.mainChannelId;
+    return { ok: onMain, postUrl: `https://www.youtube.com/watch?v=${v.videoId}`,
+             verified: onMain ? 'O' : 'X',
+             why: onMain ? '' : `엉뚱한 채널에 올라감(${v.channelTitle || v.channelId})` };
+  },
+};
+
+// 인스타 공통 마무리 — success 깃발 불신, owner 대조로 실제 게시 확인
+function finishIg(v) {
+  if (!v.exists) return { ok: false, verified: 'X', why: 'API에 게시물이 없음(발행 실패·삭제)' };
+  if (v.ownerMatch === false) return { ok: false, verified: 'X', postUrl: v.permalink || '', why: '다른 계정에 올라감' };
+  return { ok: true, postUrl: v.permalink || '', verified: v.ownerMatch === true ? 'O' : '', why: '' };
+}
+
+// 예약표 한 줄 → 어댑터가 받는 규격으로 변환
+//   · 미디어URL 여러 장(캐러셀)은 한 칸에 줄바꿈으로 넣는다 → 여기서 배열로 편다.
+//   · 캡션 = 캡션·본문 + 진단링크 + 해시태그 (대표님이 세 칸에 나눠 쓴 걸 하나로 조립)
+function toJob(r, cell) {
+  const mediaUrls = String(cell(r, C.media) || '').split(/[\r\n]+/).map((s) => s.trim()).filter((s) => /^https?:\/\//i.test(s));
+  const parts = [cell(r, C.caption), cell(r, C.link), cell(r, C.tags)].map((s) => String(s || '').trim()).filter(Boolean);
+  return { mediaUrls, title: cell(r, C.title), caption: parts.join('\n\n'), tags: cell(r, C.tags),
+           visibility: cell(r, C.vis) || '공개', channel: cell(r, C.ch), id: cell(r, C.id) };
+}
+
+// 한 건 발행 — ★DRY_RUN이면 여기서 멈춘다(발행 함수 호출 0).
+async function runJob(job) {
+  const meta = CHANNELS[job.channel];
+  if (!meta) return { ok: false, why: `모르는 채널: "${job.channel}" — 예약표 드롭다운에서 고르세요` };
+  const fn = ADAPTERS[meta.adapter];
+  if (!fn) return { ok: false, why: `어댑터 없음: ${meta.adapter}` };
+  if (DRY_RUN) return { ok: false, dry: true, why: `DRY RUN — ${meta.adapter} 어댑터로 갈 예정(실제 발행 안 함)` };
+  if (!_deps.pub) return { ok: false, why: '발행 함수가 연결되지 않음' };
+  try { return await fn(job, _deps.pub); }
+  catch (e) { return { ok: false, why: e.message }; }
+}
+
+// ── ★ 예약ID 기준 결과 쓰기 ────────────────────────────────────────────────
+//   쓰기 직전에 예약ID로 행을 '다시 찾는다'. 읽고→발행하는 사이 대표님이 행을 지웠으면
+//   행번호가 밀려 엉뚱한 줄에 '완료'가 찍히기 때문. 못 찾으면 안 쓴다(=거짓 기록 방지).
+//   대표님이 채우는 칸(A~K)은 절대 안 건드린다. 자동 칸(L~P)만 쓴다.
+async function writeResult(id, { status, pubAt, url, verified, memo }) {
+  const rowNo = await findRowById(id);
+  if (rowNo < 0) return { ok: false, why: `예약ID "${id}" 행을 못 찾음 — 쓰지 않음(지워졌거나 바뀜)` };
+  const sheets = _deps.sheetsClient();
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: PUB_SHEET_ID, range: `'${RESV_TAB_NAME}'!L${rowNo}:P${rowNo}`,   // 상태·발행시각·게시물URL·검증·메모
+    valueInputOption: 'RAW',
+    requestBody: { values: [[status || '', pubAt || '', url || '', verified || '', memo || '']] },
+  });
+  return { ok: true, rowNo };
+}
+
 // ── 시계가 부르는 곳 (읽기·로그만) ──────────────────────────────────────────
 let _busy = false;
 let LAST = { at: '', total: 0, due: 0, waiting: 0, bad: 0, stuck: 0, lines: [], error: '' };
@@ -192,7 +292,18 @@ async function tick(verbose) {
     const lines = [];
     for (const x of stuck) lines.push(`⚠️ ${x.rowNo}행 '발행중' ${STUCK_MIN}분 초과 — ${x.label}`);
     for (const x of bad)   lines.push(`❌ ${x.rowNo}행 ${x.why} → ${x.label}`);
-    for (const x of due)   lines.push(`🚀 ${x.rowNo}행 발행대상 — ${x.label} (예약 ${fmtKST(x.when)})${DRY_RUN ? ' [DRY RUN — 실제 발행 안 함]' : ''}`);
+
+    // 발행 대상 처리 — runJob이 DRY_RUN을 스스로 막는다(발행 함수 호출 0).
+    //   DRY_RUN이 잠긴 동안 아래 writeResult는 절대 안 돈다(r.dry=true라서).
+    for (const x of due) {
+      const r = await runJob(x.job);
+      if (r.dry) { lines.push(`🚀 ${x.rowNo}행 발행대상 — ${x.label} (예약 ${fmtKST(x.when)}) [${r.why}]`); continue; }
+      const nowStr = fmtKST(new Date());
+      const w = r.ok
+        ? await writeResult(x.id, { status: '완료', pubAt: nowStr, url: r.postUrl, verified: r.verified, memo: '' })
+        : await writeResult(x.id, { status: '실패', pubAt: nowStr, url: r.postUrl || '', verified: r.verified || '', memo: r.why || '' });
+      lines.push(`${r.ok ? '✅' : '❌'} ${x.rowNo}행 ${x.label} — ${r.ok ? r.postUrl : r.why}${w.ok ? '' : ' / ★기록실패: ' + w.why}`);
+    }
 
     LAST = { at: fmtKST(now), total, due: due.length, waiting: waiting.length, bad: bad.length, stuck: stuck.length,
              dryRun: DRY_RUN, lines, error: '',
@@ -213,4 +324,5 @@ async function tick(verbose) {
 const last = () => LAST;
 
 module.exports = { init, tick, last, findDue, findRowById, loadChannelTokens, migrateToken, pickToken,
+                   runJob, writeResult, toJob, CHANNELS, ADAPTERS, C,
                    parseKST, fmtKST, DRY_RUN, PUB_SHEET_ID, RESV_TAB_NAME, TOKEN_TAB_NAME };
