@@ -113,6 +113,13 @@ async function findDue(now) {
       bad.push({ rowNo, id, label, why: raw ? `예약일시를 못 읽음: "${raw}" (예: 2026-07-20 09:00)` : '예약일시가 비어 있음' });
       return;
     }
+
+    // ★공개설정은 비어 있어도, 오타여도 발행하지 않는다. 조용히 '공개'로 나가는 게 최악이라서.
+    const vis = cell(r, C.vis);
+    if (!VIS[vis]) {
+      bad.push({ rowNo, id, label, why: vis ? `공개설정 "${vis}"을 모르겠습니다 — 공개/비공개/일부공개 중 골라주세요` : '공개설정이 비어 있음 — 공개/비공개/일부공개 중 골라주세요' });
+      return;
+    }
     (when <= now ? due : waiting).push({ rowNo, id, label, when, ch, content: cell(r, C.content), job: toJob(r, cell) });
   });
 
@@ -196,6 +203,11 @@ async function migrateToken({ oldSheetId, oldTab, channelId, channelName, plainT
 // ═══════════════════════════════════════════════════════════════════════════
 
 // 예약표 '채널' 칸 → 어떤 어댑터로 보낼지. ★채널 추가 = 여기 1줄.
+// 예약표 '공개설정' 칸 → 유튜브 공개수준. ★여기 없는 값은 발행 안 한다.
+//   빈칸이나 오타를 '공개'로 봐주면, 46,200명 채널에 조용히 공개로 나간다.
+//   대표님 원칙: "멋대로 발행하느니 오류가 백 배 낫다"(날짜만 있을 때와 같은 판단).
+const VIS = { '공개': 'public', '비공개': 'private', '일부공개': 'unlisted' };
+
 const CHANNELS = {
   '인스타릴스':          { adapter: 'igReel' },
   '인스타캐러셀':        { adapter: 'igCarousel' },
@@ -224,11 +236,12 @@ const ADAPTERS = {
     if (!job.title) return { ok: false, why: '유튜브는 제목이 필수입니다 — 예약표 제목 칸을 채워주세요' };
     // ★ title·description을 '직접' 넘긴다. 안 넘기면 buildCaptions가 캠페인 문구로 덮어써
     //   제목이 "강의"가 되고 꼬리표 붙은 진단링크가 설명에서 사라진다(리허설로 잡음).
+    const privacy = VIS[job.visibility];
+    if (!privacy) return { ok: false, why: `공개설정 "${job.visibility}"을 모르겠습니다 — 공개/비공개/일부공개 중 하나여야 합니다` };
     const r = await P.postYoutube(
       { mediaUrl: job.mediaUrls[0], scheduledAt: null },
       { hashtags: job.tags },
-      { privacy: job.visibility === '비공개' ? 'private' : job.visibility === '일부공개' ? 'unlisted' : 'public',
-        title: job.title, description: job.caption, channelId: job.ytChannelId },
+      { privacy, title: job.title, description: job.caption, channelId: job.ytChannelId },
     );
     const v = await P.verifyYoutube(r.videoId);
     if (!v.exists) return { ok: false, verified: 'X', why: v.note || '영상이 채널에 없음' };
@@ -263,8 +276,10 @@ function toJob(r, cell) {
   const mediaUrls = String(cell(r, C.media) || '').split(/[\r\n]+/).map((s) => s.trim()).filter((s) => /^https?:\/\//i.test(s));
   const link = withTag(cell(r, C.link), cell(r, C.tag));
   const parts = [cell(r, C.caption), link, cell(r, C.tags)].map((s) => String(s || '').trim()).filter(Boolean);
+  // ★visibility에 기본값을 주지 않는다. 빈칸이면 빈칸 그대로 넘겨서 VIS 검사에 걸리게 한다.
+  //   여기서 '공개'로 채워주면 방금 막은 구멍이 그대로 열린다.
   return { mediaUrls, title: cell(r, C.title), caption: parts.join('\n\n'), tags: cell(r, C.tags), link,
-           visibility: cell(r, C.vis) || '공개', channel: cell(r, C.ch), id: cell(r, C.id) };
+           visibility: cell(r, C.vis), channel: cell(r, C.ch), id: cell(r, C.id) };
 }
 
 // 한 건 발행 — ★DRY_RUN이면 여기서 멈춘다(발행 함수 호출 0).
