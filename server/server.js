@@ -1852,8 +1852,34 @@ function imageDims(buf) {
   return null;
 }
 
+// ── 🔒 쓰기 창구 잠금 (2026-07-16) ────────────────────────────────────────
+//   막는 것: ① 업로드 창구(누구나 300MB를 우리 버킷에 올릴 수 있었음)
+//            ② 발행창고 카피 쓰기(누구나 대표님 카피 60개를 지울 수 있었음 — 파괴적)
+//   방식 = Basic Auth. 브라우저가 한 번 묻고 기억한다 → 대표님의 [+올리기] 그대로 작동.
+//          러너는 헤더 한 줄로 보낸다(WAREHOUSE_RUNNER_KEY 대신 이걸 쓴다).
+//   ★ WAREHOUSE_PASS 미설정이면 잠그지 않는다(=현행 유지). 설정해야 잠긴다.
+//     이유: 값이 없는데 잠그면 대표님이 [+올리기]를 못 쓰게 되어 오히려 사고.
+//   ★ 발행 경로(9시 유튜브·인스타)에는 이 자물쇠를 걸지 않는다. 무접촉.
+const WAREHOUSE_USER = process.env.WAREHOUSE_USER || 'ohwant';
+const WAREHOUSE_PASS = process.env.WAREHOUSE_PASS || '';
+function lockWrite(req, res, next) {
+  if (!WAREHOUSE_PASS) return next();   // 미설정 = 현행 유지(잠그지 않음)
+  const h = String(req.get('authorization') || '');
+  if (h.startsWith('Basic ')) {
+    let u = '', p = '';
+    try { const s = Buffer.from(h.slice(6), 'base64').toString('utf8'); const i = s.indexOf(':'); u = s.slice(0, i); p = s.slice(i + 1); } catch (e) {}
+    // 타이밍 공격 방지 — 길이가 같을 때만 상수시간 비교
+    const same = (a, b) => { const A = Buffer.from(String(a)), B = Buffer.from(String(b)); return A.length === B.length && crypto.timingSafeEqual(A, B); };
+    if (same(u, WAREHOUSE_USER) && same(p, WAREHOUSE_PASS)) return next();
+  }
+  // ★realm은 반드시 영문 — HTTP 헤더에 한글을 넣으면 Node가 터져서 500이 난다(실측).
+  //   500이면 브라우저가 비밀번호를 안 물어본다 = 대표님 [+올리기]가 죽는다.
+  res.set('WWW-Authenticate', 'Basic realm="Ohwant Jenya Warehouse", charset="UTF-8"');
+  return res.status(401).json({ error: '이 창구는 대표님 전용입니다. 아이디·비밀번호가 필요합니다.' });
+}
+
 // ① 업로드 허가증(서명 URL) 발급 — 브라우저가 이 URL로 버킷에 직접 PUT
-app.post('/content/upload-url', async (req, res) => {
+app.post('/content/upload-url', lockWrite, async (req, res) => {
   try {
     const b = req.body || {};
     if (!UPLOAD_KINDS[b.kind]) return res.status(400).json({ error: '업로드 대상이 아닌 종류입니다.' });
@@ -1873,7 +1899,7 @@ app.post('/content/upload-url', async (req, res) => {
 });
 
 // ② 업로드 완료 통보 — 공개 다운로드 토큰 부여 후 콘텐츠로 보관(링크 자동, 대표는 링크 안 만짐)
-app.post('/content/uploaded', async (req, res) => {
+app.post('/content/uploaded', lockWrite, async (req, res) => {
   try {
     const b = req.body || {};
     if (!UPLOAD_KINDS[b.kind]) return res.status(400).json({ error: '종류 오류' });
@@ -5820,7 +5846,9 @@ app.get('/warehouse/sample-video', (req, res) => {
   res.json(v ? { ok: true, name: v.name, url: v.link } : { ok: false, note: '보관함에 쇼츠가 없습니다' });
 });
 
-app.post('/warehouse/copies', async (req, res) => {
+// ★쓰기 = 잠금. 읽기(/warehouse, campaigns, copies GET)는 안 잠근다 —
+//   대표님이 폰에서 바로 보실 수 있어야 하고, 읽기로는 아무것도 안 망가진다.
+app.post('/warehouse/copies', lockWrite, async (req, res) => {
   try {
     const b = req.body || {};
     const key = String(b.key || '').trim();
