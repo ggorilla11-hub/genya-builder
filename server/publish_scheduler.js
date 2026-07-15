@@ -19,11 +19,13 @@ const DRY_RUN = true;
 
 const STUCK_MIN = 30;   // '발행중'이 이만큼 멈춰 있으면 사람이 봐야 함
 
-// 예약표 컬럼 = 시트와 1:1
+// 예약표 컬럼 = 시트와 1:1. ★여기 바꾸면 아래 WRITE_RANGE도 같이 바꿀 것.
 const C = { id: 0, when: 1, ch: 2, kind: 3, content: 4, media: 5, title: 6, caption: 7,
-            link: 8, tags: 9, vis: 10, status: 11, pubAt: 12, url: 13, verify: 14, memo: 15 };
+            link: 8, tag: 9, tags: 10, vis: 11, status: 12, pubAt: 13, url: 14, verify: 15, memo: 16 };
+// 서버가 쓰는 칸 = 상태~메모(M~Q). 대표님이 채우는 A~L은 절대 안 건드린다.
+const WRITE_FROM = 'M', WRITE_TO = 'Q';
 // 시트가 수식으로 오해할 수 있는 글자 칸 → FORMULA로 읽어 원문 복구(실측 검증됨)
-const TEXT_COLS = [C.id, C.ch, C.kind, C.content, C.media, C.title, C.caption, C.link, C.tags, C.vis, C.status, C.url, C.verify, C.memo];
+const TEXT_COLS = [C.id, C.ch, C.kind, C.content, C.media, C.title, C.caption, C.link, C.tag, C.tags, C.vis, C.status, C.url, C.verify, C.memo];
 
 let _deps = null;   // { sheetsClient, encToken, decToken }
 function init(deps) { _deps = deps; }
@@ -64,7 +66,7 @@ const isBroken = (v) => /^#(ERROR!|REF!|VALUE!|NAME\?|N\/A|DIV\/0!)/.test(String
 async function readRows() {
   const sheets = _deps.sheetsClient();
   if (!sheets) throw new Error('구글 열쇠 없음');
-  const range = `'${RESV_TAB_NAME}'!A2:P`;
+  const range = `'${RESV_TAB_NAME}'!A2:Q`;   // ★꼬리표 추가로 P→Q. 컬럼 늘리면 여기도 늘릴 것.
   const [plain, formula] = await Promise.all([
     sheets.spreadsheets.values.get({ spreadsheetId: PUB_SHEET_ID, range }),
     sheets.spreadsheets.values.get({ spreadsheetId: PUB_SHEET_ID, range, valueRenderOption: 'FORMULA' }),
@@ -219,11 +221,14 @@ const ADAPTERS = {
   // 유튜브 = 영상 1개 (+ 예약공개 publishAt)
   youtube: async (job, P) => {
     if (!job.mediaUrls.length) return { ok: false, why: '미디어URL이 없습니다' };
+    if (!job.title) return { ok: false, why: '유튜브는 제목이 필수입니다 — 예약표 제목 칸을 채워주세요' };
+    // ★ title·description을 '직접' 넘긴다. 안 넘기면 buildCaptions가 캠페인 문구로 덮어써
+    //   제목이 "강의"가 되고 꼬리표 붙은 진단링크가 설명에서 사라진다(리허설로 잡음).
     const r = await P.postYoutube(
       { mediaUrl: job.mediaUrls[0], scheduledAt: null },
-      { title: job.title, caption: job.caption, hashtags: job.tags },
+      { hashtags: job.tags },
       { privacy: job.visibility === '비공개' ? 'private' : job.visibility === '일부공개' ? 'unlisted' : 'public',
-        channelId: job.ytChannelId },
+        title: job.title, description: job.caption, channelId: job.ytChannelId },
     );
     const v = await P.verifyYoutube(r.videoId);
     if (!v.exists) return { ok: false, verified: 'X', why: v.note || '영상이 채널에 없음' };
@@ -244,10 +249,21 @@ function finishIg(v) {
 // 예약표 한 줄 → 어댑터가 받는 규격으로 변환
 //   · 미디어URL 여러 장(캐러셀)은 한 칸에 줄바꿈으로 넣는다 → 여기서 배열로 편다.
 //   · 캡션 = 캡션·본문 + 진단링크 + 해시태그 (대표님이 세 칸에 나눠 쓴 걸 하나로 조립)
+//   · ★꼬리표 = 진단링크 뒤에 ?from=... 자동 부착. 대표님은 'yt_pen_001'만 적으면 된다.
+//     이름이 src가 아니라 from인 이유: 진단페이지·Apps Script·통합리드 시트('유입경로')가
+//     이미 from을 읽어 기록한다(실측). src로 새로 만들면 검증된 배관을 버리게 된다.
+//     형식 = 채널_캠페인_번호 (yt·ig·igc·bl·kt / pen·bil·hou·des / 001~060)
+function withTag(link, tag) {
+  if (!link || !tag) return link || '';
+  if (/[?&]from=/.test(link)) return link;              // 대표님이 이미 붙였으면 그대로 존중
+  return link + (link.includes('?') ? '&' : '?') + 'from=' + encodeURIComponent(tag);
+}
+
 function toJob(r, cell) {
   const mediaUrls = String(cell(r, C.media) || '').split(/[\r\n]+/).map((s) => s.trim()).filter((s) => /^https?:\/\//i.test(s));
-  const parts = [cell(r, C.caption), cell(r, C.link), cell(r, C.tags)].map((s) => String(s || '').trim()).filter(Boolean);
-  return { mediaUrls, title: cell(r, C.title), caption: parts.join('\n\n'), tags: cell(r, C.tags),
+  const link = withTag(cell(r, C.link), cell(r, C.tag));
+  const parts = [cell(r, C.caption), link, cell(r, C.tags)].map((s) => String(s || '').trim()).filter(Boolean);
+  return { mediaUrls, title: cell(r, C.title), caption: parts.join('\n\n'), tags: cell(r, C.tags), link,
            visibility: cell(r, C.vis) || '공개', channel: cell(r, C.ch), id: cell(r, C.id) };
 }
 
@@ -259,7 +275,10 @@ async function runJob(job) {
   if (!fn) return { ok: false, why: `어댑터 없음: ${meta.adapter}` };
   if (DRY_RUN) return { ok: false, dry: true, why: `DRY RUN — ${meta.adapter} 어댑터로 갈 예정(실제 발행 안 함)` };
   if (!_deps.pub) return { ok: false, why: '발행 함수가 연결되지 않음' };
-  try { return await fn(job, _deps.pub); }
+  // 어느 유튜브 채널로 보낼지는 ★매핑표가 정한다(채널 추가 = 매핑표 1줄 원칙 유지).
+  //   main:true → 본채널. 나중에 다른 채널이 생기면 CHANNELS에 ytChannelId만 적으면 된다.
+  const j = { ...job, ytChannelId: meta.ytChannelId || (meta.main ? (_deps.pub.mainChannelId || '') : '') };
+  try { return await fn(j, _deps.pub); }
   catch (e) { return { ok: false, why: e.message }; }
 }
 
@@ -272,7 +291,7 @@ async function writeResult(id, { status, pubAt, url, verified, memo }) {
   if (rowNo < 0) return { ok: false, why: `예약ID "${id}" 행을 못 찾음 — 쓰지 않음(지워졌거나 바뀜)` };
   const sheets = _deps.sheetsClient();
   await sheets.spreadsheets.values.update({
-    spreadsheetId: PUB_SHEET_ID, range: `'${RESV_TAB_NAME}'!L${rowNo}:P${rowNo}`,   // 상태·발행시각·게시물URL·검증·메모
+    spreadsheetId: PUB_SHEET_ID, range: `'${RESV_TAB_NAME}'!${WRITE_FROM}${rowNo}:${WRITE_TO}${rowNo}`,   // 상태·발행시각·게시물URL·검증·메모
     valueInputOption: 'RAW',
     requestBody: { values: [[status || '', pubAt || '', url || '', verified || '', memo || '']] },
   });

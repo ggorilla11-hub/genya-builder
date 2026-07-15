@@ -2083,9 +2083,19 @@ async function mediaStream(mediaUrl) {
   return { stream: Readable.fromWeb(r.body), contentType: r.headers.get('content-type') || 'video/mp4' };
 }
 // 유튜브 1건 직접 업로드. opts.privacy(즉시 공개수준) / opts.publishAt(미래시각이면 비공개 예약공개)
+// ★ 2026-07-16 추가된 입구 3개(전부 선택). 안 주면 예전과 100% 똑같이 동작한다.
+//   · opts.channelId   — 채널별 토큰. 안 주면 ytClient()가 기존 전역 토큰으로 폴백(기존 경로).
+//   · opts.title       — 제목을 직접 지정. 안 주면 기존 buildCaptions(캠페인 자동생성).
+//   · opts.description — 설명을 직접 지정. 안 주면 기존 buildCaptions.
+//   왜 필요한가(리허설로 잡음): 예약표는 대표님이 문구를 '직접 쓰는' 방식인데,
+//   buildCaptions는 캠페인 객체를 기대해서 c.name이 없으면 제목이 조용히 "강의"가 되고
+//   설명이 통째로 갈려 꼬리표(?from=) 붙은 진단링크까지 사라진다. 예외도 안 난다.
+//   ※ 기존 9시 자동발행(runYoutubeAutoPublish)은 이 opts를 안 넘긴다 → 무영향.
 async function postOneToYoutube(p, c, opts = {}) {
-  const yt = ytClient(); if (!yt) throw new Error('유튜브 미연결(refresh_token 없음)');
+  const yt = ytClient(opts.channelId); if (!yt) throw new Error('유튜브 미연결(refresh_token 없음)');
   const caps = buildCaptions(c || {});
+  const title = opts.title || caps.youtube_title;
+  const description = opts.description || caps.description;
   const { stream, contentType } = await mediaStream(p.mediaUrl);
   const status = { selfDeclaredMadeForKids: false };
   const when = opts.publishAt || p.scheduledAt;
@@ -2094,7 +2104,7 @@ async function postOneToYoutube(p, c, opts = {}) {
   const tags = String((c || {}).hashtags || '').split(/[#\s,]+/).map((t) => t.trim()).filter(Boolean).slice(0, 15);
   const r = await yt.videos.insert({
     part: ['snippet', 'status'],
-    requestBody: { snippet: { title: caps.youtube_title, description: caps.description, tags, categoryId: '22' }, status },
+    requestBody: { snippet: { title, description, tags, categoryId: '22' }, status },
     media: { mimeType: contentType, body: stream },
   });
   const vid = r.data.id;
