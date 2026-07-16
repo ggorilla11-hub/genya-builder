@@ -292,6 +292,27 @@ app.get('/api/my/gmail', async (req, res) => {
   } catch (e) { if (scopeGate(e, res, 'gmail')) return; res.status(500).json({ ok: false, error: e.message }); }
 });
 
+// ═══ 📣 홍보비서(발행창고 1단계) — 한줄카피 → 쇼츠 원고 (클로드 API) ═══════════
+//   교육생용 테넌트: 대표님 캠페인·토큰·시트 안 씀. 카피 받아 원고만 생성해 반환(서버 저장 0).
+//   목표(일요일): [홍보비서] 클릭 → 카피 1개 입력 → 원고가 나온다. 발행은 그다음 단계.
+app.post('/api/promo/draft', async (req, res) => {
+  try {
+    if (!sessionOf(req)) return res.status(401).json({ ok: false, error: '로그인이 필요해요' });
+    const copy = String((req.body || {}).copy || '').trim();
+    if (!copy) return res.status(400).json({ ok: false, error: '한줄카피를 입력해 주세요' });
+    // 원고 규칙(짧은 문장·질문→답·30초·5씬) — 엄마1 원고규칙.md의 핵심을 프롬프트로.
+    const sys = [
+      '너는 1인 사업자를 위한 30초 세로 쇼츠(숏폼) 대본 작가다. 아래 한줄카피를 후크로 삼아 대본을 쓴다.',
+      '규칙: ① 5개 씬, 각 씬 1~2문장 ② 한 문장 16자 이내로 짧게 ③ 질문을 던지고 바로 답한다',
+      '④ 숫자는 한 문장에 하나만 ⑤ 마지막 씬은 "무료 진단 받아보세요" 같은 행동유도',
+      '⑥ 과장·허위 금지, 사실만. 출력은 "씬1: ...\\n씬2: ..." 형식으로만.',
+    ].join('\n');
+    const r = await _anthropic.messages.create({ model: WS_CHAT_MODEL, max_tokens: 900, system: sys, messages: [{ role: 'user', content: '한줄카피: ' + copy } ] });
+    const script = (r.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
+    res.json({ ok: true, copy, script, engine: 'claude-sonnet-5' });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
 // 🩺 진단 전용(임시) — 캘린더 0건 원인 격리. 로그인 본인만. ★토큰값 0노출.
 //   대표님이 로그인 후 이 주소를 열면, 무엇이 문제인지 한눈에 나온다.
 app.get('/api/diag/calendar', async (req, res) => {
