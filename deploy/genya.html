@@ -1757,19 +1757,19 @@ function connectGoogle(returnTo, scope){
   if(scope) url+='&scope='+encodeURIComponent(scope);
   location.href=url;
 }
-// ★작업A2/B: /me의 granted scopes로 도구 연결상태(온보딩·메인 우측)를 실제 ON/OFF 반영. 가짜 ON 제거.
+// ★2026-07-16 사고 수정: "토큰 있으니 연결됨"·스코프 문자열 추측 = 거짓말이었다.
+//   → /api/conn/status(실제 API를 1회 호출해 200 확인)로 "됐다"를 읽는다. "될 것 같다" 금지.
 function refreshConnState(){
-  fetch('/me').then(function(r){return r.json();}).then(function(d){
-    var sc=(d&&d.scopes)||'';
-    var map={ calendar:/calendar/.test(sc), sheets:/spreadsheets/.test(sc), drive:/\/drive|drive\./.test(sc), gmail:/gmail/.test(sc) };
-    Object.keys(map).forEach(function(k){
+  fetch('/api/conn/status').then(function(r){return r.json();}).then(function(map){
+    ['calendar','sheets','drive','gmail'].forEach(function(k){
+      var on=!!(map&&map[k]);
       Array.prototype.slice.call(document.querySelectorAll('[data-conn="'+k+'"]')).forEach(function(el){
-        var on=map[k]; el.setAttribute('data-on', on?'1':'0');
+        el.setAttribute('data-on', on?'1':'0');
         var b=el.querySelector('.conn-badge');
         if(b){ b.textContent=on?'연결됨':'연결하기'; b.style.background=on?'var(--teal-l)':'#f0ead9'; b.style.color=on?'var(--teal-d)':'#8a6d2f'; }
       });
     });
-    if(typeof refreshTopKPIs==='function') refreshTopKPIs();  // ★구글시트 연결·초기로드 시 상단 KPI 실데이터 갱신
+    if(typeof refreshTopKPIs==='function') refreshTopKPIs();
   }).catch(function(){});
 }
 // ★상단 KPI 실데이터 계산 (하드코딩 제거·가짜 숫자 금지). 만기=업로드 명단 실값, 약속·발굴=소스 없으면 0 정직표시.

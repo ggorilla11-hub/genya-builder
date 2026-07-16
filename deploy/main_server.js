@@ -813,6 +813,24 @@ app.get('/auth/google/callback', async (req, res) => {
 app.get('/logout', (req, res) => { const s = sidOf(req); if (s) sessions.delete(s); res.setHeader('Set-Cookie', 'genya_sid=; Path=/; Max-Age=0'); res.redirect('/login'); });
 app.get('/me', (req, res) => { const s = sessionOf(req); res.json(s ? { ok: true, email: s.email, name: s.name, provider: s.provider, hasGoogleData: !!s.tokens, hasData: hasDataScope(req), scopes: (s.scope || (s.tokens && s.tokens.scope) || '') } : { ok: false }); });
 
+// 🔌 커넥터 실측 연결상태 — ★"토큰 있으니 연결됨"(거짓말) 금지. 실제 API 1회 호출 200 = 연결됨.
+//   지니야가 "연결됨"이라 표시했는데 실제론 안 됐던 사고의 근본 수정. "될 것 같다"가 아니라 "됐다".
+//   화면(refreshConnState)이 이걸 읽어 배지를 켠다. 스코프 문자열이 아니라 진짜 호출 결과.
+app.get('/api/conn/status', async (req, res) => {
+  const ma = memberAuth(req);
+  const out = { calendar: false, sheets: false, drive: false, gmail: false };
+  if (!ma) return res.json({ ok: true, loggedIn: !!sessionOf(req), ...out });
+  const probes = {
+    calendar: () => google.calendar({ version: 'v3', auth: ma }).calendarList.list({ maxResults: 1 }),
+    drive:    () => google.drive({ version: 'v3', auth: ma }).files.list({ pageSize: 1, fields: 'files(id)' }),
+    sheets:   () => google.drive({ version: 'v3', auth: ma }).files.list({ pageSize: 1, q: "mimeType='application/vnd.google-apps.spreadsheet'", fields: 'files(id)' }),
+    gmail:    () => google.gmail({ version: 'v1', auth: ma }).users.getProfile({ userId: 'me' }),
+  };
+  // 각 커넥터를 실제로 1회 호출. 200이면 진짜 연결. 401/403(스코프 없음)이면 미연결.
+  await Promise.all(Object.keys(probes).map(async (k) => { try { await probes[k](); out[k] = true; } catch (e) { out[k] = false; } }));
+  res.json({ ok: true, loggedIn: true, ...out });
+});
+
 // ── 💬 카카오 로그인 라우트 (구글과 동일 구조: authorize → callback) ──
 app.get('/auth/kakao', (req, res) => {
   if (!KA_CONFIGURED) return res.status(503).send('카카오 미설정 — KAKAO_REST_KEY 필요');
