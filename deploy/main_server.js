@@ -186,8 +186,12 @@ app.get('/api/calendar', async (req, res) => {
     const DBG = String(req.query.debug || '') === '1';
     const dbg = { 요청: { timeMin, timeMax, singleEvents: true, orderBy: 'startTime', timeZone: 'Asia/Seoul' }, 지금KST: new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 16), 캘린더별: [] };
     let cals = ['primary'], calList = [];
-    try { const cl = await cal.calendarList.list(); calList = cl.data.items || []; cals = calList.map((c) => c.id); if (!cals.length) cals = ['primary']; }
-    catch (e) { dbg.calendarList_에러 = e.message; }
+    try {
+      const cl = await cal.calendarList.list(); calList = cl.data.items || [];
+      // ★공휴일·생일 캘린더는 "약속"이 아니다 → 제외(안 빼면 오늘 약속에 공휴일이 섞임).
+      cals = calList.filter((c) => !/#holiday@|#contacts@/.test(c.id)).map((c) => c.id);
+      if (!cals.length) cals = ['primary'];
+    } catch (e) { dbg.calendarList_에러 = e.message; }
     dbg.내캘린더수 = cals.length;
     let items = [];
     for (const cid of cals) {
