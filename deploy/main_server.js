@@ -180,14 +180,24 @@ app.get('/api/calendar', async (req, res) => {
     const y = kst.getUTCFullYear(), m = kst.getUTCMonth(), d = kst.getUTCDate();
     const timeMin = new Date(Date.UTC(y, m, d, 0, 0, 0) - 9 * 3600e3).toISOString();   // KST 오늘 00:00
     const timeMax = new Date(Date.UTC(y, m, d, 23, 59, 59) - 9 * 3600e3).toISOString(); // KST 오늘 23:59
-    const ev = await cal.events.list({ calendarId: 'primary', timeMin, timeMax, singleEvents: true, orderBy: 'startTime' });
-    const events = (ev.data.items || []).map((e) => {
-      const start = (e.start || {}).dateTime || (e.start || {}).date || '';
-      const time = start.length >= 16 ? start.slice(11, 16) : '종일';
+    // ★원인 4: primary만 보면 업무 캘린더 등 다른 캘린더가 빠진다 → 내 모든 캘린더를 돈다.
+    //   원인 2(종일=start.date)·3(singleEvents=반복 펼침)·5(KST 범위)도 여기서 함께 반영.
+    let cals = ['primary'];
+    try { const cl = await cal.calendarList.list(); cals = (cl.data.items || []).map((c) => c.id); if (!cals.length) cals = ['primary']; } catch (e) {}
+    let items = [];
+    for (const cid of cals) {
+      try {
+        const ev = await cal.events.list({ calendarId: cid, timeMin, timeMax, singleEvents: true, orderBy: 'startTime', timeZone: 'Asia/Seoul' });
+        items = items.concat(ev.data.items || []);
+      } catch (e) {}
+    }
+    const events = items.map((e) => {
+      const start = (e.start || {}).dateTime || (e.start || {}).date || '';   // ★종일=date / 시간=dateTime 둘 다
+      const time = start.length >= 16 ? new Date(start).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Seoul' }) : '종일';
       const title = e.summary || '(제목없음)';
       const name = Object.keys(byName).find((n) => title.includes(n));
-      return { time, title, prep: prepFor(byName[name]) };
-    });
+      return { time, title, start, prep: prepFor(byName[name]) };
+    }).sort((a, b) => String(a.start).localeCompare(String(b.start)));
     res.json({ ok: true, date: `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`, count: events.length, events });
   } catch (e) {
     // ★시트만 연결한 회원은 gateGoogle을 통과하지만 캘린더 스코프가 없어 여기서 터진다.
@@ -792,10 +802,10 @@ app.get('/auth/google/callback', async (req, res) => {
     const c = oaClient(); const { tokens } = await c.getToken(code); c.setCredentials(tokens);
     const ui = await google.oauth2({ version: 'v2', auth: c }).userinfo.get();
     const s = crypto.randomBytes(16).toString('hex');
-    // ★작업A2: 도구별 incremental 연결 시 이전 스코프 누적(병합) — 새 연결이 기존 연결을 덮지 않게
-    const _old = sessionOf(req);
-    const _mergedScope = (((_old && _old.scope) || '') + ' ' + (tokens.scope || '')).trim();
-    sessions.set(s, { email: ui.data.email, name: ui.data.name, tokens, scope: _mergedScope, provider: 'google' });
+    // ★스코프 = 이번에 구글이 실제로 준 tokens.scope만 신뢰한다.
+    //   include_granted_scopes=true라 구글이 '기존+신규'를 합쳐서 준다 → 굳이 옛 세션을 누적하면
+    //   취소한 스코프까지 계속 '연결됨'으로 남아 거짓말이 된다(대표님이 겪은 그 증상).
+    sessions.set(s, { email: ui.data.email, name: ui.data.name, tokens, scope: tokens.scope || '', provider: 'google' });
     res.setHeader('Set-Cookie', `genya_sid=${s}; HttpOnly; Path=/; SameSite=Lax${process.env.RENDER ? '; Secure' : ''}`);
     res.redirect(isConnect ? ('/?connected=1&screen=' + encodeURIComponent(returnTo)) : '/'); // 데이터 연결이면 원래 화면으로 복귀
   } catch (e) { res.status(500).send('로그인 오류: ' + e.message); }
