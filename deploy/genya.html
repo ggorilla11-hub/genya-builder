@@ -1405,12 +1405,9 @@ function loadSchedKpi(){
 var _SEND = { success:[], fail:[], daily:0, dailyMax:300 };
 function _sEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function _renderSendKpi(){ var ns=((_SEND&&_SEND.success)||[]).length, nf=((_SEND&&_SEND.fail)||[]).length; _setKpi('kpiSend','✅'+ns+' · ❌'+nf); }
-function _fetchSend(){
-  return fetch(GENYA_API+'/api/send/status?agent='+encodeURIComponent(_agentName()))
-    .then(function(r){return r.json();})
-    .then(function(d){ if(d){ _SEND=d; _renderSendKpi(); if(document.getElementById('sendModalMark')) _renderSendModal(); } })
-    .catch(function(){});
-}
+// ★2026-07-16: 교육생 화면이 제니야(대표님 서버)를 7초마다 폴링하던 격리 위반 제거.
+//   발송 소스가 아직 없으니 0 정직 표시(가짜 숫자 금지). 교육생 발송 붙으면 자기 서버로 연결.
+function _fetchSend(){ _renderSendKpi(); return Promise.resolve(); }
 function sendDashboard(){ _renderSendModal(); _fetchSend(); }   // 모달 즉시 표시 후 최신값으로 갱신
 function _renderSendModal(){
   var s=(_SEND&&_SEND.success)||[], f=(_SEND&&_SEND.fail)||[];
@@ -1786,8 +1783,7 @@ function refreshTopKPIs(dash){
   loadSchedKpi();   // ★하드코딩 제거 → 실제 오늘 일정 개수로 갱신
   _setKpi('kpiFind','0명');
   // 오늘 발송: 서버(jenya) 폴링 실데이터. 발송할 때마다 자동 갱신(7초 주기).
-  _renderSendKpi(); _fetchSend();
-  if(!window._sendPoll) window._sendPoll = setInterval(_fetchSend, 7000);
+  _renderSendKpi();   // ★제니야 폴링 제거 — 0 정직 표시(소스 없음)
 }
 // 로드 즉시: 로그인 안 됐으면 로그인화면부터 고정
 if(!_AUTHED) _goReal(0);
