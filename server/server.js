@@ -859,6 +859,8 @@ app.post(['/vapi', '/vapi/chat/completions', '/vapi/chat/completions/chat/comple
 // 영업일기에서 팀별로 "오늘 건수 / 48시간 건수 / 마지막 활동 시각"을 계산해 준다.
 // 실데이터(시트·SNS)가 연결되기 전까지는 활동 건수가 가장 정직한 숫자다.
 app.get('/dashboard', (req, res) => {
+  // 게이팅: 로그인 안 한 외부인은 팀 골격만(숫자 0). 대표 영업일기 실수치 누수 차단.
+  if (gateEmpty(req)) return res.json({ teams: Object.keys(AGENT_DOCS).map((id) => ({ id, name: AGENT_DOCS[id].name, today: 0, h48: 0, total: 0, last: null })), gated: true });
   const now = Date.now();
   const todayStr = new Date().toDateString();
   const teams = Object.keys(AGENT_DOCS).map((id) => {
