@@ -166,7 +166,11 @@ function prepFor(c) {
 app.get('/api/calendar', async (req, res) => {
   try {
     const ma = gateGoogle(req, res); if (!ma) return; // ★회원 구글 토큰으로만(SA 폴백 제거)
-    const roster = await readRoster(ma);
+    // ★캘린더만 연결한 회원도 일정이 떠야 한다.
+    //   명단(드라이브+시트)은 '있으면 좋은 것'이지 캘린더의 전제가 아니다.
+    //   전에는 여기서 스코프 없어 터지면 500 → 화면엔 그냥 0건으로 보였다.
+    let roster = [];
+    try { roster = await readRoster(ma); } catch (e) { roster = []; }
     const byName = {}; roster.forEach((c) => byName[c['고객명']] = c);
     const cal = google.calendar({ version: 'v3', auth: ma });
     const now = new Date(); const y = now.getFullYear(), m = now.getMonth(), d = now.getDate();
@@ -181,7 +185,12 @@ app.get('/api/calendar', async (req, res) => {
       return { time, title, prep: prepFor(byName[name]) };
     });
     res.json({ ok: true, date: `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`, count: events.length, events });
-  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+  } catch (e) {
+    // ★시트만 연결한 회원은 gateGoogle을 통과하지만 캘린더 스코프가 없어 여기서 터진다.
+    //   500을 던지면 화면엔 그냥 '0건'으로 보인다 = 조용히 잘못된 것. '연결 필요'로 정직하게.
+    if (isScopeError(e)) return res.json({ ok: true, needsConnect: true, connectUrl: '/auth/google/connect?scope=calendar', message: '캘린더를 보려면 캘린더 연결이 필요해요' });
+    res.status(500).json({ ok: false, error: e.message });
+  }
 });
 
 // ── 📊 시트 명단 정리: 필터/정렬(원칙1: 읽기만, 저장 0) ──

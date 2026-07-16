@@ -1363,18 +1363,41 @@ function _schedShell(inner){ return '<div class="pop-h s"><div class="pic"><svg 
 function schedPop(){
   document.getElementById('popBox').innerHTML=_schedShell('<div style="padding:24px;text-align:center;color:#8a93a3;font-size:13px">불러오는 중…</div>');  // ① 로딩
   document.getElementById('popBack').classList.add('on');
-  fetch(GENYA_API+'/calendar/today').then(function(r){ if(!r.ok) throw 0; return r.json(); }).then(function(d){
-    window._SCHED=d; _setKpi('kpiSched',((d&&d.events)?d.events.length:0)+'건');
+  // ★2026-07-16 수정: 제니야(대표님 서버·서비스계정)를 부르던 것을 자기 서버로 돌림.
+  //   응답 모양도 다르다 — 제니야는 {start,summary}, 지니야는 {time,title,prep}.
+  fetch('/api/calendar').then(function(r){ if(!r.ok) throw 0; return r.json(); }).then(function(d){
+    window._SCHED=d;
     var body;
-    if(!d||d.configured===false){ body=_schedMsg('🔧','캘린더 연결 준비 중','대표님 캘린더를 서비스계정에 공유하고 GCAL_ID를 설정하면 실제 일정이 떠요.'); }
-    else if(d.error||!Array.isArray(d.events)){ body=_schedMsg('⚠️','일정을 불러오지 못했어요',''); }        // ③ 에러
-    else if(!d.events.length){ body=_schedMsg('📭','오늘 약속 없음','오늘 잡힌 일정이 없어요.'); }             // ② 빈
-    else { body='<div class="pop-list">'+d.events.map(function(e){                                            // ④ 정상
-        return '<div class="pop-item"><span class="di pi-s"></span><div class="it"><b>'+_sEsc(_schedTime(e.start))+' · '+_sEsc(e.summary)+'</b>'+(e.location?('<span>'+_sEsc(e.location)+'</span>'):'')+'</div></div>'; }).join('')+'</div>'; }
+    if(d&&d.needsConnect){                                                                                  // ① 미연결 = 정직하게
+      _setKpi('kpiSched','연결 필요');
+      body=_schedMsg('🔗','캘린더가 아직 연결되지 않았어요','아래 도구에서 <b>구글 캘린더 연결하기</b>를 한 번만 누르면 오늘 일정이 바로 떠요.');
+    }
+    else if(d&&d.ok===false){ _setKpi('kpiSched','0건'); body=_schedMsg('⚠️','일정을 불러오지 못했어요',''); }   // ③ 에러
+    else{
+      var ev=(d&&d.events)||[];
+      _setKpi('kpiSched',ev.length+'건');
+      if(!ev.length) body=_schedMsg('📭','오늘 약속 없음','오늘 잡힌 일정이 없어요.');                          // ② 빈
+      else body='<div class="pop-list">'+ev.map(function(e){                                                 // ④ 정상
+        var prep=(e.prep&&e.prep.length)?('<span>'+_sEsc(e.prep.join(' · '))+'</span>'):'';
+        return '<div class="pop-item"><span class="di pi-s"></span><div class="it"><b>'+_sEsc(e.time)+' · '+_sEsc(e.title)+'</b>'+prep+'</div></div>'; }).join('')+'</div>';
+    }
     document.getElementById('popBox').innerHTML=_schedShell(body);
   }).catch(function(){ document.getElementById('popBox').innerHTML=_schedShell(_schedMsg('⚠️','일정을 불러오지 못했어요','다시 시도해 주세요.')); });
 }
-function loadSchedKpi(){ fetch(GENYA_API+'/calendar/today').then(function(r){return r.json();}).then(function(d){ window._SCHED=d; _setKpi('kpiSched',((d&&d.events)?d.events.length:0)+'건'); }).catch(function(){ _setKpi('kpiSched','0건'); }); }
+// ★2026-07-16 수정: 제니야(GENYA_API+'/calendar/today')를 부르고 있었다.
+//   그건 대표님 서버 + 서비스계정이라 ①교육생 세션이 안 실려 항상 0건이었고
+//   ②CORS가 열려 있어 대표님 일정이 교육생 화면에 뜰 뻔했다(절대규칙 위반).
+//   → 자기 서버 /api/calendar (교육생 본인 OAuth 토큰)로 돌린다.
+function loadSchedKpi(){
+  fetch('/api/calendar')
+    .then(function(r){return r.json();})
+    .then(function(d){
+      window._SCHED=d;
+      if(d&&d.needsConnect){ _setKpi('kpiSched','연결 필요'); return; }   // 캘린더 미연결 = 0건이 아니라 '연결 필요'(정직)
+      _setKpi('kpiSched',((d&&d.events)?d.events.length:0)+'건');
+    })
+    .catch(function(){ _setKpi('kpiSched','0건'); });
+}
 
 // ===== 📨 오늘 발송 현황(카톡) — 서버(jenya)에서 폴링, 재발송=검증된 genyasend: 링크 재사용 =====
 //   ★로컬 watcher(대표님 PC)가 발송할 때마다 서버로 요약을 올림 → 여기서 GET으로 읽어 표시.
