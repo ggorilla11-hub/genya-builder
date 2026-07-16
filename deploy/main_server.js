@@ -67,6 +67,57 @@ async function askClaude(systemPrompt, messages, maxTokens) {
 const SKILL_OUT = require('path').join(__dirname, 'out');
 
 const KEY_FILE = process.env.GOOGLE_SA_JSON || '{}';
+
+// ═══ 🔐 회원 refresh_token 영속 (Firestore · AES-256-GCM) — 재배포·재시작 생존 ══════════
+//   ★대표님이 6번 헤맨 근본: sessions가 메모리라 배포마다 다 날아갔다. → Firestore에 uid별 저장.
+//   ★법률 구분: refresh_token=열쇠(암호화 저장 O) / 일정·메일·시트 내용=교육생 구글에만(저장 0).
+//   키=TOKEN_ENC_KEY(32바이트 hex64/base64). 없으면 저장 스킵(메모리로만 동작·경고).
+const { google: _g } = require('googleapis');
+const TOKEN_COLL = 'genya_member_tokens';
+const _tokProject = process.env.GENYA_MEM_PROJECT || 'moneya-72fe6';
+const _tokDB = `projects/${_tokProject}/databases/(default)/documents`;
+function _encKey() {
+  const k = process.env.TOKEN_ENC_KEY || '';
+  if (!k) return null;
+  try { const b = k.length === 64 ? Buffer.from(k, 'hex') : Buffer.from(k, 'base64'); return b.length === 32 ? b : null; } catch (e) { return null; }
+}
+function _enc(plain) {
+  const key = _encKey(); if (!key) return null;
+  const iv = crypto.randomBytes(12); const c = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const ct = Buffer.concat([c.update(String(plain), 'utf8'), c.final()]);
+  return Buffer.concat([iv, c.getAuthTag(), ct]).toString('base64');
+}
+function _dec(b64) {
+  const key = _encKey(); if (!key) return null;
+  const raw = Buffer.from(String(b64), 'base64'); const d = crypto.createDecipheriv('aes-256-gcm', key, raw.slice(0, 12));
+  d.setAuthTag(raw.slice(12, 28)); return Buffer.concat([d.update(raw.slice(28)), d.final()]).toString('utf8');
+}
+const _docId = (email) => Buffer.from(String(email || '').toLowerCase()).toString('hex').slice(0, 120);
+async function saveMemberToken(email, refreshToken, scope) {
+  if (!email || !refreshToken) return;
+  const enc = _enc(refreshToken);
+  if (!enc) { console.warn('⚠️ TOKEN_ENC_KEY 미설정 — refresh_token 영속 안 됨(메모리로만). Render에 TOKEN_ENC_KEY 넣으면 재배포 생존.'); return; }
+  const auth = new _g.auth.GoogleAuth({ credentials: JSON.parse(KEY_FILE), scopes: ['https://www.googleapis.com/auth/datastore'] });
+  const fs = _g.firestore({ version: 'v1', auth });
+  const name = `${_tokDB}/${TOKEN_COLL}/${_docId(email)}`;
+  await fs.projects.databases.documents.patch({ name, requestBody: { fields: {
+    email: { stringValue: String(email).toLowerCase() }, enc: { stringValue: enc },
+    scope: { stringValue: String(scope || '') }, updated: { stringValue: new Date().toISOString() },
+  } } });
+}
+async function loadMemberToken(email) {
+  if (!email) return null;
+  try {
+    const auth = new _g.auth.GoogleAuth({ credentials: JSON.parse(KEY_FILE), scopes: ['https://www.googleapis.com/auth/datastore'] });
+    const fs = _g.firestore({ version: 'v1', auth });
+    const name = `${_tokDB}/${TOKEN_COLL}/${_docId(email)}`;
+    const r = await fs.projects.databases.documents.get({ name });
+    const f = (r.data && r.data.fields) || {};
+    const enc = f.enc && f.enc.stringValue; if (!enc) return null;
+    const rt = _dec(enc); if (!rt) return null;
+    return { refresh_token: rt, scope: (f.scope && f.scope.stringValue) || '' };
+  } catch (e) { return null; }
+}
 const DEMO_TITLE = '지니야빌더_데모_명단';
 const SHEET_TAB = '고객명단';
 const CAL_ID = process.env.CAL_ID || 'ggorilla11@gmail.com';
@@ -77,6 +128,23 @@ const YAK = JSON.parse(fs.readFileSync(path.join(__dirname, 'yakgwan_pages.json'
 
 const app = express();
 app.use(express.json({ limit: '50mb' })); // 자료 업로드(base64) 파싱 — 큰 제안서 PDF 다중 업로드 대비 상향
+
+// ★세션 복원: 재배포로 메모리(sessions)가 비어도, 쿠키의 이메일로 Firestore에서 refresh_token
+//   복원 → 세션 재구성. 대표님이 재배포마다 재로그인하던 무한반복의 근본 해결.
+app.use(async (req, res, next) => {
+  try {
+    const sid = sidOf(req);
+    if (sid && !sessions.get(sid)) {
+      const m = /(?:^|;\s*)genya_uid=([^;]+)/.exec(req.headers.cookie || '');
+      const email = m && decodeURIComponent(m[1]);
+      if (email) {
+        const t = await loadMemberToken(email);
+        if (t && t.refresh_token) sessions.set(sid, { email, name: '', tokens: { refresh_token: t.refresh_token }, scope: t.scope || '', provider: 'google', restored: true });
+      }
+    }
+  } catch (e) {}
+  next();
+});
 
 // ── 🔑 구글 OAuth 로그인 통합 (auth-oauth/.env에서 자격, 하드코딩 0) ──
 try { require('dotenv').config(); } catch (e) {}
@@ -841,9 +909,10 @@ app.get(['/terms', '/terms.html', '/이용약관'], (req, res) => res.sendFile(p
 
 app.get('/auth/google', (req, res) => {
   if (!OA_CONFIGURED) return res.status(503).send('OAuth 미설정');
-  // ★로그인은 비민감 스코프(openid·email·profile)만 → 강제 동의(consent)·refresh토큰(offline) 불필요.
-  //   계정 선택(select_account)만 → 매번 뜨는 동의 화면 제거. (데이터 연결에서만 consent 유지)
-  res.redirect(oaClient().generateAuthUrl({ prompt: 'select_account', scope: LOGIN_SCOPES }));
+  // ★2026-07-16 무한반복 수정: 예전엔 로그인이 LOGIN_SCOPES(3개)만 요청 → 재로그인마다
+  //   기존 캘린더·시트 연결 스코프를 덮어써 사라졌다. 대표님이 6번 헤맨 직접 원인.
+  //   → include_granted_scopes=true: 이미 동의한 스코프를 유지하며 반환. + offline로 refresh_token.
+  res.redirect(oaClient().generateAuthUrl({ prompt: 'select_account', scope: LOGIN_SCOPES, access_type: 'offline', include_granted_scopes: true }));
 });
 // ★데이터 연결(캘린더·시트·드라이브) — 그 기능 실제로 쓸 때만 별도 동의(incremental). 여기서만 민감 스코프 요청.
 // ★작업A2: 도구별 최소권한 스코프(incremental 누적). scope 파라미터 없으면 기존 일괄(하위호환)
@@ -874,11 +943,24 @@ app.get('/auth/google/callback', async (req, res) => {
     const c = oaClient(); const { tokens } = await c.getToken(code); c.setCredentials(tokens);
     const ui = await google.oauth2({ version: 'v2', auth: c }).userinfo.get();
     const s = crypto.randomBytes(16).toString('hex');
-    // ★스코프 = 이번에 구글이 실제로 준 tokens.scope만 신뢰한다.
-    //   include_granted_scopes=true라 구글이 '기존+신규'를 합쳐서 준다 → 굳이 옛 세션을 누적하면
-    //   취소한 스코프까지 계속 '연결됨'으로 남아 거짓말이 된다(대표님이 겪은 그 증상).
-    sessions.set(s, { email: ui.data.email, name: ui.data.name, tokens, scope: tokens.scope || '', provider: 'google' });
-    res.setHeader('Set-Cookie', `genya_sid=${s}; HttpOnly; Path=/; SameSite=Lax${process.env.RENDER ? '; Secure' : ''}`);
+    // ★로그인이 기존 연결을 지우지 않게: refresh_token은 이번에 없으면(로그인은 재동의 안 함)
+    //   기존 세션 것을 유지. scope도 이번 것이 더 좁으면(로그인=3개) 기존 것을 유지.
+    //   include_granted_scopes=true라 정상적으론 넓게 오지만, 안전하게 넓은 쪽을 택한다.
+    const _old = sessionOf(req);
+    const tok = Object.assign({}, tokens);
+    if (!tok.refresh_token && _old && _old.tokens && _old.tokens.refresh_token) tok.refresh_token = _old.tokens.refresh_token;
+    const newScope = tokens.scope || '';
+    const oldScope = (_old && _old.scope) || '';
+    const scope = newScope.split(' ').length >= oldScope.split(' ').length ? newScope : oldScope;
+    sessions.set(s, { email: ui.data.email, name: ui.data.name, tokens: tok, scope, provider: 'google' });
+    // ★Firestore에 refresh_token 영속(재배포·재시작 생존). uid=이메일. 실패해도 메모리로는 동작.
+    saveMemberToken(ui.data.email, tok.refresh_token, scope).catch((e) => console.warn('토큰저장 실패:', e.message));
+    const _sec = process.env.RENDER ? '; Secure' : '';
+    // ★genya_uid = 재배포 후 세션 복원의 열쇠(이메일만. refresh_token은 Firestore 암호화).
+    res.setHeader('Set-Cookie', [
+      `genya_sid=${s}; HttpOnly; Path=/; SameSite=Lax${_sec}`,
+      `genya_uid=${encodeURIComponent(String(ui.data.email || '').toLowerCase())}; HttpOnly; Path=/; SameSite=Lax; Max-Age=31536000${_sec}`,
+    ]);
     res.redirect(isConnect ? ('/?connected=1&screen=' + encodeURIComponent(returnTo)) : '/'); // 데이터 연결이면 원래 화면으로 복귀
   } catch (e) { res.status(500).send('로그인 오류: ' + e.message); }
 });
