@@ -206,6 +206,63 @@ app.get('/api/sheets', async (req, res) => {
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
+// ═══════════════════════════════════════════════════════════════════════════
+// 🔌 커넥터 4종 — 교육생 본인 구글 데이터 "한 줄이라도" 화면에 (2026-07-16)
+//   ★캘린더에서 확정된 패턴 그대로 4개 복제:
+//     ① 자기 서버 · 교육생 본인 OAuth 토큰(gateGoogle) — 옆집(제니야)·SA 안 부름
+//     ② 스코프 없으면 500 대신 {needsConnect:true} 정직 응답
+//     ③ 부가데이터(명단 등)에 의존 안 함 — 그 도구 하나만 연결해도 뜸
+//   ★제로 데이터 인그레스: 전부 읽어서 반환만. 서버 저장 0.
+//   ★SA 폴백 없음 — gateGoogle이 회원 토큰 없으면 바로 needsConnect(남의 데모 안 보임).
+// ═══════════════════════════════════════════════════════════════════════════
+const scopeGate = (e, res, scope) => { if (isScopeError(e)) { res.json({ ok: true, needsConnect: true, connectUrl: '/auth/google/connect?scope=' + scope, message: '이 도구를 쓰려면 연결이 필요해요' }); return true; } return false; };
+
+// 📊 내 구글 시트 목록 (최근 수정순 10개)
+app.get('/api/my/sheets', async (req, res) => {
+  try {
+    const ma = gateGoogle(req, res); if (!ma) return;
+    const drive = google.drive({ version: 'v3', auth: ma });
+    const r = await drive.files.list({
+      q: "mimeType='application/vnd.google-apps.spreadsheet' and trashed=false",
+      orderBy: 'modifiedTime desc', pageSize: 10,
+      fields: 'files(id,name,modifiedTime,webViewLink)',
+    });
+    res.json({ ok: true, items: (r.data.files || []).map((f) => ({ id: f.id, name: f.name, link: f.webViewLink, at: (f.modifiedTime || '').slice(0, 10) })) });
+  } catch (e) { if (scopeGate(e, res, 'sheets')) return; res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// 📁 내 드라이브 최근 파일 (폴더 제외, 최근 10개)
+app.get('/api/my/drive', async (req, res) => {
+  try {
+    const ma = gateGoogle(req, res); if (!ma) return;
+    const drive = google.drive({ version: 'v3', auth: ma });
+    const r = await drive.files.list({
+      q: "trashed=false and mimeType!='application/vnd.google-apps.folder'",
+      orderBy: 'modifiedTime desc', pageSize: 10,
+      fields: 'files(id,name,modifiedTime,webViewLink,mimeType)',
+    });
+    res.json({ ok: true, items: (r.data.files || []).map((f) => ({ id: f.id, name: f.name, link: f.webViewLink, at: (f.modifiedTime || '').slice(0, 10) })) });
+  } catch (e) { if (scopeGate(e, res, 'drive')) return; res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// 📧 내 Gmail 최근 메일 제목 5개 — ★서버에 없던 것. 신설.
+//   gmail.readonly로 목록·제목만(본문·발송 없음). 발송·초안은 사람 승인 뒤 별도.
+app.get('/api/my/gmail', async (req, res) => {
+  try {
+    const ma = gateGoogle(req, res); if (!ma) return;
+    const gmail = google.gmail({ version: 'v1', auth: ma });
+    const list = await gmail.users.messages.list({ userId: 'me', maxResults: 5, q: 'in:inbox' });
+    const ids = (list.data.messages || []).map((m) => m.id);
+    const items = [];
+    for (const id of ids) {
+      const m = await gmail.users.messages.get({ userId: 'me', id, format: 'metadata', metadataHeaders: ['Subject', 'From', 'Date'] });
+      const h = {}; ((m.data.payload || {}).headers || []).forEach((x) => h[x.name] = x.value);
+      items.push({ subject: h.Subject || '(제목 없음)', from: (h.From || '').replace(/<.*>/, '').trim(), snippet: m.data.snippet || '' });
+    }
+    res.json({ ok: true, items });
+  } catch (e) { if (scopeGate(e, res, 'gmail')) return; res.status(500).json({ ok: false, error: e.message }); }
+});
+
 // ── 📄 약관 검색: 약관 창고(RAG 모듈)에서 근거 찾아 쉽게 답 + 출처(페이지). 없으면 "확인 필요" ──
 app.get('/api/yakgwan', async (req, res) => {
   try {
