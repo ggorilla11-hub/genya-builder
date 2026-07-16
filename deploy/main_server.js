@@ -456,6 +456,64 @@ app.get('/api/diag/calendar', async (req, res) => {
   } catch (e) { out.에러 = e.message; out.진단 = isScopeError(e) ? '캘린더 스코프 없음 — 재연결 필요' : '캘린더 호출 실패'; res.json(out); }
 });
 
+// ═══ 🔍 고객발굴비서 — 남의 유튜브(★오상열 제외) 금융 키워드 검색 → 리드 → 답글초안 ═══
+//   대표님 확정 구조: 제니야=오상열 채널 / 지니야=오상열 제외 나머지 전체를 찾아다님.
+//   ★제니야 collectYouTube를 이식(YouTube Data API·API키만·OAuth 불필요). 새로 안 만듦.
+//   ★자동 발송 0 — 답글 초안까지만. 교육생이 [복사→직접 게시]. 진단링크에 교육생 꼬리표.
+const FIND_EXCLUDE_CH = process.env.FIND_EXCLUDE_CHANNEL || 'UCQxyqyUyMpNzHZvK0V_mOGQ'; // 오상열 @OhSangRyul 제외
+const FIND_KEYWORDS = ['재테크', '노후준비', '연금저축', '목돈 마련', '퇴직연금', '보험 리모델링', '종잣돈', '재무설계', '10억 모으기', '투자 초보'];
+const FIND_INTENT = /(어떻게|어떡|추천|모으|막막|시작|초보|고민|할까요|방법|좋을까|궁금|문의|해야|도와|알려|얼마|불안|걱정)/;
+const FIND_HOT = /(상담|신청|연락|문의|디엠|dm|카톡|어떻게\s*신청|알려주세요)/i;
+const FIND_WARM = /(노후|연금|재테크|종잣돈|목돈|불안|막막|초보|시작|얼마|투자|고민)/;
+function findTier(t) { if (FIND_HOT.test(t)) return '🔥핫'; if (FIND_WARM.test(t)) return '🌤웜'; return '🌱콜드'; }
+const _tierOrd = { '🔥핫': 0, '🌤웜': 1, '🌱콜드': 2 };
+
+async function findYouTubeLeads(key, max) {
+  const out = [];
+  for (const kw of FIND_KEYWORDS.slice(0, 6)) {   // 할당량 보호: 회당 6키워드
+    let s; try { s = await (await fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&order=date&maxResults=3&q=${encodeURIComponent(kw)}&key=${key}`)).json(); } catch (e) { continue; }
+    if (s.error) throw new Error((s.error.message || 'youtube search 실패'));
+    for (const it of (s.items || [])) {
+      const vid = it.id && it.id.videoId; if (!vid) continue;
+      if ((it.snippet && it.snippet.channelId) === FIND_EXCLUDE_CH) continue;   // ★오상열 제외
+      let cs; try { cs = await (await fetch(`https://www.googleapis.com/youtube/v3/commentThreads?part=snippet&maxResults=10&order=relevance&videoId=${vid}&key=${key}`)).json(); } catch (e) { continue; }
+      (cs.items || []).forEach((ci) => {
+        const sn = ci.snippet && ci.snippet.topLevelComment && ci.snippet.topLevelComment.snippet; if (!sn) return;
+        const text = String(sn.textOriginal || ''); if (!FIND_INTENT.test(text)) return;
+        out.push({ source: '유튜브', author: sn.authorDisplayName || '', text: text.slice(0, 180), link: `https://www.youtube.com/watch?v=${vid}&lc=${ci.id}`, videoTitle: (it.snippet && it.snippet.title) || '', keyword: kw, tier: findTier(text) });
+      });
+      if (out.length >= (max || 30)) return out;
+    }
+  }
+  return out;
+}
+
+app.get('/api/find/leads', async (req, res) => {
+  if (!sessionOf(req)) return res.status(401).json({ ok: false, error: '로그인이 필요해요' });
+  const key = process.env.YOUTUBE_API_KEY;
+  if (!key) return res.json({ ok: true, needsKey: true, youtube: [], naver: [], message: 'YOUTUBE_API_KEY 미설정 — 대표님이 Render에 넣으면 발굴이 켜집니다.' });
+  try {
+    const yt = await findYouTubeLeads(key, 30);
+    yt.sort((a, b) => (_tierOrd[a.tier] != null ? _tierOrd[a.tier] : 9) - (_tierOrd[b.tier] != null ? _tierOrd[b.tier] : 9));
+    res.json({ ok: true, youtube: yt, naver: [] });   // 네이버 카페·지식인은 다음 단계(일요일 범위=유튜브만)
+  } catch (e) { res.status(502).json({ ok: false, error: e.message }); }
+});
+
+// 답글 초안(LLM) — ★게시는 교육생 직접(자동 0). [링크]는 화면에서 진단링크+교육생 꼬리표로 치환.
+app.post('/api/find/reply-draft', async (req, res) => {
+  if (!sessionOf(req)) return res.status(401).json({ ok: false, error: '로그인이 필요해요' });
+  try {
+    const b = req.body || {};
+    const text = String(b.text || '').slice(0, 500);
+    const source = String(b.source || '공개 채널');
+    if (!text) return res.json({ ok: false, error: '내용 없음' });
+    const sys = '너는 재무설계사를 돕는 어시스턴트다. 유튜브 댓글/카페 글에 달 "답글 초안"을 쓴다. 톤: 친절하고 전문적. 규칙: ① 2~3문장 짧게 ② 상대 고민에 진심으로 공감 ③ "무료 재무진단으로 지금 상황을 점검해보시라"고 자연스럽게 권함 ④ 마지막에 링크 자리로 [링크] 토큰 하나만 넣기 ⑤ 강매·전화번호·과장·이모지 남발 금지. 답글 본문만 출력(설명 없이).';
+    const cr = await _anthropic.messages.create({ model: WS_CHAT_MODEL, max_tokens: 350, system: sys, messages: [{ role: 'user', content: `[출처: ${source}] 상대 글/댓글:\n"${text}"\n\n이 사람에게 달 답글 초안을 써줘.` }] });
+    const draft = (cr.content || []).filter((x) => x.type === 'text').map((x) => x.text).join('').trim();
+    res.json({ ok: true, draft });
+  } catch (e) { res.json({ ok: false, error: e.message }); }
+});
+
 // ── 📄 약관 검색: 약관 창고(RAG 모듈)에서 근거 찾아 쉽게 답 + 출처(페이지). 없으면 "확인 필요" ──
 app.get('/api/yakgwan', async (req, res) => {
   try {
