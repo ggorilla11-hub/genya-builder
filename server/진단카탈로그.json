@@ -1,0 +1,12 @@
+{
+  "_주석": "쇼츠→진단페이지 매칭 카탈로그. server/data/가 아니라 server/에 둔다(data/는 .gitignore라 배포 제외됨). 항목 추가로 확장(연금분석·부채정리 등). pickDiagnosis가 shorts.diagId → topics 키워드매칭 → default 순으로 고른다.",
+  "default": "consult_general",
+  "items": [
+    {
+      "id": "consult_general",
+      "name": "일반 재무상담 진단",
+      "url": "https://ohwant-class.netlify.app/개인상담진단페이지.html",
+      "topics": ["재무", "전반", "돈", "자산", "상담"]
+    }
+  ]
+}
