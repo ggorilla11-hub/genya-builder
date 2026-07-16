@@ -93,26 +93,32 @@ function _dec(b64) {
   d.setAuthTag(raw.slice(12, 28)); return Buffer.concat([d.update(raw.slice(28)), d.final()]).toString('utf8');
 }
 const _docId = (email) => Buffer.from(String(email || '').toLowerCase()).toString('hex').slice(0, 120);
+function _tokFs() {
+  const auth = new _g.auth.GoogleAuth({ credentials: JSON.parse(KEY_FILE), scopes: ['https://www.googleapis.com/auth/datastore'] });
+  return _g.firestore({ version: 'v1', auth });
+}
+// ★검증된 genya_mem 방식(createDocument + runQuery) 복사 — patch는 SA 권한 부족(insufficient permissions).
 async function saveMemberToken(email, refreshToken, scope) {
   if (!email || !refreshToken) return;
   const enc = _enc(refreshToken);
-  if (!enc) { console.warn('⚠️ TOKEN_ENC_KEY 미설정 — refresh_token 영속 안 됨(메모리로만). Render에 TOKEN_ENC_KEY 넣으면 재배포 생존.'); return; }
-  const auth = new _g.auth.GoogleAuth({ credentials: JSON.parse(KEY_FILE), scopes: ['https://www.googleapis.com/auth/datastore'] });
-  const fs = _g.firestore({ version: 'v1', auth });
-  const name = `${_tokDB}/${TOKEN_COLL}/${_docId(email)}`;
-  await fs.projects.databases.documents.patch({ name, requestBody: { fields: {
+  if (!enc) { console.warn('⚠️ TOKEN_ENC_KEY 미설정 — refresh_token 영속 안 됨(메모리로만).'); return; }
+  await _tokFs().projects.databases.documents.createDocument({ parent: _tokDB, collectionId: TOKEN_COLL, requestBody: { fields: {
     email: { stringValue: String(email).toLowerCase() }, enc: { stringValue: enc },
-    scope: { stringValue: String(scope || '') }, updated: { stringValue: new Date().toISOString() },
+    scope: { stringValue: String(scope || '') }, timestamp: { stringValue: new Date().toISOString() },
   } } });
 }
 async function loadMemberToken(email) {
   if (!email) return null;
   try {
-    const auth = new _g.auth.GoogleAuth({ credentials: JSON.parse(KEY_FILE), scopes: ['https://www.googleapis.com/auth/datastore'] });
-    const fs = _g.firestore({ version: 'v1', auth });
-    const name = `${_tokDB}/${TOKEN_COLL}/${_docId(email)}`;
-    const r = await fs.projects.databases.documents.get({ name });
-    const f = (r.data && r.data.fields) || {};
+    const r = await _tokFs().projects.databases.documents.runQuery({ parent: _tokDB, requestBody: { structuredQuery: {
+      from: [{ collectionId: TOKEN_COLL }],
+      where: { fieldFilter: { field: { fieldPath: 'email' }, op: 'EQUAL', value: { stringValue: String(email).toLowerCase() } } },
+      limit: 50,
+    } } });
+    const rows = (r.data || []).filter((x) => x.document).map((x) => x.document.fields || {});
+    if (!rows.length) return null;
+    rows.sort((a, b) => String((b.timestamp || {}).stringValue || '').localeCompare(String((a.timestamp || {}).stringValue || '')));
+    const f = rows[0];
     const enc = f.enc && f.enc.stringValue; if (!enc) return null;
     const rt = _dec(enc); if (!rt) return null;
     return { refresh_token: rt, scope: (f.scope && f.scope.stringValue) || '' };
@@ -886,11 +892,16 @@ app.get('/api/diag/persist', async (req, res) => {
     out.복원됨 = !!(back && back.refresh_token);
     out.복호화_일치 = back && back.refresh_token === dummy;
     out.암호화_확인 = '평문 노출 안 됨(더미로 검증)';
-    // 정리: 더미 문서 삭제
+    // 정리: 더미 문서들 찾아 삭제(createDocument는 auto-id라 runQuery로 찾는다)
     try {
-      const auth = new _g.auth.GoogleAuth({ credentials: JSON.parse(KEY_FILE), scopes: ['https://www.googleapis.com/auth/datastore'] });
-      await _g.firestore({ version: 'v1', auth }).projects.databases.documents.delete({ name: `${_tokDB}/${TOKEN_COLL}/${_docId(testEmail)}` });
-      out.정리 = '더미 삭제 완료';
+      const fs = _tokFs();
+      const q = await fs.projects.databases.documents.runQuery({ parent: _tokDB, requestBody: { structuredQuery: {
+        from: [{ collectionId: TOKEN_COLL }],
+        where: { fieldFilter: { field: { fieldPath: 'email' }, op: 'EQUAL', value: { stringValue: testEmail } } }, limit: 50,
+      } } });
+      let n = 0;
+      for (const x of (q.data || [])) { if (x.document && x.document.name) { try { await fs.projects.databases.documents.delete({ name: x.document.name }); n++; } catch (e) {} } }
+      out.정리 = `더미 ${n}건 삭제`;
     } catch (e) { out.정리 = '삭제 실패(무해): ' + e.message; }
     out.진단 = out.복호화_일치 ? '✅ Firestore 영속 실작동 — 재배포·재로그인 생존' : '⚠️ 저장/복원 불일치';
     res.json(out);
