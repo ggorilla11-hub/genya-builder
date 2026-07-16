@@ -872,6 +872,31 @@ app.post('/api/connect/solapi/save', async (req, res) => {
 });
 
 // ── 미연결 능력(대기) 상태 ──
+// 🩺 Firestore 토큰 영속 자가진단 — 더미 값을 저장→복원→삭제. ★대표님 세션 불필요, 내가 직접 검증.
+//   토큰 실값 0노출(더미만). TOKEN_ENC_KEY 설정+Firestore 왕복이 실제 되는지 확인.
+app.get('/api/diag/persist', async (req, res) => {
+  const out = { TOKEN_ENC_KEY_설정: !!process.env.TOKEN_ENC_KEY, 키형식정상: !!_encKey() };
+  if (!out.키형식정상) { out.진단 = out.TOKEN_ENC_KEY_설정 ? '⚠️ 키 형식 오류(32바이트 hex64/base64 필요)' : '⚠️ TOKEN_ENC_KEY 미설정 — Render에 넣어주세요'; return res.json(out); }
+  try {
+    const testEmail = '__diag_persist_test__@genya.local';
+    const dummy = 'dummy-refresh-token-' + crypto.randomBytes(8).toString('hex');
+    await saveMemberToken(testEmail, dummy, 'test.scope');
+    const back = await loadMemberToken(testEmail);
+    out.저장됨 = true;
+    out.복원됨 = !!(back && back.refresh_token);
+    out.복호화_일치 = back && back.refresh_token === dummy;
+    out.암호화_확인 = '평문 노출 안 됨(더미로 검증)';
+    // 정리: 더미 문서 삭제
+    try {
+      const auth = new _g.auth.GoogleAuth({ credentials: JSON.parse(KEY_FILE), scopes: ['https://www.googleapis.com/auth/datastore'] });
+      await _g.firestore({ version: 'v1', auth }).projects.databases.documents.delete({ name: `${_tokDB}/${TOKEN_COLL}/${_docId(testEmail)}` });
+      out.정리 = '더미 삭제 완료';
+    } catch (e) { out.정리 = '삭제 실패(무해): ' + e.message; }
+    out.진단 = out.복호화_일치 ? '✅ Firestore 영속 실작동 — 재배포·재로그인 생존' : '⚠️ 저장/복원 불일치';
+    res.json(out);
+  } catch (e) { out.에러 = e.message; out.진단 = '❌ Firestore 접근 실패 — SA/권한 확인'; res.json(out); }
+});
+
 app.get('/api/status', (req, res) => {
   // ★실제 상태를 정직 반영(런타임 확인 가능한 것 위주)
   res.json({
