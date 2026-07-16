@@ -297,15 +297,27 @@ app.get('/api/diag/calendar', async (req, res) => {
     const y = kst.getUTCFullYear(), m = kst.getUTCMonth(), d = kst.getUTCDate();
     const timeMin = new Date(Date.UTC(y, m, d, 0, 0, 0) - 9 * 3600e3).toISOString();
     const timeMax = new Date(Date.UTC(y, m, d, 23, 59, 59) - 9 * 3600e3).toISOString();
-    const ev = await cal.events.list({ calendarId: 'primary', timeMin, timeMax, singleEvents: true, orderBy: 'startTime' });
-    out.오늘_KST범위 = { timeMin, timeMax };
-    out.오늘일정수 = (ev.data.items || []).length;
-    out.오늘일정 = (ev.data.items || []).map((e) => ({ 제목: e.summary || '(제목없음)', 시작: (e.start || {}).dateTime || (e.start || {}).date }));
-    // 시간대 무관 이번주 7일 — 오늘 0인데 이게 있으면 시간대/범위 문제
+    out.오늘_KST범위 = { timeMin, timeMax, 지금KST: new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 16) };
+    // ★핵심: primary만이 아니라 '모든 캘린더'를 돌며 각각 오늘 몇 건인지 찍는다.
+    //   대표님 약속이 업무 캘린더에 있으면 여기서 어느 캘린더인지 드러난다(원인 ①).
+    const cals = cl.data.items || [];
+    out.캘린더별_오늘 = [];
+    let 합계 = 0;
+    for (const c of cals) {
+      try {
+        const ev = await cal.events.list({ calendarId: c.id, timeMin, timeMax, singleEvents: true, orderBy: 'startTime', timeZone: 'Asia/Seoul' });
+        const items = ev.data.items || []; 합계 += items.length;
+        out.캘린더별_오늘.push({ 캘린더: c.summary || c.id, 오늘건수: items.length,
+          일정: items.map((e) => ({ 제목: e.summary || '(제목없음)', 시작: (e.start || {}).dateTime || (e.start || {}).date, 종일: !(e.start || {}).dateTime })) });
+      } catch (e2) { out.캘린더별_오늘.push({ 캘린더: c.summary || c.id, 에러: e2.message }); }
+    }
+    out.오늘_전체합계 = 합계;
+    // 시간대 무관 이번주(primary) — 오늘 0인데 이게 있으면 시간대/범위 문제
     const wk = await cal.events.list({ calendarId: 'primary', timeMin: new Date(Date.now() - 2 * 864e5).toISOString(), timeMax: new Date(Date.now() + 5 * 864e5).toISOString(), singleEvents: true, orderBy: 'startTime', maxResults: 10 });
-    out.최근7일일정수 = (wk.data.items || []).length;
-    out.최근7일제목 = (wk.data.items || []).map((e) => (e.summary || '(제목없음)') + ' @ ' + ((e.start || {}).dateTime || (e.start || {}).date || ''));
-    out.진단 = out.오늘일정수 > 0 ? '✅ 오늘 일정 읽힘 — 정상' : (out.최근7일일정수 > 0 ? '⚠️ 오늘은 0인데 이번주엔 있음 → 시간대/범위 문제' : (out.내캘린더수 <= 1 ? '⚠️ 캘린더가 거의 없음 → SA(빈 계정) 의심 or 다른 구글계정으로 로그인' : '⚠️ 이번주 일정 자체가 0 → 다른 계정이거나 일정 없음'));
+    out.최근7일_primary = (wk.data.items || []).map((e) => (e.summary || '(제목없음)') + ' @ ' + ((e.start || {}).dateTime || (e.start || {}).date || ''));
+    out.진단 = 합계 > 0
+      ? '✅ 오늘 일정 읽힘(합계 ' + 합계 + ') — 어느 캘린더인지 캘린더별_오늘 참고. 화면이 0이면 화면 반영 문제.'
+      : (out.최근7일_primary.length > 0 ? '⚠️ 오늘은 0인데 최근7일엔 있음 → 시간대/범위' : (cals.length <= 1 ? '⚠️ 캘린더 1개뿐 → 다른 구글계정 로그인 의심' : '⚠️ 모든 캘린더 오늘 0 → 진짜 오늘 일정 없음 or 다른 계정'));
     res.json(out);
   } catch (e) { out.에러 = e.message; out.진단 = isScopeError(e) ? '캘린더 스코프 없음 — 재연결 필요' : '캘린더 호출 실패'; res.json(out); }
 });
