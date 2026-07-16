@@ -1752,8 +1752,9 @@ var _CONN_META = {
   gmail:    { api:'/api/my/gmail', title:'최근 메일', ico:'📧', row:function(e){ return '<b>'+_sEsc(e.subject)+'</b>'+(e.from?('<br><span style="color:#8a93a3;font-size:11px">'+_sEsc(e.from)+'</span>'):''); } }
 };
 function connectorClick(el, kind){
-  if(el.getAttribute('data-on')==='1'){ showConnData(kind); }   // 연결됨 → 실데이터
-  else { connectGoogle('5', kind); }                            // 미연결 → OAuth
+  // ★배지(data-on)를 믿지 않는다 — 항상 실데이터를 시도하고, 실제 안 되면 그 팝업에서 연결.
+  //   배지가 틀려도(연결됨인데 실제 미연결) 대표님이 팝업의 [지금 연결하기]로 바로 연결.
+  showConnData(kind);
 }
 function showConnData(kind){
   var M=_CONN_META[kind]; if(!M) return;
@@ -1761,7 +1762,15 @@ function showConnData(kind){
   document.getElementById('popBack').classList.add('on');
   fetch(M.api).then(function(r){return r.json();}).then(function(d){
     var body;
-    if(d&&d.needsConnect){ body=_schedMsg('🔗',M.title+'을(를) 보려면 연결이 필요해요','도구의 <b>연결하기</b>를 한 번만 누르면 바로 떠요.'); }
+    if(d&&d.needsConnect){
+      // ★안내만 하지 않는다 — 실제 [지금 연결하기] 버튼(그 커넥터 scope만)을 팝업에 넣는다.
+      body='<div style="padding:26px 20px;text-align:center">'
+        +'<div style="font-size:32px">'+M.ico+'</div>'
+        +'<div style="font-size:15px;font-weight:800;margin-top:10px">'+M.title+' 연결이 필요해요</div>'
+        +'<div style="font-size:12.5px;color:#8a93a3;margin-top:6px">아래 버튼을 누르면 구글 동의 후 바로 떠요. (이 도구만 · 최소 권한)</div>'
+        +'<button onclick="connectGoogle(\'5\',\''+kind+'\')" style="margin-top:16px;background:#1DB088;color:#fff;border:none;border-radius:10px;padding:12px 26px;font-size:14.5px;font-weight:800;cursor:pointer">지금 연결하기</button>'
+        +'</div>';
+    }
     else if(d&&d.ok===false){ body=_schedMsg('⚠️','불러오지 못했어요',''); }
     else{
       var items=(d&&(d.items||d.events))||[];

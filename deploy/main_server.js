@@ -313,6 +313,28 @@ app.post('/api/promo/draft', async (req, res) => {
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
+// 🩺 진단 — 4개 커넥터 각각 실제 API를 호출해 200/에러 원문을 찍는다. ★토큰값 0노출.
+//   "스코프는 있는데 연결 필요가 뜬다"의 진짜 원인(문자열 vs 실제 부여)을 대표님 세션에서 확인.
+app.get('/api/diag/conn', async (req, res) => {
+  const s = sessionOf(req);
+  const out = { 로그인: !!s, 이메일: s ? s.email : null, 구글토큰있음: !!(s && s.tokens),
+                승인스코프_문자열: (s && (s.scope || (s.tokens && s.tokens.scope))) || '', 실제호출: {} };
+  const ma = memberAuth(req);
+  if (!ma) { out.진단 = '구글 토큰 없음 — 로그인/연결 필요'; return res.json(out); }
+  const probes = {
+    calendar: () => google.calendar({ version: 'v3', auth: ma }).calendarList.list({ maxResults: 1 }),
+    sheets:   () => google.drive({ version: 'v3', auth: ma }).files.list({ pageSize: 1, q: "mimeType='application/vnd.google-apps.spreadsheet'", fields: 'files(id)' }),
+    drive:    () => google.drive({ version: 'v3', auth: ma }).files.list({ pageSize: 1, fields: 'files(id)' }),
+    gmail:    () => google.gmail({ version: 'v1', auth: ma }).users.getProfile({ userId: 'me' }),
+  };
+  for (const k of Object.keys(probes)) {
+    try { await probes[k](); out.실제호출[k] = '✅ 200'; }
+    catch (e) { out.실제호출[k] = '❌ ' + (e.code || '') + ' ' + (e.message || '').slice(0, 80); }
+  }
+  out.진단 = '실제호출에서 ❌인 것 = 문자열엔 스코프 있어도 실제 토큰엔 없음 → 그 커넥터 [지금 연결하기] 필요';
+  res.json(out);
+});
+
 // 🩺 진단 전용(임시) — 캘린더 0건 원인 격리. 로그인 본인만. ★토큰값 0노출.
 //   대표님이 로그인 후 이 주소를 열면, 무엇이 문제인지 한눈에 나온다.
 app.get('/api/diag/calendar', async (req, res) => {
