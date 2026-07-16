@@ -882,6 +882,9 @@ app.post('/api/connect/solapi/save', async (req, res) => {
 //   토큰 실값 0노출(더미만). TOKEN_ENC_KEY 설정+Firestore 왕복이 실제 되는지 확인.
 app.get('/api/diag/persist', async (req, res) => {
   const out = { TOKEN_ENC_KEY_설정: !!process.env.TOKEN_ENC_KEY, 키형식정상: !!_encKey() };
+  // ★권한 줄 SA·프로젝트를 노출(시크릿 아님) — 대표님이 맞는 SA에 역할 줬는지 확인용.
+  try { const sa = JSON.parse(KEY_FILE); out.권한줄_서비스계정 = sa.client_email || '(KEY_FILE에 client_email 없음)'; out.SA_프로젝트 = sa.project_id; } catch (e) { out.권한줄_서비스계정 = 'KEY_FILE 파싱실패'; }
+  out.Firestore_프로젝트 = _tokProject;
   if (!out.키형식정상) { out.진단 = out.TOKEN_ENC_KEY_설정 ? '⚠️ 키 형식 오류(32바이트 hex64/base64 필요)' : '⚠️ TOKEN_ENC_KEY 미설정 — Render에 넣어주세요'; return res.json(out); }
   try {
     const testEmail = '__diag_persist_test__@genya.local';
