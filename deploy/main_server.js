@@ -182,14 +182,24 @@ app.get('/api/calendar', async (req, res) => {
     const timeMax = new Date(Date.UTC(y, m, d, 23, 59, 59) - 9 * 3600e3).toISOString(); // KST 오늘 23:59
     // ★원인 4: primary만 보면 업무 캘린더 등 다른 캘린더가 빠진다 → 내 모든 캘린더를 돈다.
     //   원인 2(종일=start.date)·3(singleEvents=반복 펼침)·5(KST 범위)도 여기서 함께 반영.
-    let cals = ['primary'];
-    try { const cl = await cal.calendarList.list(); cals = (cl.data.items || []).map((c) => c.id); if (!cals.length) cals = ['primary']; } catch (e) {}
+    // ★?debug=1 이면 화면이 받는 바로 이 응답에 요청·응답 원문을 실어 보낸다(추측 금지).
+    const DBG = String(req.query.debug || '') === '1';
+    const dbg = { 요청: { timeMin, timeMax, singleEvents: true, orderBy: 'startTime', timeZone: 'Asia/Seoul' }, 지금KST: new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 16), 캘린더별: [] };
+    let cals = ['primary'], calList = [];
+    try { const cl = await cal.calendarList.list(); calList = cl.data.items || []; cals = calList.map((c) => c.id); if (!cals.length) cals = ['primary']; }
+    catch (e) { dbg.calendarList_에러 = e.message; }
+    dbg.내캘린더수 = cals.length;
     let items = [];
     for (const cid of cals) {
       try {
         const ev = await cal.events.list({ calendarId: cid, timeMin, timeMax, singleEvents: true, orderBy: 'startTime', timeZone: 'Asia/Seoul' });
-        items = items.concat(ev.data.items || []);
-      } catch (e) {}
+        const got = ev.data.items || [];
+        items = items.concat(got);
+        // ★각 캘린더의 에러를 더 이상 삼키지 않는다 — 조용한 0건의 진짜 원인이 여기 있었다.
+        if (DBG) dbg.캘린더별.push({ 캘린더: (calList.find((c) => c.id === cid) || {}).summary || cid, 건수: got.length, 첫item: got[0] || null });
+      } catch (e) {
+        if (DBG) dbg.캘린더별.push({ 캘린더: cid, 에러: e.message });
+      }
     }
     const events = items.map((e) => {
       const start = (e.start || {}).dateTime || (e.start || {}).date || '';   // ★종일=date / 시간=dateTime 둘 다
@@ -198,7 +208,7 @@ app.get('/api/calendar', async (req, res) => {
       const name = Object.keys(byName).find((n) => title.includes(n));
       return { time, title, start, prep: prepFor(byName[name]) };
     }).sort((a, b) => String(a.start).localeCompare(String(b.start)));
-    res.json({ ok: true, date: `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`, count: events.length, events });
+    res.json({ ok: true, date: `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`, count: events.length, events, ...(DBG ? { debug: dbg } : {}) });
   } catch (e) {
     // ★시트만 연결한 회원은 gateGoogle을 통과하지만 캘린더 스코프가 없어 여기서 터진다.
     //   500을 던지면 화면엔 그냥 '0건'으로 보인다 = 조용히 잘못된 것. '연결 필요'로 정직하게.
