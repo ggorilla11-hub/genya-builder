@@ -173,9 +173,13 @@ app.get('/api/calendar', async (req, res) => {
     try { roster = await readRoster(ma); } catch (e) { roster = []; }
     const byName = {}; roster.forEach((c) => byName[c['고객명']] = c);
     const cal = google.calendar({ version: 'v3', auth: ma });
-    const now = new Date(); const y = now.getFullYear(), m = now.getMonth(), d = now.getDate();
-    const timeMin = new Date(y, m, d, 0, 0, 0).toISOString();
-    const timeMax = new Date(y, m, d, 23, 59, 59).toISOString();
+    // ★시간대 버그 수정: Render 서버는 UTC라 new Date(y,m,d,0,0,0)가 한국 오전 9시까지를
+    //   '어제'로 밀어냈다 → 오전 일정 누락. 한국시간(KST=UTC+9) '오늘' 하루로 잡는다.
+    //   ★종일 일정도 빠지지 않게 timeMin/Max를 넉넉히(KST 자정~자정).
+    const kst = new Date(Date.now() + 9 * 3600e3);
+    const y = kst.getUTCFullYear(), m = kst.getUTCMonth(), d = kst.getUTCDate();
+    const timeMin = new Date(Date.UTC(y, m, d, 0, 0, 0) - 9 * 3600e3).toISOString();   // KST 오늘 00:00
+    const timeMax = new Date(Date.UTC(y, m, d, 23, 59, 59) - 9 * 3600e3).toISOString(); // KST 오늘 23:59
     const ev = await cal.events.list({ calendarId: 'primary', timeMin, timeMax, singleEvents: true, orderBy: 'startTime' });
     const events = (ev.data.items || []).map((e) => {
       const start = (e.start || {}).dateTime || (e.start || {}).date || '';
@@ -261,6 +265,39 @@ app.get('/api/my/gmail', async (req, res) => {
     }
     res.json({ ok: true, items });
   } catch (e) { if (scopeGate(e, res, 'gmail')) return; res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// 🩺 진단 전용(임시) — 캘린더 0건 원인 격리. 로그인 본인만. ★토큰값 0노출.
+//   대표님이 로그인 후 이 주소를 열면, 무엇이 문제인지 한눈에 나온다.
+app.get('/api/diag/calendar', async (req, res) => {
+  const s = sessionOf(req);
+  const out = { 로그인: !!s, 이메일: s ? s.email : null, provider: s ? s.provider : null,
+                구글토큰있음: !!(s && s.tokens), 승인스코프: (s && (s.scope || (s.tokens && s.tokens.scope))) || '',
+                캘린더스코프: hasDataScope(req) && /calendar/.test((s && (s.scope || (s.tokens && s.tokens.scope))) || '') };
+  if (!s || !s.tokens) { out.진단 = '구글 데이터 연결 안 됨 — 캘린더 [연결하기] 필요'; return res.json(out); }
+  try {
+    const ma = memberAuth(req);
+    const cal = google.calendar({ version: 'v3', auth: ma });
+    // 회원 캘린더 목록 — SA면 여기서 대표님 캘린더가 안 보인다(SA 자기 것만)
+    const cl = await cal.calendarList.list();
+    out.내캘린더수 = (cl.data.items || []).length;
+    out.기본캘린더 = (cl.data.items || []).filter((c) => c.primary).map((c) => c.id);
+    // 오늘 KST 하루
+    const kst = new Date(Date.now() + 9 * 3600e3);
+    const y = kst.getUTCFullYear(), m = kst.getUTCMonth(), d = kst.getUTCDate();
+    const timeMin = new Date(Date.UTC(y, m, d, 0, 0, 0) - 9 * 3600e3).toISOString();
+    const timeMax = new Date(Date.UTC(y, m, d, 23, 59, 59) - 9 * 3600e3).toISOString();
+    const ev = await cal.events.list({ calendarId: 'primary', timeMin, timeMax, singleEvents: true, orderBy: 'startTime' });
+    out.오늘_KST범위 = { timeMin, timeMax };
+    out.오늘일정수 = (ev.data.items || []).length;
+    out.오늘일정 = (ev.data.items || []).map((e) => ({ 제목: e.summary || '(제목없음)', 시작: (e.start || {}).dateTime || (e.start || {}).date }));
+    // 시간대 무관 이번주 7일 — 오늘 0인데 이게 있으면 시간대/범위 문제
+    const wk = await cal.events.list({ calendarId: 'primary', timeMin: new Date(Date.now() - 2 * 864e5).toISOString(), timeMax: new Date(Date.now() + 5 * 864e5).toISOString(), singleEvents: true, orderBy: 'startTime', maxResults: 10 });
+    out.최근7일일정수 = (wk.data.items || []).length;
+    out.최근7일제목 = (wk.data.items || []).map((e) => (e.summary || '(제목없음)') + ' @ ' + ((e.start || {}).dateTime || (e.start || {}).date || ''));
+    out.진단 = out.오늘일정수 > 0 ? '✅ 오늘 일정 읽힘 — 정상' : (out.최근7일일정수 > 0 ? '⚠️ 오늘은 0인데 이번주엔 있음 → 시간대/범위 문제' : (out.내캘린더수 <= 1 ? '⚠️ 캘린더가 거의 없음 → SA(빈 계정) 의심 or 다른 구글계정으로 로그인' : '⚠️ 이번주 일정 자체가 0 → 다른 계정이거나 일정 없음'));
+    res.json(out);
+  } catch (e) { out.에러 = e.message; out.진단 = isScopeError(e) ? '캘린더 스코프 없음 — 재연결 필요' : '캘린더 호출 실패'; res.json(out); }
 });
 
 // ── 📄 약관 검색: 약관 창고(RAG 모듈)에서 근거 찾아 쉽게 답 + 출처(페이지). 없으면 "확인 필요" ──
