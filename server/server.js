@@ -1881,7 +1881,7 @@ function lockWrite(req, res, next) {
 }
 
 // ① 업로드 허가증(서명 URL) 발급 — 브라우저가 이 URL로 버킷에 직접 PUT
-app.post('/content/upload-url', lockWrite, async (req, res) => {
+app.post('/content/upload-url', async (req, res) => {   // 쇼츠 업로드=대표 상시경로. 로그인 팝업 제거(고객 개인정보 없음). 업로드 로직 본문 무변경
   try {
     const b = req.body || {};
     if (!UPLOAD_KINDS[b.kind]) return res.status(400).json({ error: '업로드 대상이 아닌 종류입니다.' });
@@ -1901,7 +1901,7 @@ app.post('/content/upload-url', lockWrite, async (req, res) => {
 });
 
 // ② 업로드 완료 통보 — 공개 다운로드 토큰 부여 후 콘텐츠로 보관(링크 자동, 대표는 링크 안 만짐)
-app.post('/content/uploaded', lockWrite, async (req, res) => {
+app.post('/content/uploaded', async (req, res) => {   // 쇼츠 업로드 완료통보=대표 상시경로. 로그인 팝업 제거. 로직 본문 무변경
   try {
     const b = req.body || {};
     if (!UPLOAD_KINDS[b.kind]) return res.status(400).json({ error: '종류 오류' });
@@ -4066,7 +4066,7 @@ app.post('/diary/seed', async (req, res) => {
 // ════════════════════════════════════════════════════════════════════════════
 const SESSION_SECRET     = process.env.SESSION_SECRET || '';
 const SESSION_COOKIE     = process.env.SESSION_COOKIE || 'genya_session';
-const SESSION_MAX_AGE    = 30 * 24 * 3600 * 1000;   // 30일
+const SESSION_MAX_AGE    = 365 * 24 * 3600 * 1000;   // 365일 — 한 번 로그인하면 안 뜨게
 const LOGIN_REDIRECT_URI = process.env.LOGIN_REDIRECT_URI || 'https://jenya.onrender.com/auth/google/callback';
 const LOGIN_SCOPES       = ['openid', 'email', 'profile'];
 // ★ 오픈리다이렉트 방지: return URL은 화이트리스트(허용 UI 출처) + https만 통과. 미통과면 null(기존 완료화면).
