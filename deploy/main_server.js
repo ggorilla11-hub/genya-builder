@@ -188,8 +188,9 @@ app.get('/api/calendar', async (req, res) => {
     let cals = ['primary'], calList = [];
     try {
       const cl = await cal.calendarList.list(); calList = cl.data.items || [];
-      // ★공휴일·생일 캘린더는 "약속"이 아니다 → 제외(안 빼면 오늘 약속에 공휴일이 섞임).
-      cals = calList.filter((c) => !/#holiday@|#contacts@/.test(c.id)).map((c) => c.id);
+      // ★대표님 11 계정 = 캘린더 3개. primary만 보면 나머지 2개의 약속이 안 뜬다.
+      //   selected!==false(화면에 켜둔 것만) + 공휴일·생일(#holiday/#contacts) 제외.
+      cals = calList.filter((c) => c.selected !== false && !/#holiday@|#contacts@/.test(c.id)).map((c) => c.id);
       if (!cals.length) cals = ['primary'];
     } catch (e) { dbg.calendarList_에러 = e.message; }
     dbg.내캘린더수 = cals.length;
@@ -314,7 +315,9 @@ app.get('/api/diag/calendar', async (req, res) => {
     out.오늘_KST범위 = { timeMin, timeMax, 지금KST: new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 16) };
     // ★핵심: primary만이 아니라 '모든 캘린더'를 돌며 각각 오늘 몇 건인지 찍는다.
     //   대표님 약속이 업무 캘린더에 있으면 여기서 어느 캘린더인지 드러난다(원인 ①).
-    const cals = cl.data.items || [];
+    // ★/api/calendar와 같은 필터: selected!==false + 공휴일·생일 제외
+    const cals = (cl.data.items || []).filter((c) => c.selected !== false && !/#holiday@|#contacts@/.test(c.id));
+    out.볼_캘린더 = cals.map((c) => c.summary || c.id);
     out.캘린더별_오늘 = [];
     let 합계 = 0;
     for (const c of cals) {
