@@ -135,17 +135,17 @@ const YAK = JSON.parse(fs.readFileSync(path.join(__dirname, 'yakgwan_pages.json'
 const app = express();
 app.use(express.json({ limit: '50mb' })); // 자료 업로드(base64) 파싱 — 큰 제안서 PDF 다중 업로드 대비 상향
 
-// ★세션 복원: 재배포로 메모리(sessions)가 비어도, 쿠키의 이메일로 Firestore에서 refresh_token
-//   복원 → 세션 재구성. 대표님이 재배포마다 재로그인하던 무한반복의 근본 해결.
-app.use(async (req, res, next) => {
+// ★세션 복원: 재배포·15분 슬립으로 메모리(sessions)가 비어도, 암호화 쿠키(genya_rt)에서
+//   refresh_token 복원 → 세션 재구성. ★서버 저장 0(쿠키=사용자 브라우저 것) · SA/Firestore 불필요.
+//   대표님·교육생이 15분마다 재로그인하던 무한반복의 근본 해결.
+app.use((req, res, next) => {
   try {
     const sid = sidOf(req);
     if (sid && !sessions.get(sid)) {
-      const m = /(?:^|;\s*)genya_uid=([^;]+)/.exec(req.headers.cookie || '');
-      const email = m && decodeURIComponent(m[1]);
-      if (email) {
-        const t = await loadMemberToken(email);
-        if (t && t.refresh_token) sessions.set(sid, { email, name: '', tokens: { refresh_token: t.refresh_token }, scope: t.scope || '', provider: 'google', restored: true });
+      const m = /(?:^|;\s*)genya_rt=([^;]+)/.exec(req.headers.cookie || '');
+      if (m) {
+        const p = JSON.parse(_dec(decodeURIComponent(m[1])) || '{}');
+        if (p && p.rt) sessions.set(sid, { email: p.email || '', name: '', tokens: { refresh_token: p.rt }, scope: p.scope || '', provider: 'google', restored: true });
       }
     }
   } catch (e) {}
@@ -881,34 +881,19 @@ app.post('/api/connect/solapi/save', async (req, res) => {
 // 🩺 Firestore 토큰 영속 자가진단 — 더미 값을 저장→복원→삭제. ★대표님 세션 불필요, 내가 직접 검증.
 //   토큰 실값 0노출(더미만). TOKEN_ENC_KEY 설정+Firestore 왕복이 실제 되는지 확인.
 app.get('/api/diag/persist', async (req, res) => {
-  const out = { TOKEN_ENC_KEY_설정: !!process.env.TOKEN_ENC_KEY, 키형식정상: !!_encKey() };
-  // ★권한 줄 SA·프로젝트를 노출(시크릿 아님) — 대표님이 맞는 SA에 역할 줬는지 확인용.
-  try { const sa = JSON.parse(KEY_FILE); out.권한줄_서비스계정 = sa.client_email || '(KEY_FILE에 client_email 없음)'; out.SA_프로젝트 = sa.project_id; } catch (e) { out.권한줄_서비스계정 = 'KEY_FILE 파싱실패'; }
-  out.Firestore_프로젝트 = _tokProject;
-  if (!out.키형식정상) { out.진단 = out.TOKEN_ENC_KEY_설정 ? '⚠️ 키 형식 오류(32바이트 hex64/base64 필요)' : '⚠️ TOKEN_ENC_KEY 미설정 — Render에 넣어주세요'; return res.json(out); }
+  // ★쿠키 영속 방식 검증 — 서버 저장 0·SA/Firestore 불필요. TOKEN_ENC_KEY 암호화 왕복만 확인.
+  const out = { 방식: '암호화 쿠키(genya_rt) — 서버저장0·재시작생존', TOKEN_ENC_KEY_설정: !!process.env.TOKEN_ENC_KEY, 키형식정상: !!_encKey() };
+  if (!out.키형식정상) { out.진단 = out.TOKEN_ENC_KEY_설정 ? '⚠️ 키 형식 오류(32B hex64/base64)' : '⚠️ TOKEN_ENC_KEY 미설정'; return res.json(out); }
   try {
-    const testEmail = '__diag_persist_test__@genya.local';
-    const dummy = 'dummy-refresh-token-' + crypto.randomBytes(8).toString('hex');
-    await saveMemberToken(testEmail, dummy, 'test.scope');
-    const back = await loadMemberToken(testEmail);
-    out.저장됨 = true;
-    out.복원됨 = !!(back && back.refresh_token);
-    out.복호화_일치 = back && back.refresh_token === dummy;
-    out.암호화_확인 = '평문 노출 안 됨(더미로 검증)';
-    // 정리: 더미 문서들 찾아 삭제(createDocument는 auto-id라 runQuery로 찾는다)
-    try {
-      const fs = _tokFs();
-      const q = await fs.projects.databases.documents.runQuery({ parent: _tokDB, requestBody: { structuredQuery: {
-        from: [{ collectionId: TOKEN_COLL }],
-        where: { fieldFilter: { field: { fieldPath: 'email' }, op: 'EQUAL', value: { stringValue: testEmail } } }, limit: 50,
-      } } });
-      let n = 0;
-      for (const x of (q.data || [])) { if (x.document && x.document.name) { try { await fs.projects.databases.documents.delete({ name: x.document.name }); n++; } catch (e) {} } }
-      out.정리 = `더미 ${n}건 삭제`;
-    } catch (e) { out.정리 = '삭제 실패(무해): ' + e.message; }
-    out.진단 = out.복호화_일치 ? '✅ Firestore 영속 실작동 — 재배포·재로그인 생존' : '⚠️ 저장/복원 불일치';
+    const dummy = JSON.stringify({ rt: '1//dummy-' + crypto.randomBytes(8).toString('hex'), scope: 'calendar.readonly spreadsheets', email: 'test@genya.local' });
+    const enc = _enc(dummy);
+    const dec = _dec(enc);
+    out.암호화됨 = !!enc && enc !== dummy;
+    out.복호화_일치 = dec === dummy;
+    out.암호문_평문노출없음 = enc.indexOf('dummy') === -1;
+    out.진단 = (out.복호화_일치 && out.암호문_평문노출없음) ? '✅ 쿠키 영속 실작동 — 재로그인 1회 후 15분 슬립·재배포 생존' : '⚠️ 암호화 왕복 실패';
     res.json(out);
-  } catch (e) { out.에러 = e.message; out.진단 = '❌ Firestore 접근 실패 — SA/권한 확인'; res.json(out); }
+  } catch (e) { out.에러 = e.message; out.진단 = '❌ 암호화 실패'; res.json(out); }
 });
 
 app.get('/api/status', (req, res) => {
@@ -992,14 +977,17 @@ app.get('/auth/google/callback', async (req, res) => {
     const oldScope = (_old && _old.scope) || '';
     const scope = newScope.split(' ').length >= oldScope.split(' ').length ? newScope : oldScope;
     sessions.set(s, { email: ui.data.email, name: ui.data.name, tokens: tok, scope, provider: 'google' });
-    // ★Firestore에 refresh_token 영속(재배포·재시작 생존). uid=이메일. 실패해도 메모리로는 동작.
-    saveMemberToken(ui.data.email, tok.refresh_token, scope).catch((e) => console.warn('토큰저장 실패:', e.message));
     const _sec = process.env.RENDER ? '; Secure' : '';
-    // ★genya_uid = 재배포 후 세션 복원의 열쇠(이메일만. refresh_token은 Firestore 암호화).
-    res.setHeader('Set-Cookie', [
-      `genya_sid=${s}; HttpOnly; Path=/; SameSite=Lax${_sec}`,
-      `genya_uid=${encodeURIComponent(String(ui.data.email || '').toLowerCase())}; HttpOnly; Path=/; SameSite=Lax; Max-Age=31536000${_sec}`,
-    ]);
+    const cookies = [`genya_sid=${s}; HttpOnly; Path=/; SameSite=Lax${_sec}`];
+    // ★refresh_token(+scope,email)을 암호화해 사용자 쿠키에. 서버 저장 0·재시작 생존.
+    //   refresh_token 있을 때만 갱신(로그인만 하면 없을 수 있음 → 기존 genya_rt 유지).
+    if (tok.refresh_token) {
+      try {
+        const enc = _enc(JSON.stringify({ rt: tok.refresh_token, scope, email: (ui.data.email || '').toLowerCase() }));
+        if (enc) cookies.push(`genya_rt=${encodeURIComponent(enc)}; HttpOnly; Path=/; SameSite=Lax; Max-Age=31536000${_sec}`);
+      } catch (e) {}
+    }
+    res.setHeader('Set-Cookie', cookies);
     res.redirect(isConnect ? ('/?connected=1&screen=' + encodeURIComponent(returnTo)) : '/'); // 데이터 연결이면 원래 화면으로 복귀
   } catch (e) { res.status(500).send('로그인 오류: ' + e.message); }
 });
