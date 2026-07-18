@@ -1965,11 +1965,26 @@ function apRender(){
   }
 }
 function apApprove(id){
-  var q=_bizGet('genya_approvals');
-  q.forEach(function(a){ if(a.id===id){ a.status='승인'; a.decidedAt=Date.now(); } });
-  _bizSet('genya_approvals', q);
-  // ★승인 시 실행 트리거 자리 — 실제 발송(보험사·카톡·게시)은 각 채널 준비되면 연결. 지금은 트리거만(실발송 0).
-  toast('승인됨 — 발송 실행은 채널 연결 후(지금은 트리거 자리)'); apRender();
+  var q=_bizGet('genya_approvals'); var item=null;
+  q.forEach(function(a){ if(a.id===id){ a.status='승인'; a.decidedAt=Date.now(); item=a; } });
+  _bizSet('genya_approvals', q); apRender();
+  // ★F-10 휴먼인루프 완성: 승인(=사람 관문) 시 발송정보(item.send)가 있으면 그 채널로 실제 발송.
+  //   카톡=genyasend(로컬 발송기)·문자=/api/send/sms·이메일=/api/gmail/send 재사용. 발송정보 없는 결재건(서류 정리 등)은 승인 기록만.
+  var s=item&&item.send;
+  if(s && s.channel==='kakao' && (s.to||s.name)){ _genyaSilentSave(s.to||s.name, s.text||s.msg||''); toast('✅ 승인 — 카톡 발송기로 전달됨'); return; }
+  if(s && s.channel==='sms' && s.to && s.text){
+    toast('승인 — 문자 발송 중…');
+    fetch('/api/send/sms',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({to:s.to,text:s.text})})
+      .then(function(r){return r.json();}).then(function(d){ toast(d&&d.ok&&d.sent?'✅ 승인 — 문자 발송됨':'승인됨(문자 실패: '+((d&&d.error)||'')+')'); }).catch(function(){ toast('승인됨(문자 발송 오류)'); });
+    return;
+  }
+  if(s && s.channel==='email' && s.to && s.text){
+    toast('승인 — 이메일 발송 중…');
+    fetch('/api/gmail/send',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({to:s.to,subject:s.subject||'',text:s.text})})
+      .then(function(r){return r.json();}).then(function(d){ toast(d&&d.ok&&d.sent?'✅ 승인 — 이메일 발송됨':'승인됨(이메일 실패: '+((d&&d.error)||'')+')'); }).catch(function(){ toast('승인됨(이메일 오류)'); });
+    return;
+  }
+  toast('✅ 승인됨');
 }
 function apReject(id){
   var reason=(typeof prompt==='function'?prompt('반려 사유(선택):',''):'')||'';
