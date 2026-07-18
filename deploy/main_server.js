@@ -970,6 +970,11 @@ app.get('/api/diag/persist', async (req, res) => {
     res.json(out);
   } catch (e) { out.에러 = e.message; out.진단 = '❌ 암호화 실패'; res.json(out); }
 });
+// ★2026-07-18 배포 SA client_email 노출(대표님 IAM Datastore User 권한부여용). client_email=공개 식별자(private_key 미노출·안전). genya_mem 저장 SA 확인용.
+app.get('/api/diag/sa', (req, res) => {
+  try { const c = JSON.parse(KEY_FILE); res.json({ ok: true, client_email: c.client_email || '(키에 client_email 없음)', project_id: c.project_id || '', genya_mem_project: genyaMem.PROJECT, genya_mem_scope: genyaMem.SCOPE }); }
+  catch (e) { res.json({ ok: false, error: e.message, GOOGLE_SA_JSON_설정됨: KEY_FILE !== '{}' }); }
+});
 
 app.get('/api/status', (req, res) => {
   // ★실제 상태를 정직 반영(런타임 확인 가능한 것 위주)
