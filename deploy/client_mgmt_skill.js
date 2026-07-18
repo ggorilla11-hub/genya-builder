@@ -106,11 +106,22 @@ function analyzeManagement(input) {
   return { ok: true, present, missing, 가능, 잠금, canStart, rowCount, headerCount: headers.length, 리딩, 표준: Object.keys(STD) };
 }
 
-/** 관리-2: 오늘 이벤트 대시보드(실제 날짜 비교·결정적). input={file, today} */
+/** roster(객체 배열) → {headers, rows} 변환. 시트 자동연동(readRoster 결과)을 buildDashboard에 태우기 위함 */
+function rosterToSheet(roster) {
+  const arr = Array.isArray(roster) ? roster.filter((o) => o && typeof o === 'object') : [];
+  if (!arr.length) return { headers: [], rows: [] };
+  const headers = []; arr.forEach((o) => Object.keys(o).forEach((k) => { if (headers.indexOf(k) < 0) headers.push(k); }));
+  const rows = arr.map((o) => headers.map((h) => (o[h] == null ? '' : o[h])));
+  return { headers, rows };
+}
+
+/** 관리-2: 오늘 이벤트 대시보드(실제 날짜 비교·결정적). input={file, today} 또는 {sheet:{headers,rows}, today} */
 function buildDashboard(input) {
   input = input || {};
   const today = parseToday(input.today) || nowYMD();
-  let sheet; try { sheet = readSheet(input.file); } catch (e) { return { ok: false, error: 'read_fail' }; }
+  let sheet;
+  if (input.sheet && Array.isArray(input.sheet.headers)) { sheet = input.sheet; }        // ★[A] 시트 자동연동: 이미 파싱된 headers/rows 직접 사용(파일 없이)
+  else { try { sheet = readSheet(input.file); } catch (e) { return { ok: false, error: 'read_fail' }; } }
   const F = mapFields(sheet.headers);
   const get = (row, f) => (F[f] != null ? row[F[f]] : '');
   const cards = { contact: [], maturity: [], birthday: [], intro: [] };
@@ -150,7 +161,7 @@ function buildDashboard(input) {
   return { ok: true, today: todayStr, rowCount: sheet.rows.length, metrics, 우선순위: ['신상품·제도', '만기·갱신', '생일', '소개', '전체공지'] };
 }
 
-module.exports = { analyzeManagement, buildDashboard, readHeaders, readSheet, STD };
+module.exports = { analyzeManagement, buildDashboard, rosterToSheet, readHeaders, readSheet, STD };
 
 if (require.main === module) {
   const demo = analyzeManagement({ headers: ['이름', '휴대폰', '생일', '만기일'], rowCount: 3 });
