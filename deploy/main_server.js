@@ -1018,6 +1018,48 @@ app.post('/api/connect/solapi/save', async (req, res) => {
   } catch (e) { if (isScopeError(e)) return res.json({ ok: true, needsConnect: true, connectUrl: '/auth/google/connect' }); res.status(500).json({ ok: false, error: e.message }); }
 });
 
+// ── 📱 문자(SMS) 실발송 — 회원 본인 솔라피 키로 1건 발송.
+//    ★휴먼인루프: 웹에서 사람이 [승인]을 누른 뒤에만 호출된다(자동 발송 없음, 요청당 1건).
+//    ★제로 인그레스: 받는번호·문구는 발송에만 쓰고 서버·시트에 저장 0. 키는 회원 본인 시트에서만 읽음(멀티테넌트 격리).
+//    ★가짜 성공 금지: 솔라피가 정상 접수(statusCode 2000/SENDING)일 때만 sent:true, 아니면 사유 그대로 반환.
+app.post('/api/send/sms', async (req, res) => {
+  try {
+    const ma = memberAuth(req);
+    if (!ma || !hasDataScope(req)) return res.json({ ok: false, needsConnect: true, connectUrl: '/auth/google/connect', message: '문자 발송은 구글 데이터 연결 후, 본인 시트에 저장한 솔라피 키로 나가요.' });
+    const to = String((req.body && req.body.to) || '').replace(/[^0-9]/g, '');
+    const text = String((req.body && req.body.text) || '').trim();
+    if (!to || !text) return res.json({ ok: false, error: '받는 번호와 내용을 모두 입력해 주세요.' });
+    // 회원 본인 시트(지니야_연결)에서 솔라피 키 읽기 — 서버 저장 0
+    const { id, sheets } = await findOrCreateMemberSheet(ma);
+    const kv = {};
+    try {
+      const r = await sheets.spreadsheets.values.get({ spreadsheetId: id, range: '지니야_연결!A1:B10' });
+      (r.data.values || []).forEach((row) => { if (row && row[0]) kv[row[0]] = row[1] || ''; });
+    } catch (e) { /* 탭 없음 = 아직 미저장 */ }
+    const apiKey = kv['솔라피_API_KEY'], apiSecret = kv['솔라피_SECRET'], from = String(kv['솔라피_발신번호'] || '').replace(/[^0-9]/g, '');
+    if (!apiKey || !apiSecret || !from) return res.json({ ok: false, needsSolapi: true, message: '먼저 솔라피 API 키와 발신번호를 저장해 주세요.' });
+    // 솔라피 v4 인증: HMAC-SHA256(date+salt, apiSecret)
+    const crypto = require('crypto');
+    const date = new Date().toISOString();
+    const salt = crypto.randomBytes(32).toString('hex');
+    const signature = crypto.createHmac('sha256', apiSecret).update(date + salt).digest('hex');
+    const auth = `HMAC-SHA256 apiKey=${apiKey}, date=${date}, salt=${salt}, signature=${signature}`;
+    let sr, out;
+    try {
+      sr = await fetch('https://api.solapi.com/messages/v4/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: auth },
+        body: JSON.stringify({ message: { to, from, text } })
+      });
+      out = await sr.json().catch(() => ({}));
+    } catch (e) { return res.json({ ok: false, sent: false, error: '솔라피 연결 실패: ' + e.message }); }
+    const okSent = sr.ok && out && (String(out.statusCode) === '2000' || out.status === 'SENDING' || out.messageId);
+    if (okSent) return res.json({ ok: true, sent: true, id: out.messageId || out.groupId || null });
+    // 실패 = 정직하게 사유 전달(가짜 성공 없음)
+    return res.json({ ok: false, sent: false, error: (out && (out.errorMessage || out.statusMessage || out.message)) || ('솔라피 응답 오류(HTTP ' + (sr && sr.status) + ')') });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
 // ── 미연결 능력(대기) 상태 ──
 // 🩺 Firestore 토큰 영속 자가진단 — 더미 값을 저장→복원→삭제. ★대표님 세션 불필요, 내가 직접 검증.
 //   토큰 실값 0노출(더미만). TOKEN_ENC_KEY 설정+Firestore 왕복이 실제 되는지 확인.
