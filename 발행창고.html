@@ -205,31 +205,25 @@ function fillSvc(){
   onSvc();
 }
 function onSvc(){
-  // ★유형 목록도 시트에서 나온다(그 서비스에 실제로 있는 유형만)
-  const typ = $('typ'), s = $('svc').value;
-  typ.innerHTML = '';
-  uniq(CAMPS.filter(c=>c.service===s).map(c=>c.type)).forEach(v=>{
-    const o=document.createElement('option'); o.value=v; o.textContent=v; typ.appendChild(o);
-  });
-  onTyp();
-}
-function onTyp(){
-  const cnt = $('cnt'), s=$('svc').value, ty=$('typ').value;
+  // ★설계 3단(2026-07-18): 유형 선택 폐지. 서비스 → 진단명 목록 바로. 랜딩은 upd에서 표시만.
+  const cnt = $('cnt'), s = $('svc').value;
+  const typ = $('typ'); if(typ){ const w = (typ.closest && typ.closest('label,.field,.row,div')) || typ; if(w && w!==document.body) w.style.display='none'; } // 유형 셀렉트 숨김
   cnt.innerHTML = '';
-  const rows = CAMPS.filter(c=>c.service===s && c.type===ty);
+  const rows = CAMPS.filter(c=>c.service===s);
   if(!rows.length){
     const o=document.createElement('option'); o.value=''; o.textContent='(없음)'; cnt.appendChild(o);
   } else rows.forEach(c=>{
     const o=document.createElement('option'); o.value=c.name;
-    // ★없는 걸 있는 척하지 않는다 — 도착지 없으면 그대로 표시
-    o.textContent = c.name + (c.live ? '' : (c.url ? ' (주소확인필요)' : ' (미제작)'));
+    // ★없는 걸 있는 척하지 않는다 — 진단URL 없으면 그대로 표시
+    o.textContent = c.name + (c.contentTopic ? ' · '+c.contentTopic : '') + (c.live ? '' : (c.diagUrl ? ' (주소확인필요)' : ' (진단 미제작)'));
     cnt.appendChild(o);
   });
   upd();
 }
+function onTyp(){ upd(); }   // ★유형 선택 폐지 — 호환용(혹시 onchange가 남아있어도 안전)
 function cur(){
-  const s=$('svc').value, ty=$('typ').value, n=$('cnt').value;
-  return CAMPS.find(c=>c.service===s && c.type===ty && c.name===n) || null;
+  const s=$('svc').value, n=$('cnt').value;
+  return CAMPS.find(c=>c.service===s && c.name===n) || null;
 }
 
 function upd(){
@@ -241,20 +235,23 @@ function upd(){
   // ★꼬리표는 ?from= 이다. (?src= 아님 — 진단페이지·Apps Script·통합리드 '유입경로'가
   //   전부 from을 읽어 기록한다. src로 만들면 유입이 하나도 안 잡힌다.)
   const 꼬리표 = '?from=yt_' + (c.code || '?') + '_001';
+  // ★설계: 도착지=진단URL(쇼츠가 보내는 곳). 랜딩URL은 표시만(없어도 발행됨).
   const 도착지 = c.live
-    ? '<a href="'+esc(c.url)+'" target="_blank" rel="noopener"><code>'+esc(c.url)+'</code></a> <span style="color:var(--green);font-weight:900">✓ 클릭하면 열립니다</span>'
-    : '<span class="dead">'+esc(c.url || (c.status==='대기' ? '(미제작)' : '(주소 없음)'))+'</span> <span style="color:#FFB4A5;font-weight:900">⚠ 도착지 없음</span>';
+    ? '<a href="'+esc(c.diagUrl)+'" target="_blank" rel="noopener"><code>'+esc(c.diagUrl)+'</code></a> <span style="color:var(--green);font-weight:900">✓ 클릭하면 열립니다</span>'
+    : '<span class="dead">'+esc(c.diagUrl || (c.status==='대기' ? '(진단 미제작)' : '(주소 없음)'))+'</span> <span style="color:#FFB4A5;font-weight:900">⚠ 진단 도착지 없음</span>';
+  const 랜딩 = c.landingUrl
+    ? '<a href="'+esc(c.landingUrl)+'" target="_blank" rel="noopener"><code>'+esc(c.landingUrl)+'</code></a>'
+    : '<span style="color:var(--soft)">(랜딩 미지정 — 표시만)</span>';
 
   $('ctaline').innerHTML =
-    '🎯 <b>도착지:</b> ' + 도착지 +
-    ' <span style="color:var(--soft)">' + (c.note ? '— ' + esc(c.note) : '') + '</span><br>' +
+    '🎯 <b>도착지(진단):</b> ' + 도착지 + '<br>' +
+    '🏁 <b>최종 목적지(랜딩):</b> ' + 랜딩 + ' <span style="color:var(--soft)">— 표시만(쇼츠는 진단으로 보냅니다)</span><br>' +
     '🏷️ <b>꼬리표:</b> <span class="cid">' + esc(꼬리표) + '</span> ' +
     '<span style="color:var(--soft)">← 채널_캠페인_번호. 발행할 때 도착지 뒤에 자동으로 붙습니다</span>';
 
   $('campline').innerHTML =
     '<span class="cb">'+esc(c.service)+'</span><span class="ar">›</span>' +
-    '<span class="cb">'+esc(c.type)+'</span><span class="ar">›</span>' +
-    '<span class="cb cn">'+esc(c.name)+'</span>' +
+    '<span class="cb cn">'+esc(c.name)+(c.contentTopic?' ('+esc(c.contentTopic)+')':'')+'</span>' +
     '<span style="color:var(--soft);margin-left:4px">= 캠페인 1개 · 카피 60개</span>';
 
   loadCopies(c.key);

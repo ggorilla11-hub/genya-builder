@@ -28,13 +28,14 @@ async function readCampaigns() {
     spreadsheetId: _deps.sheetId, range: `'${CAMP_TAB}'!A2:G`, valueRenderOption: 'FORMULA',
   });
   return (got.data.values || [])
-    .filter((r) => cell(r, 0) && cell(r, 2))            // 서비스·내용 없는 줄은 무시
+    .filter((r) => cell(r, 0) && cell(r, 1))            // ★2026-07-18 새 컬럼: 서비스·진단명 없는 줄은 무시
     .map((r) => ({
-      service: cell(r, 0), type: cell(r, 1), name: cell(r, 2), code: cell(r, 3),
-      url: cell(r, 4), status: cell(r, 5), note: cell(r, 6),
-      // ★활성인데 주소가 없으면 활성이 아니다. 대표님이 상태만 바꾸고 URL을 안 넣는 실수 방지.
-      live: cell(r, 5) === '활성' && /^https?:\/\//i.test(cell(r, 4)),
-      key: [cell(r, 0), cell(r, 1), cell(r, 2)].join('/'),   // 캠페인 신원 = 서비스/유형/내용
+      // ★설계 컬럼: 서비스 | 진단명 | 콘텐츠주제 | 코드 | 진단URL(도착지) | 랜딩URL(최종목적지) | 상태
+      service: cell(r, 0), name: cell(r, 1), contentTopic: cell(r, 2), code: cell(r, 3),
+      diagUrl: cell(r, 4), landingUrl: cell(r, 5), status: cell(r, 6),
+      // ★live 판정 = 진단URL(E)만 본다. 쇼츠가 보내는 도착지니까. 랜딩URL(F)은 없어도 live(표시만).
+      live: cell(r, 6) === '활성' && /^https?:\/\//i.test(cell(r, 4)),
+      key: [cell(r, 0), cell(r, 1), cell(r, 2)].join('/'),   // 캠페인 신원 = 서비스/진단명/콘텐츠주제
     }));
 }
 
