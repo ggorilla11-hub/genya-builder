@@ -892,6 +892,30 @@ app.post('/api/reminder/split', async (req, res) => {
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
+// ── 📨 발송현황 수신(watcher→서버, 2단계) — watcher가 발송 성공/실패 스냅샷을 POST /api/send/status로 보냄.
+//   ★AGENT_NAME(회원)별 메모리 Map(휘발·서버 디스크 저장 0). ★제로 인그레스: 이름 마스킹(김○○)·성공/실패 카운트+라벨만. 전화·메시지·재발송링크는 저장 안 함.
+const _sendStatus = new Map(); // agent → { success:[{name,time}], fail:[{name,reason,time}], updated }
+function _maskNm(s) { s = String(s == null ? '' : s).trim(); if (s.length <= 1) return s || '—'; if (s.length === 2) return s[0] + '○'; return s[0] + '○'.repeat(s.length - 2) + s[s.length - 1]; }
+app.post('/api/send/status', (req, res) => {
+  try {
+    const b = req.body || {};
+    const agent = String(b.agent || '').trim();
+    if (!agent) return res.json({ ok: false, error: 'agent 없음' });
+    const success = (Array.isArray(b.success) ? b.success : []).slice(-100).map((x) => ({ name: _maskNm(x && x.name), time: String((x && x.time) || '').slice(0, 10) }));
+    const fail = (Array.isArray(b.fail) ? b.fail : []).slice(-100).map((x) => ({ name: _maskNm(x && x.name), reason: String((x && x.reason) || '').slice(0, 30), time: String((x && x.time) || '').slice(0, 10) }));
+    _sendStatus.set(agent, { success, fail, updated: Date.now() });
+    res.json({ ok: true, success: success.length, fail: fail.length });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+app.get('/api/watcher/status', (req, res) => {
+  try {
+    const agent = String(req.query.agent || '').trim();
+    const s = agent ? _sendStatus.get(agent) : null;
+    const installed = !!(s && s.updated && (Date.now() - s.updated < 24 * 3600 * 1000)); // 최근 24h 내 보고 = 발송기 연결됨
+    res.json({ ok: true, installed, success: s ? s.success.length : 0, fail: s ? s.fail.length : 0, lastSeen: (s && s.updated) ? new Date(s.updated).toTimeString().slice(0, 5) : '', successList: s ? s.success.slice(-20) : [], failList: s ? s.fail.slice(-20) : [] });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
 // ── 🗣️ 온보딩 대화: 지니야가 자연스럽게 응답(실제 LLM). ★구글 데이터 불필요 = 로그인·권한 없이도 무조건 대답 ──
 app.post('/api/onboard/chat', async (req, res) => {
   try {

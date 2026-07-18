@@ -1594,8 +1594,14 @@ function _renderSendKpi(){
 // ★발송기(watcher) 설치 상태 — kpiSend 근처 정직 표시. /api/watcher/status 없으면 '미설치'(가짜 금지). watcher 세션에서 라우트 붙으면 자동으로 '연결됨'.
 function loadWatcherStatus(){
   var el=document.getElementById('kpiSendSub'); if(!el) return;
-  fetch('/api/watcher/status',{credentials:'same-origin'}).then(function(r){return r.ok?r.json():null;}).then(function(d){
-    el.textContent=(d&&d.installed)?'발송기 연결됨':'발송기 미설치';
+  var agent=(typeof _agentName==='function')?_agentName():'';
+  fetch('/api/watcher/status?agent='+encodeURIComponent(agent),{credentials:'same-origin'}).then(function(r){return r.ok?r.json():null;}).then(function(d){
+    if(d&&d.installed){
+      var ns=d.success||0, nf=d.fail||0;
+      // ★가짜 금지: watcher가 실제로 보고한 발송현황만. 있으면 성공/실패 수, 없으면 '대기'.
+      if(ns||nf){ _setKpi('kpiSend','✅'+ns+' · ❌'+nf); } else { _setKpi('kpiSend','대기'); }
+      el.textContent='발송기 연결됨';
+    } else { el.textContent='발송기 미설치'; }
   }).catch(function(){ el.textContent='발송기 미설치'; });
 }
 // ★2026-07-16: 교육생 화면이 제니야(대표님 서버)를 7초마다 폴링하던 격리 위반 제거.
