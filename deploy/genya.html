@@ -1190,7 +1190,7 @@ function prospectTab(which){ window._PTAB=which; document.getElementById('modalB
 function _prospectHTML(){
   var tab=window._PTAB||'deploy';
   var tb=function(id,label){ var on=(tab===id); return '<button onclick="prospectTab(\''+id+'\')" style="flex:1;padding:9px 8px;border:none;background:none;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;color:'+(on?'var(--teal-d)':'#8a93a3')+';border-bottom:2px solid '+(on?'var(--teal)':'transparent')+'">'+label+'</button>'; };
-  return '<div style="max-width:560px">'
+  return '<div style="max-width:560px;padding:22px 24px">'
    +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px"><b style="font-size:16px;color:#0d1b2a">📡 고객발굴비서</b><span onclick="closeModal()" style="cursor:pointer;color:#8a93a3;font-size:20px">×</span></div>'
    +'<div style="display:flex;margin-bottom:14px;border-bottom:1px solid #e5e9ee;overflow-x:auto">'+tb('deploy','📤 진단페이지')+tb('find','🔍 발굴 리드')+tb('leads','📥 진단 유입')+'</div>'
    +'<div id="prospectBody">'+(tab==='deploy'?_deployBody():(tab==='find'?_findBody():_leadsBody()))+'</div></div>';
@@ -1801,8 +1801,8 @@ function _bizId(){ return Date.now().toString(36)+Math.random().toString(36).sli
 function _bizTime(ms){ try{ var d=new Date(ms); return (d.getMonth()+1)+'/'+d.getDate()+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }catch(e){ return ''; } }
 // 공통 모달 셸 — ★닫기(×) 반드시 포함(홍보마케팅비서 닫기버그 반복 금지)
 function _bizShell(emoji, title, sub, bodyHtml){
-  return '<div style="max-width:620px;position:relative;padding:2px">'
-    +'<span onclick="closeModal()" title="닫기" style="position:absolute;top:-2px;right:-2px;cursor:pointer;color:#8a93a3;font-size:22px;width:40px;height:40px;line-height:40px;text-align:center;border-radius:50%;background:#f2f5f8;z-index:5">×</span>'
+  return '<div style="max-width:620px;position:relative;padding:22px 24px">'
+    +'<span onclick="closeModal()" title="닫기" style="position:absolute;top:14px;right:16px;cursor:pointer;color:#8a93a3;font-size:22px;width:36px;height:36px;line-height:36px;text-align:center;border-radius:50%;background:#f2f5f8;z-index:5">×</span>'
     +'<div style="display:flex;align-items:center;gap:10px;margin:0 46px 12px 0"><span style="font-size:24px">'+emoji+'</span><div><b style="font-size:17px;color:#0d1b2a">'+_sEsc(title)+'</b>'+(sub?'<div style="font-size:12px;color:#8a93a3;margin-top:1px">'+_sEsc(sub)+'</div>':'')+'</div></div>'
     +bodyHtml+'</div>';
 }
