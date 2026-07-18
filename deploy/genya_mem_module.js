@@ -83,14 +83,27 @@ async function searchMem(auth, q) {
       },
     },
   });
-  let rows = (res.data || []).filter((r) => r.document).map((r) => fromFields(r.document.fields));
+  let rows = (res.data || []).filter((r) => r.document).map((r) => Object.assign({ _id: String(r.document.name || '').split('/').pop() }, fromFields(r.document.fields)));
   rows.sort((a, b) => String(b.timestamp || '').localeCompare(String(a.timestamp || '')));
   if (q.고객명) rows = rows.filter((r) => (String(r.고객명 || '') + String(r.summary || '')).indexOf(q.고객명) >= 0);
   if (q.date) rows = rows.filter((r) => String(r.date || '').indexOf(q.date) >= 0);
   return rows.slice(0, q.limit || 10);
 }
 
-module.exports = { saveMem, searchMem, mask, SCOPE, COLL, PROJECT };
+/** 설계 요약 삭제. q={userId, id}. ★userId 소유 확인 후 삭제(남의 기록 삭제 방지) */
+async function deleteMem(auth, q) {
+  q = q || {};
+  if (!q.userId) throw new Error('userId 필수(격리)');
+  if (!q.id) throw new Error('id 필수');
+  const name = `${DB}/${COLL}/${q.id}`;
+  const g = await fsClient(auth).projects.databases.documents.get({ name });
+  const owner = ((g.data && g.data.fields && g.data.fields.userId) || {}).stringValue || '';
+  if (owner !== String(q.userId)) throw new Error('권한 없음(다른 회원의 기록)');
+  await fsClient(auth).projects.databases.documents.delete({ name });
+  return { deleted: true, id: q.id };
+}
+
+module.exports = { saveMem, searchMem, deleteMem, mask, SCOPE, COLL, PROJECT };
 
 if (require.main === module) {
   console.log('🧠 MEM 모듈 — Firestore', PROJECT + '/' + COLL, '· userId 격리 · 저장 전 주민번호/전화 마스킹');
