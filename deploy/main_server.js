@@ -1012,6 +1012,12 @@ app.get('/api/diag/persist', async (req, res) => {
     res.json(out);
   } catch (e) { out.에러 = e.message; out.진단 = '❌ 암호화 실패'; res.json(out); }
 });
+// ★임시 진단(다운로드함 403 규명): 배포가 쓰는 SA client_email·project 를 권한 준 SA와 대조하기 위함.
+//   ★private_key·전체 JSON 절대 미노출(client_email·project는 공개 식별자). ★규명 끝나면 즉시 제거.
+app.get('/api/diag/sa', (req, res) => {
+  try { const c = JSON.parse(KEY_FILE); res.json({ ok: true, client_email: c.client_email || '(키에 client_email 없음)', project_id: c.project_id || '', genya_mem_project: genyaMem.PROJECT, genya_mem_scope: genyaMem.SCOPE, GOOGLE_SA_JSON_설정됨: KEY_FILE !== '{}' }); }
+  catch (e) { res.json({ ok: false, error: e.message, GOOGLE_SA_JSON_설정됨: KEY_FILE !== '{}' }); }
+});
 
 app.get('/api/status', (req, res) => {
   // ★실제 상태를 정직 반영(런타임 확인 가능한 것 위주)
