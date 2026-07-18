@@ -1522,15 +1522,48 @@ function closeModal(){ document.getElementById('modalBack').classList.remove('on
 function showModal(html){ document.getElementById('modalBox').innerHTML=html; document.getElementById('modalBack').classList.add('on'); }
 
 // 📣 홍보마케팅비서 — 한줄카피 넣으면 지니야가 쇼츠 원고를 만든다(발행창고 1단계). ★대원칙②: 명칭 "홍보마케팅비서"로 통일.
+// ★[3] 통합모달 — 캠페인(대표님만·[4]) + 초안 만들기(작동) + 검수·발행(준비중). 한 화면에서 흐름을 보여준다.
+function _promoStep(no, name, badge, on){
+  var col = on ? '#1DB088' : '#b7c0cc';
+  var bg  = on ? '#eaf7f2' : '#f2f5f8';
+  var bd  = on ? '#c7ecdf' : '#e2e8ef';
+  return '<div style="flex:1;text-align:center;background:'+bg+';border:1px solid '+bd+';border-radius:9px;padding:8px 4px">'
+    +'<div style="font-size:11px;color:'+col+';font-weight:700">'+no+'. '+name+'</div>'
+    +'<div style="font-size:10px;color:'+(on?'#3a8f74':'#98a4b2')+';margin-top:2px">'+badge+'</div></div>';
+}
 function openPromo(){
-  showModal('<div style="padding:20px;max-width:520px">'
-    +'<h3 style="margin:0 0 4px;font-size:17px">📣 홍보마케팅비서</h3>'
-    +'<p style="color:#6b7a8d;font-size:13px;margin:0 0 14px">홍보하고 싶은 <b>한 줄</b>을 넣으면, 30초 쇼츠 대본을 만들어 드려요.</p>'
-    +'<textarea id="promoIn" rows="2" placeholder="예: 국민연금만으론 노후 30년이 부족합니다" style="width:100%;border:1px solid #d8dee6;border-radius:10px;padding:11px;font-size:14px;font-family:inherit;resize:vertical"></textarea>'
-    +'<button onclick="runPromo()" id="promoBtn" style="margin-top:10px;background:#1DB088;color:#fff;border:none;border-radius:10px;padding:11px 18px;font-size:14px;font-weight:700;cursor:pointer;width:100%">원고 만들기</button>'
-    +'<div id="promoOut" style="margin-top:14px"></div>'
+  var isRep = (typeof _isRep==='function') && _isRep();
+  showModal('<div style="padding:20px;max-width:560px">'
+    +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px"><h3 style="margin:0;font-size:17px">📣 홍보마케팅비서</h3><span onclick="closeModal()" style="cursor:pointer;color:#8a93a3;font-size:20px">×</span></div>'
+    +'<p style="color:#6b7a8d;font-size:13px;margin:0 0 16px">캠페인을 고르고 <b>한 줄 카피</b>를 넣으면 쇼츠 대본을 만들어 드려요. 검수·발행은 순차 오픈됩니다.</p>'
+    // ① 캠페인 (jenya · 대표님만 — [4]에서 실제 로드)
+    +'<div style="margin-bottom:16px">'
+    +'  <div style="font-size:12px;font-weight:700;color:#0d1b2a;margin-bottom:7px">📁 캠페인</div>'
+    +'  <div id="promoCampaigns" style="border:1px solid #e2e8ef;border-radius:10px;padding:11px;min-height:44px;background:#fafbfc">'
+    +      (isRep?'<div style="color:#8a93a3;font-size:12px">불러오는 중…</div>':'<div style="color:#98a4b2;font-size:12px">교육생용 캠페인 관리는 <b>준비 중</b>이에요. 지금은 아래에서 바로 원고를 만들 수 있어요.</div>')
+    +'  </div>'
+    +'</div>'
+    // ② 초안 만들기 (작동)
+    +'<div style="margin-bottom:16px">'
+    +'  <div style="font-size:12px;font-weight:700;color:#0d1b2a;margin-bottom:7px">✍️ 초안 만들기 <span style="background:#eaf7f2;color:#1DB088;font-size:10px;font-weight:700;padding:2px 6px;border-radius:6px;margin-left:4px">ON</span></div>'
+    +'  <textarea id="promoIn" rows="2" placeholder="예: 국민연금만으론 노후 30년이 부족합니다" style="width:100%;border:1px solid #d8dee6;border-radius:10px;padding:11px;font-size:14px;font-family:inherit;resize:vertical"></textarea>'
+    +'  <button onclick="runPromo()" id="promoBtn" style="margin-top:10px;background:#1DB088;color:#fff;border:none;border-radius:10px;padding:11px 18px;font-size:14px;font-weight:700;cursor:pointer;width:100%">원고 만들기</button>'
+    +'  <div id="promoOut" style="margin-top:14px"></div>'
+    +'</div>'
+    // ③ 발행 파이프라인 (원고=작동 / 검수·발행=준비중)
+    +'<div style="display:flex;gap:7px">'
+    +    _promoStep(1,'원고','작동',true)
+    +    _promoStep(2,'검수','준비중',false)
+    +    _promoStep(3,'발행','준비중',false)
+    +'</div>'
     +'</div>');
   setTimeout(function(){ var i=document.getElementById('promoIn'); if(i)i.focus(); },100);
+  if(isRep && typeof loadPromoCampaigns==='function'){ try{ loadPromoCampaigns(); }catch(e){} }
+}
+// ★[3] 캠페인 로더 스텁 — [4]에서 jenya /warehouse/campaigns 실제 fetch로 교체
+function loadPromoCampaigns(){
+  var box=document.getElementById('promoCampaigns'); if(!box) return;
+  box.innerHTML='<div style="color:#98a4b2;font-size:12px">캠페인 연결 준비 중…</div>';
 }
 function runPromo(){
   var copy=(document.getElementById('promoIn').value||'').trim();
