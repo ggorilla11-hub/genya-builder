@@ -2183,10 +2183,35 @@ function openShare(){
   showModal(
     '<div class="pop-h s"><div class="pic"><svg viewBox="0 0 24 24" fill="none"><path d="M8 12l8-5m-8 5l8 5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><circle cx="18" cy="6" r="2.3" stroke="currentColor" stroke-width="1.6"/><circle cx="6" cy="12" r="2.3" stroke="currentColor" stroke-width="1.6"/><circle cx="18" cy="18" r="2.3" stroke="currentColor" stroke-width="1.6"/></svg></div><div class="pt"><b>공유 · 발송</b><span>고객에게 바로 보내요 (승인 후)</span></div><div class="px" onclick="closeModal()"><svg viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></div></div>'+
     '<div class="pop-list">'+
-      [['카카오톡으로 보내기','솔라피 · Compute Use'],['문자(SMS)로 보내기','솔라피'],['링크 복사','공유 URL'],['이메일 발송','Gmail 연동']].map((x,i)=>
-        '<div class="pop-item" style="cursor:pointer" onclick="closeModal();toast(\''+x[0]+' — 승인 후 발송됩니다\')"><span class="di pi-s"></span><div class="it"><b>'+x[0]+'</b><span>'+x[1]+'</span></div><span class="tag" style="background:var(--gold-l);color:var(--gold-d)">발송</span></div>').join('')+
+      [['카카오톡으로 보내기','승인 후 발송기가 카톡 전송','shareKakao()'],['문자(SMS)로 보내기','솔라피 (준비중)','closeModal();toast(\'문자(SMS) 발송은 준비 중이에요 — 곧 솔라피로 연결됩니다\')'],['링크 복사','진단·공유 URL','shareCopyLink()'],['이메일 발송','Gmail 연동 (준비중)','closeModal();toast(\'이메일 발송은 준비 중이에요 — Gmail 연동 예정이에요\')']].map((x,i)=>
+        '<div class="pop-item" style="cursor:pointer" onclick="'+x[2]+'"><span class="di pi-s"></span><div class="it"><b>'+x[0]+'</b><span>'+x[1]+'</span></div><span class="tag" style="background:var(--gold-l);color:var(--gold-d)">발송</span></div>').join('')+
     '</div>'+
     '<div class="pop-foot"><div class="pop-src"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3l7 3v6c0 4-3 6.5-7 8-4-1.5-7-4-7-8V6l7-3z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>모든 발송은 반드시 사람 승인 후에만 실행됩니다</div></div>');
+}
+// ★[공유/발송] 카톡 보내기 = 받는사람·내용 입력 → [승인·발송] → 기존 완성 로직(dashSendApprove→_genyaSilentSave→watcher) 재사용. 새 발송 함수 안 만듦.
+//   ★제로 인그레스: 받는사람·내용은 브라우저 로컬 → genyasend:(로컬 watcher)로만. 서버 저장 0. ★사람이 [승인·발송] 눌러야만 나감(자동 발송 없음).
+function shareKakao(){
+  showModal('<div style="max-width:520px"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px"><b style="font-size:16px;color:#0d1b2a">📨 카카오톡으로 보내기</b><span onclick="closeModal()" style="cursor:pointer;color:#8a93a3;font-size:20px">×</span></div>'
+    +'<div style="font-size:11px;color:#8a93a3;margin-bottom:4px">받는 사람 (카톡에서 찾을 이름/번호)</div>'
+    +'<input id="shareKkTo" type="text" placeholder="예: 김영수" style="width:100%;font-size:14px;font-family:inherit;color:#0d1b2a;background:#f5f7fa;border:1px solid #dbe2ea;border-radius:8px;padding:10px;box-sizing:border-box;margin-bottom:10px">'
+    +'<div style="font-size:11px;color:#8a93a3;margin-bottom:4px">보낼 내용 (직접 수정 가능 — 편집한 내용이 그대로 발송됩니다)</div>'
+    +'<textarea id="sendDraft" placeholder="보낼 카톡 내용을 입력하세요" style="width:100%;height:120px;font-size:13px;font-family:inherit;line-height:1.6;color:#0d1b2a;background:#f5f7fa;border:1px solid #dbe2ea;border-radius:8px;padding:10px;box-sizing:border-box;margin-bottom:10px;resize:vertical"></textarea>'
+    +'<div style="font-size:11px;color:#c0392b;line-height:1.6;margin-bottom:12px">⚠️ 발송 전 반드시 검토하세요(사람이 최종 확인).<br>· 승인하면 <b>발송기가 카톡으로 보냅니다</b>(방 미리 안 열어도 이름으로 검색).<br>· 대화 이력이 없으면 “검색 결과 없음” → 미발송(오발송 방지).</div>'
+    +'<div style="display:flex;gap:8px"><button onclick="shareKakaoSend()" style="flex:1;padding:10px;border:none;border-radius:10px;background:#fee500;color:#3c1e1e;font-weight:700;cursor:pointer">✅ 승인 — 발송</button><button onclick="closeModal()" style="padding:10px 16px;border:1px solid #dbe2ea;border-radius:10px;background:#fff;color:#556;cursor:pointer">취소</button></div></div>');
+  setTimeout(function(){ var i=document.getElementById('shareKkTo'); if(i)i.focus(); },100);
+}
+function shareKakaoSend(){
+  var nm=String((document.getElementById('shareKkTo')||{}).value||'').trim();
+  var msg=String((document.getElementById('sendDraft')||{}).value||'').trim();
+  if(!nm){ toast('받는 사람(카톡 이름)을 입력해 주세요'); return; }
+  if(!msg){ toast('보낼 내용을 입력해 주세요'); return; }
+  window._PENDING_SEND={nm:nm, msg:msg};   // ★스냅샷 고정
+  dashSendApprove();   // 기존 완성 흐름 재사용: sendDraft 최종본 → _genyaSilentSave(genyasend:→watcher outbox) + "발송 요청됨" 모달 + [📋 명령] 수동 백업
+}
+function shareCopyLink(){
+  var link;
+  try{ link=(typeof _findDraftLink==='function')?_findDraftLink(0):((typeof _findDiagBase==='function')?_findDiagBase():location.href); }catch(e){ link=location.href; }
+  try{ navigator.clipboard.writeText(link).then(function(){ closeModal(); toast('링크 복사됨 — 카톡·문자에 붙여넣으세요'); }, function(){ toast('복사 실패 — 길게 눌러 복사하세요'); }); }catch(e){ toast('복사 실패'); }
 }
 // ===== Compute Use (대화형) =====
 function openCompute(){
