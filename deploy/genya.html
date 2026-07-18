@@ -378,6 +378,72 @@
   /* 단계 제목(renderMd의 ## → 고정 인라인 스타일 div)을 Teal 배지로. renderMd 내부 스타일 문자열에 의존(같은 파일) */
   .cmp-report div[style*="font-weight:700;margin:8px 0 3px"]{background:var(--teal-l);color:var(--teal-d)!important;border-left:3px solid var(--teal);padding:7px 11px!important;border-radius:0 7px 7px 0;margin:14px 0 6px!important;font-size:13px!important;font-weight:800!important;}
   .cmp-report ul{margin:5px 0 8px 18px!important;} .cmp-report li{margin:2px 0;font-size:12.5px;color:#33475a;line-height:1.55;}
+  /* ★[홍보마케팅비서] 발행창고 1단계 이식 — 딥그린 테마를 #whRoot로 스코프(genya 딥네이비와 변수 충돌 없음) */
+  #whRoot{--bg:#0A1512;--panel:#0F211E;--panel2:#143029;--line:#254842;--teal:#22C7B8;--mint:#7EE0D8;--deep:#0A5D5A;--gold:#F2B23E;--red:#E5573D;--blue:#3B8FD4;--green:#2FBF71;--purple:#9B7EDE;--pink:#E06B9E;--ink:#EAF3F1;--soft:#93AEA9;
+    background:var(--bg);color:var(--ink);border-radius:14px;overflow:hidden;border:1px solid var(--line);line-height:1.6;max-width:100%;}
+  #whRoot *{margin:0;padding:0;box-sizing:border-box}
+  #whRoot .hero{background:linear-gradient(150deg,#0A5D5A,#0A1512 72%);padding:20px 18px 16px;border-bottom:1px solid var(--line)}
+  #whRoot .hero .tag{display:inline-flex;font-size:11px;font-weight:900;letter-spacing:.09em;background:rgba(34,199,184,.14);border:1px solid rgba(34,199,184,.4);color:var(--mint);padding:4px 11px;border-radius:5px}
+  #whRoot .hero h1{font-size:19px;font-weight:900;line-height:1.3;margin:11px 0 6px}
+  #whRoot .hero h1 .hl{color:var(--gold)}
+  #whRoot .hero p{font-size:12.5px;color:var(--soft);max-width:660px}
+  #whRoot .stage{display:inline-block;font-size:10px;font-weight:900;background:var(--blue);color:#fff;padding:2px 8px;border-radius:9px;margin-left:6px;vertical-align:middle}
+  #whRoot .whbody{padding:18px 16px 22px}
+  #whRoot .selbar{background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:16px 18px;margin-bottom:14px}
+  #whRoot .selrow{display:grid;grid-template-columns:1fr 1fr 1.4fr auto;gap:11px;align-items:end}
+  #whRoot .fld label{display:block;font-size:10.5px;font-weight:900;color:var(--soft);margin-bottom:5px;letter-spacing:.04em}
+  #whRoot .fld label .num{display:inline-block;width:15px;height:15px;background:var(--teal);color:#04110F;border-radius:3px;text-align:center;line-height:15px;font-size:9.5px;margin-right:4px}
+  #whRoot .fld select{width:100%;background:#04110F;border:1px solid var(--line);color:var(--ink);padding:10px 11px;border-radius:8px;font-size:13px;font-weight:700;font-family:inherit;cursor:pointer}
+  #whRoot .fld select:focus{outline:none;border-color:var(--teal)}
+  #whRoot .fld select.hot{border-color:var(--gold);box-shadow:0 0 0 2px rgba(242,178,62,.15)}
+  #whRoot .upbtn{background:var(--gold);color:#04110F;border:none;padding:10px 16px;border-radius:8px;font-size:12.5px;font-weight:900;cursor:pointer;font-family:inherit;white-space:nowrap}
+  #whRoot .upbtn:hover{background:#FFC95A}
+  #whRoot .upbtn:disabled{background:#3A4B47;color:var(--soft);cursor:not-allowed}
+  #whRoot .cta-line{margin-top:12px;background:rgba(34,199,184,.08);border:1px solid rgba(34,199,184,.35);border-radius:8px;padding:10px 12px;font-size:11.5px;line-height:1.7}
+  #whRoot .cta-line b{color:var(--mint)}
+  #whRoot .cta-line code{font-family:monospace;color:var(--gold);font-size:11px;background:rgba(0,0,0,.3);padding:2px 7px;border-radius:4px;word-break:break-all}
+  #whRoot .cta-line a code{text-decoration:underline}
+  #whRoot .cta-line .cid{font-family:monospace;color:var(--pink);font-size:11px}
+  #whRoot .cta-line .dead{font-family:monospace;color:var(--soft);font-size:11px;background:rgba(0,0,0,.3);padding:2px 7px;border-radius:4px}
+  #whRoot .camp{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px;font-size:11.5px}
+  #whRoot .camp .cb{background:var(--panel2);border:1px solid var(--line);padding:4px 11px;border-radius:14px;font-weight:900}
+  #whRoot .camp .ar{color:var(--soft)}
+  #whRoot .camp .cn{background:rgba(242,178,62,.15);border-color:var(--gold);color:var(--gold)}
+  #whRoot .pipe{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+  #whRoot .pstep{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;cursor:pointer;transition:.15s;position:relative}
+  #whRoot .pstep:hover{border-color:var(--teal)}
+  #whRoot .pstep.active{border-color:var(--teal);background:rgba(34,199,184,.07)}
+  #whRoot .pstep .pn{font-size:10px;font-weight:900;color:var(--soft);letter-spacing:.05em}
+  #whRoot .pstep .pt{font-size:14px;font-weight:900;margin:4px 0 7px}
+  #whRoot .pstep .cnt{font-size:22px;font-weight:900;line-height:1}
+  #whRoot .pstep .cnt small{font-size:12px;color:var(--soft);font-weight:700}
+  #whRoot .bar{height:5px;background:rgba(0,0,0,.35);border-radius:3px;margin-top:8px;overflow:hidden}
+  #whRoot .bar i{display:block;height:100%;border-radius:3px;transition:width .2s}
+  #whRoot .s1 .cnt{color:var(--gold)} #whRoot .s1 .bar i{background:var(--gold)}
+  #whRoot .s2 .cnt{color:var(--teal)} #whRoot .s2 .bar i{background:var(--teal)}
+  #whRoot .s3 .cnt{color:var(--purple)} #whRoot .s3 .bar i{background:var(--purple)}
+  #whRoot .s4 .cnt{color:var(--soft)} #whRoot .s4 .bar i{background:var(--soft)}
+  #whRoot .soon{position:absolute;top:11px;right:11px;font-size:9px;font-weight:900;background:rgba(147,174,169,.18);color:var(--soft);padding:3px 7px;border-radius:11px}
+  #whRoot .view{background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:18px;min-height:200px}
+  #whRoot .view h3{font-size:15px;font-weight:900;margin-bottom:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  #whRoot .view h3 .badge{font-size:9.5px;font-weight:900;padding:2px 8px;border-radius:9px;background:rgba(242,178,62,.18);color:var(--gold)}
+  #whRoot table{width:100%;border-collapse:collapse;font-size:11.5px}
+  #whRoot th{background:var(--panel2);color:var(--soft);padding:8px;text-align:left;font-weight:700;font-size:10.5px}
+  #whRoot td{padding:8px;border-bottom:1px solid var(--line);vertical-align:top}
+  #whRoot .st{font-size:9.5px;font-weight:900;padding:2px 7px;border-radius:9px;white-space:nowrap}
+  #whRoot .st-wait{background:rgba(147,174,169,.15);color:var(--soft)}
+  #whRoot .empty{text-align:center;padding:30px 20px;color:var(--soft);font-size:12.5px;line-height:1.7}
+  #whRoot .empty .ic{font-size:30px;margin-bottom:8px}
+  #whRoot .note{font-size:11.5px;color:var(--soft);background:rgba(0,0,0,.25);border:1px solid var(--line);border-radius:9px;padding:11px 13px;margin-top:12px;line-height:1.65}
+  #whRoot .note b{color:var(--mint)}
+  #whRoot .note.warn{background:rgba(242,178,62,.08);border-color:rgba(242,178,62,.4)} #whRoot .note.warn b{color:var(--gold)}
+  #whRoot .note code{font-family:monospace;color:var(--gold);font-size:10.5px}
+  #whRoot .whfoot{text-align:center;font-size:10.5px;color:var(--soft);padding:14px;border-top:1px solid var(--line)}
+  #whRoot .whfoot a{color:var(--mint);cursor:pointer}
+  @media(max-width:820px){
+    #whRoot .selrow{grid-template-columns:1fr 1fr} #whRoot .upbtn{grid-column:1/-1}
+    #whRoot .pipe{grid-template-columns:1fr 1fr} #whRoot .hero h1{font-size:17px} #whRoot .whbody{padding:14px 10px 18px}
+  }
 </style>
 </head>
 <body>
@@ -652,7 +718,7 @@
           <div class="tool"><div class="ti-ic" style="background:#eae7f7;color:#5a4bb0;"><svg viewBox="0 0 24 24" fill="none"><path d="M4 7h16v10H4z" stroke="currentColor" stroke-width="1.7"/><path d="M4 8l8 5 8-5" stroke="currentColor" stroke-width="1.7"/></svg></div><div class="tt"><b>문자·카톡 발송</b><span>승인 후 발송</span><div class="stack-tags"><span class="stk">솔라피</span><span class="stk auto">Compute Use</span></div></div><span class="badge soon">준비</span></div>
 
           <div class="sect-t mt">마케팅 도구</div>
-          <div class="tool" onclick="openPromo()" style="cursor:pointer;"><div class="ti-ic" style="background:#eef5e9;color:#3f7a2e;"><svg viewBox="0 0 24 24" fill="none"><path d="M4 9v6l7 4V5L4 9z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M11 7l7-3v16l-7-3" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></div><div class="tt"><b>홍보마케팅비서</b><span>한줄카피 → 쇼츠 원고</span><div class="stack-tags"><span class="stk">Claude</span></div></div><span class="badge on">ON</span></div>
+          <div class="tool" onclick="openWarehouse()" style="cursor:pointer;"><div class="ti-ic" style="background:#eef5e9;color:#3f7a2e;"><svg viewBox="0 0 24 24" fill="none"><path d="M4 9v6l7 4V5L4 9z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M11 7l7-3v16l-7-3" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></div><div class="tt"><b>홍보마케팅비서</b><span>서비스·캠페인·한줄카피</span><div class="stack-tags"><span class="stk">발행 1단계</span></div></div><span class="badge on">ON</span></div>
           <div class="tool"><div class="ti-ic"><svg viewBox="0 0 24 24" fill="none"><path d="M4 7h16v10H4z" stroke="currentColor" stroke-width="1.6"/><path d="M10 9l5 3-5 3z" fill="currentColor"/></svg></div><div class="tt"><b>유튜브 발굴</b><span>내 채널 댓글 리드</span><div class="stack-tags"><span class="stk">YouTube API</span></div></div><span class="badge soon">곧 나와요</span></div>
           <div class="add-tool" onclick="addToolAsk()"><svg viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>도구 추가하기</div>
           <div class="safe"><b><svg viewBox="0 0 24 24" fill="none"><path d="M12 3l7 3v6c0 4-3 6.5-7 8-4-1.5-7-4-7-8V6l7-3z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>데이터 안전</b><p>모든 자료는 본인 구글에만 저장돼요. 지니야 서버엔 저장 0. 발송·연락은 승인 후에만.</p></div>
@@ -1325,7 +1391,7 @@ function _genyaSilentSave(nm, msg){
 // ===== 2차 시나리오 팝업 (기술 엮기 = 해자) =====
 function openScenario(jobKey, idx){
   const j = GENYA_JOBS[jobKey] || GENYA_JOBS.insurance;
-  const p = j.pains[idx]; if(p&&p.icon==='radar'){ discoveryPanel(); return; } if(p&&p.icon==='megaphone'){ openPromo(); return; } const s = p.sc; // ★2026-07-18 원칙(대표=교육생 모든 기능+전용 추가): !_isRep 제거 → 대표님도 동일 발굴모달. 대표 전용은 얹기만(미구현·자리)
+  const p = j.pains[idx]; if(p&&p.icon==='radar'){ discoveryPanel(); return; } if(p&&p.icon==='megaphone'){ openWarehouse(); return; } const s = p.sc; // ★2026-07-18 원칙(대표=교육생 모든 기능+전용 추가): !_isRep 제거 → 대표님도 동일 발굴모달. 대표 전용은 얹기만(미구현·자리)
   const steps = s.steps.map(st=>
     '<div class="sc-step"><div class="sn">'+ic(st.ic)+'</div><div class="sx"><div class="st">'+st.st+'</div><div class="sd">'+st.sd+'</div></div></div>'
   ).join('');
@@ -1531,6 +1597,126 @@ function _promoStep(no, name, badge, on){
     +'<div style="font-size:11px;color:'+col+';font-weight:700">'+no+'. '+name+'</div>'
     +'<div style="font-size:10px;color:'+(on?'#3a8f74':'#98a4b2')+';margin-top:2px">'+badge+'</div></div>';
 }
+// ══ ★[홍보마케팅비서] 발행창고 1단계 전체 이식 — 서비스→내용→한줄카피→캠페인(진단 도착지·꼬리표·pstep 4단계). ══
+//    jenya(제니야) 읽기API(무인증·server.js 전역 CORS). ★대표님(_isRep)만 캠페인 로드, 교육생 준비중(격리). 명칭 전체 "홍보마케팅비서".
+var WH_CAMPS=[], WH_COPIES=[], WH_SHEET='', WH_T=1, WH_LOADING=true;
+function _whEsc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
+function _whUniq(a){ var o={},r=[]; a.forEach(function(x){ if(x!=null&&!o[x]){o[x]=1;r.push(x);} }); return r; }
+function _whPromoSection(){
+  return '<div class="view" style="margin-top:14px"><h3>✍️ 한줄대본 만들기 <span class="badge" style="background:rgba(59,143,212,.2);color:var(--blue)">즉석</span></h3>'
+    +'<p style="font-size:12px;color:var(--soft);margin:0 0 10px">홍보하고 싶은 한 줄을 넣으면 30초 쇼츠 대본을 만들어 드려요.</p>'
+    +'<textarea id="promoIn" rows="2" placeholder="예: 국민연금만으론 노후 30년이 부족합니다" style="width:100%;background:#04110F;border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:10px;font-size:13px;font-family:inherit;resize:vertical"></textarea>'
+    +'<button onclick="runPromo()" id="promoBtn" class="upbtn" style="margin-top:8px;width:100%">원고 만들기</button>'
+    +'<div id="promoOut" style="margin-top:12px"></div></div>';
+}
+function _whShell(bodyExtra){
+  return '<div id="whRoot">'
+    +'<div class="hero"><span class="tag">⬢ 홍보마케팅비서</span><span class="stage">1단계 · 재료 넣기까지</span>'
+    +'<h1>서비스 → 내용 → <span class="hl">카피만 넣으면 끝</span></h1>'
+    +'<p>서비스와 내용을 고르고 한줄카피를 올리면, 그 캠페인의 도착지와 꼬리표가 자동으로 정해져요. '
+    +'<b style="color:var(--gold)">내용 하나 = 카피 60개 = 캠페인 하나.</b> 원고·콘텐츠·발행 자동화는 2단계부터.</p></div>'
+    +'<div class="whbody">'+bodyExtra+'</div></div>';
+}
+function openWarehouse(){
+  if(!((typeof _isRep==='function')&&_isRep())){
+    // ★교육생 격리: jenya(대표님 총괄) 캠페인 데이터 노출 금지 → 준비중 + 한줄대본만.
+    showModal(_whShell('<div class="view"><div class="empty"><div class="ic">🚧</div>캠페인·한줄카피 관리는 <b style="color:var(--gold)">준비 중</b>이에요.<br><span style="font-size:11.5px">지금은 아래에서 바로 쇼츠 대본을 만들 수 있어요.</span></div></div>'+_whPromoSection()));
+    setTimeout(function(){ var i=document.getElementById('promoIn'); if(i)i.focus(); },100);
+    return;
+  }
+  WH_LOADING=true; WH_T=1;
+  showModal(_whShell(
+    '<div class="selbar"><div class="selrow">'
+    +'<div class="fld"><label><span class="num">1</span>서비스명</label><select id="whSvc" onchange="whOnSvc()"></select></div>'
+    +'<div class="fld"><label><span class="num">2</span>내용 <span style="color:var(--gold)">← 서비스 따라 바뀜</span></label><select id="whCnt" class="hot" onchange="whUpd()"></select></div>'
+    +'<button class="upbtn" id="whUpb" onclick="whPick()">＋ 한줄카피</button>'
+    +'<input type="file" id="whFile" accept=".txt,.csv,.json" style="display:none" onchange="whUpload(this)"></div>'
+    +'<div class="cta-line" id="whCta">불러오는 중…</div></div>'
+    +'<div class="camp" id="whCampline"></div>'
+    +'<div class="pipe">'
+    +'<div class="pstep s1 active" onclick="whTab(1)"><div class="pn">① 재료 · 대표님</div><div class="pt">📋 한줄카피</div><div class="cnt" id="whC1">–<small>/60</small></div><div class="bar"><i id="whB1" style="width:0%"></i></div></div>'
+    +'<div class="pstep s2" onclick="whTab(2)"><span class="soon">2단계</span><div class="pn">② 자동</div><div class="pt">📝 원고</div><div class="cnt" id="whC2">0<small>/60</small></div><div class="bar"><i id="whB2" style="width:0%"></i></div></div>'
+    +'<div class="pstep s3" onclick="whTab(3)"><span class="soon">3단계</span><div class="pn">③ 자동</div><div class="pt">🎬 콘텐츠</div><div class="cnt" id="whC3">0<small>/60</small></div><div class="bar"><i id="whB3" style="width:0%"></i></div></div>'
+    +'<div class="pstep s4" onclick="whTab(4)"><span class="soon">4단계</span><div class="pn">④ 자동</div><div class="pt">🚀 발행·분석</div><div class="cnt" id="whC4">0<small>/60</small></div><div class="bar"><i id="whB4" style="width:0%"></i></div></div>'
+    +'</div>'
+    +'<div class="view" id="whView"><div class="empty"><div class="ic">⏳</div>불러오는 중…</div></div>'
+    +_whPromoSection()
+    +'<div class="whfoot">오원트금융연구소 · 홍보마케팅비서 1단계 · 캠페인 = 서비스 × 내용 · 캠페인마다 카피 60개 · <a onclick="whOpenSheet()">📗 시트에서 직접 고치기</a></div>'
+  ));
+  whBoot();
+}
+function whBoot(){
+  fetch(JENYA_BASE+'/warehouse/campaigns').then(function(r){return r.json();}).then(function(j){
+    if(j.error) throw new Error(j.error);
+    WH_CAMPS=j.campaigns||[]; WH_SHEET=j.sheetUrl||''; WH_LOADING=false; whFillSvc();
+  }).catch(function(e){
+    WH_LOADING=false;
+    var c=document.getElementById('whCta'); if(c) c.innerHTML='⚠️ 캠페인 표를 못 읽었어요 — '+_whEsc(e.message);
+    var v=document.getElementById('whView'); if(v) v.innerHTML='<div class="empty"><div class="ic">⚠️</div>캠페인을 못 읽었어요.<br>'+_whEsc(e.message)+'</div>';
+  });
+}
+function whFillSvc(){
+  var svc=document.getElementById('whSvc'); if(!svc) return; svc.innerHTML='';
+  _whUniq(WH_CAMPS.map(function(c){return c.service;})).forEach(function(s){ var o=document.createElement('option'); o.value=s; o.textContent=s; svc.appendChild(o); });
+  whOnSvc();
+}
+function whOnSvc(){
+  var cnt=document.getElementById('whCnt'); if(!cnt) return; var s=document.getElementById('whSvc').value; cnt.innerHTML='';
+  var rows=WH_CAMPS.filter(function(c){return c.service===s;});
+  if(!rows.length){ var o=document.createElement('option'); o.value=''; o.textContent='(없음)'; cnt.appendChild(o); }
+  else rows.forEach(function(c){ var o=document.createElement('option'); o.value=c.name; o.textContent=c.name+(c.contentTopic?' · '+c.contentTopic:'')+(c.live?'':(c.diagUrl?' (주소확인필요)':' (진단 미제작)')); cnt.appendChild(o); });
+  whUpd();
+}
+function _whCur(){ var s=document.getElementById('whSvc').value, n=document.getElementById('whCnt').value; return WH_CAMPS.find(function(c){return c.service===s&&c.name===n;})||null; }
+function whUpd(){
+  var c=_whCur();
+  if(!c){ var ct0=document.getElementById('whCta'); if(ct0) ct0.innerHTML='이 조합에는 아직 만들어진 페이지가 없어요.'; var cl0=document.getElementById('whCampline'); if(cl0) cl0.innerHTML=''; whSetPipe(0); whRender(); return; }
+  var 꼬리표='?from=yt_'+(c.code||'?')+'_001';
+  var 도착지=c.live
+    ? '<a href="'+_whEsc(c.diagUrl)+'" target="_blank" rel="noopener"><code>'+_whEsc(c.diagUrl)+'</code></a> <span style="color:var(--green);font-weight:900">✓ 클릭하면 열려요</span>'
+    : '<span class="dead">'+_whEsc(c.diagUrl||(c.status==='대기'?'(진단 미제작)':'(주소 없음)'))+'</span> <span style="color:#FFB4A5;font-weight:900">⚠ 진단 도착지 없음</span>';
+  var 랜딩=c.landingUrl?'<a href="'+_whEsc(c.landingUrl)+'" target="_blank" rel="noopener"><code>'+_whEsc(c.landingUrl)+'</code></a>':'<span style="color:var(--soft)">(랜딩 미지정 — 표시만)</span>';
+  var ct=document.getElementById('whCta');
+  if(ct) ct.innerHTML='🎯 <b>도착지(진단):</b> '+도착지+'<br>🏁 <b>최종 목적지(랜딩):</b> '+랜딩+' <span style="color:var(--soft)">— 표시만</span><br>🏷️ <b>꼬리표:</b> <span class="cid">'+_whEsc(꼬리표)+'</span> <span style="color:var(--soft)">← 발행할 때 도착지 뒤에 자동으로 붙어요</span>';
+  var cl=document.getElementById('whCampline');
+  if(cl) cl.innerHTML='<span class="cb">'+_whEsc(c.service)+'</span><span class="ar">›</span><span class="cb cn">'+_whEsc(c.name)+(c.contentTopic?' ('+_whEsc(c.contentTopic)+')':'')+'</span><span style="color:var(--soft);margin-left:4px">= 캠페인 1개 · 카피 60개</span>';
+  whLoadCopies(c.key);
+}
+function whLoadCopies(key){
+  var c1=document.getElementById('whC1'); if(c1) c1.innerHTML='…<small>/60</small>';
+  fetch(JENYA_BASE+'/warehouse/copies?key='+encodeURIComponent(key)).then(function(r){return r.json();}).then(function(j){ WH_COPIES=j.copies||[]; }).catch(function(){ WH_COPIES=[]; }).then(function(){ whSetPipe(WH_COPIES.length); whRender(); });
+}
+function whSetPipe(n){
+  var c1=document.getElementById('whC1'), b1=document.getElementById('whB1'); if(c1) c1.innerHTML=n+'<small>/60</small>'; if(b1) b1.style.width=Math.min(100,Math.round(n/60*100))+'%';
+  ['2','3','4'].forEach(function(i){ var c=document.getElementById('whC'+i), b=document.getElementById('whB'+i); if(c) c.innerHTML='0<small>/60</small>'; if(b) b.style.width='0%'; });
+}
+function whTab(n){ WH_T=n; var ps=document.querySelectorAll('#whRoot .pstep'); Array.prototype.forEach.call(ps,function(e,i){ e.classList.toggle('active', i===n-1); }); whRender(); }
+function whRender(){
+  var v=document.getElementById('whView'); if(!v) return; var c=_whCur();
+  if(WH_LOADING){ v.innerHTML='<div class="empty"><div class="ic">⏳</div>불러오는 중…</div>'; return; }
+  if(WH_T===1){
+    if(!WH_COPIES.length){ v.innerHTML='<div class="empty"><div class="ic">📋</div>아직 한줄카피가 없어요.<br><b style="color:var(--gold)">＋ 한줄카피</b> 버튼으로 올려주세요.</div><div class="note warn"><b>txt 파일을 권해요</b> — 한 줄에 카피 하나, 60줄. csv는 쉼표에 쪼개지고 엑셀은 한글이 깨져요. <b>진실은 시트</b>라 올린 뒤에도 시트에서 고칠 수 있어요.</div>'; return; }
+    var h='<h3>📋 한줄카피 <span class="badge">대표님이 올림</span> <span style="font-size:11px;color:var(--soft);font-weight:400">'+WH_COPIES.length+'개</span></h3>';
+    h+='<table><thead><tr><th style="width:52px">번호</th><th>한줄카피</th><th style="width:78px">꼬리표</th><th style="width:60px">상태</th></tr></thead><tbody>';
+    WH_COPIES.forEach(function(x){ var tag='yt_'+(c&&c.code?c.code:'?')+'_'+x.no; h+='<tr><td style="color:var(--soft)">'+_whEsc(x.no)+'</td><td>'+_whEsc(x.copy)+'</td><td><span style="font-family:monospace;font-size:10px;color:var(--pink)">'+_whEsc(tag)+'</span></td><td><span class="st st-wait">'+_whEsc(x.status)+'</span></td></tr>'; });
+    h+='</tbody></table><div class="note">📗 이 목록은 <b>시트 「한줄카피」 탭</b>이 원본이에요. 시트에서 고치면 여기 그대로 반영돼요.</div>';
+    v.innerHTML=h; return;
+  }
+  var nm={2:['📝 원고','카피 하나를 채널별 원고 5종으로 자동 변환'],3:['🎬 콘텐츠','원고를 쇼츠·카드뉴스·오디오로 자동 제작 + 퀄리티 게이트'],4:['🚀 발행·분석','예약표에 자동 등록 → 발행 → 유입경로로 성과 집계']}[WH_T];
+  v.innerHTML='<h3>'+nm[0]+' <span class="badge" style="background:rgba(147,174,169,.18);color:var(--soft)">'+WH_T+'단계에서 연결</span></h3><div class="empty"><div class="ic">🚧</div>'+nm[1]+'<br><br><span style="font-size:11.5px">아직 안 만들었어요. <b style="color:var(--gold)">숫자 0은 진짜 0</b>이에요 — 꾸며낸 값 아니에요.</span></div>';
+}
+function whPick(){ var c=_whCur(); if(!c){ toast('먼저 캠페인을 고르세요'); return; } var f=document.getElementById('whFile'); if(f) f.click(); }
+function whUpload(el){
+  var f=el.files&&el.files[0]; if(!f) return; var c=_whCur(); if(!c){ el.value=''; return; }
+  var btn=document.getElementById('whUpb'); if(btn){ btn.disabled=true; btn.textContent='올리는 중…'; }
+  f.text().then(function(text){
+    return fetch(JENYA_BASE+'/warehouse/copies',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:c.key,filename:f.name,text:text})}).then(function(r){return r.json();});
+  }).then(function(j){
+    if(j.error){ toast('올리지 못했어요: '+j.error); }
+    else{ var msg=j.saved+'개 저장'; if(j.dropped) msg+=' · '+j.dropped+'개는 60개 초과로 제외'; toast(msg); whLoadCopies(c.key); }
+  }).catch(function(e){ toast('올리지 못했어요: '+e.message); }).then(function(){ if(btn){ btn.disabled=false; btn.textContent='＋ 한줄카피'; } el.value=''; });
+}
+function whOpenSheet(){ if(WH_SHEET) window.open(WH_SHEET,'_blank'); }
 function openPromo(){
   var isRep = (typeof _isRep==='function') && _isRep();
   showModal('<div style="padding:20px;max-width:560px">'
