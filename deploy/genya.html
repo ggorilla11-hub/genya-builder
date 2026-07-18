@@ -2602,7 +2602,8 @@ window.runOCR=function(mode){
         // ★작업2: PDF·엑셀·문서 등 비이미지가 하나라도 섞이면 만능 처리기(/api/coverage/analyze)로 폴백.
         //   policy/pension은 images=Claude Vision 전용 → PDF를 image 블록으로 보내면 400. coverage엔 형식분기 있음(main_server.js 853~).
         var _allImg=imgs.every(function(x){ return /^image\//i.test(x.mime||''); });
-        if(!_allImg){
+        // ★연금(pension)은 PDF도 /api/pension(예쁜 틀·스킬이 document 처리)로 보낸다 → coverage 날것 폴백은 증권(policy)만.
+        if(!_allImg && !_isPen){
           var _f=imgs[0];
           fetch('/api/coverage/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dataUrl:'data:'+_f.mime+';base64,'+_f.data, mime:_f.mime, name:(fs[0]&&fs[0].name)||'upload'})})
            .then(function(r){return r.json();}).then(function(d){ w.remove();

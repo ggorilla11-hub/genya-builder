@@ -177,12 +177,17 @@ async function analyzePension(input) {
     const r = await anthropic().messages.create({ model: ANSWER_MODEL, max_tokens: 8000, system: buildSystem(name), messages: [{ role: 'user', content }] });
     const txt = (r.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');
     data = parseJSON(txt);
-    if (!data) throw new Error('JSON 파싱 실패');
   } catch (e) {
-    const hint = /too large|maximum|size|token|payload|400/i.test(e.message || '') ? ' (설계서 PDF가 크거나 페이지가 많은 것 같아요 — 핵심 페이지만 올려보세요)' : '';
-    return { ok: false, html: '', rows: [], error: e.message, report: '연금 설계서 분석 중 문제가 생겼어요' + hint + '. 파일을 확인하고 다시 시도해 주세요.', disclaimer: DISCLAIMER };
+    // ★크기·토큰 등 명백한 API 실패만 사용자 안내(파일 문제). 그 외/JSON 파싱 실패는 아래 "확인 필요" 고정 틀로.
+    if (/too large|maximum|size|token|payload|400/i.test(e.message || '')) {
+      return { ok: false, html: '', rows: [], error: e.message, report: '연금 설계서 분석 중 문제가 생겼어요 (설계서 PDF가 크거나 페이지가 많은 것 같아요 — 최저보증·수익률·연금액이 보이는 핵심 페이지만 올려보세요). 파일을 확인하고 다시 시도해 주세요.', disclaimer: DISCLAIMER };
+    }
+    data = null;
   }
-
+  // ★대표 지시: LLM이 JSON을 못 뱉어도 날것 텍스트 대신 "확인 필요" 채운 고정 틀로(renderMd 날것 폴백 최소화). 항상 예쁜 제안서 틀을 반환.
+  if (!data || typeof data !== 'object') {
+    data = { 표지: {}, 노후공백: '설계서에서 내용을 확실히 읽지 못했어요. 최저보증·수익률·연금액이 보이는 페이지로 다시 올려주시면 정확히 채워드려요.', 상품: [], 비교: {}, 시뮬설명: '', 성향추천: {}, 고지: '', 요약: '' };
+  }
   return { ok: true, html: renderHTML(data), rows: toRows(data), data, engine: ANSWER_MODEL, disclaimer: DISCLAIMER };
 }
 
