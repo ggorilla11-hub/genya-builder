@@ -1971,6 +1971,20 @@ window.runOCR=function(mode){
       // ★배선A/B: 증권분석(policy)·연금분석(pension) 맥락이면 전용 API로 (유형판별·보장분석 / 표지있는 연금 제안서)
       if(window._ACTIVE_SKILL==='policy_analysis' || window._ACTIVE_SKILL==='pension_analysis'){
         var _isPen=window._ACTIVE_SKILL==='pension_analysis';
+        // ★작업2: PDF·엑셀·문서 등 비이미지가 하나라도 섞이면 만능 처리기(/api/coverage/analyze)로 폴백.
+        //   policy/pension은 images=Claude Vision 전용 → PDF를 image 블록으로 보내면 400. coverage엔 형식분기 있음(main_server.js 853~).
+        var _allImg=imgs.every(function(x){ return /^image\//i.test(x.mime||''); });
+        if(!_allImg){
+          var _f=imgs[0];
+          fetch('/api/coverage/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dataUrl:'data:'+_f.mime+';base64,'+_f.data, mime:_f.mime, name:(fs[0]&&fs[0].name)||'upload'})})
+           .then(function(r){return r.json();}).then(function(d){ w.remove();
+             var txt=(d&&(d.report||d.analysis||d.message||d.note))||(d&&d.error)||'(분석 결과 없음)';
+             if(typeof _HIST!=='undefined'){ _HIST.push({role:'user',content:'['+(_isPen?'연금 설계서':'증권')+'(PDF/문서) 업로드: '+names+']'}); _HIST.push({role:'assistant',content:'[분석 결과] '+String(txt).replace(/\s+/g,' ').slice(0,700)}); if(typeof _persistHist==='function')_persistHist(); }
+             window._LASTRESULT={text:txt};
+             pushMsg('gen', renderMd(txt)+_dlBtns());
+           }).catch(function(){ w.remove(); pushMsg('gen','<span style="color:#c0392b">'+(_isPen?'연금 분석':'증권 분석')+' 오류(잠시 후 다시)</span>'); });
+          return;
+        }
         var _url=_isPen?'/api/pension':'/api/policy';
         var _pj=(GENYA_JOBS[CUR_JOB]||{}).label||'';
         var _payload=_isPen?{images:imgs}:{images:imgs,job:_pj};
