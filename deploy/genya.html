@@ -1635,7 +1635,7 @@ function openDownload(){
 }
 function _loadVault(){
   var box=document.getElementById('dlVaultList');
-  fetch('/api/mem/list').then(function(r){return r.json();}).then(function(d){
+  fetch('/api/mem/list',{credentials:'same-origin'}).then(function(r){return r.json();}).then(function(d){
     if(!box)return; window._VAULT=(d&&d.list)||[];
     if(!d||!d.ok){ box.innerHTML='<div style="padding:22px;text-align:center;color:#98a4b2">로그인 후 이용할 수 있어요</div>'; return; }
     if(!window._VAULT.length){ box.innerHTML='<div style="padding:22px;text-align:center;color:#98a4b2">아직 만든 문서가 없어요.<br>증권분석·상품비교를 하면 여기 쌓여요.</div>'; return; }
@@ -1654,7 +1654,7 @@ function _vaultOpen(id){
 }
 function _vaultDelete(id){
   if(!confirm('이 문서를 자료함에서 삭제할까요?'))return;
-  fetch('/api/mem/delete?id='+encodeURIComponent(id)).then(function(r){return r.json();}).then(function(d){
+  fetch('/api/mem/delete?id='+encodeURIComponent(id),{credentials:'same-origin'}).then(function(r){return r.json();}).then(function(d){
     if(d&&d.ok&&d.deleted){ toast('삭제했어요'); _loadVault(); } else { toast((d&&d.error)||'삭제 실패'); }
   }).catch(function(){ toast('삭제 오류'); });
 }
@@ -2079,7 +2079,7 @@ window.runOCR=function(mode){
              if(typeof _HIST!=='undefined'){ _HIST.push({role:'user',content:'['+(_isPen?'연금 설계서':'증권')+'(PDF/문서) 업로드: '+names+']'}); _HIST.push({role:'assistant',content:'[분석 결과] '+String(txt).replace(/\s+/g,' ').slice(0,700)}); if(typeof _persistHist==='function')_persistHist(); }
              window._LASTRESULT={text:txt};
              // ★2026-07-18 버그수정(방법1): PDF(coverage 폴백)는 서버 _memSaveDesign을 안 타므로, 결과를 여기서 다운로드함(genya_mem)에 저장. 서버 SA=Datastore User 권한 부여됨.
-             if(d&&d.ok&&txt&&txt.indexOf('분석 결과 없음')<0){ var _sum=String(txt).replace(/[#*|>_`]/g,' ').replace(/\s+/g,' ').trim().slice(0,120); fetch('/api/mem/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({skill:(_isPen?'연금':'증권분석'),고객명:'',summary:_sum,담보금액:''})}).catch(function(){}); }
+             if(d&&d.ok&&txt&&txt.indexOf('분석 결과 없음')<0){ var _sum=String(txt).replace(/[#*|>_`]/g,' ').replace(/\s+/g,' ').trim().slice(0,120); fetch('/api/mem/save',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({skill:(_isPen?'연금':'증권분석'),고객명:'',summary:_sum,담보금액:''})}).catch(function(){}); }
              pushMsg('gen', renderMd(txt)+_dlBtns());
            }).catch(function(){ w.remove(); pushMsg('gen','<span style="color:#c0392b">'+(_isPen?'연금 분석':'증권 분석')+' 오류(잠시 후 다시)</span>'); });
           return;

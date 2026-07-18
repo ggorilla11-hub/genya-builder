@@ -145,7 +145,13 @@ app.use((req, res, next) => {
       const m = /(?:^|;\s*)genya_rt=([^;]+)/.exec(req.headers.cookie || '');
       if (m) {
         const p = JSON.parse(_dec(decodeURIComponent(m[1])) || '{}');
-        if (p && p.rt) sessions.set(sid, { email: p.email || '', name: '', tokens: { refresh_token: p.rt }, scope: p.scope || '', provider: 'google', restored: true });
+        // ★다운로드함 버그 수정: rt 없어도 email 있으면 세션 복원(email 기반 기능=mem·프로필 유지).
+        //   rt 있으면 구글토큰까지 복원(캘린더·시트 등), 없으면 email만(memberAuth는 tokens 없으면 null → 데이터기능은 정직히 구글연결 요구).
+        if (p && (p.email || p.rt)) {
+          const _sess = { email: p.email || '', name: '', scope: p.scope || '', provider: 'google', restored: true };
+          if (p.rt) _sess.tokens = { refresh_token: p.rt };
+          sessions.set(sid, _sess);
+        }
       }
     }
   } catch (e) {}
@@ -1060,10 +1066,14 @@ app.get('/auth/google/callback', async (req, res) => {
     const _sec = process.env.RENDER ? '; Secure' : '';
     const cookies = [`genya_sid=${s}; HttpOnly; Path=/; SameSite=Lax${_sec}`];
     // ★refresh_token(+scope,email)을 암호화해 사용자 쿠키에. 서버 저장 0·재시작 생존.
-    //   refresh_token 있을 때만 갱신(로그인만 하면 없을 수 있음 → 기존 genya_rt 유지).
-    if (tok.refresh_token) {
+    //   ★다운로드함 버그 수정: 예전엔 refresh_token 있을 때만 genya_rt 저장 → 재로그인(구글이 rt 안 줌)은 미저장 →
+    //     재배포로 sessions Map 비면 복원 불가 → mem "로그인 필요". 이제 email 있으면 항상 저장(rt는 있으면 함께).
+    //     mem은 구글토큰 불필요·email(uid)만 필요하므로, email만 복원돼도 다운로드함이 산다.
+    if (ui.data.email) {
       try {
-        const enc = _enc(JSON.stringify({ rt: tok.refresh_token, scope, email: (ui.data.email || '').toLowerCase() }));
+        const _payload = { email: (ui.data.email || '').toLowerCase(), scope };
+        if (tok.refresh_token) _payload.rt = tok.refresh_token;
+        const enc = _enc(JSON.stringify(_payload));
         if (enc) cookies.push(`genya_rt=${encodeURIComponent(enc)}; HttpOnly; Path=/; SameSite=Lax; Max-Age=31536000${_sec}`);
       } catch (e) {}
     }
