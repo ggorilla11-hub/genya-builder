@@ -803,6 +803,7 @@ const GENYA_JOBS = {
       {icon:"megaphone",axis:"발굴",t:"홍보 콘텐츠 만들 시간이 없어요",s:"꾸준한 발행이 어려워요"},
       {icon:"reminder",axis:"관리",t:"요청해둔 걸 자꾸 놓쳐요",s:"a사만 오고 b·c사는 감감무소식"},
       {icon:"claim",axis:"관리",t:"보상청구 서류가 복잡해요",s:"회사마다 양식이 달라 손이 많이 가요"},
+      {icon:"approval",axis:"관리",t:"발송 전 마지막 점검이 필요해요",s:"승인해야만 나가게 — 실수 발송 방지"},
     ]},
   clinic:{ label:"병의원", nick:"원장님", title:"지니야 · 병의원 전담", sub:"원장님 맞춤",
     tags:["예약관리","리뷰관리","재방문","블로그","상담"], job_full:"병의원 원장",
@@ -1859,6 +1860,53 @@ function claimToApproval(){
   var form=(_claimForm&&_claimForm.name)||'(양식 미첨부)';
   _approvalPush({출처:'보상', 제목:'보상청구서류 — '+form, 미리보기:'증빙 '+_claimProofs.length+'건 정리 완료 · 승인하면 보험사 발송(발송 준비중). '+String(window._claimExtract||'').replace(/\s+/g,' ').slice(0,80)});
   toast('결재함에 올렸어요 — 결재함비서에서 승인하세요'); closeModal();
+}
+
+// ═══ [3] 결재함비서 ═══ 발송·게시·제출·서명 성격 작업이 즉시 실행 안 되고 여기 쌓임 → ★사람(대표)이 승인해야만 외부로(휴먼인루프 구현체). 리마인더·보상·홍보마케팅 출처 통합.
+function openApproval(){
+  showModal(_bizShell('🗂️','결재함비서','발송·제출 전 여기 쌓여요 · ★승인해야만 나갑니다(휴먼인루프)',
+    '<div style="font-size:12px;font-weight:700;color:#0d1b2a;margin-bottom:8px">📥 승인 대기 <span id="apCount" style="color:#8a93a3;font-weight:400"></span></div>'
+    +'<div id="apList"></div>'
+    +'<div style="font-size:11px;font-weight:700;color:#0d1b2a;margin:14px 0 6px">🧾 처리 로그 <span style="color:#8a93a3;font-weight:400">(타임스탬프)</span></div>'
+    +'<div id="apLog"></div>'));
+  apRender();
+}
+function apRender(){
+  var box=document.getElementById('apList'); var logBox=document.getElementById('apLog'); if(!box) return;
+  var q=_bizGet('genya_approvals');
+  var pending=q.filter(function(x){return x.status==='대기';});
+  var done=q.filter(function(x){return x.status!=='대기';});
+  var cnt=document.getElementById('apCount'); if(cnt) cnt.textContent=pending.length?('· '+pending.length+'건'):'';
+  var srcBadge={ '리마인더':'#3B8FD4','보상':'#9B7EDE','홍보마케팅':'#E06B9E','발송':'#2FBF71' };
+  if(!pending.length){ box.innerHTML='<div style="text-align:center;padding:22px;color:#98a4b2;font-size:12.5px">승인 대기 중인 게 없어요.<br>리마인더 마감·보상 서류가 생기면 여기로 올라와요.</div>'; }
+  else box.innerHTML=pending.map(function(a){
+    var col=srcBadge[a.출처]||'#8a93a3';
+    return '<div style="border:1px solid #e2e8ef;border-radius:10px;padding:11px;margin-bottom:8px">'
+      +'<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px"><span style="font-size:10px;font-weight:700;color:#fff;background:'+col+';padding:2px 8px;border-radius:9px">'+_sEsc(a.출처||'기타')+'</span><b style="font-size:12.5px;color:#0d1b2a">'+_sEsc(a.제목||'')+'</b></div>'
+      +'<div style="font-size:11.5px;color:#556;line-height:1.5;margin-bottom:8px">'+_sEsc(String(a.미리보기||'').slice(0,160))+'</div>'
+      +'<div style="display:flex;gap:7px"><button onclick="apApprove(\''+a.id+'\')" style="flex:1;background:var(--teal);color:#fff;border:none;border-radius:7px;padding:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">✅ 승인</button>'
+      +'<button onclick="apReject(\''+a.id+'\')" style="flex:1;background:#fff;color:#c0392b;border:1px solid #f0c8c0;border-radius:7px;padding:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">↩ 반려</button></div></div>';
+  }).join('');
+  if(logBox){
+    if(!done.length){ logBox.innerHTML='<div style="font-size:11.5px;color:#98a4b2;padding:6px">아직 처리 내역이 없어요.</div>'; }
+    else logBox.innerHTML=done.slice(0,20).map(function(a){
+      var ic=a.status==='승인'?'✅':'↩'; var col=a.status==='승인'?'#0f766e':'#c0392b';
+      return '<div style="font-size:11px;color:#556;padding:4px 0;border-bottom:1px solid #f0f3f6"><span style="color:'+col+';font-weight:700">'+ic+' '+_sEsc(a.status)+'</span> · '+_sEsc(a.제목||'')+(a.반려사유?(' <span style="color:#c0392b">('+_sEsc(a.반려사유)+')</span>'):'')+' <span style="color:#b0b8c2">'+_bizTime(a.decidedAt||a.at)+'</span></div>';
+    }).join('');
+  }
+}
+function apApprove(id){
+  var q=_bizGet('genya_approvals');
+  q.forEach(function(a){ if(a.id===id){ a.status='승인'; a.decidedAt=Date.now(); } });
+  _bizSet('genya_approvals', q);
+  // ★승인 시 실행 트리거 자리 — 실제 발송(보험사·카톡·게시)은 각 채널 준비되면 연결. 지금은 트리거만(실발송 0).
+  toast('승인됨 — 발송 실행은 채널 연결 후(지금은 트리거 자리)'); apRender();
+}
+function apReject(id){
+  var reason=(typeof prompt==='function'?prompt('반려 사유(선택):',''):'')||'';
+  var q=_bizGet('genya_approvals');
+  q.forEach(function(a){ if(a.id===id){ a.status='반려'; a.반려사유=reason; a.decidedAt=Date.now(); } });
+  _bizSet('genya_approvals', q); toast('반려됨'); apRender();
 }
 function openPromo(){
   var isRep = (typeof _isRep==='function') && _isRep();
