@@ -572,6 +572,11 @@
       </div>
     </div>
 
+    <!-- ★[1-3] 고객명단 없을 때: 빈 화면 대신 다음 행동 유도(명단 올리면 만기관리 시작). window._MGMTFILE 있으면 자동 숨김 -->
+    <div id="rosterHint" style="display:none;margin:0 18px 12px;padding:11px 14px;border-radius:11px;background:linear-gradient(135deg,#fff7e6,#fffdf7);border:1px solid #f0e0b8;font-size:12.5px;color:#8a6d1a;line-height:1.55;cursor:pointer" onclick="openPop('due')">
+      📋 <b>고객명단을 올리면 만기 관리가 시작됩니다.</b> 엑셀·CSV를 올리면 이번달 만기·생일 고객을 지니야가 자동으로 찾아 챙겨드려요. <span style="text-decoration:underline;white-space:nowrap">지금 올리기 →</span>
+    </div>
+
     <div class="cols">
       <!-- 좌: 비서 + 직업별 문제카드 -->
       <div class="col col-l">
@@ -1189,11 +1194,12 @@ function prospectLoadFind(){
   //   자기 서버 /api/find/leads = 오상열 제외한 남의 유튜브 검색(교육생 공용·격리).
   fetch('/api/find/leads').then(function(r){ if(!r.ok) throw 0; return r.json(); })
    .then(function(d){
-     if(d&&d.needsKey){ box.innerHTML='<div style="text-align:center;padding:26px 16px"><div style="font-size:30px">🔑</div><div style="font-size:13px;font-weight:700;color:#556;margin-top:8px">발굴 준비 중</div><div style="font-size:11.5px;color:#8a93a3;margin-top:6px">곧 켜집니다.</div></div>'; return; }
+     if(d&&d.needsKey){ box.innerHTML='<div style="text-align:center;padding:26px 16px"><div style="font-size:30px">🔑</div><div style="font-size:13px;font-weight:700;color:#556;margin-top:8px">발굴 준비 중</div><div style="font-size:11.5px;color:#8a93a3;margin-top:6px">곧 켜집니다.</div></div>'; _setKpi('kpiFind','연결 필요'); return; }
      var yt=(d.youtube||[]).map(function(l){ return {icon:'📺', name:l.author, sub:l.videoTitle, text:l.text, link:l.link, tier:l.tier, source:'유튜브'}; });
      var nv=(d.naver||[]).map(function(l){ return {icon:'🟢', name:(l.author||l.keyword), sub:l.source, text:l.text, link:l.link, tier:l.tier, source:(l.source||'네이버')}; });
-     if(!yt.length && !nv.length){ box.innerHTML=_findEmpty(); return; }   // ② 빈
+     if(!yt.length && !nv.length){ box.innerHTML=_findEmpty(); _setKpi('kpiFind','0명'); return; }   // ② 빈
      window._FIND=yt.concat(nv);                                    // ★전역 인덱스(답글초안 대상)
+     _setKpi('kpiFind', window._FIND.length+'명');                  // ★발굴 즉시 상단 KPI 실개수 반영
      var h=_findSection('📺 유튜브', yt, 0);
      h+=_findSection('🟢 네이버 카페·지식인', nv, yt.length);
      h+='<div style="font-size:12px;font-weight:800;color:#0d1b2a;margin:12px 0 8px">🟡 크몽</div><div style="border:1px dashed #dbe2ea;border-radius:10px;padding:14px;text-align:center;color:#8a93a3;font-size:12px">준비 중 — 곧 연결됩니다</div>';
@@ -1438,13 +1444,25 @@ function loadSchedKpi(){
     })
     .catch(function(){ _setKpi('kpiSched','0건'); });
 }
+// ★발굴 KPI — 실데이터. 발굴은 [🔍 지금 발굴]을 누를 때 실시간 검색(무거움)하고, 그 결과 개수를 그 즉시 kpiFind에 반영한다(prospectLoadFind).
+//   대시보드 로드마다 자동 실검색은 안 한다(유튜브 API 쿼터·최대 30초 지연). 이번 세션에 발굴한 리드가 있으면 그 실개수, 없으면 '0명'(정직: 아직 발굴 안 함).
+function loadFindKpi(){
+  var n = (window._FIND && window._FIND.length) ? window._FIND.length : 0;
+  _setKpi('kpiFind', n+'명');
+}
 
 // ===== 📨 오늘 발송 현황(카톡) — 서버(jenya)에서 폴링, 재발송=검증된 genyasend: 링크 재사용 =====
 //   ★로컬 watcher(대표님 PC)가 발송할 때마다 서버로 요약을 올림 → 여기서 GET으로 읽어 표시.
 //   ★재발송 = 실패자 옆 [🔄 다시 발송](genyasend: 링크) → 로컬 프로토콜이 그 사람에게 문구·이름 그대로 재발송.
 var _SEND = { success:[], fail:[], daily:0, dailyMax:300 };
 function _sEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
-function _renderSendKpi(){ var ns=((_SEND&&_SEND.success)||[]).length, nf=((_SEND&&_SEND.fail)||[]).length; _setKpi('kpiSend','✅'+ns+' · ❌'+nf); }
+function _renderSendKpi(){
+  var ns=((_SEND&&_SEND.success)||[]).length, nf=((_SEND&&_SEND.fail)||[]).length;
+  // ★"연결 안 됨"과 "0건" 구분: 교육생 화면엔 발송 배관(대표님 PC watcher)이 아직 없다 → 발송 이력이 0이면 가짜 '✅0·❌0' 대신 '대기'(정직).
+  //   실제 발송 이력(watcher가 올린 성공/실패)이 들어오면 그 수를 표시.
+  if(ns===0 && nf===0){ _setKpi('kpiSend','대기'); return; }
+  _setKpi('kpiSend','✅'+ns+' · ❌'+nf);
+}
 // ★2026-07-16: 교육생 화면이 제니야(대표님 서버)를 7초마다 폴링하던 격리 위반 제거.
 //   발송 소스가 아직 없으니 0 정직 표시(가짜 숫자 금지). 교육생 발송 붙으면 자기 서버로 연결.
 function _fetchSend(){ _renderSendKpi(); return Promise.resolve(); }
@@ -1874,6 +1892,9 @@ function refreshConnState(){
 // ★상단 KPI 실데이터 계산 (하드코딩 제거·가짜 숫자 금지). 만기=업로드 명단 실값, 약속·발굴=소스 없으면 0 정직표시.
 function _setKpi(id,txt){ var el=document.getElementById(id); if(el) el.textContent=txt; }
 function refreshTopKPIs(dash){
+  // ★[1-3] 고객명단 유무로 안내 배너 토글: 명단 없으면 "올리면 만기관리 시작" 안내(빈 화면 대신 다음 행동 유도).
+  var _hasRoster = !!(window._MGMTFILE && window._MGMTFILE.file) || !!dash;
+  var _rh=document.getElementById('rosterHint'); if(_rh) _rh.style.display = _hasRoster ? 'none' : 'block';
   function applyDue(d){ var due=0; try{ var m=((d&&d.metrics)||[]).filter(function(x){return x.key==='maturity';})[0]; if(m&&!m.locked) due=m.count||0; }catch(e){} _setKpi('kpiDue', due+'건'); }
   if(dash){ window._DASH=dash; applyDue(dash); }
   else if(window._MGMTFILE&&window._MGMTFILE.file){
@@ -1883,7 +1904,7 @@ function refreshTopKPIs(dash){
   } else { _setKpi('kpiDue','0건'); }
   // 오늘 약속 = 구글캘린더 실데이터(server.js /calendar/today). 어젯밤 발굴은 아직 0 정직표시.
   loadSchedKpi();   // ★하드코딩 제거 → 실제 오늘 일정 개수로 갱신
-  _setKpi('kpiFind','0명');
+  loadFindKpi();    // ★하드코딩 제거 → 이번 세션 발굴 리드 실개수(자동 실검색 안 함: 유튜브 쿼터·30초 지연 방지)
   // 오늘 발송: 서버(jenya) 폴링 실데이터. 발송할 때마다 자동 갱신(7초 주기).
   _renderSendKpi();   // ★제니야 폴링 제거 — 0 정직 표시(소스 없음)
 }
