@@ -734,6 +734,7 @@ const GENYA_JOBS = {
          {ic:"file-check",st:"생성",sd:"노후공백·수령 시뮬·성향추천까지 고객용 제안서"}],
          stack:"Claude Vision/문서 + 금융집짓기 연금관점 + 스킬창고(HTML/PDF)",
          moat:"코치 연금 완성본 포맷 = 못 흉내내는 제안 품질"}},
+      {icon:"megaphone",axis:"발굴",t:"홍보 콘텐츠 만들 시간이 없어요",s:"꾸준한 발행이 어려워요"},
     ]},
   clinic:{ label:"병의원", nick:"원장님", title:"지니야 · 병의원 전담", sub:"원장님 맞춤",
     tags:["예약관리","리뷰관리","재방문","블로그","상담"], job_full:"병의원 원장",
@@ -883,6 +884,7 @@ const ICON = {
   'file-check':'<path d="M6 3h9l4 4v14H6z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M9 14l2 2 4-4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>',
   'calendar-due':'<rect x="4" y="5" width="16" height="16" rx="2.5" stroke="currentColor" stroke-width="1.7"/><path d="M8 3v4M16 3v4M4 10h16" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>',
   bell:'<path d="M6 10a6 6 0 0112 0c0 5 2 6 2 6H4s2-1 2-6z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M10 20a2 2 0 004 0" stroke="currentColor" stroke-width="1.7"/>',
+  megaphone:'<path d="M4 10v4h3l8 4V6l-8 4H4z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M18 9.5a2.8 2.8 0 010 5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>',
   send:'<path d="M5 12l14-7-5 14-3-5-6-2z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>',
   help:'<circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><path d="M9.5 9.5a2.5 2.5 0 013.5 2c0 1.5-1.5 1.8-1.5 3M12 17h.01" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>',
   quote:'<path d="M7 7h4v4c0 2-1 3-3 4M13 7h4v4c0 2-1 3-3 4" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>',
@@ -1319,7 +1321,7 @@ function _genyaSilentSave(nm, msg){
 // ===== 2차 시나리오 팝업 (기술 엮기 = 해자) =====
 function openScenario(jobKey, idx){
   const j = GENYA_JOBS[jobKey] || GENYA_JOBS.insurance;
-  const p = j.pains[idx]; if(p&&p.icon==='radar'){ discoveryPanel(); return; } const s = p.sc; // ★2026-07-18 원칙(대표=교육생 모든 기능+전용 추가): !_isRep 제거 → 대표님도 동일 발굴모달. 대표 전용은 얹기만(미구현·자리)
+  const p = j.pains[idx]; if(p&&p.icon==='radar'){ discoveryPanel(); return; } if(p&&p.icon==='megaphone'){ openPromo(); return; } const s = p.sc; // ★2026-07-18 원칙(대표=교육생 모든 기능+전용 추가): !_isRep 제거 → 대표님도 동일 발굴모달. 대표 전용은 얹기만(미구현·자리)
   const steps = s.steps.map(st=>
     '<div class="sc-step"><div class="sn">'+ic(st.ic)+'</div><div class="sx"><div class="st">'+st.st+'</div><div class="sd">'+st.sd+'</div></div></div>'
   ).join('');
@@ -1515,10 +1517,10 @@ function toast(msg){
 function closeModal(){ document.getElementById('modalBack').classList.remove('on'); }
 function showModal(html){ document.getElementById('modalBox').innerHTML=html; document.getElementById('modalBack').classList.add('on'); }
 
-// 📣 홍보비서 — 한줄카피 넣으면 클로드가 쇼츠 원고를 만든다(발행창고 1단계).
+// 📣 홍보마케팅비서 — 한줄카피 넣으면 지니야가 쇼츠 원고를 만든다(발행창고 1단계). ★대원칙②: 명칭 "홍보마케팅비서"로 통일.
 function openPromo(){
   showModal('<div style="padding:20px;max-width:520px">'
-    +'<h3 style="margin:0 0 4px;font-size:17px">📣 홍보비서</h3>'
+    +'<h3 style="margin:0 0 4px;font-size:17px">📣 홍보마케팅비서</h3>'
     +'<p style="color:#6b7a8d;font-size:13px;margin:0 0 14px">홍보하고 싶은 <b>한 줄</b>을 넣으면, 30초 쇼츠 대본을 만들어 드려요.</p>'
     +'<textarea id="promoIn" rows="2" placeholder="예: 국민연금만으론 노후 30년이 부족합니다" style="width:100%;border:1px solid #d8dee6;border-radius:10px;padding:11px;font-size:14px;font-family:inherit;resize:vertical"></textarea>'
     +'<button onclick="runPromo()" id="promoBtn" style="margin-top:10px;background:#1DB088;color:#fff;border:none;border-radius:10px;padding:11px 18px;font-size:14px;font-weight:700;cursor:pointer;width:100%">원고 만들기</button>'
@@ -1561,6 +1563,7 @@ function _secName(p){
     'file-search':'증권분석비서','pension':'연금분석제안비서','scan':'자료분석비서','camera':'자료분석비서',
     'files':'상품비교추천비서','diff':'상품비교추천비서',
     'calendar-due':'고객관리비서','bell':'고객관리비서',
+    'megaphone':'홍보마케팅비서',
     'book':'약관해석비서','help':'약관해석비서','quote':'약관해석비서',
     'chart':'시세분석비서','search':'조사비서','file-text':'자료정리비서','pencil':'콘텐츠비서','message':'콘텐츠비서','image':'콘텐츠비서' };
   return (p&&p.sec) || byIcon[(p&&p.icon)] || (((p&&p.axis)||'맞춤')+'비서');  // ★sec 있으면 직업맞춤 비서명 우선(없으면 기존 아이콘매핑)
