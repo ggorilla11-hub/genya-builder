@@ -798,7 +798,7 @@ app.get('/api/profile', async (req, res) => {
 app.get('/api/profile/save', async (req, res) => {
   try { const ma = gateGoogle(req, res); if (!ma) return; const { id, sheets } = await findOrCreateMemberSheet(ma);
     await ensureTab(sheets, id, PROFILE_TAB);
-    const rows = [['직업', String(req.query.job || '')], ['하는일', String(req.query.work || '')], ['주고객', String(req.query.clients || '')], ['반복업무', String(req.query.pain || '')], ['맡길기능', String(req.query.tasks || '')], ['철칙', String(req.query.rule || '')], ['설문방식', String(req.query.mode || '')], ['생성일', new Date().toISOString().slice(0, 10)]];
+    const rows = [['직업', String(req.query.job || '')], ['이름', String(req.query.nick || '')], ['하는일', String(req.query.work || '')], ['주고객', String(req.query.clients || '')], ['반복업무', String(req.query.pain || '')], ['맡길기능', String(req.query.tasks || '')], ['철칙', String(req.query.rule || '')], ['설문방식', String(req.query.mode || '')], ['생성일', new Date().toISOString().slice(0, 10)]];
     await sheets.spreadsheets.values.update({ spreadsheetId: id, range: `${PROFILE_TAB}!A1`, valueInputOption: 'RAW', requestBody: { values: rows } });
     res.json({ ok: true, saved: true, sheetUrl: `https://docs.google.com/spreadsheets/d/${id}/edit` });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }

@@ -986,6 +986,10 @@ function onbUploadFile(inp){
      .then(function(r){return r.json();}).then(function(d){
        var txt=(d&&d.analysis)||''; var msg=(d&&d.message)||(d&&d.error)||'';
        window.ONBOARD.uploadText = txt || '';
+       // ★[3-2] 온보딩에서 올린 게 명단(엑셀/CSV)이면 고객관리비서(_MGMTFILE)에도 연결 → 메인에서 재업로드 없이 만기·초안 바로. (다운로드함=결과물 전용이라 제외)
+       try{ var _nm=String(f.name||'').toLowerCase();
+         if(/\.(xlsx|xls|csv)$/.test(_nm)){ var _b64=String(rd.result||'').split(',')[1]||''; if(_b64){ window._MGMTFILE={file:_b64, mime:(f.type||'')}; } }
+       }catch(e){}
        if(txt) _obStructure(txt); // ★"다음" 누르기 전에 미리 구조화 → 즉시 반영
        if(st){ st.innerHTML = txt
          ? '✅ 분석 완료 — [다음]을 누르면 확인 화면에 반영돼요.<div style="margin-top:6px;color:#556;">'+_escOb(txt.slice(0,200))+'…</div>'
@@ -1817,7 +1821,16 @@ go = function(n){
   if(!_AUTHED && String(n) !== '0'){ _goReal(0); return; }
   _goReal(n);
   if(String(n)==='5'){ try{localStorage.setItem('genya_onboarded','1');localStorage.setItem('genya_job',CUR_JOB);localStorage.setItem('genya_nick',CUR_NICK);}catch(e){}
-    try{ var lb=(GENYA_JOBS[CUR_JOB]||{}).label||CUR_JOB; fetch('/api/profile/save?'+'job='+encodeURIComponent(lb)+'&nick='+encodeURIComponent(CUR_NICK)).catch(function(){}); }catch(e){}
+    // ★[3-1] 프로필 저장 완전화: 온보딩 완료(ONBOARD.profile 있음) 시에만 서버 저장(설문 상세+이름).
+    //   재방문(profile null)엔 호출 안 함 — 서버가 A1부터 8필드 전체를 덮어쓰므로, 빈 값 저장 시 기존 상세가 날아가는 것 방지.
+    try{ var _ob=window.ONBOARD&&window.ONBOARD.profile;
+      if(_ob){ var lb=(GENYA_JOBS[CUR_JOB]||{}).label||CUR_JOB;
+        var q='job='+encodeURIComponent(lb)+'&nick='+encodeURIComponent(CUR_NICK)
+          +'&pain='+encodeURIComponent(_ob.pain||'')+'&tasks='+encodeURIComponent(_ob.tasks||'')
+          +'&mode='+encodeURIComponent((window.ONBOARD&&window.ONBOARD.method)||'');
+        fetch('/api/profile/save?'+q).catch(function(){});
+      }
+    }catch(e){}
   }
 };
 // ★작업A: 구글 연결(OAuth 전체 리다이렉트) 시 대화·상태 보존 → 복귀 후 복원(데이터 안 날아가게)
