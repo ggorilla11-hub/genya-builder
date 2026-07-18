@@ -640,7 +640,7 @@
     <div class="topbar">
       <div class="brand"><div class="mk"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3l7 4v6c0 4-3 6.5-7 8-4-1.5-7-4-7-8V7l7-4z" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/><circle cx="12" cy="11" r="2.4" fill="#fff"/></svg></div><div class="nm"><b>지니야</b><span><span class="nick-slot"></span>님의 AI 비서실장</span></div></div>
       <div class="top-dash">
-        <div class="kpi f" onclick="openPop('find')"><div class="ic"><svg viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8"/><path d="M20 20l-3.5-3.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></div><div class="tx"><b id="kpiFind">0명</b><span>어젯밤 발굴</span></div></div>
+        <div class="kpi f" onclick="openPop('find')"><div class="ic"><svg viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8"/><path d="M20 20l-3.5-3.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></div><div class="tx"><b id="kpiFind">발굴 전</b><span>어젯밤 발굴</span></div></div>
         <div class="kpi s" onclick="openPop('sched')"><div class="ic"><svg viewBox="0 0 24 24" fill="none"><rect x="4" y="5" width="16" height="16" rx="2.5" stroke="currentColor" stroke-width="1.8"/><path d="M8 3v4M16 3v4M4 10h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></div><div class="tx"><b id="kpiSched">0건</b><span>오늘 약속</span></div></div>
         <div class="kpi u" onclick="openPop('due')"><div class="ic"><svg viewBox="0 0 24 24" fill="none"><path d="M12 8v5l3 2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="12" r="8.5" stroke="currentColor" stroke-width="1.8"/></svg></div><div class="tx"><b id="kpiDue">0건</b><span>이번달 만기</span></div></div>
         <div class="kpi k" onclick="openPop('send')"><div class="ic"><svg viewBox="0 0 24 24" fill="none"><path d="M4 6h16v12H4z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M4 7l8 6 8-6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div><div class="tx"><b id="kpiSend">✅0 · ❌0</b><span>오늘 발송</span></div></div>
@@ -1288,8 +1288,9 @@ function prospectLoadFind(){
      if(d&&d.needsKey){ box.innerHTML='<div style="text-align:center;padding:26px 16px"><div style="font-size:30px">🔑</div><div style="font-size:13px;font-weight:700;color:#556;margin-top:8px">발굴 준비 중</div><div style="font-size:11.5px;color:#8a93a3;margin-top:6px">곧 켜집니다.</div></div>'; _setKpi('kpiFind','연결 필요'); return; }
      var yt=(d.youtube||[]).map(function(l){ return {icon:'📺', name:l.author, sub:l.videoTitle, text:l.text, link:l.link, tier:l.tier, source:'유튜브'}; });
      var nv=(d.naver||[]).map(function(l){ return {icon:'🟢', name:(l.author||l.keyword), sub:l.source, text:l.text, link:l.link, tier:l.tier, source:(l.source||'네이버')}; });
-     if(!yt.length && !nv.length){ box.innerHTML=_findEmpty(); _setKpi('kpiFind','0명'); return; }   // ② 빈
+     if(!yt.length && !nv.length){ window._FIND=[]; _saveFindLast(0); box.innerHTML=_findEmpty(); _setKpi('kpiFind','0명'); return; }   // ② 빈(발굴은 실행함 → '0명', 기억)
      window._FIND=yt.concat(nv);                                    // ★전역 인덱스(답글초안 대상)
+     _saveFindLast(window._FIND.length);                            // ★[B] 마지막 발굴결과 기억(재방문 시 '발굴 전' 대신 실개수)
      _setKpi('kpiFind', window._FIND.length+'명');                  // ★발굴 즉시 상단 KPI 실개수 반영
      var h=_findSection('📺 유튜브', yt, 0);
      h+=_findSection('🟢 네이버 카페·지식인', nv, yt.length);
@@ -1537,9 +1538,16 @@ function loadSchedKpi(){
 }
 // ★발굴 KPI — 실데이터. 발굴은 [🔍 지금 발굴]을 누를 때 실시간 검색(무거움)하고, 그 결과 개수를 그 즉시 kpiFind에 반영한다(prospectLoadFind).
 //   대시보드 로드마다 자동 실검색은 안 한다(유튜브 API 쿼터·최대 30초 지연). 이번 세션에 발굴한 리드가 있으면 그 실개수, 없으면 '0명'(정직: 아직 발굴 안 함).
+// ★[B] 발굴 KPI — "발굴 전"(한 번도 안 함)과 "0명"(발굴했는데 0) 구분. 마지막 발굴결과는 localStorage에 기억(자동 실검색 안 함: 유튜브 쿼터).
+function _findKey(){ try{ return 'genya_findlast_'+((window._ME&&window._ME.email)||'anon'); }catch(e){ return 'genya_findlast_anon'; } }
+function _saveFindLast(n){ try{ localStorage.setItem(_findKey(), JSON.stringify({n:n, t:Date.now()})); }catch(e){} }
 function loadFindKpi(){
-  var n = (window._FIND && window._FIND.length) ? window._FIND.length : 0;
-  _setKpi('kpiFind', n+'명');
+  // ① 이번 세션에 발굴을 실행함 → 실개수(0이면 정직하게 '0명')
+  if(window._FIND && typeof window._FIND.length==='number'){ _setKpi('kpiFind', window._FIND.length+'명'); return; }
+  // ② 이번 세션엔 안 했지만 지난 발굴 기억이 있으면 그 개수 표시
+  try{ var raw=localStorage.getItem(_findKey()); if(raw){ var st=JSON.parse(raw); if(st&&typeof st.n==='number'){ _setKpi('kpiFind', st.n+'명'); return; } } }catch(e){}
+  // ③ 한 번도 발굴 안 함 → '발굴 전'(클릭 유도). 가짜 0명 금지.
+  _setKpi('kpiFind','발굴 전');
 }
 
 // ===== 📨 오늘 발송 현황(카톡) — 서버(jenya)에서 폴링, 재발송=검증된 genyasend: 링크 재사용 =====
