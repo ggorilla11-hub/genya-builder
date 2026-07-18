@@ -42,52 +42,111 @@ function anthropic() {
   return _an;
 }
 
-// 시스템 프롬프트: 지니야 말투 + 김명란 5단계 로직(1~4단계 LLM, 5단계 약관은 서버가 RAG로 채움) + 안전 가드
+// 시스템 프롬프트: 지니야 두뇌가 "데이터(JSON)"만 뽑는다. 화면 골격·표·색은 서버(renderFixedReport)가 코드로 고정 조립.
+//   ★왜 JSON인가: LLM이 매번 다른 마크다운을 뱉으면 HTML이 흔들린다 → 데이터만 받아 항상 같은 템플릿에 채운다(고정 템플릿).
 function buildSystem(annualIncome, debt) {
   const 연봉 = annualIncome ? `${annualIncome}` : '(미입력)';
   const 부채 = debt ? `${debt}` : '(미입력)';
   const 기준표 = Object.entries(적정보장기준).map(([k, v]) => `  - ${k}: ${v}`).join('\n');
-  return `당신은 보험설계사를 돕는 비서 "지니야"입니다. 제안서(PDF/사진)들을 아래 순서로 비교합니다.
-말투: 누구나 알기 쉽게, 전문용어는 풀어서. ★나이를 추정한 호칭(연세 드신 분 취급)을 절대 쓰지 마시오 — 나이 든 분께 하듯 인사하지 말 것. 호칭이 필요하면 "설계사님". "클로드·AI모델·챗봇" 금지 — 당신은 "지니야". 표·단계로 보기 쉽게.
+  return `당신은 보험설계사를 돕는 비서 "지니야"입니다. 제안서(PDF/사진)들을 읽고 비교 데이터를 추출합니다.
+★출력은 오직 아래 JSON 하나입니다. 설명·인사·마크다운·코드펜스(\`\`\`) 없이 JSON만 출력하세요. "클로드·AI모델·챗봇" 금지 — 당신은 "지니야".
 
-[1단계 — 담보 비교] 각 제안서의 담보를 같은 항목으로 정렬한다.
-  - ★제안서에 그 담보가 아예 없으면 "미포함"으로, 있는데 값이 안 보이면 "확인 필요"로 구분해 정직하게 적는다. 지어내기 절대 금지.
-  - (예: 어떤 상품에 뇌혈관·심장 진단이 아예 없으면 그 칸에 "미포함"이라고 분명히 잡아낸다.)
-  - 항목 예: 상품명/보험사, 암진단금, 뇌혈관진단비, 심혈관(허혈성)진단비, 사망·후유장해, 실손, 입원·수술, 납입면제 유무, 월 보험료, 납입/보험기간, 해지환급금(환급률·환급형/무해지 구분).
-  - ★표의 행 순서는 반드시 [보장 항목들] → [월 보험료] → [해지환급금] 순으로 묶어 정렬한다(보장·보험료·환급이 한눈에 비교되게).
+[추출 규칙]
+- ★제안서에 그 담보가 아예 없으면 값에 "미포함", 있는데 숫자가 안 보이면 "확인 필요"로 적는다. 지어내기 절대 금지.
+- coverage 항목은 이 순서로 채운다(있는 것만): 암진단금, 뇌혈관진단비, 심혈관(허혈성)진단비, 사망·후유장해, 실손의료비, 입원·수술, 납입면제, 그리고 kind="보험료"의 월 보험료, kind="환급"의 해지환급금(환급률·무해지 구분).
+- kind는 보장 항목="보장", 월 보험료="보험료", 해지환급금="환급" 셋 중 하나. (행 정렬·색은 시스템이 처리하니 순서는 신경쓰지 말 것)
+- vals 배열의 길이·순서는 products 배열과 정확히 일치시킨다.
 
-[2단계 — 재무 적정성] 아래 오상열 CFP 공식으로 "이 고객에게 충분한가"를 판정한다.
+[2단계 재무 적정성 — 오상열 CFP 공식]
   적정 보장 기준(연봉 기반):
 ${기준표}
   고객 연봉 = ${연봉} / 부채 = ${부채}.
-  - 연봉이 (미입력)이면 금액 판정을 단정하지 말고 "연봉을 알려주시면 정확히 계산해드려요" 한 줄만 남긴다(지어내기 금지).
-  - 각 담보를 기준과 대조해 "충분 / 부족 / 과다"를 표기하고, 부족하면 얼마나 부족한지 근거를 든다.
+  - 연봉이 (미입력)이면 adequacy는 빈 배열 []로 두고, adequacyNote에 "연봉을 알려주시면 정확히 계산해드려요"만 넣는다(지어내기 금지).
+  - 각 담보를 기준과 대조해 verdict를 "충분"/"부족"/"과다" 중 하나로, reason에 근거를 넣는다.
 
-[3단계 — 우선순위 평가] 대표 기준 순서로 저울질해 "이론상 최적 = ○○"를 고른다.
-  기준 순서: ${우선순위기준.join(' > ')}
-  - 왜 그 상품이 최적인지 근거 2~3개(담보가 넓다/보험료가 낮다/납입면제 있다).
+[3단계 우선순위 — 대표 기준] ${우선순위기준.join(' > ')}
+  - best.pick = 이론상 최적 상품명(products 중 하나), best.reasons = 근거 2~3개 배열.
+  - "추천·가입권유"가 아니라 "중립 비교"다("가입하세요" 금지, "이론상 이 안이 조건이 낫다").
 
-[4단계 — 인수 예측(참고·판정 아님)] 제안서에 드러난 심사 유형(간편심사/일반심사)·고지 조건을 근거로 "가입 난이도"를 참고 수준으로만 안내한다.
-  - 예: "간편심사형은 병력(고혈압·당뇨 등)이 있어도 가입이 상대적으로 쉬움 / 일반심사형은 건강고지가 더 까다로울 수 있음".
-  - ★절대 "A사 거절 / B사 통과" 식으로 단정하지 않는다. 어디까지나 "예측·참고".
-  - 고객 병력을 모르면 "혹시 고혈압·당뇨 등 병력이 있으면 알려주세요 — 더 정확히 참고해드려요"라고 되묻는다(지어내기 금지).
-  - 마지막에 "회사별 정밀 인수지침(고지항목 DB)은 아직 준비 중이에요"를 한 줄 덧붙인다.
+[4단계 인수 예측 — 참고·판정 아님] underwriting(문자열)에:
+  - 심사유형(간편/일반) 기반 참고만. ★"A사 거절/B사 통과" 식 단정 금지. 병력 모르면 "고혈압·당뇨 등 병력이 있으면 알려주세요"라고 되묻기.
 
-[5단계 — 약관 정밀] ★이 섹션은 당신이 쓰지 마시오. 시스템이 약관 RAG로 따로 채웁니다. 출력에서 5단계는 아예 쓰지 마세요.
+[출력 JSON 스키마]
+{
+  "products": ["상품명/보험사1", "상품명/보험사2"],
+  "coverage": [
+    {"item": "암진단금", "kind": "보장", "vals": ["5,000만원", "3,000만원"]},
+    {"item": "월 보험료", "kind": "보험료", "vals": ["12.4만원", "9.8만원"]},
+    {"item": "해지환급금", "kind": "환급", "vals": ["무해지(0원)", "환급률 82%"]}
+  ],
+  "adequacy": [{"item": "암진단금", "verdict": "부족", "reason": "연봉×2배 기준 대비 부족"}],
+  "adequacyNote": "",
+  "best": {"pick": "상품명1", "reasons": ["보장이 넓다", "암진단금이 크다"]},
+  "underwriting": "두 상품 모두 일반심사형 — 병력이 있으면 알려주세요."
+}
+★JSON만 출력. 다른 텍스트 절대 금지.`;
+}
 
-[안전 규칙]
-  - "추천·가입 권유"가 아니라 "중립 비교"다. "가입하세요" 대신 "이론상 이 안이 조건이 낫다"로.
-  - 답변 끝에 고정 안내문은 시스템이 붙이니 당신은 넣지 마세요.
+// ── JSON → 고정 골격 마크다운 (결정론·코드 조립). LLM 순서 무관하게 항상 같은 표·섹션·행순서 ──
+function renderFixedReport(data) {
+  const d = data || {};
+  const products = Array.isArray(d.products) && d.products.length ? d.products : ['상품A', '상품B'];
+  const esc = (s) => String(s == null ? '' : s).replace(/\|/g, '/').replace(/\n/g, ' ').trim();
+  const n = products.length;
+  const out = [];
 
-[출력 형식(마크다운) — ★1·2·3·4단계를 반드시 모두 출력한다(중간에 끊기지 않게). 1단계 표가 길면 핵심 담보(암·뇌·심·사망·실손·납입면제·보험료) 위주로 간결히 하고, 2·3·4단계는 절대 생략·축약하지 마라.]
-## 📊 1단계 · 담보 비교
-(표: 항목 | 상품A | 상품B … / 없으면 "미포함", 안 보이면 "확인 필요")
-## 🧮 2단계 · 재무 적정성 (오상열 CFP 공식)
-(담보별 충분/부족/과다 + 근거)
-## 🏆 3단계 · 이론상 최적안
-(최적 = ○○ + 근거 2~3개)
-## 🔎 4단계 · 인수 예측 (참고)
-(심사유형 기반 참고 + 병력 되묻기 + "정밀 인수지침 준비 중")`;
+  // 1단계 · 담보 비교 (행 순서 고정: 보장 → 보험료 → 환급)
+  out.push('## 📊 1단계 · 담보 비교');
+  out.push('| 항목 | ' + products.map(esc).join(' | ') + ' |');
+  out.push('|---|' + products.map(() => '---').join('|') + '|');
+  const cov = Array.isArray(d.coverage) ? d.coverage : [];
+  const order = { '보장': 0, '보험료': 1, '환급': 2 };
+  const rows = cov.slice().sort((a, b) => (order[(a && a.kind) || '보장'] ?? 0) - (order[(b && b.kind) || '보장'] ?? 0));
+  if (!rows.length) {
+    out.push('| _제안서에서 담보를 읽지 못했어요_ | ' + products.map(() => '확인 필요').join(' | ') + ' |');
+  } else {
+    rows.forEach((r) => {
+      const vals = Array.isArray(r.vals) ? r.vals.slice(0, n) : [];
+      while (vals.length < n) vals.push('확인 필요');
+      out.push('| ' + esc(r.item) + ' | ' + vals.map(esc).join(' | ') + ' |');
+    });
+  }
+
+  // 2단계 · 재무 적정성
+  out.push('\n## 🧮 2단계 · 재무 적정성 (오상열 CFP 공식)');
+  const adq = Array.isArray(d.adequacy) ? d.adequacy : [];
+  if (adq.length) {
+    out.push('| 담보 | 판정 | 근거 |');
+    out.push('|---|---|---|');
+    adq.forEach((a) => out.push('| ' + esc(a.item) + ' | ' + esc(a.verdict) + ' | ' + esc(a.reason) + ' |'));
+  } else {
+    out.push(esc(d.adequacyNote) || '연봉을 알려주시면 담보가 충분한지 정확히 계산해드려요.');
+  }
+
+  // 3단계 · 이론상 최적안
+  out.push('\n## 🏆 3단계 · 이론상 최적안');
+  const best = d.best || {};
+  out.push('**이론상 최적 = ' + (esc(best.pick) || '판단 보류') + '**');
+  const reasons = Array.isArray(best.reasons) ? best.reasons : [];
+  if (reasons.length) reasons.forEach((r) => out.push('- ' + esc(r)));
+  else out.push('- 근거를 정리하지 못했어요 — 담보·보험료를 다시 확인해 주세요.');
+
+  // 4단계 · 인수 예측
+  out.push('\n## 🔎 4단계 · 인수 예측 (참고)');
+  out.push((esc(d.underwriting) || '심사유형 정보가 부족해요. 병력(고혈압·당뇨 등)이 있으면 알려주시면 더 정확히 참고해드려요.'));
+  out.push('_회사별 정밀 인수지침(고지항목 DB)은 아직 준비 중이에요._');
+
+  return out.join('\n');
+}
+
+// JSON 추출(코드펜스·앞뒤 잡텍스트 방어) → 파싱. 실패 시 null
+function _extractJson(text) {
+  let t = String(text || '').trim();
+  const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fence) t = fence[1].trim();
+  const s = t.indexOf('{'); const e = t.lastIndexOf('}');
+  if (s < 0 || e <= s) return null;
+  try { return JSON.parse(t.slice(s, e + 1)); } catch (err) { return null; }
 }
 
 /** 제안서(PDF·이미지)들 → 김명란 5단계 비교 리포트. images=[{data:base64, mime}] */
@@ -117,14 +176,17 @@ async function compareProducts(input) {
   if (!content.some((c) => c.type === 'document' || c.type === 'image')) {
     return { ok: false, report: `올려주신 파일을 읽지 못했어요(${bad.join(', ')}). 제안서는 이미지(jpg·png)나 PDF로 올려주세요.`, disclaimer: DISCLAIMER };
   }
-  content.push({ type: 'text', text: '위 제안서(들)를 1→4단계로 비교해 주세요. (5단계 약관은 쓰지 마세요)' });
+  content.push({ type: 'text', text: '위 제안서(들)를 읽고, 시스템이 지정한 JSON 스키마 하나만 출력해 주세요. (JSON 외 텍스트·코드펜스 금지)' });
 
   const system = buildSystem(annualIncome, debt);
   let report = '';
   try {
     const r = await anthropic().messages.create({ model: ANSWER_MODEL, max_tokens: 8000, system, messages: [{ role: 'user', content }] });
-    report = (r.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
-    if (!report) throw new Error('빈 응답');
+    const raw = (r.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
+    if (!raw) throw new Error('빈 응답');
+    // ★고정 템플릿: JSON 데이터 → 코드로 항상 같은 골격 마크다운 조립. 파싱 실패 시에만 원문 폴백(양식은 흔들려도 내용은 살림)
+    const data = _extractJson(raw);
+    report = data ? renderFixedReport(data) : raw;
   } catch (e) {
     const hint = /too large|maximum|size|token|payload|400/i.test(e.message || '') ? ' (제안서 PDF가 크거나 페이지가 많은 것 같아요 — 담보·보험료 핵심 페이지만 올려보세요)' : '';
     return { ok: false, error: e.message, report: '제안서 분석 중 문제가 생겼어요' + hint + '. 파일을 확인하고 다시 시도해 주세요.', disclaimer: DISCLAIMER };
@@ -145,7 +207,7 @@ async function compareProducts(input) {
   return { ok: true, report, engine: 'claude-sonnet-5', disclaimer: DISCLAIMER };
 }
 
-module.exports = { compareProducts, 적정보장기준, 우선순위기준, DISCLAIMER };
+module.exports = { compareProducts, renderFixedReport, _extractJson, 적정보장기준, 우선순위기준, DISCLAIMER };
 
 // ── 자체 시연(구조만; 실제 호출은 배포 API에서) ──
 if (require.main === module) {
