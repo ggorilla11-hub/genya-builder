@@ -1601,17 +1601,17 @@ function _renderSendModal(){
   if(!s.length && !f.length){
     showModal(
       '<div class="pop-h k"><div class="pic"><svg viewBox="0 0 24 24" fill="none"><path d="M4 6h16v12H4z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M4 7l8 6 8-6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></div>'+
-        '<div class="pt"><b>오늘 발송</b><span>대기 · 발송 배관을 연결하면 실시간 표시돼요</span></div>'+
+        '<div class="pt"><b>오늘 발송</b><span>대기 · 발송기를 설치하면 실시간 표시돼요</span></div>'+
         '<div class="px" onclick="closeModal()"><svg viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></div></div>'+
       '<div style="padding:18px 20px">'+
         '<div style="font-size:14px;font-weight:700;color:#0d1b2a;margin-bottom:6px">📭 아직 발송 기록이 없어요</div>'+
-        '<p style="font-size:13px;color:#6b7a8d;line-height:1.7;margin:0 0 14px">고객관리비서가 보낸 문자·카톡의 <b>성공·실패</b>가 여기 실시간으로 뜨려면, 먼저 <b>발송 배관</b>을 연결해야 해요.</p>'+
+        '<p style="font-size:13px;color:#6b7a8d;line-height:1.7;margin:0 0 14px">결재함에서 <b>승인한 카톡</b>의 성공·실패가 여기 실시간으로 뜨려면, 먼저 <b>카톡 발송기(watcher)</b>를 각자 PC에 설치해야 해요.</p>'+
         '<div style="border:1px solid #e2e8ef;border-radius:10px;padding:12px;font-size:12.5px;color:#556;line-height:1.75;margin-bottom:14px">'+
-          '· <b>문자(솔라피)</b>: 내 문자 발송 키를 연결하면 무인 발송 <span style="color:#98a4b2">(준비 중)</span><br>'+
-          '· <b>카톡</b>: 대표님 PC 발송기(watcher) 연결 필요 <span style="color:#98a4b2">(준비 중)</span>'+
+          '· <b>카톡</b>: 발송기(watcher) 설치 → 결재함 승인분이 무인 발송·기록 <span style="color:#0d7a52">(아래에서 설치)</span><br>'+
+          '· <b>문자(솔라피)</b>: 내 문자 발송 키 연결 <span style="color:#98a4b2">(준비 중)</span>'+
         '</div>'+
-        '<button onclick="closeModal();toast(\'발송 배관(문자 솔라피·카톡 발송기)을 연결하면 무인 발송이 켜져요 — 준비 중이에요\');" style="width:100%;background:#1DB088;color:#fff;border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:700;cursor:pointer">🔌 발송 배관 연결하기</button>'+
-        '<div style="font-size:11px;color:#98a4b2;margin-top:8px;text-align:center">연결 전까지는 가짜 숫자 대신 “대기”로 정직하게 표시돼요.</div>'+
+        '<button onclick="closeModal(); if(typeof openWatcher===\'function\'){openWatcher();}" style="width:100%;background:#1DB088;color:#fff;border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:700;cursor:pointer">🖥️ 카톡 발송기 설치하기 →</button>'+
+        '<div style="font-size:11px;color:#98a4b2;margin-top:8px;text-align:center">발송기를 설치하면 발송한 게 여기 기록돼요. 그 전까지는 가짜 숫자 대신 “대기”로 정직하게 표시돼요.</div>'+
       '</div>'
     );
     return;
