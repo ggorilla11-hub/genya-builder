@@ -643,7 +643,7 @@
         <div class="kpi f" onclick="openPop('find')"><div class="ic"><svg viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8"/><path d="M20 20l-3.5-3.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></div><div class="tx"><b id="kpiFind">발굴 전</b><span>어젯밤 발굴</span></div></div>
         <div class="kpi s" onclick="openPop('sched')"><div class="ic"><svg viewBox="0 0 24 24" fill="none"><rect x="4" y="5" width="16" height="16" rx="2.5" stroke="currentColor" stroke-width="1.8"/><path d="M8 3v4M16 3v4M4 10h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></div><div class="tx"><b id="kpiSched">0건</b><span>오늘 약속</span></div></div>
         <div class="kpi u" onclick="openPop('due')"><div class="ic"><svg viewBox="0 0 24 24" fill="none"><path d="M12 8v5l3 2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="12" r="8.5" stroke="currentColor" stroke-width="1.8"/></svg></div><div class="tx"><b id="kpiDue">0건</b><span>이번달 만기</span></div></div>
-        <div class="kpi k" onclick="openPop('send')"><div class="ic"><svg viewBox="0 0 24 24" fill="none"><path d="M4 6h16v12H4z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M4 7l8 6 8-6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div><div class="tx"><b id="kpiSend">대기</b><span>오늘 발송</span></div></div>
+        <div class="kpi k" onclick="openPop('send')"><div class="ic"><svg viewBox="0 0 24 24" fill="none"><path d="M4 6h16v12H4z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M4 7l8 6 8-6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div><div class="tx"><b id="kpiSend">대기</b><span id="kpiSendSub">오늘 발송</span></div></div>
       </div>
       <div class="top-act">
         <div class="tbtn" title="다운로드" onclick="openDownload()"><svg viewBox="0 0 24 24" fill="none"><path d="M12 4v10m0 0l-4-4m4 4l4-4M5 19h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
@@ -1588,8 +1588,15 @@ function _renderSendKpi(){
   var ns=((_SEND&&_SEND.success)||[]).length, nf=((_SEND&&_SEND.fail)||[]).length;
   // ★"연결 안 됨"과 "0건" 구분: 교육생 화면엔 발송 배관(대표님 PC watcher)이 아직 없다 → 발송 이력이 0이면 가짜 '✅0·❌0' 대신 '대기'(정직).
   //   실제 발송 이력(watcher가 올린 성공/실패)이 들어오면 그 수를 표시.
-  if(ns===0 && nf===0){ _setKpi('kpiSend','대기'); return; }
-  _setKpi('kpiSend','✅'+ns+' · ❌'+nf);
+  if(ns===0 && nf===0){ _setKpi('kpiSend','대기'); loadWatcherStatus(); return; }
+  _setKpi('kpiSend','✅'+ns+' · ❌'+nf); var _sub=document.getElementById('kpiSendSub'); if(_sub) _sub.textContent='오늘 발송';
+}
+// ★발송기(watcher) 설치 상태 — kpiSend 근처 정직 표시. /api/watcher/status 없으면 '미설치'(가짜 금지). watcher 세션에서 라우트 붙으면 자동으로 '연결됨'.
+function loadWatcherStatus(){
+  var el=document.getElementById('kpiSendSub'); if(!el) return;
+  fetch('/api/watcher/status',{credentials:'same-origin'}).then(function(r){return r.ok?r.json():null;}).then(function(d){
+    el.textContent=(d&&d.installed)?'발송기 연결됨':'발송기 미설치';
+  }).catch(function(){ el.textContent='발송기 미설치'; });
 }
 // ★2026-07-16: 교육생 화면이 제니야(대표님 서버)를 7초마다 폴링하던 격리 위반 제거.
 //   발송 소스가 아직 없으니 0 정직 표시(가짜 숫자 금지). 교육생 발송 붙으면 자기 서버로 연결.
