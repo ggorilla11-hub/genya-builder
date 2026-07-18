@@ -1465,15 +1465,7 @@ function startFromCard(jobKey, idx){
 
 // ===== KPI 팝업 =====
 const popData = {
-  find:{ cls:'f', icon:ICON.search, title:'어젯밤 발굴 · 예시', sub:'예시 미리보기 — 발굴 연결 시 실데이터로 채워져요',
-    items:[ {b:'김민수',s:'실손 인상 고민 · "보험료가 너무 올라서…"',tag:'Hot',hot:true},
-            {b:'이수진',s:'은퇴 설계 관심 · "노후 준비 막막해요"',tag:'Warm'},
-            {b:'정하늘',s:'자녀 보험 문의 · "아이 실비 어디가 좋나요"',tag:'Warm'} ],
-    foot:'답글 초안 보기 (승인 후 직접 연락)', src:'유튜브 API · 밤사이 Cron 수집 → LLM 분류' },
-  sched:{ cls:'s', icon:ICON['calendar-due'], title:'오늘 약속 · 예시', sub:'예시 미리보기 — 캘린더 연결 시 실데이터로 채워져요',
-    items:[ {b:'14:00 · 강민호님 미팅',s:'강남 스타벅스 · 종신보험 상담',tag:'미팅'},
-            {b:'16:00 · 윤서연님 전화',s:'실손 갱신 안내 · 자료 준비됨',tag:'전화'} ],
-    foot:'준비 자료 열기', src:'구글 캘린더 · 오늘 일정' },
+  // ★가짜 예시 금지: find는 findPop()(실제 발굴 리드/빈 안내), sched는 schedPop()(캘린더 실데이터/미연결 안내)로 분기. 예시 하드코딩 제거.
   due:{ cls:'u', icon:'<path d="M12 8v5l3 2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="12" r="8.5" stroke="currentColor" stroke-width="1.8"/>', title:'이번달 만기·갱신', sub:'고객 명단을 올리면 실제 만기 고객이 떠요',
     items:[ {b:'고객 명단(엑셀·CSV)을 올려주세요',s:'만기일 열을 자동으로 읽어 이번달 만기 고객을 실제로 계산해요',tag:'안내'} ],
     foot:'＋ 버튼으로 명단 올리기', src:'구글 시트 · 만기일 열 자동 감지' }
@@ -1481,6 +1473,7 @@ const popData = {
 function openPop(key){
   if(key==='send'){ closePop(); sendDashboard(); return; }   // ★오늘 발송: 서버(jenya) 폴링 실데이터 + 재발송(genyasend:)
   if(key==='sched'){ schedPop(); return; }                   // ★오늘 약속: 구글캘린더 실데이터(읽기전용·4상태)
+  if(key==='find'){ findPop(); return; }                     // ★발굴: 실제 발굴 리드(window._FIND)만·가짜 예시 금지
   if(key==='due' && window._MGMTFILE && window._MGMTFILE.file){ closePop(); managementDashboard(); return; }  // ★만기: 명단 있으면 실제 대시보드(실데이터)
   const d = popData[key];
   const items = d.items.map(it=>'<div class="pop-item"><span class="di pi-'+d.cls+'"></span><div class="it"><b>'+it.b+'</b><span>'+it.s+'</span></div><span class="tag'+(it.hot?' hot':'')+'">'+it.tag+'</span></div>').join('');
@@ -1494,6 +1487,21 @@ function openPop(key){
   document.getElementById('popBack').classList.add('on');
 }
 function closePop(){ document.getElementById('popBack').classList.remove('on'); }
+// ★발굴 카드 팝업 — 가짜 예시(김민수 등) 금지. 실제 발굴 리드(window._FIND) 있으면 표시, 없으면 빈 안내+[지금 발굴].
+function findPop(){
+  var leads=(window._FIND||[]);
+  var head='<div class="pop-h f"><div class="pic"><svg viewBox="0 0 24 24" fill="none">'+ICON.search+'</svg></div><div class="pt"><b>고객 발굴</b><span>실제 발굴 리드만 표시(예시 없음)</span></div><div class="px" onclick="closePop()"><svg viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></div></div>';
+  var body, foot;
+  if(!leads.length){
+    body='<div class="pop-list">'+_schedMsg('🔍','아직 발굴 전이에요','[지금 발굴]을 누르면 유튜브·네이버에서 실제 잠재고객을 찾아드려요.')+'</div>';
+    foot='<div class="pop-foot"><button class="fb" onclick="closePop(); if(typeof discoveryPanel===\'function\'){discoveryPanel();}">🔍 지금 발굴</button><div class="pop-src"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3l7 4v6c0 4-3 6.5-7 8-4-1.5-7-4-7-8V7l7-4z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>유튜브·네이버 공개 댓글</div></div>';
+  } else {
+    body='<div class="pop-list">'+leads.slice(0,10).map(function(l){ var hot=/핫|hot|🔥/i.test(l.tier||''); return '<div class="pop-item"><span class="di pi-f"></span><div class="it"><b>'+_sEsc(l.name||'')+'</b><span>'+_sEsc(String(l.sub||l.text||'').slice(0,60))+'</span></div><span class="tag'+(hot?' hot':'')+'">'+_sEsc(l.source||'')+'</span></div>'; }).join('')+'</div>';
+    foot='<div class="pop-foot"><button class="fb" onclick="closePop(); if(typeof discoveryPanel===\'function\'){discoveryPanel();}">발굴 상세 열기</button><div class="pop-src">실제 리드 '+leads.length+'명</div></div>';
+  }
+  document.getElementById('popBox').innerHTML=head+body+foot;
+  document.getElementById('popBack').classList.add('on');
+}
 
 // ===== 📅 오늘 약속 — 구글 캘린더 실데이터(server.js /calendar/today · 서비스계정 읽기전용) =====
 function _schedTime(iso){ if(!iso) return '종일'; if(String(iso).length<=10) return '종일'; try{ var d=new Date(iso); var h=d.getHours(),m=d.getMinutes(); return (h<10?'0':'')+h+':'+(m<10?'0':'')+m; }catch(e){ return ''; } }
