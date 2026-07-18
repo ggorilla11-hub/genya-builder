@@ -1560,10 +1560,29 @@ function openPromo(){
   setTimeout(function(){ var i=document.getElementById('promoIn'); if(i)i.focus(); },100);
   if(isRep && typeof loadPromoCampaigns==='function'){ try{ loadPromoCampaigns(); }catch(e){} }
 }
-// ★[3] 캠페인 로더 스텁 — [4]에서 jenya /warehouse/campaigns 실제 fetch로 교체
+// ★[4] 캠페인 로더 — jenya(총괄) /warehouse/campaigns 실제 로드. 대표님(_isRep)만 openPromo에서 호출(교육생 격리).
+//   CORS: jenya 서버 전역 app.use(cors({origin:true})) 로 모든 오리진 공개 읽기 허용(server.js:263) → 별도 추가 불필요.
+var JENYA_BASE='https://jenya.onrender.com';
 function loadPromoCampaigns(){
   var box=document.getElementById('promoCampaigns'); if(!box) return;
-  box.innerHTML='<div style="color:#98a4b2;font-size:12px">캠페인 연결 준비 중…</div>';
+  box.innerHTML='<div style="color:#8a93a3;font-size:12px">불러오는 중…</div>';
+  fetch(JENYA_BASE+'/warehouse/campaigns')
+    .then(function(r){return r.json();})
+    .then(function(d){
+      var cs=(d&&d.campaigns)||[];
+      if(!cs.length){ box.innerHTML='<div style="color:#98a4b2;font-size:12px">등록된 캠페인이 없어요.</div>'; return; }
+      box.innerHTML=cs.map(function(c){
+        var nm=_sEsc(c.name||'캠페인');
+        var sub=_sEsc([c.service,c.contentTopic].filter(Boolean).join(' · '));
+        var badge = c.live
+          ? '<span style="background:#eaf7f2;color:#1DB088;font-size:10px;font-weight:700;padding:2px 6px;border-radius:6px">활성</span>'
+          : '<span style="background:#f2f5f8;color:#98a4b2;font-size:10px;font-weight:700;padding:2px 6px;border-radius:6px">'+_sEsc(c.status||'대기')+'</span>';
+        return '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 4px;border-bottom:1px solid #eef2f6">'
+          +'<div style="min-width:0"><b style="font-size:13px;color:#0d1b2a;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+nm+'</b>'
+          +(sub?'<span style="font-size:11px;color:#8a93a3">'+sub+'</span>':'')+'</div>'+badge+'</div>';
+      }).join('');
+    })
+    .catch(function(){ box.innerHTML='<div style="color:#c0392b;font-size:12px">캠페인을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.</div>'; });
 }
 function runPromo(){
   var copy=(document.getElementById('promoIn').value||'').trim();
