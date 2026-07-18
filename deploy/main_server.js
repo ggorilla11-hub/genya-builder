@@ -644,7 +644,26 @@ app.post('/api/manage/dashboard', async (req, res) => {
     const file = b.file || (Array.isArray(b.images) && b.images[0] && b.images[0].data) || '';
     if (!file) return res.json({ ok: false, error: '고객 명단 엑셀이 필요해요.' });
     const r = skills.manage.buildDashboard({ file: file, today: b.today });
-    res.json({ ok: true, ...r });
+    res.json({ ok: true, source: 'file', ...r });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// ── 📊 [A] 만기 대시보드(시트 자동연동) — 파일 업로드 없이 회원 구글시트 명단으로 이번달 만기·생일 계산 ──
+//   readRoster(회원 토큰) → rosterToSheet → buildDashboard. 상단 KPI(kpiDue)가 파일 없이도 실데이터로 채워지게.
+app.get('/api/manage/roster-dashboard', async (req, res) => {
+  try {
+    const ma = gateGoogle(req, res); if (!ma) return; // 회원 본인 구글 토큰(SA 폴백 아님)
+    let roster = [];
+    try { roster = await readRoster(ma); }
+    catch (e) {
+      // 시트·드라이브 스코프가 없으면 500 대신 '연결 필요' 정직 응답(0건으로 조용히 감추지 않음)
+      if (isScopeError(e)) return res.json({ ok: true, needsConnect: true, message: '고객명단 시트를 보려면 구글 시트·드라이브 연결이 필요해요' });
+      throw e;
+    }
+    if (!roster.length) return res.json({ ok: true, empty: true, metrics: [], message: '연결된 시트에서 고객 명단을 찾지 못했어요' });
+    const sheet = skills.manage.rosterToSheet(roster);
+    const r = skills.manage.buildDashboard({ sheet: sheet, today: req.query.today });
+    res.json({ ok: true, source: 'sheet', ...r });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
@@ -855,6 +874,21 @@ async function _extractHandler(req, res) {
 }
 app.post('/api/onboard/extract', _extractHandler);
 app.get('/api/onboard/extract', _extractHandler);
+
+// ── ⏰ 리마인더비서: "A고객 3사 비교 a·b·c사 요청" → 회사별 1건씩 쪼개기 ──
+//   ★로그인 불필요(대화 LLM). ★데이터 저장 0(쪼갠 결과만 반환, 회원 브라우저 localStorage에만 보관). 지어내기 금지.
+app.post('/api/reminder/split', async (req, res) => {
+  try {
+    const text = String((req.body && req.body.text) || '').trim();
+    if (!text) return res.json({ ok: true, items: [] });
+    const sys = '너는 보험설계사의 "요청해둔 일"을 건별로 쪼개는 비서다. 설계사가 누구 고객에 대해 어느 회사(들)에 무엇을 요청해뒀다고 말하면, 회사마다 1건으로 나눠 JSON 배열만 출력한다. 형식: [{"대상":"고객명","내용":"요청한 일","회사":"회사명"}]. 회사가 여럿이면 각각 1건(예: 삼성·메리츠·DB = 3건). 회사 언급이 없으면 회사는 빈칸으로 1건. ★말에 있는 것만, 지어내기 절대 금지. JSON 배열만 출력(설명·코드펜스 없이).';
+    const raw = await askClaude(sys, [{ role: 'user', content: text }], 500);
+    let t = String(raw || '').trim(); const s = t.indexOf('['), e = t.lastIndexOf(']');
+    let items = []; if (s >= 0 && e > s) { try { items = JSON.parse(t.slice(s, e + 1)); } catch (err) {} }
+    if (!Array.isArray(items)) items = [];
+    res.json({ ok: true, items: items.slice(0, 20) });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
 
 // ── 🗣️ 온보딩 대화: 지니야가 자연스럽게 응답(실제 LLM). ★구글 데이터 불필요 = 로그인·권한 없이도 무조건 대답 ──
 app.post('/api/onboard/chat', async (req, res) => {
