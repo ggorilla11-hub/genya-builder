@@ -1060,7 +1060,7 @@ app.post('/api/send/sms', async (req, res) => {
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
-// ── 📧 이메일 발송 — 회원 본인 Gmail로 1건 발송(gmail.compose 스코프).
+// ── 📧 이메일 발송 — 회원 본인 Gmail로 1건 발송(gmail.send 스코프 — 실제 발송 확실히. compose에도 send가 포함되나 명시).
 //    ★휴먼인루프: 웹 [승인] 후에만 호출(자동 발송 없음). ★제로 인그레스: 받는이·제목·내용은 발송에만, 서버 저장 0.
 //    ★멀티테넌트: 회원 본인 구글 토큰으로만 발송(gateGoogle). ★가짜성공 금지: Gmail이 messageId 반환할 때만 sent:true.
 app.post('/api/gmail/send', async (req, res) => {
@@ -1188,7 +1188,7 @@ const CONNECT_SCOPES = {
   calendar: ['https://www.googleapis.com/auth/calendar.readonly'],
   sheets: ['https://www.googleapis.com/auth/spreadsheets'],
   drive: ['https://www.googleapis.com/auth/drive.file'],
-  gmail: ['https://www.googleapis.com/auth/gmail.readonly', 'https://www.googleapis.com/auth/gmail.compose'],
+  gmail: ['https://www.googleapis.com/auth/gmail.readonly', 'https://www.googleapis.com/auth/gmail.compose', 'https://www.googleapis.com/auth/gmail.send'],
 };
 app.get('/auth/google/connect', (req, res) => {
   if (!OA_CONFIGURED) return res.status(503).send('OAuth 미설정');
