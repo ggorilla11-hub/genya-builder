@@ -1777,9 +1777,10 @@ function openReminder(){
     +'<button onclick="rmParse()" id="rmBtn" style="margin-top:8px;background:var(--teal);color:#fff;border:none;border-radius:8px;padding:9px 16px;font-size:13px;font-weight:700;cursor:pointer;width:100%">지니야가 건별로 쪼개서 등록</button>'
     +'<div style="font-size:11px;color:#8a93a3;margin-top:6px">여러 회사에 요청했으면 <b>회사별로 나눠</b> 각각 카운트해요(a사만 오고 b·c 안 온 걸 알 수 있게).</div>'
     +'<div id="rmParseOut" style="margin-top:8px"></div></div>'
-    +'<div style="display:flex;gap:7px;margin-bottom:14px">'
+    +'<div style="display:flex;gap:7px;margin-bottom:10px">'
     +'<div style="flex:1;background:#f7f9fb;border:1px dashed #d5dde6;border-radius:9px;padding:8px 10px;font-size:11px;color:#8a93a3">🔘 고객 카드 [요청함] <b style="color:#b0b8c2">준비중</b></div>'
     +'<div style="flex:1;background:#f7f9fb;border:1px dashed #d5dde6;border-radius:9px;padding:8px 10px;font-size:11px;color:#8a93a3">💬 카톡 발송 감지 <b style="color:#b0b8c2">준비중</b></div></div>'
+    +'<div style="background:#fffdf5;border:1px dashed #ecdca8;border-radius:9px;padding:10px 12px;font-size:11px;color:#8a6d1a;line-height:1.65;margin-bottom:14px">💬 <b>카톡 발송 감지 — 리마인더 킬러 기능 (준비중)</b><br>카톡으로 보험사 설계매니저에게 요청을 보내면, 지니야가 감지해 <b>"삼성 매니저에게 요청 보내셨네요. 24시간 리마인더 등록할까요?"</b>라고 물어봐요.<br><span style="color:#a99a6a">흐름: 대표님 카톡 발송 → 지니야(발송기)가 감지 → 설계 요청인지 분류 → 맞으면 등록 제안 → [예] → 자동 등록. <b>실제 감지는 발송기(watcher) 설치 후 켜집니다.</b></span></div>'
     +'<div style="font-size:12px;font-weight:700;color:#0d1b2a;margin-bottom:8px">📋 등록된 리마인더 <span id="rmCount" style="color:#8a93a3;font-weight:400"></span></div>'
     +'<div id="rmList"></div>'));
   rmRender();
