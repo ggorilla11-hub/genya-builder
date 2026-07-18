@@ -2042,6 +2042,8 @@ window.runOCR=function(mode){
              var txt=(d&&(d.report||d.analysis||d.message||d.note))||(d&&d.error)||'(분석 결과 없음)';
              if(typeof _HIST!=='undefined'){ _HIST.push({role:'user',content:'['+(_isPen?'연금 설계서':'증권')+'(PDF/문서) 업로드: '+names+']'}); _HIST.push({role:'assistant',content:'[분석 결과] '+String(txt).replace(/\s+/g,' ').slice(0,700)}); if(typeof _persistHist==='function')_persistHist(); }
              window._LASTRESULT={text:txt};
+             // ★2026-07-18 버그수정(방법1): PDF(coverage 폴백)는 서버 _memSaveDesign을 안 타므로, 결과를 여기서 다운로드함(genya_mem)에 저장. 서버 SA=Datastore User 권한 부여됨.
+             if(d&&d.ok&&txt&&txt.indexOf('분석 결과 없음')<0){ var _sum=String(txt).replace(/[#*|>_`]/g,' ').replace(/\s+/g,' ').trim().slice(0,120); fetch('/api/mem/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({skill:(_isPen?'연금':'증권분석'),고객명:'',summary:_sum,담보금액:''})}).catch(function(){}); }
              pushMsg('gen', renderMd(txt)+_dlBtns());
            }).catch(function(){ w.remove(); pushMsg('gen','<span style="color:#c0392b">'+(_isPen?'연금 분석':'증권 분석')+' 오류(잠시 후 다시)</span>'); });
           return;
