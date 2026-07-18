@@ -1300,7 +1300,7 @@ function _genyaSilentSave(nm, msg){
 // ===== 2차 시나리오 팝업 (기술 엮기 = 해자) =====
 function openScenario(jobKey, idx){
   const j = GENYA_JOBS[jobKey] || GENYA_JOBS.insurance;
-  const p = j.pains[idx]; if(p&&p.icon==='radar'&&!_isRep()){ discoveryPanel(); return; } const s = p.sc;
+  const p = j.pains[idx]; if(p&&p.icon==='radar'){ discoveryPanel(); return; } const s = p.sc; // ★2026-07-18 원칙(대표=교육생 모든 기능+전용 추가): !_isRep 제거 → 대표님도 동일 발굴모달. 대표 전용은 얹기만(미구현·자리)
   const steps = s.steps.map(st=>
     '<div class="sc-step"><div class="sn">'+ic(st.ic)+'</div><div class="sx"><div class="st">'+st.st+'</div><div class="sd">'+st.sd+'</div></div></div>'
   ).join('');
