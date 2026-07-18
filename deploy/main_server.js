@@ -1089,6 +1089,39 @@ app.post('/api/gmail/send', async (req, res) => {
   } catch (e) { if (scopeGate(e, res, 'gmail')) return; res.status(500).json({ ok: false, error: e.message }); }
 });
 
+// ── 🧾 보상청구서 초안(F-11) — 보험사 양식 + 증빙(여러 장) → 양식 항목을 증빙 값으로 채운 '작성 초안'.
+//    ★보험업법 경계: 손해액 산정·보상 적정성 판단 안 함(서류 정리·기입만). ★휴먼인루프: "제출 전 검토" 명시.
+//    ★제로 인그레스: 양식·증빙 base64는 메모리에서만 처리하고 버림(서버 저장 0). ★지어내기 금지: 증빙에 없으면 [확인 필요].
+app.post('/api/claim/build', async (req, res) => {
+  try {
+    const b = req.body || {};
+    const form = b.form && b.form.data ? b.form : null;
+    const proofs = Array.isArray(b.proofs) ? b.proofs.filter((p) => p && p.data) : [];
+    if (!form && !proofs.length) return res.json({ ok: false, error: '양식이나 증빙을 올려주세요.' });
+    const content = [];
+    const add = (f, label) => {
+      const mime = String(f.mime || 'image/jpeg').toLowerCase();
+      if (/pdf/.test(mime)) content.push({ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: f.data } });
+      else if (/^image\//.test(mime)) { const mt = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(mime) ? mime : 'image/jpeg'; content.push({ type: 'image', source: { type: 'base64', media_type: mt, data: f.data } }); }
+      else return;
+      content.push({ type: 'text', text: label });
+    };
+    if (form) add(form, '— 위는 보험사 보상청구 양식입니다.');
+    proofs.forEach((p, i) => add(p, `— 위는 고객 증빙 ${i + 1}입니다(진단서·영수증 등).`));
+    if (!content.some((c) => c.type === 'document' || c.type === 'image')) return res.json({ ok: false, error: '파일을 읽지 못했어요(이미지·PDF로 올려주세요).' });
+    content.push({ type: 'text', text: [
+      '위 보험사 양식의 각 항목을, 증빙에서 읽은 정보로 채운 "보상청구서 작성 초안"을 만들어 주세요.',
+      '규칙: (1) 양식에 있는 항목명을 그대로 쓰고 그 값을 증빙에서 찾아 "항목: 값" 형식으로 채운다.',
+      '(2) 증빙에 없거나 불명확한 항목은 값 대신 "[확인 필요]"로 표시한다(절대 지어내지 말 것).',
+      '(3) 손해액 산정·보상 적정성 판단은 하지 않는다(서류 정리·기입만).',
+      '(4) 표/목록으로 읽기 쉽게. 마지막 줄에 "※ 제출 전 반드시 설계사·고객이 검토하세요"를 붙인다.',
+    ].join('\n') });
+    const r = await _anthropic.messages.create({ model: WS_CHAT_MODEL, max_tokens: 2500, messages: [{ role: 'user', content }] });
+    const txt = (r.content || []).filter((c) => c.type === 'text').map((c) => c.text).join('').trim();
+    return res.json({ ok: true, draft: txt || '초안을 생성하지 못했어요. 다시 시도해 주세요.' });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
 // ── 미연결 능력(대기) 상태 ──
 // 🩺 Firestore 토큰 영속 자가진단 — 더미 값을 저장→복원→삭제. ★대표님 세션 불필요, 내가 직접 검증.
 //   토큰 실값 0노출(더미만). TOKEN_ENC_KEY 설정+Firestore 왕복이 실제 되는지 확인.

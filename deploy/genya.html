@@ -1903,26 +1903,33 @@ function claimFiles(kind, inp){
 }
 function claimBuild(){
   if(!_claimForm && !_claimProofs.length){ toast('양식이나 증빙을 먼저 올려주세요'); return; }
+  if(!_claimProofs.length){ document.getElementById('claimOut').innerHTML=_claimResult('(증빙 없음 — 양식만 등록됨. 진단서·영수증 등 증빙을 올리면 양식 항목을 채워드려요.)'); return; }
   var out=document.getElementById('claimOut'); var btn=document.getElementById('claimBuildBtn'); btn.disabled=true; btn.textContent='정리 중…';
-  var proof=_claimProofs[0];
-  if(!proof){ btn.disabled=false; btn.textContent='③ 지니야가 보상청구서류 정리 →'; out.innerHTML=_claimResult('(증빙 없음 — 양식만 등록됨. 증빙을 올리면 진단서·영수증에서 정보를 읽어드려요.)'); return; }
-  var rd=new FileReader();
-  rd.onload=function(){
-    fetch('/api/coverage/analyze',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({dataUrl:rd.result,mime:proof.file.type||'',name:proof.name})})
+  // ★F-11: 양식 + 증빙(여러 장)을 함께 /api/claim/build로 → 양식 항목을 증빙 값으로 채운 초안(제출 전 검토).
+  var items=[]; if(_claimForm) items.push({role:'form', f:_claimForm.file}); _claimProofs.forEach(function(p){ items.push({role:'proof', f:p.file}); });
+  var form=null, proofs=[], done=0;
+  items.forEach(function(it){
+    var rd=new FileReader();
+    rd.onload=function(){ var s=String(rd.result||'').split(','); var b=s[1]||''; if(b){ var o={data:b, mime:(it.f.type||'')}; if(it.role==='form') form=o; else proofs.push(o); } done++; if(done===items.length) go(); };
+    rd.onerror=function(){ done++; if(done===items.length) go(); };
+    rd.readAsDataURL(it.f);
+  });
+  function go(){
+    if(!form && !proofs.length){ btn.disabled=false; btn.textContent='③ 지니야가 보상청구서류 정리 →'; out.innerHTML='<div style="color:#c0392b;font-size:12px">파일을 읽지 못했어요</div>'; return; }
+    fetch('/api/claim/build',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({form:form, proofs:proofs})})
       .then(function(r){return r.json();}).then(function(d){
         btn.disabled=false; btn.textContent='③ 지니야가 보상청구서류 정리 →';
-        var txt=(d&&(d.analysis||d.message))||(d&&d.error)||'증빙을 읽지 못했어요';
-        out.innerHTML=_claimResult(txt);
+        if(d&&d.ok&&d.draft){ out.innerHTML=_claimResult(d.draft); }
+        else{ out.innerHTML='<div style="color:#c0392b;font-size:12px">'+_sEsc((d&&d.error)||'초안 생성 실패 — 다시 시도해 주세요')+'</div>'; }
       }).catch(function(){ btn.disabled=false; btn.textContent='③ 지니야가 보상청구서류 정리 →'; out.innerHTML='<div style="color:#c0392b;font-size:12px">분석 오류 — 잠시 후 다시</div>'; });
-  };
-  rd.readAsDataURL(proof.file);
+  }
 }
 function _claimResult(extract){
   window._claimExtract=String(extract||'');
   return '<div style="border:1px solid var(--teal-bd);border-radius:10px;padding:12px;background:#f5f9f8">'
-    +'<div style="font-size:12px;font-weight:700;color:#0f766e;margin-bottom:6px">🧾 증빙에서 읽은 내용</div>'
-    +'<div style="font-size:12px;color:#33475a;line-height:1.6;white-space:pre-wrap;max-height:160px;overflow:auto">'+_sEsc(String(extract).slice(0,800))+'</div>'
-    +'<div style="font-size:11px;color:#8a6d1a;background:#fff7ed;border:1px solid #f0e0c8;border-radius:7px;padding:8px;margin-top:8px">📋 <b>회사 양식 필드 자동 매핑</b>은 준비 중이에요. 지금은 증빙에서 읽은 정보를 정리해 드려요.</div>'
+    +'<div style="font-size:12px;font-weight:700;color:#0f766e;margin-bottom:6px">🧾 양식에 채운 보상청구서 초안</div>'
+    +'<div style="font-size:12px;color:#33475a;line-height:1.6;white-space:pre-wrap;max-height:240px;overflow:auto">'+_sEsc(String(extract).slice(0,2000))+'</div>'
+    +'<div style="font-size:11px;color:#8a6d1a;background:#fff7ed;border:1px solid #f0e0c8;border-radius:7px;padding:8px;margin-top:8px">📋 양식 항목을 증빙에서 읽어 채운 <b>초안</b>이에요. <b>[확인 필요]</b> 항목과 전체 내용을 <b>제출 전 반드시 검토</b>하세요(손해액·적정성 판단은 지니야가 하지 않아요).</div>'
     +'<button onclick="claimToApproval()" style="width:100%;background:#0d1b2a;color:#fff;border:none;border-radius:8px;padding:10px;font-size:12.5px;font-weight:700;cursor:pointer;margin-top:10px;font-family:inherit">④ 결재함에 올리기 →</button></div>';
 }
 function claimToApproval(){
