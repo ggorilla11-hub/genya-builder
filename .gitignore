@@ -36,3 +36,9 @@ local-bulk-checker/*.png
 
 # 작업3 무인 실증용 임시 스크립트(커밋 금지)
 deploy/tmp_memtest.js
+
+# 고객 증권/개인정보 파일 — deploy에 둔 실증용 샘플, 절대 커밋 금지(제로 인그레스)
+deploy/*.jpg
+deploy/*.jpeg
+deploy/*.png
+deploy/*.pdf

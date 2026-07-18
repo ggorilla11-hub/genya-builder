@@ -589,6 +589,7 @@ app.post('/api/compare', async (req, res) => {
     const images = Array.isArray(b.images) ? b.images : [];
     if (!images.length) return res.json({ ok: true, note: '제안서 사진을 1~4장 올려주세요 (예: 삼성생명 The퍼스트 · 삼성화재 간편365). 연봉·부채를 함께 주시면 적정성까지 계산해요.' });
     const r = await skills.compare.compareProducts({ images, annualIncome: b.annualIncome, debt: b.debt });
+    _memSaveDesign(req, r, '상품비교'); // ★작업3: 상품비교 결과도 MEM 저장(다운로드함용, fire-and-forget · 응답 불변)
     res.json({ ok: true, ...r });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
@@ -645,10 +646,12 @@ app.post('/api/manage/dashboard', async (req, res) => {
 //   ★제로 인그레스: 검색용 요약만 저장(원본·개인정보 서버 X). 저장 실패는 대화·분석을 막지 않는다(fire-and-forget).
 function _memSaveDesign(req, r, label) {
   try {
-    const uid = (sessionOf(req) || {}).email; if (!uid || !r || !r.ok || !r.data) return;
-    const d = r.data; let 고객명 = '', summary = '', 담보금액 = '';
-    if (label === '증권분석') { 고객명 = (d.고객 && d.고객.이름) || ''; const gap = (d.보장분석 || []).filter((x) => x.판정 === '부족').map((x) => x.항목 + ' ' + x.부족).slice(0, 4).join(', '); summary = (d.요약 || '') + (gap ? (' | 부족: ' + gap) : ''); 담보금액 = gap; }
-    else if (label === '연금') { 고객명 = (d.표지 && d.표지.고객명) || ''; summary = d.요약 || ''; 담보금액 = (d.상품 || []).map((p) => p.상품명 + ' ' + (p.예상연금액 || '')).slice(0, 2).join(' / '); }
+    const uid = (sessionOf(req) || {}).email; if (!uid || !r || !r.ok) return;
+    const d = r.data || {}; let 고객명 = '', summary = '', 담보금액 = '';
+    if (label === '증권분석') { if (!r.data) return; 고객명 = (d.고객 && d.고객.이름) || ''; const gap = (d.보장분석 || []).filter((x) => x.판정 === '부족').map((x) => x.항목 + ' ' + x.부족).slice(0, 4).join(', '); summary = (d.요약 || '') + (gap ? (' | 부족: ' + gap) : ''); 담보금액 = gap; }
+    else if (label === '연금') { if (!r.data) return; 고객명 = (d.표지 && d.표지.고객명) || ''; summary = d.요약 || ''; 담보금액 = (d.상품 || []).map((p) => p.상품명 + ' ' + (p.예상연금액 || '')).slice(0, 2).join(' / '); }
+    else if (label === '상품비교') { const rep = String(r.report || '').replace(/[#*|>_`\-]/g, ' ').replace(/\s+/g, ' ').trim(); summary = rep.slice(0, 120); 담보금액 = ''; if (!summary) return; } // ★작업3: compareProducts는 report만 반환 → 요약 추출해 저장
+    else return;
     genyaMem.saveMem(googleAuth([genyaMem.SCOPE]), { userId: uid, 고객명: 고객명, skill: label, summary: summary, 담보금액: 담보금액 }).catch(function () {});
   } catch (e) {}
 }
@@ -662,6 +665,20 @@ app.get('/api/mem/search', async (req, res) => {
   try { const uid = (sessionOf(req) || {}).email; if (!uid) return res.status(401).json({ ok: false, error: '로그인 필요' });
     const rows = await genyaMem.searchMem(googleAuth([genyaMem.SCOPE]), { userId: uid, 고객명: req.query.name || req.query.q || '', date: req.query.date || '' });
     res.json({ ok: true, list: rows });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+// ★작업3: 다운로드함 전용 — 내가(지니야가) 만든 문서(genya_mem) 전체 최근 목록. (기존 mem/search 동작 불변, 새 라우트 추가)
+app.get('/api/mem/list', async (req, res) => {
+  try { const uid = (sessionOf(req) || {}).email; if (!uid) return res.status(401).json({ ok: false, error: '로그인 필요' });
+    const rows = await genyaMem.searchMem(googleAuth([genyaMem.SCOPE]), { userId: uid, limit: 50 });
+    res.json({ ok: true, list: rows });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+// ★작업3: genya_mem 삭제(다운로드함 [삭제]) — /api/memory/delete 흉내. userId 소유 확인은 genya_mem_module.deleteMem에서.
+app.get('/api/mem/delete', async (req, res) => {
+  try { const uid = (sessionOf(req) || {}).email; if (!uid) return res.status(401).json({ ok: false, error: '로그인 필요' });
+    const r = await genyaMem.deleteMem(googleAuth([genyaMem.SCOPE]), { userId: uid, id: String(req.query.id || '') });
+    res.json({ ok: true, ...r });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
