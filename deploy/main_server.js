@@ -1060,6 +1060,35 @@ app.post('/api/send/sms', async (req, res) => {
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
+// ── 📧 이메일 발송 — 회원 본인 Gmail로 1건 발송(gmail.compose 스코프).
+//    ★휴먼인루프: 웹 [승인] 후에만 호출(자동 발송 없음). ★제로 인그레스: 받는이·제목·내용은 발송에만, 서버 저장 0.
+//    ★멀티테넌트: 회원 본인 구글 토큰으로만 발송(gateGoogle). ★가짜성공 금지: Gmail이 messageId 반환할 때만 sent:true.
+app.post('/api/gmail/send', async (req, res) => {
+  try {
+    const ma = gateGoogle(req, res); if (!ma) return;
+    const to = String((req.body && req.body.to) || '').trim();
+    const subject = String((req.body && req.body.subject) || '').trim();
+    const text = String((req.body && req.body.text) || '').trim();
+    if (!to || !text) return res.json({ ok: false, error: '받는 이메일과 내용을 모두 입력해 주세요.' });
+    const gmail = google.gmail({ version: 'v1', auth: ma });
+    // RFC822 (한글 제목=MIME encoded-word, 본문=UTF-8 base64로 안전 인코딩)
+    const subjEnc = '=?UTF-8?B?' + Buffer.from(subject || '(제목 없음)', 'utf-8').toString('base64') + '?=';
+    const mime = [
+      'To: ' + to,
+      'Subject: ' + subjEnc,
+      'MIME-Version: 1.0',
+      'Content-Type: text/plain; charset=UTF-8',
+      'Content-Transfer-Encoding: base64',
+      '',
+      Buffer.from(text, 'utf-8').toString('base64'),
+    ].join('\r\n');
+    const raw = Buffer.from(mime, 'utf-8').toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    const r = await gmail.users.messages.send({ userId: 'me', requestBody: { raw } });
+    if (r && r.data && r.data.id) return res.json({ ok: true, sent: true, id: r.data.id });
+    return res.json({ ok: false, sent: false, error: 'Gmail 발송 응답이 비어 있어요.' });
+  } catch (e) { if (scopeGate(e, res, 'gmail')) return; res.status(500).json({ ok: false, error: e.message }); }
+});
+
 // ── 미연결 능력(대기) 상태 ──
 // 🩺 Firestore 토큰 영속 자가진단 — 더미 값을 저장→복원→삭제. ★대표님 세션 불필요, 내가 직접 검증.
 //   토큰 실값 0노출(더미만). TOKEN_ENC_KEY 설정+Firestore 왕복이 실제 되는지 확인.
