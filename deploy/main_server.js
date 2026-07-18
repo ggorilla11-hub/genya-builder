@@ -134,6 +134,8 @@ const YAK = JSON.parse(fs.readFileSync(path.join(__dirname, 'yakgwan_pages.json'
 
 const app = express();
 app.use(express.json({ limit: '50mb' })); // 자료 업로드(base64) 파싱 — 큰 제안서 PDF 다중 업로드 대비 상향
+// ★카톡 발송기(watcher) 배포 zip — 교육생이 각자 PC에 설치. 공개 정적(개인정보·키·명단 미포함 zip만 배치). zip은 별도 생성.
+app.use('/downloads', express.static(path.join(__dirname, 'downloads')));
 
 // ★세션 복원: 재배포·15분 슬립으로 메모리(sessions)가 비어도, 암호화 쿠키(genya_rt)에서
 //   refresh_token 복원 → 세션 재구성. ★서버 저장 0(쿠키=사용자 브라우저 것) · SA/Firestore 불필요.

@@ -648,6 +648,7 @@
       <div class="top-act">
         <div class="tbtn" title="다운로드" onclick="openDownload()"><svg viewBox="0 0 24 24" fill="none"><path d="M12 4v10m0 0l-4-4m4 4l4-4M5 19h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
         <div class="tbtn" title="공유/발송" onclick="openShare()"><svg viewBox="0 0 24 24" fill="none"><path d="M8 12l8-5m-8 5l8 5m-8-5a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0zm13-7a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0zm0 14a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <div class="tbtn" title="발송기 설치" onclick="openWatcher()"><svg viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="13" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M8 21h8M12 17v4M12 7v4m0 0l-2.2-2.2M12 11l2.2-2.2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
       </div>
     </div>
 
@@ -1935,6 +1936,32 @@ function apReject(id){
   var q=_bizGet('genya_approvals');
   q.forEach(function(a){ if(a.id===id){ a.status='반려'; a.반려사유=reason; a.decidedAt=Date.now(); } });
   _bizSet('genya_approvals', q); toast('반려됨'); apRender();
+}
+
+// ═══ 🖥️ 카톡 발송기(watcher) 설치 안내 — 교육생이 각자 PC에 설치. ★대표·교육생 모두. 실제 설치·연결은 대표PC 실증 대기.
+function _watStep(n,ic,title,desc){
+  return '<div style="display:flex;gap:10px;align-items:flex-start;padding:9px 0;border-bottom:1px solid #f0f3f6">'
+    +'<div style="flex-shrink:0;width:26px;height:26px;background:var(--teal-l);color:var(--teal-d);border-radius:50%;text-align:center;line-height:26px;font-weight:800;font-size:12px">'+n+'</div>'
+    +'<div><b style="font-size:12.5px;color:#0d1b2a">'+ic+' '+title+'</b><div style="font-size:11.5px;color:#556;margin-top:2px;line-height:1.5">'+desc+'</div></div></div>';
+}
+function openWatcher(){
+  showModal(_bizShell('🖥️','카톡 발송기 설치','카톡 자동 발송·감지용 PC 프로그램 · 승인한 것만 지니야가 대신 보내요',
+    '<div id="watStatus" style="font-size:12px;font-weight:700;margin-bottom:12px;padding:9px 12px;border-radius:8px;background:#f2f5f8;color:#8a93a3">🔌 연결 상태: 확인 중…</div>'
+    +'<a href="/downloads/genya-watcher.zip" download style="display:block;text-align:center;background:var(--teal);color:#fff;border-radius:10px;padding:13px;font-size:14px;font-weight:800;text-decoration:none;margin-bottom:6px">⬇ 발송기 다운로드 (genya-watcher.zip)</a>'
+    +'<div style="font-size:10.5px;color:#98a4b2;text-align:center;margin-bottom:14px">Windows PC용 · 카톡 PC버전이 설치돼 있어야 해요</div>'
+    +'<div style="font-size:12.5px;font-weight:700;color:#0d1b2a;margin-bottom:4px">설치 4단계</div>'
+    +_watStep('1','⬇','다운로드','위 버튼으로 genya-watcher.zip 받기')
+    +_watStep('2','📂','압축 풀기','바탕화면 등 원하는 폴더에 압축 해제')
+    +_watStep('3','▶','실행 (프로토콜 등록)','폴더 안 <b>지니야_발송_시작.bat</b> 더블클릭 · 처음 한 번은 <b>프로토콜_등록.bat</b>도 실행')
+    +_watStep('4','✅','연결 확인','이 화면 상단 "연결 상태"가 <b>설치됨</b>으로 바뀌면 완료')
+    +'<div style="background:#fff7ed;border:1px solid #f0e0c8;border-radius:9px;padding:10px 12px;font-size:11px;color:#8a6d1a;line-height:1.6;margin-top:12px">💡 <b>genyasend: 프로토콜 "항상 허용" 체크</b> — 승인 발송 시 브라우저가 "genyasend 열기?"를 물으면 <b>항상 허용</b>에 체크하세요(매번 안 묻게).</div>'
+    +'<div style="background:#f7f9fb;border:1px solid #e2e8ef;border-radius:9px;padding:10px 12px;font-size:11px;color:#556;line-height:1.6;margin-top:8px">🐍 <b>파이썬 필요</b>: 처음이면 python.org에서 Python 설치 후, 폴더에서 <code style="background:#eef2f6;padding:1px 5px;border-radius:4px">pip install pywinauto pywin32</code> 한 번 실행. (자세한 건 README.txt)</div>'
+    +'<div style="font-size:10.5px;color:#c0392b;margin-top:10px;line-height:1.6">⚠️ 발송은 <b>결재함에서 승인한 것만</b> 나가요(휴먼인루프). 발송기는 각자 PC에서만 동작하고, 오원트 서버는 고객 정보를 저장하지 않아요.</div>'));
+  fetch('/api/watcher/status',{credentials:'same-origin'}).then(function(r){return r.ok?r.json():null;}).then(function(d){
+    var el=document.getElementById('watStatus'); if(!el) return;
+    if(d&&d.installed){ el.innerHTML='🟢 연결 상태: <b>설치됨</b>'+(d.lastSeen?(' · 최근 '+_sEsc(d.lastSeen)):''); el.style.background='#e8f4f2'; el.style.color='#0f766e'; }
+    else{ el.innerHTML='⚪ 연결 상태: <b>미설치</b> — 아래에서 받아 설치하세요'; el.style.background='#fbf6ec'; el.style.color='#8a6d1a'; }
+  }).catch(function(){ var el=document.getElementById('watStatus'); if(el){ el.innerHTML='⚪ 연결 상태: <b>미설치</b> — 아래에서 받아 설치하세요'; el.style.background='#fbf6ec'; el.style.color='#8a6d1a'; } });
 }
 function openPromo(){
   var isRep = (typeof _isRep==='function') && _isRep();
