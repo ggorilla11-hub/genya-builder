@@ -33,3 +33,6 @@ local-bulk-checker/STOP
 local-bulk-checker/in.txt
 local-bulk-checker/__pycache__/
 local-bulk-checker/*.png
+
+# 작업3 무인 실증용 임시 스크립트(커밋 금지)
+deploy/tmp_memtest.js

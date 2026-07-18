@@ -794,7 +794,7 @@ const GENYA_JOBS = {
     tasks:"24/7 문의 수집 · 퇴원 조기경보 · 학부모 소통 · 원생 리포트",
     chips:["이번달 퇴원 위험 원생 뽑아줘","학부모 상담 문자 초안","신규 문의 응대 스크립트"],
     pains:[
-      {icon:"radar",axis:"발굴",t:"신규 문의가 밤에 와도 못 받음",s:"놓친 문의가 경쟁 학원으로 갑니다",
+      {icon:"radar",axis:"발굴",sec:"원생모집비서",t:"신규 문의가 밤에 와도 못 받음",s:"놓친 문의가 경쟁 학원으로 갑니다",
        sc:{title:"밤사이 문의 수집 → 아침 브리핑",steps:[
          {ic:"moon",st:"밤 10시",sd:"블로그·맘카페·당근 문의글 수집"},
          {ic:"filter",st:"새벽",sd:"LLM이 학년·과목·거리로 Hot·Warm 분류"},
@@ -803,7 +803,7 @@ const GENYA_JOBS = {
          {ic:"check",st:"승인",sd:"원장님이 직접 연락 (자동 발송 금지)"}],
          stack:"소셜리스닝 + Claude 분류 + Cron 스케줄러",
          moat:"우리 학원 상담 성공 패턴이 쌓일수록 응대 정확도↑"}},
-      {icon:"file-search",axis:"업무",t:"퇴원 징후를 미리 못 봄",s:"이미 그만둔 뒤에 압니다",
+      {icon:"file-search",axis:"업무",sec:"퇴원방지비서",t:"퇴원 징후를 미리 못 봄",s:"이미 그만둔 뒤에 압니다",
        sc:{title:"출결·성적 → 퇴원 위험 조기 경보",steps:[
          {ic:"table",st:"업로드",sd:"원생 명단·출결 엑셀 업로드"},
          {ic:"scan",st:"분석",sd:"결석 증가·성적 하락·상담 공백 신호 감지"},
@@ -1528,7 +1528,7 @@ function _secName(p){
     'calendar-due':'고객관리비서','bell':'고객관리비서',
     'book':'약관해석비서','help':'약관해석비서','quote':'약관해석비서',
     'chart':'시세분석비서','search':'조사비서','file-text':'자료정리비서','pencil':'콘텐츠비서','message':'콘텐츠비서','image':'콘텐츠비서' };
-  return byIcon[(p&&p.icon)] || (((p&&p.axis)||'맞춤')+'비서');
+  return (p&&p.sec) || byIcon[(p&&p.icon)] || (((p&&p.axis)||'맞춤')+'비서');  // ★sec 있으면 직업맞춤 비서명 우선(없으면 기존 아이콘매핑)
 }
 function _setToday(){ try{ var d=new Date(),wk=['일','월','화','수','목','금','토'],el=document.getElementById('chatDate'); if(el)el.textContent=(d.getMonth()+1)+'월 '+d.getDate()+'일 ('+wk[d.getDay()]+')'; }catch(e){} }
 function addAgentAsk(){ window._ACTIVE_SKILL='add_agent'; pushMsg('gen','어떤 비서를 만들고 싶으세요? 하시는 일에서 <b>반복되는 업무</b>를 말씀해 주시면, 제가 만들 수 있는 건 바로 준비하고 — 어려운 건 본사 오상열 대표님(ggorilla11@gmail.com)께 연결해 드릴게요.'); var i=document.getElementById('chatInput'); if(i)i.focus(); var b=document.getElementById('chatScroll'); if(b)b.scrollIntoView({block:'center'}); }
