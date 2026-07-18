@@ -1583,13 +1583,38 @@ function runOCR(){
 }
 
 // ===== 다운로드 =====
+// ★작업3: 우측 다운로드함 = 지니야가 만든 문서(MEM/genya_mem)만. 죽은 toast 버튼 제거 → 실제 조회·열기·삭제.
 function openDownload(){
   showModal(
-    '<div class="pop-h f"><div class="pic"><svg viewBox="0 0 24 24" fill="none"><path d="M12 4v10m0 0l-4-4m4 4l4-4M5 19h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div><div class="pt"><b>다운로드</b><span>결과물을 저장해요</span></div><div class="px" onclick="closeModal()"><svg viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></div></div>'+
-    '<div class="pop-list">'+
-      ['PDF 제안서','Word 문서','엑셀 비교표','텍스트 복사'].map((x,i)=>
-        '<div class="pop-item" style="cursor:pointer" onclick="closeModal();toast(\''+x+' 다운로드를 시작합니다\')"><span class="di pi-f"></span><div class="it"><b>'+x+'</b></div><span class="tag">받기</span></div>').join('')+
-    '</div>');
+    '<div class="pop-h f"><div class="pic"><svg viewBox="0 0 24 24" fill="none"><path d="M12 4v10m0 0l-4-4m4 4l4-4M5 19h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div><div class="pt"><b>내 자료함</b><span>지니야가 만든 문서만 모여요</span></div><div class="px" onclick="closeModal()"><svg viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></div></div>'+
+    '<div class="pop-list" id="dlVaultList" style="max-height:340px;overflow:auto"><div style="padding:22px;text-align:center;color:#98a4b2">불러오는 중…</div></div>'+
+    '<div class="pop-foot"><a href="https://drive.google.com/drive/my-drive" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;color:#5566a0;text-decoration:none;font-size:12.5px">📁 내 구글 드라이브 전체는 여기서 열기 →</a></div>');
+  _loadVault();
+}
+function _loadVault(){
+  var box=document.getElementById('dlVaultList');
+  fetch('/api/mem/list').then(function(r){return r.json();}).then(function(d){
+    if(!box)return; window._VAULT=(d&&d.list)||[];
+    if(!d||!d.ok){ box.innerHTML='<div style="padding:22px;text-align:center;color:#98a4b2">로그인 후 이용할 수 있어요</div>'; return; }
+    if(!window._VAULT.length){ box.innerHTML='<div style="padding:22px;text-align:center;color:#98a4b2">아직 만든 문서가 없어요.<br>증권분석·상품비교를 하면 여기 쌓여요.</div>'; return; }
+    box.innerHTML=window._VAULT.map(function(m){
+      var 유형=m.skill||'문서'; var 제목=(m.고객명? _sEsc(m.고객명)+' · ':'')+_sEsc(m.summary||유형);
+      return '<div class="pop-item"><div class="it" style="flex:1;min-width:0"><b style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+제목.slice(0,90)+'</b><span>'+_sEsc(m.date||'')+' · '+_sEsc(유형)+'</span></div>'+
+        '<span class="tag" style="cursor:pointer" onclick="_vaultOpen(\''+_sEsc(m._id)+'\')">열기</span>'+
+        '<span class="tag" style="cursor:pointer;background:#fbe9e9;color:#c0392b;margin-left:5px" onclick="_vaultDelete(\''+_sEsc(m._id)+'\')">삭제</span></div>';
+    }).join('');
+  }).catch(function(){ if(box)box.innerHTML='<div style="padding:22px;text-align:center;color:#c0392b">불러오기 오류(잠시 후 다시)</div>'; });
+}
+function _vaultOpen(id){
+  var m=(window._VAULT||[]).filter(function(x){return String(x._id)===String(id);})[0]; closeModal();
+  if(!m){ toast('항목을 찾지 못했어요'); return; }
+  pushMsg('gen','<b>📄 저장된 '+_sEsc(m.skill||'문서')+'</b> · '+_sEsc(m.date||'')+'<br>'+_sEsc(m.summary||'요약 없음')+(m.담보금액?'<br><span style="color:#888;font-size:12px">'+_sEsc(m.담보금액)+'</span>':''));
+}
+function _vaultDelete(id){
+  if(!confirm('이 문서를 자료함에서 삭제할까요?'))return;
+  fetch('/api/mem/delete?id='+encodeURIComponent(id)).then(function(r){return r.json();}).then(function(d){
+    if(d&&d.ok&&d.deleted){ toast('삭제했어요'); _loadVault(); } else { toast((d&&d.error)||'삭제 실패'); }
+  }).catch(function(){ toast('삭제 오류'); });
 }
 // ===== 공유 (카톡·문자·링크·메일) =====
 function openShare(){
