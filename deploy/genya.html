@@ -802,6 +802,7 @@ const GENYA_JOBS = {
          moat:"코치 연금 완성본 포맷 = 못 흉내내는 제안 품질"}},
       {icon:"megaphone",axis:"발굴",t:"홍보 콘텐츠 만들 시간이 없어요",s:"꾸준한 발행이 어려워요"},
       {icon:"reminder",axis:"관리",t:"요청해둔 걸 자꾸 놓쳐요",s:"a사만 오고 b·c사는 감감무소식"},
+      {icon:"claim",axis:"관리",t:"보상청구 서류가 복잡해요",s:"회사마다 양식이 달라 손이 많이 가요"},
     ]},
   clinic:{ label:"병의원", nick:"원장님", title:"지니야 · 병의원 전담", sub:"원장님 맞춤",
     tags:["예약관리","리뷰관리","재방문","블로그","상담"], job_full:"병의원 원장",
@@ -1807,6 +1808,58 @@ function rmRender(){
 function rmDue(id){ var l=_bizGet('genya_reminders'); l.forEach(function(r){ if(r.id===id) r.마감=Date.now()-1000; }); _bizSet('genya_reminders', l); rmRender(); }
 function rmDone(id){ var l=_bizGet('genya_reminders'); l.forEach(function(r){ if(r.id===id) r.status='완료'; }); _bizSet('genya_reminders', l); rmRender(); }
 function rmDel(id){ var l=_bizGet('genya_reminders').filter(function(r){return r.id!==id;}); _bizSet('genya_reminders', l); rmRender(); }
+
+// ═══ [2] 보상비서 ═══ 보험사 양식 + 고객 증빙 → 회사 양식에 맞는 보상청구서류 정리 → 결재함. ★합법범위: 서류 작성·정리·안내까지(손해액 산정·적정성 판단 안 함). ★제로 인그레스(증빙 서버 미저장).
+var _claimForm=null, _claimProofs=[];
+function openClaim(){
+  _claimForm=null; _claimProofs=[];
+  showModal(_bizShell('🧾','보상비서','보험사 양식 + 고객 증빙 → 회사 양식에 맞는 보상청구서류를 정리해요',
+    '<div style="background:#fff7ed;border:1px solid #f0e0c8;border-radius:9px;padding:9px 11px;font-size:11px;color:#8a6d1a;margin-bottom:12px;line-height:1.6">⚖️ <b>지니야는 서류 작성·정리·안내</b>까지만 도와요. 손해액 산정·보상 적정성 판단은 하지 않아요(보험업법). 최종 검토·제출은 설계사·고객 몫이에요.</div>'
+    +'<div style="border:1px solid #e2e8ef;border-radius:10px;padding:12px;margin-bottom:10px"><div style="font-size:12px;font-weight:700;color:#0d1b2a;margin-bottom:6px">① 보험사 보상청구 양식 <span style="color:#8a93a3;font-weight:400">(회사별 기본틀)</span></div>'
+    +'<button onclick="claimPick(\'form\')" style="background:#eef2f6;border:1px solid #d5dde6;border-radius:8px;padding:8px 14px;font-size:12px;cursor:pointer;font-family:inherit">📄 양식 업로드</button><span id="claimFormName" style="font-size:11.5px;color:#8a93a3;margin-left:8px">아직 없음</span></div>'
+    +'<div style="border:1px solid #e2e8ef;border-radius:10px;padding:12px;margin-bottom:10px"><div style="font-size:12px;font-weight:700;color:#0d1b2a;margin-bottom:6px">② 고객 증빙자료 <span style="color:#8a93a3;font-weight:400">(진단서·영수증 등 · 여러 장)</span></div>'
+    +'<button onclick="claimPick(\'proof\')" style="background:#eef2f6;border:1px solid #d5dde6;border-radius:8px;padding:8px 14px;font-size:12px;cursor:pointer;font-family:inherit">🧾 증빙 업로드</button><span id="claimProofName" style="font-size:11.5px;color:#8a93a3;margin-left:8px">아직 없음</span>'
+    +'<div style="font-size:10.5px;color:#98a4b2;margin-top:6px">🔒 증빙은 분석 후 서버에 저장하지 않아요(제로 인그레스).</div></div>'
+    +'<button onclick="claimBuild()" id="claimBuildBtn" style="width:100%;background:var(--teal);color:#fff;border:none;border-radius:9px;padding:11px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">③ 지니야가 보상청구서류 정리 →</button>'
+    +'<div id="claimOut" style="margin-top:12px"></div>'
+    +'<input type="file" id="claimFile" style="display:none" accept="image/*,.pdf">'));
+}
+function claimPick(kind){ var f=document.getElementById('claimFile'); if(!f)return; f.multiple=(kind==='proof'); f.onchange=function(){ claimFiles(kind, this); }; f.click(); }
+function claimFiles(kind, inp){
+  var fs=inp.files; if(!fs||!fs.length){ return; }
+  if(kind==='form'){ _claimForm={name:fs[0].name, file:fs[0]}; var n=document.getElementById('claimFormName'); if(n){ n.textContent=fs[0].name; n.style.color='#0f766e'; } }
+  else{ _claimProofs=Array.prototype.slice.call(fs).map(function(f){return {name:f.name, file:f};}); var n2=document.getElementById('claimProofName'); if(n2){ n2.textContent=_claimProofs.length+'개: '+_claimProofs.map(function(x){return x.name;}).join(', ').slice(0,50); n2.style.color='#0f766e'; } }
+  inp.value='';
+}
+function claimBuild(){
+  if(!_claimForm && !_claimProofs.length){ toast('양식이나 증빙을 먼저 올려주세요'); return; }
+  var out=document.getElementById('claimOut'); var btn=document.getElementById('claimBuildBtn'); btn.disabled=true; btn.textContent='정리 중…';
+  var proof=_claimProofs[0];
+  if(!proof){ btn.disabled=false; btn.textContent='③ 지니야가 보상청구서류 정리 →'; out.innerHTML=_claimResult('(증빙 없음 — 양식만 등록됨. 증빙을 올리면 진단서·영수증에서 정보를 읽어드려요.)'); return; }
+  var rd=new FileReader();
+  rd.onload=function(){
+    fetch('/api/coverage/analyze',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({dataUrl:rd.result,mime:proof.file.type||'',name:proof.name})})
+      .then(function(r){return r.json();}).then(function(d){
+        btn.disabled=false; btn.textContent='③ 지니야가 보상청구서류 정리 →';
+        var txt=(d&&(d.analysis||d.message))||(d&&d.error)||'증빙을 읽지 못했어요';
+        out.innerHTML=_claimResult(txt);
+      }).catch(function(){ btn.disabled=false; btn.textContent='③ 지니야가 보상청구서류 정리 →'; out.innerHTML='<div style="color:#c0392b;font-size:12px">분석 오류 — 잠시 후 다시</div>'; });
+  };
+  rd.readAsDataURL(proof.file);
+}
+function _claimResult(extract){
+  window._claimExtract=String(extract||'');
+  return '<div style="border:1px solid var(--teal-bd);border-radius:10px;padding:12px;background:#f5f9f8">'
+    +'<div style="font-size:12px;font-weight:700;color:#0f766e;margin-bottom:6px">🧾 증빙에서 읽은 내용</div>'
+    +'<div style="font-size:12px;color:#33475a;line-height:1.6;white-space:pre-wrap;max-height:160px;overflow:auto">'+_sEsc(String(extract).slice(0,800))+'</div>'
+    +'<div style="font-size:11px;color:#8a6d1a;background:#fff7ed;border:1px solid #f0e0c8;border-radius:7px;padding:8px;margin-top:8px">📋 <b>회사 양식 필드 자동 매핑</b>은 준비 중이에요. 지금은 증빙에서 읽은 정보를 정리해 드려요.</div>'
+    +'<button onclick="claimToApproval()" style="width:100%;background:#0d1b2a;color:#fff;border:none;border-radius:8px;padding:10px;font-size:12.5px;font-weight:700;cursor:pointer;margin-top:10px;font-family:inherit">④ 결재함에 올리기 →</button></div>';
+}
+function claimToApproval(){
+  var form=(_claimForm&&_claimForm.name)||'(양식 미첨부)';
+  _approvalPush({출처:'보상', 제목:'보상청구서류 — '+form, 미리보기:'증빙 '+_claimProofs.length+'건 정리 완료 · 승인하면 보험사 발송(발송 준비중). '+String(window._claimExtract||'').replace(/\s+/g,' ').slice(0,80)});
+  toast('결재함에 올렸어요 — 결재함비서에서 승인하세요'); closeModal();
+}
 function openPromo(){
   var isRep = (typeof _isRep==='function') && _isRep();
   showModal('<div style="padding:20px;max-width:560px">'
