@@ -804,6 +804,11 @@ app.get('/api/memory/delete', async (req, res) => { try { const ma = gateGoogle(
 // ── 🎓 온보딩: 회원 프로필(직업·설문) = 회원 본인 구글시트에만 저장(원칙1) ──
 //   ★회원 OAuth는 SA와 달리 자기 드라이브에 시트 생성 가능 → 없으면 만들어줌(진짜 다회원).
 const PROFILE_TAB = '지니야_프로필';
+// ★계정별 역할(대표 지시): 두 이메일을 서버 상수로 구분한다.
+//   VIP_EMAIL      = 오상열 대표 본사 VIP → 저장된 보험설계사 세팅 복원, 온보딩 스킵.
+//   DEMO_FRESH_EMAIL = 대표 시연/체험용 → 항상 "처음 들어온 신규"처럼 온보딩부터.
+const VIP_EMAIL = 'ggorilla11@gmail.com';
+const DEMO_FRESH_EMAIL = 'ggorilla66@gmail.com';
 async function findOrCreateMemberSheet(ma) {
   const drive = google.drive({ version: 'v3', auth: ma }), sheets = google.sheets({ version: 'v4', auth: ma });
   const f = await drive.files.list({ q: `mimeType='application/vnd.google-apps.spreadsheet' and name='${DEMO_TITLE}' and trashed=false`, fields: 'files(id)' });
@@ -821,6 +826,35 @@ app.get('/api/profile', async (req, res) => {
     const p = {}; rows.forEach((r) => { if (r[0]) p[r[0]] = r[1] || ''; });
     res.json({ ok: true, onboarded: !!p['직업'], profile: p });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+// ── 🧭 로그인 후 화면 분기의 '권위 소스' ──
+//   ★버그 수정: 예전엔 클라이언트가 브라우저 localStorage(genya_job)로 화면을 정해,
+//     계정과 무관하게 그 브라우저에 남은 직업(예: 공인중개사) 메인으로 직행 → 온보딩 스킵.
+//     로그아웃/다른 계정도 같은 localStorage를 봐서 똑같이 오염됐다.
+//   → 이제 "이 로그인 계정"의 상태를 서버가 정한다. route: login | onboarding | main.
+//   ★절대 기본 직업으로 메인 직행 금지. 저장값 없으면 온보딩.
+app.get('/api/boot', async (req, res) => {
+  try {
+    const s = sessionOf(req);
+    if (!s) return res.json({ ok: true, loggedIn: false, route: 'login' });
+    const email = String(s.email || '').toLowerCase();
+    // 시연/체험용 계정: 항상 온보딩부터(교육생처럼)
+    if (email === DEMO_FRESH_EMAIL) return res.json({ ok: true, loggedIn: true, email, route: 'onboarding' });
+    // 본사 VIP(대표): 저장된 보험설계사 세팅 복원, 온보딩 스킵(스코프 유무와 무관하게 보장)
+    if (email === VIP_EMAIL) return res.json({ ok: true, loggedIn: true, email, route: 'main', job: 'insurance', vip: true });
+    // 일반 회원: 서버 저장 프로필(회원 본인 구글시트)로 분기
+    const ma = memberAuth(req);
+    if (ma && hasDataScope(req)) {
+      try {
+        const { id, sheets } = await findOrCreateMemberSheet(ma);
+        let rows = []; try { const g = await sheets.spreadsheets.values.get({ spreadsheetId: id, range: `${PROFILE_TAB}!A1:B20` }); rows = g.data.values || []; } catch (e) {}
+        const p = {}; rows.forEach((r) => { if (r[0]) p[r[0]] = r[1] || ''; });
+        if (p['직업']) return res.json({ ok: true, loggedIn: true, email, route: 'main', jobLabel: p['직업'], profile: p });
+      } catch (e) {}
+    }
+    // 저장값 없음/조회 불가 → 온보딩(신규). ★기본 직업 메인 직행 금지.
+    return res.json({ ok: true, loggedIn: true, email, route: 'onboarding' });
+  } catch (e) { res.json({ ok: true, loggedIn: false, route: 'login', error: e.message }); }
 });
 app.get('/api/profile/save', async (req, res) => {
   try { const ma = gateGoogle(req, res); if (!ma) return; const { id, sheets } = await findOrCreateMemberSheet(ma);

@@ -2583,27 +2583,53 @@ function refreshTopKPIs(dash){
 }
 // 로드 즉시: 로그인 안 됐으면 로그인화면부터 고정
 if(!_AUTHED) _goReal(0);
-// 서버 세션(/me) 재확인 → 권위있게 라우팅 (fail-closed: 실패해도 로그인화면). localStorage는 로그인된 뒤에만 온보딩 여부 참고
+// ★[로그인 흐름 버그 수정] 화면 분기는 '서버'가 정한다(계정별). 브라우저 localStorage(genya_job)로 정하지 않는다.
+//   예전엔 그 브라우저에 남은 직업(예: 공인중개사)이 계정 무관하게 메인으로 튀어나와 온보딩을 스킵했다.
+//   /me = 신원(email·이름·스코프) 채우기, /api/boot = 이 계정의 올바른 화면(login/onboarding/main).
 fetch('/me').then(function(r){return r.json();}).then(function(d){
-  if(d&&d.ok){ _AUTHED=true; window._ME=d;
-    var job=null,nick=null,done=false;
-    try{job=localStorage.getItem('genya_job');nick=localStorage.getItem('genya_nick');done=localStorage.getItem('genya_onboarded')==='1';}catch(e){}
-    if(job&&GENYA_JOBS[job])CUR_JOB=job;
-    if(nick){var ni=document.getElementById('nickInput'); if(ni)ni.value=nick; CUR_NICK=nick;}
-    // ★작업A: 구글 연결 복귀(connected=1) → 저장 상태 복원 + 원래 화면(메인)으로. 로그인/온보딩 처음으로 안 튕김
-    var params=new URLSearchParams(location.search);
-    if(params.get('connected')==='1'){
-      var st=_restoreState();
-      var back=parseInt(params.get('screen')||'5',10)||5;
-      _goReal(back);
-      if(back===5){ applyJob(); if(st) _replayChat(); }
-      refreshConnState();
-      return;
-    }
-    if(done){ _goReal(5); applyJob(); _restoreHist(); } else { _goReal(1); }
-    if(typeof refreshConnState==='function') refreshConnState();
-  } else { _AUTHED=false; _goReal(0); }
+  if(!(d&&d.ok)){ _AUTHED=false; _goReal(0); return; }
+  _AUTHED=true; window._ME=d;
+  var nick=null; try{nick=localStorage.getItem('genya_nick');}catch(e){}
+  if(nick){var ni=document.getElementById('nickInput'); if(ni)ni.value=nick; CUR_NICK=nick;}
+  // ★작업A: 구글 데이터 연결 복귀(connected=1) → 저장 상태 복원 + 원래 화면으로. (라우팅 전에 처리)
+  var params=new URLSearchParams(location.search);
+  if(params.get('connected')==='1'){
+    var st=_restoreState();
+    var back=parseInt(params.get('screen')||'5',10)||5;
+    _goReal(back);
+    if(back===5){ applyJob(); if(st) _replayChat(); }
+    refreshConnState();
+    return;
+  }
+  _bootRoute();
+  if(typeof refreshConnState==='function') refreshConnState();
 }).catch(function(){ _AUTHED=false; _goReal(0); });
+// 서버가 준 직업값(키 또는 라벨) → GENYA_JOBS 키로 변환
+function _resolveJobKey(job, label){
+  if(job && GENYA_JOBS[job]) return job;
+  var want=String(label||job||'').trim(); if(!want) return null;
+  for(var k in GENYA_JOBS){ if(GENYA_JOBS[k] && GENYA_JOBS[k].label===want) return k; }
+  return null;
+}
+// ★계정별 권위 라우팅: /api/boot(서버) → login/onboarding/main. localStorage에 의존하지 않음.
+function _bootRoute(){
+  fetch('/api/boot').then(function(r){return r.json();}).then(function(b){
+    if(!b||!b.loggedIn||b.route==='login'){ _AUTHED=false; _goReal(0); return; }
+    if(b.route==='main'){
+      // 서버가 준 직업으로 세팅(키/라벨 모두 허용). ★localStorage 값은 신뢰하지 않는다.
+      var key=_resolveJobKey(b.job, b.jobLabel);
+      if(key){ CUR_JOB=key; try{localStorage.setItem('genya_job',key);localStorage.setItem('genya_onboarded','1');}catch(e){} }
+      _goReal(5); applyJob(); _restoreHist();
+    } else {
+      // 온보딩(신규/시연): 이전 브라우저에 남은 온보딩 흔적 제거(계정 오염 방지)
+      try{localStorage.removeItem('genya_onboarded');localStorage.removeItem('genya_job');}catch(e){}
+      _goReal(1);
+    }
+  }).catch(function(){
+    // 서버 조회 실패 시 안전기본 → 온보딩(★기본 직업 메인 직행 금지)
+    _goReal(1);
+  });
+}
 // 실제 대화 → /api/order (Claude Sonnet 5, 직업 페르소나 + 히스토리)
 var _HIST=[];
 // ★순서3-A 대화지속: _HIST를 localStorage(genya_hist_{userId})에 실시간 저장/복원 + 긴 대화 요약압축(토큰관리) + _ACTIVE_SKILL 저장
