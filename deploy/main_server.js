@@ -25,6 +25,7 @@ const genyaMem = require('./genya_mem_module');               // 🧠 MEM 하이
 const personalMem = require('./personal_memory');             // 🧠 개인화 벡터 메모리(v4.0 Step2-A · Pinecone 대표·고객 이중 네임스페이스). PINECONE_API_KEY 없으면 no-op.
 const sheetsCrud = require('./sheets_crud_skill');            // 🗂️ Step 2-B · 시트 자연어 CRUD(독립 모듈 · 하이브리드 라우터 무접촉)
 const approval = require('./approval_skill');                 // 🗂️ Step 2-C · 결재함 백엔드(독립 모듈 · 라우터 무접촉)
+const rosterImport = require('./roster_import');              // 📇 Step 2-F · 명단 업로드→회원 시트 저장(독립 모듈)
 const _openai = new (require('openai'))({ apiKey: process.env.OPENAI_API_KEY });
 // ★워크스페이스 대화 = Anthropic Claude Sonnet 5(대표 지시). 온보딩·OCR·약관·문자초안은 OpenAI 유지.
 //   대표가 준 'claude-sonnet-4-6-20250514'는 존재하지 않는 ID → 최신 Sonnet인 claude-sonnet-5로. 날짜접미사 금지.
@@ -1040,6 +1041,15 @@ async function ensureTab(sheets, id, title) {
   const meta = await sheets.spreadsheets.get({ spreadsheetId: id, fields: 'sheets.properties.title' });
   if (!(meta.data.sheets || []).some((s) => s.properties.title === title)) await sheets.spreadsheets.batchUpdate({ spreadsheetId: id, requestBody: { requests: [{ addSheet: { properties: { title } } }] } });
 }
+// 📇 Step 2-F · 명단 업로드→회원 시트 저장 (제로 인그레스: 파싱만·회원 시트 write·서버 저장0)
+rosterImport.init({ getMemberSheet: findOrCreateMemberSheet, ensureTab, title: DEMO_TITLE, tab: SHEET_TAB });
+app.post('/api/roster/import', async (req, res) => {
+  try {
+    const ma = gateGoogle(req, res); if (!ma) return;
+    const b = req.body || {};
+    res.json(await rosterImport.importRoster(ma, { dataUrl: b.dataUrl || b.file || '', mode: b.mode, confirm: !!b.confirm }));
+  } catch (e) { if (scopeGate(e, res, 'sheets')) return; res.status(500).json({ ok: false, error: e.message }); }
+});
 app.get('/api/profile', async (req, res) => {
   try { const ma = gateGoogle(req, res); if (!ma) return; const { id, sheets } = await findOrCreateMemberSheet(ma);
     let rows = []; try { const g = await sheets.spreadsheets.values.get({ spreadsheetId: id, range: `${PROFILE_TAB}!A1:B20` }); rows = g.data.values || []; } catch (e) {}
