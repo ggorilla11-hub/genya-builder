@@ -646,6 +646,7 @@
         <div class="kpi k" onclick="openPop('send')"><div class="ic"><svg viewBox="0 0 24 24" fill="none"><path d="M4 6h16v12H4z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M4 7l8 6 8-6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div><div class="tx"><b id="kpiSend">대기</b><span id="kpiSendSub">오늘 발송</span></div></div>
       </div>
       <div class="top-act">
+        <div title="명단·연결" onclick="genyaHub()" style="cursor:pointer;padding:7px 12px;background:linear-gradient(135deg,#D4A574,#c79760);color:#0F1A35;font-weight:700;font-size:12.5px;display:flex;align-items:center;gap:5px;border-radius:9px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.12);">📇 명단·연결</div>
         <div class="tbtn" title="다운로드" onclick="openDownload()"><svg viewBox="0 0 24 24" fill="none"><path d="M12 4v10m0 0l-4-4m4 4l4-4M5 19h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
         <div class="tbtn" title="공유/발송" onclick="openShare()"><svg viewBox="0 0 24 24" fill="none"><path d="M8 12l8-5m-8 5l8 5m-8-5a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0zm13-7a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0zm0 14a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
         <div class="tbtn" title="발송기 설치" onclick="openWatcher()"><svg viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="13" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M8 21h8M12 17v4M12 7v4m0 0l-2.2-2.2M12 11l2.2-2.2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
@@ -2774,6 +2775,88 @@ window.runOCR=function(mode){
 };
 // 첨부(+) 버튼 → OCR/상품비교 업로드 흐름
 window.addFile=function(){ doOCR(); };
+</script>
+
+<!-- ═══ 📇 Step 2-F · 명단·연결 허브 (드로어) — 자체완결·기존 뷰 무접촉 ═══ -->
+<style>
+  #ghOv{position:fixed;inset:0;background:rgba(15,26,53,.45);z-index:9998;display:none;}
+  #ghPanel{position:fixed;top:0;right:0;height:100%;width:min(420px,92vw);background:#F5F3F2;z-index:9999;box-shadow:-4px 0 24px rgba(0,0,0,.2);transform:translateX(100%);transition:transform .22s ease;display:flex;flex-direction:column;}
+  #ghOv.on #ghPanel{transform:translateX(0);}
+  .gh-hd{background:#0F1A35;color:#fff;padding:16px 18px;display:flex;justify-content:space-between;align-items:center;}
+  .gh-hd b{font-size:16px;} .gh-x{cursor:pointer;font-size:20px;color:#D4A574;line-height:1;}
+  .gh-bd{padding:16px 18px;overflow-y:auto;flex:1;font-family:'Pretendard','맑은 고딕',sans-serif;color:#0F1A35;}
+  .gh-sec{font-size:12px;font-weight:700;color:#8a6d3b;margin:18px 0 8px;letter-spacing:.02em;}
+  .gh-row{display:flex;align-items:center;justify-content:space-between;background:#fff;border:1px solid #e5e1dc;border-radius:11px;padding:11px 13px;margin-bottom:8px;}
+  .gh-row .nm{font-size:13.5px;font-weight:600;} .gh-row .nm span{display:block;font-weight:400;color:#8a94a6;font-size:11px;}
+  .gh-st{font-size:12px;font-weight:700;display:flex;align-items:center;gap:5px;}
+  .gh-dot{width:9px;height:9px;border-radius:50%;display:inline-block;}
+  .on .gh-dot{background:#2e9e5b;} .off .gh-dot{background:#c2c7d0;}
+  .gh-on{color:#2e9e5b;} .gh-off{color:#98a0ad;}
+  .gh-relink{margin-left:8px;font-size:11.5px;color:#0F1A35;background:#f0ead9;border:none;border-radius:8px;padding:5px 10px;font-weight:600;cursor:pointer;}
+  .gh-card{background:#fff;border:1px solid #D4A574;border-radius:12px;padding:14px;}
+  .gh-cnt{font-size:22px;font-weight:800;color:#0F1A35;} .gh-cnt small{font-size:12px;font-weight:600;color:#8a94a6;margin-left:4px;}
+  .gh-btn{width:100%;background:linear-gradient(135deg,#D4A574,#c79760);color:#0F1A35;font-weight:700;border:none;border-radius:10px;padding:11px;font-size:14px;cursor:pointer;margin-top:10px;font-family:inherit;}
+  .gh-btn.ghost{background:#eee;color:#555;} .gh-btn.half{width:49%;}
+  .gh-pv{background:#f7f5f2;border-radius:9px;padding:10px;font-size:12.5px;margin-top:10px;line-height:1.6;}
+  .gh-warn{background:#FBF0DC;color:#8a4d18;border-radius:9px;padding:9px 11px;font-size:12px;margin-top:8px;}
+</style>
+<div id="ghOv" onclick="if(event.target===this)ghClose()">
+  <div id="ghPanel">
+    <div class="gh-hd"><b>📇 명단 · 연결</b><span class="gh-x" onclick="ghClose()">✕</span></div>
+    <div class="gh-bd">
+      <div class="gh-sec">내 고객명단</div>
+      <div class="gh-card">
+        <div><span class="gh-cnt" id="ghCount">–</span><small>명 저장됨</small></div>
+        <div style="font-size:12px;color:#6b7280;margin-top:4px;line-height:1.5">올린 명단이 지니야의 실제 명단이 됩니다. 만기·발송·관리가 이 명단으로 돌아가요.</div>
+        <input type="file" id="ghFile" accept=".xlsx,.xls,.csv" style="display:none" onchange="ghPick(this)">
+        <button class="gh-btn" onclick="document.getElementById('ghFile').click()">명단 파일 올리기 (엑셀·CSV)</button>
+        <div id="ghPv"></div>
+      </div>
+      <div class="gh-sec">연결 상태</div>
+      <div id="ghConns"><div style="color:#8a94a6;font-size:12.5px">확인 중…</div></div>
+      <button class="gh-btn ghost" style="margin-top:10px" onclick="ghLoad()">🔄 새로고침</button>
+    </div>
+  </div>
+</div>
+<script>
+(function(){
+  var CONNS=[{k:'sheets',nm:'구글 시트',sub:'고객 명단'},{k:'calendar',nm:'구글 캘린더',sub:'일정·브리핑'},{k:'drive',nm:'구글 드라이브',sub:'자료 저장'},{k:'gmail',nm:'Gmail',sub:'메일·발송'}];
+  var _pending=null;
+  function esc(s){return String(s==null?'':s).replace(/[&<>]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;'}[c];});}
+  async function api(u,o){var r=await fetch(u,Object.assign({credentials:'same-origin'},o||{}));return r.json();}
+  window.genyaHub=function(){document.getElementById('ghOv').style.display='block';setTimeout(function(){document.getElementById('ghOv').classList.add('on');},10);ghLoad();};
+  window.ghClose=function(){document.getElementById('ghOv').classList.remove('on');setTimeout(function(){document.getElementById('ghOv').style.display='none';},220);};
+  window.ghLoad=async function(){
+    // 명단 수
+    try{var s=await api('/api/sheets');document.getElementById('ghCount').textContent=(s&&typeof s.total==='number')?s.total:(s&&(s.needsGoogle||s.needsConnect)?'–':'0');}catch(e){document.getElementById('ghCount').textContent='–';}
+    // 연결 상태(실측)
+    var box=document.getElementById('ghConns');
+    var st;try{st=await api('/api/conn/status');}catch(e){st={};}
+    if(st&&(st.needsGoogle||st.needsConnect)){box.innerHTML='<div class="gh-warn">구글 연결이 필요해요. <a href="/auth/google/connect">지금 연결하기</a></div>';return;}
+    box.innerHTML=CONNS.map(function(c){var on=!!st[c.k];return '<div class="gh-row '+(on?'on':'off')+'"><div class="nm">'+esc(c.nm)+'<span>'+esc(c.sub)+'</span></div><div class="gh-st '+(on?'gh-on':'gh-off')+'"><span class="gh-dot"></span>'+(on?'연결됨':'미연결')+(on?'':'<button class="gh-relink" onclick="location.href=\'/auth/google/connect\'">연결</button>')+'</div></div>';}).join('');
+  };
+  window.ghPick=function(inp){
+    var f=inp.files&&inp.files[0];if(!f)return;
+    var rd=new FileReader();
+    rd.onload=async function(){
+      document.getElementById('ghPv').innerHTML='<div class="gh-warn">읽는 중…</div>';
+      var j;try{j=await api('/api/roster/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dataUrl:rd.result,confirm:false})});}catch(e){document.getElementById('ghPv').innerHTML='<div class="gh-warn">오류: '+esc(e.message)+'</div>';return;}
+      if(j&&(j.needsGoogle||j.needsConnect)){document.getElementById('ghPv').innerHTML='<div class="gh-warn">구글 연결이 필요해요. <a href="/auth/google/connect">연결</a></div>';return;}
+      if(!j.ok){document.getElementById('ghPv').innerHTML='<div class="gh-warn">'+esc(j.message||'읽기 실패')+'</div>';return;}
+      _pending=rd.result;
+      document.getElementById('ghPv').innerHTML='<div class="gh-pv">📄 <b>'+j.count+'명</b> 읽음 · 신규 <b>'+j.신규+'</b>명 · 이미 있음 <b>'+j.중복+'</b>명'+(j.중복명단&&j.중복명단.length?'<br><span style="color:#8a94a6">중복: '+esc(j.중복명단.join(', '))+(j.중복>j.중복명단.length?' 외':'')+'</span>':'')+'<br>항목: '+esc((j.header||[]).join(', '))+'</div><div style="display:flex;gap:2%;margin-top:8px"><button class="gh-btn half" onclick="ghSave(\'replace\')">기존 교체(덮어쓰기)</button><button class="gh-btn half ghost" onclick="ghSave(\'append\')">기존에 추가</button></div>';
+    };
+    rd.readAsDataURL(f);inp.value='';
+  };
+  window.ghSave=async function(mode){
+    if(!_pending)return;
+    if(mode==='replace'&&!confirm('기존 명단을 덮어쓰고 새로 저장할까요? 되돌릴 수 없어요.'))return;
+    document.getElementById('ghPv').innerHTML='<div class="gh-warn">저장 중…</div>';
+    var j;try{j=await api('/api/roster/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dataUrl:_pending,mode:mode,confirm:true})});}catch(e){document.getElementById('ghPv').innerHTML='<div class="gh-warn">오류: '+esc(e.message)+'</div>';return;}
+    if(j.ok){document.getElementById('ghPv').innerHTML='<div class="gh-pv" style="color:#2e7d32">✅ '+esc(j.message)+'</div>';_pending=null;ghLoad();if(window._MGMTFILE!==undefined){try{window._MGMTFILE=null;}catch(e){}}}
+    else{document.getElementById('ghPv').innerHTML='<div class="gh-warn">'+esc(j.message||j.error||'실패')+'</div>';}
+  };
+})();
 </script>
 </body>
 </html>
