@@ -1412,6 +1412,7 @@ app.get('/login', (req, res) => {
 });
 // ── 📄 개인정보처리방침 · 서비스 이용약관(구글 앱 인증용) — 정적 페이지 ──
 app.get(['/privacy', '/privacy.html', '/개인정보처리방침'], (req, res) => res.sendFile(path.join(__dirname, 'privacy.html')));
+app.get('/crud-test', (req, res) => res.sendFile(path.join(__dirname, 'crud_test.html'))); // 🗂️ Step 2-B 로컬 실측 콘솔(로컬 전용)
 app.get(['/terms', '/terms.html', '/이용약관'], (req, res) => res.sendFile(path.join(__dirname, 'terms.html')));
 
 app.get('/auth/google', (req, res) => {
