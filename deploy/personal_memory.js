@@ -115,9 +115,13 @@ async function recallRecent({ ownerId, scope, customerId, query, source, limit }
 // ★스마트 조회: 시간·회상 질의면 최근순(생성물 우선), 아니면 의미검색. 대화 배선에서 이걸 쓴다.
 async function recallSmart({ ownerId, scope, customerId, query, topK }) {
   if (isRecencyQuery(query)) {
-    const gen = await recallRecent({ ownerId, scope, customerId, query, source: 'generated', limit: topK });
-    if (gen) return gen;
-    return recallRecent({ ownerId, scope, customerId, query, limit: topK }); // 생성물 없으면 전체 최근순
+    // 출처 감지: "올린/업로드"→upload, "만든/생성/결과지"→generated, 그 외→전체 최근순
+    let src;
+    if (/올린|올렸|업로드|받은|받았/.test(String(query || ''))) src = 'upload';
+    else if (/만든|만들|생성|작성|제안서|결과지|리포트|초안/.test(String(query || ''))) src = 'generated';
+    const r = await recallRecent({ ownerId, scope, customerId, query, source: src, limit: topK });
+    if (r) return r;
+    return recallRecent({ ownerId, scope, customerId, query, limit: topK }); // 못 찾으면 전체 최근순
   }
   return recallContext({ ownerId, scope, customerId, query, topK });
 }

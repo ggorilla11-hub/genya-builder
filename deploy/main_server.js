@@ -732,6 +732,8 @@ function _memSaveDesign(req, r, label) {
     else if (label === '상품비교') { const rep = String(r.report || '').replace(/[#*|>_`\-]/g, ' ').replace(/\s+/g, ' ').trim(); summary = rep.slice(0, 120); 담보금액 = ''; if (!summary) return; } // ★작업3: compareProducts는 report만 반환 → 요약 추출해 저장
     else return;
     genyaMem.saveMem(googleAuth([genyaMem.SCOPE]), { userId: uid, 고객명: 고객명, skill: label, summary: summary, 담보금액: 담보금액 }).catch(function () {});
+    // ★A-7: 개인화 벡터 메모리에도 생성물 저장(source=generated) → "어제 만든 자료" 회상 대비. 키 없으면 no-op.
+    if (personalMem.configured() && summary) personalMem.saveMemoryAsync({ ownerId: uid, scope: 'representative', source: 'generated', text: (고객명 ? 고객명 + ' ' : '') + label + ': ' + summary, summary: (고객명 ? 고객명 + ' ' : '') + label + ' ' + summary });
   } catch (e) {}
 }
 app.post('/api/mem/save', async (req, res) => {
@@ -1085,6 +1087,9 @@ app.post('/api/coverage/analyze', async (req, res) => {
       return res.json({ ok: true, needsConvert: true, message: '이 형식은 아직 지원 안 돼요(' + (ext || mime || '알 수 없음') + '). 이미지·PDF·엑셀·텍스트로 올려주세요.' });
     }
     if (!analysis) return res.json({ ok: false, error: '분석에 실패했어요. 이미지·PDF로 올려주시면 바로 될 거예요.' });
+    // ★A-6: 업로드 문서 분석도 개인화 벡터 메모리에 저장(source=upload) → "올린 증권/자료" 회상 대비. 키/로그인 없으면 no-op.
+    const _muid = (sessionOf(req) || {}).email || '';
+    if (_muid && personalMem.configured() && analysis) personalMem.saveMemoryAsync({ ownerId: _muid, scope: 'representative', source: 'upload', text: analysis, summary: (name || '업로드 문서') + ' 분석' });
     res.json({ ok: true, analysis }); // ★결과만 반환, 파일·결과 서버 저장 안 함
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
