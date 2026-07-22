@@ -833,7 +833,7 @@ async function orderHandler(req, res) {
       const hist = Array.isArray(req.body && req.body.history) ? req.body.history.slice(-10) : [];
       const uid = (sessionOf(req) || {}).email || '';
       let memCtx = '';
-      if (uid && personalMem.configured()) { try { memCtx = await personalMem.recallContext({ ownerId: uid, scope: 'representative', query: q }); } catch (e) {} }
+      if (uid && personalMem.configured()) { try { memCtx = await personalMem.recallSmart({ ownerId: uid, scope: 'representative', query: q }); } catch (e) {} }
       const sysP = genyaPersona(job) + (memCtx ? ('\n[대표님 기억] 아래는 이 대표님의 과거 대화·자료 요약이다. 관련되면 근거로 활용하되 없는 값은 지어내지 마라.\n' + memCtx) : '');
       const text = await askClaude(sysP, hist.concat([{ role: 'user', content: q }]), 1500, { admin: _admin });
       out = { kind: '💬 지니야', text, engine: _lastAskModel || pickedModel(q, { admin: _admin }) };

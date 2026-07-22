@@ -21,7 +21,7 @@ const INDEX_NAME = process.env.PINECONE_INDEX || 'ohwant-genya';
 const EMBED_MODEL = 'text-embedding-3-small'; // 1536차원
 const EMBED_DIM = 1536;
 const DEFAULT_TOPK = 5;
-const MIN_SCORE = 0.2; // 이 이하 유사도는 무관하다고 보고 버림
+const MIN_SCORE = 0.1; // 이 이하 유사도는 무관하다고 보고 버림(한국어 약연관도 반영 위해 낮춤)
 
 let _pc = null, _index = null, _oa = null, _ready = false;
 
@@ -94,7 +94,35 @@ async function recallContext({ ownerId, scope, customerId, query, topK }) {
   } catch (e) { return ''; }
 }
 
-module.exports = { configured, ns, ensureIndex, embed, saveMemory, saveMemoryAsync, recallContext, INDEX_NAME, EMBED_MODEL, EMBED_DIM, DEFAULT_TOPK };
+// ── 최근순 조회 (시나리오2 "어제 만든 자료 뭐였지?"): 순수 유사도가 아니라 최근순 정렬 ──
+//   ★"어제/최근/만든 자료" 같은 시간·회상 질의는 의미검색이 약함 → source 필터 + timestamp 내림차순.
+const RECENCY_RE = /(어제|저번|지난|과거|이전|그때|최근|방금|아까|만든|만들었?|작성한|생성)/;
+function isRecencyQuery(q) { return RECENCY_RE.test(String(q || '')); }
+async function recallRecent({ ownerId, scope, customerId, query, source, limit }) {
+  if (!configured() || !ownerId) return '';
+  try {
+    const idx = await ensureIndex();
+    const vector = await embed(query || '자료');
+    const filter = source ? { source: { '$eq': source } } : undefined;
+    const res = await idx.namespace(ns(ownerId, scope, customerId)).query({ vector, topK: (limit || DEFAULT_TOPK) * 4, includeMetadata: true, filter });
+    const rows = (res.matches || []).map((m) => m.metadata || {})
+      .sort((a, b) => String(b.timestamp || '').localeCompare(String(a.timestamp || '')))
+      .slice(0, limit || DEFAULT_TOPK);
+    if (!rows.length) return '';
+    return rows.map((md) => `· [${String(md.timestamp || '').slice(0, 10)}·${md.source || ''}] ${md.summary || md.text || ''}`).join('\n');
+  } catch (e) { return ''; }
+}
+// ★스마트 조회: 시간·회상 질의면 최근순(생성물 우선), 아니면 의미검색. 대화 배선에서 이걸 쓴다.
+async function recallSmart({ ownerId, scope, customerId, query, topK }) {
+  if (isRecencyQuery(query)) {
+    const gen = await recallRecent({ ownerId, scope, customerId, query, source: 'generated', limit: topK });
+    if (gen) return gen;
+    return recallRecent({ ownerId, scope, customerId, query, limit: topK }); // 생성물 없으면 전체 최근순
+  }
+  return recallContext({ ownerId, scope, customerId, query, topK });
+}
+
+module.exports = { configured, ns, ensureIndex, embed, saveMemory, saveMemoryAsync, recallContext, recallRecent, recallSmart, isRecencyQuery, INDEX_NAME, EMBED_MODEL, EMBED_DIM, DEFAULT_TOPK };
 
 // ── 자체 점검(로컬): node personal_memory.js ──
 if (require.main === module) {
