@@ -26,9 +26,46 @@ const _openai = new (require('openai'))({ apiKey: process.env.OPENAI_API_KEY });
 // ★워크스페이스 대화 = Anthropic Claude Sonnet 5(대표 지시). 온보딩·OCR·약관·문자초안은 OpenAI 유지.
 //   대표가 준 'claude-sonnet-4-6-20250514'는 존재하지 않는 ID → 최신 Sonnet인 claude-sonnet-5로. 날짜접미사 금지.
 const _anthropic = new (require('@anthropic-ai/sdk'))({ apiKey: process.env.ANTHROPIC_API_KEY });
-const WS_CHAT_MODEL = 'claude-sonnet-5';
-// ★대화 품질 업그레이드(2026-07-06): OpenAI 폴백 모델 gpt-4o-mini → gpt-4o. OCR은 이미 gpt-4o.
-const CHAT_MODEL = 'gpt-4o';
+// ═══ 🧠 하이브리드 모델 라우터 (Step 2-1) — 간단=Sonnet5(빠름·저렴) / 깊음=Opus4.8(재무상담·분석·전략) ═══
+//   ★결정적 분기(LLM 분류 호출 0 = 지연·비용 없음): 프롬프트 길이·키워드·명시적 depth·admin·function-calling.
+//   ★폴백 유지: Claude 실패 → gpt-4o. 둘 다 실패 → 사용자에게 정직 안내(대화 안 끊김).
+const MODEL_SIMPLE = 'claude-sonnet-5';   // 인사·짧은 질문 등 일반 응답
+const MODEL_DEEP = 'claude-opus-4-8';     // 재무상담·설계·분석·전략 등 깊은 응답 (최신 Opus, 정확 ID·날짜접미사 금지)
+const MODEL_FALLBACK = 'gpt-4o';          // Claude 실패 시 폴백
+const WS_CHAT_MODEL = MODEL_SIMPLE;       // ★하위호환: 증권/연금/약관/초안 등 기존 단발 호출은 그대로 Sonnet5(추후 개별 튜닝)
+const CHAT_MODEL = MODEL_FALLBACK;        // ★하위호환
+let _lastAskModel = '';                   // ★askClaude가 마지막에 실제로 응답한 모델(폴백 gpt-4o 포함) — 화면 engine 라벨 정직표기용
+// 깊은 응답이 필요한 키워드(재무상담·설계·분석·전략·조언·설명·비교·이유설명 등)
+const DEEP_KEYWORDS = /상담|설계|분석|전략|조언|계획|설명|비교|왜|어떻게|추천|진단|리모델링|노후|연금|은퇴|절세|포트폴리오|보장분석/;
+// intent: 마지막 사용자 발화로 SIMPLE/DEEP 판별. 지어내기 없이 규칙만(빠르고 공짜).
+function classifyIntent(text, opts) {
+  opts = opts || {};
+  if (opts.depth === 'deep' || opts.admin || opts.functionCalling) return 'DEEP';  // admin·함수호출·명시요청 = 무조건 깊게
+  const t = String(text || '');
+  if (t.length > 300) return 'DEEP';          // 긴 질문 = 복잡 = 깊게
+  if (DEEP_KEYWORDS.test(t)) return 'DEEP';    // 재무 키워드 = 깊게
+  return 'SIMPLE';                             // 그 외 = 빠르게
+}
+// ── 💰 비용 관리: 모델별 토큰→원화 추정 로그(메모리·KST 자정 리셋). 임계 초과 시 경고 ──
+// ★일 비용 임계(원). 초기 도그푸딩=5천원. 조정: 환경변수 COST_THRESHOLD_KRW (1주 5천 → 교육 5명 1만 → 10명+ 2~3만, 회장님 결재)
+const DAILY_COST_THRESHOLD_KRW = Number(process.env.COST_THRESHOLD_KRW || 5000);
+const _USD_KRW = 1400;
+const _MODEL_PRICE = { 'claude-opus-4-8': [5, 25], 'claude-sonnet-5': [3, 15], 'gpt-4o': [2.5, 10] };  // [input,output] USD/1M
+const _usage = { date: '', krw: 0, calls: 0, byModel: {}, alerted: false };
+function _kstDate() { return new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10); }
+function _logModelUsage(model, usage) {
+  try {
+    const d = _kstDate();
+    if (_usage.date !== d) { _usage.date = d; _usage.krw = 0; _usage.calls = 0; _usage.byModel = {}; _usage.alerted = false; }
+    const p = _MODEL_PRICE[model] || [3, 15];
+    const inTok = (usage && (usage.input_tokens != null ? usage.input_tokens : usage.prompt_tokens)) || 0;
+    const outTok = (usage && (usage.output_tokens != null ? usage.output_tokens : usage.completion_tokens)) || 0;
+    const krw = ((inTok / 1e6) * p[0] + (outTok / 1e6) * p[1]) * _USD_KRW;
+    _usage.krw += krw; _usage.calls += 1; _usage.byModel[model] = (_usage.byModel[model] || 0) + krw;
+    if (_usage.krw > DAILY_COST_THRESHOLD_KRW && !_usage.alerted) { _usage.alerted = true; console.warn(`⚠️ 지니야 일 사용량 ${Math.round(_usage.krw)}원 — 임계값(${DAILY_COST_THRESHOLD_KRW}원) 초과 (회장님 확인 필요)`); }
+    if (process.env.LOCAL_STAGING === '1') console.log(`[usage] ${model} +${Math.round(krw)}원 → 오늘 누적 ${Math.round(_usage.krw)}원 (${_usage.calls}건)`);  // ★로컬 실측용 opt-in(기본 OFF)
+  } catch (e) {}
+}
 // ★지니야 공용 페르소나(70대 어르신도 알아듣게·클로드 언급 금지·휴먼인더루프). job=직업 맞춤.
 function genyaPersona(job) {
   const j = (job && String(job).trim()) || '1인 사업자';
@@ -47,23 +84,37 @@ function genyaPersona(job) {
 }
 // ★공통: 모든 대화를 Claude Sonnet 5로. system 별도·role은 user/assistant만·연속 동일role 병합·첫줄 user 보장.
 //   Claude 실패(키·에러) 시 OpenAI 폴백 → 대화가 절대 끊기지 않게.
-async function askClaude(systemPrompt, messages, maxTokens) {
+async function askClaude(systemPrompt, messages, maxTokens, opts) {
   maxTokens = maxTokens || 1500;
   const fmt = (messages || []).map((m) => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: String(m.content || m.text || '').slice(0, 2000) })).filter((m) => m.content);
   const cleaned = [];
   for (const m of fmt) { if (cleaned.length && cleaned[cleaned.length - 1].role === m.role) cleaned[cleaned.length - 1].content += '\n' + m.content; else cleaned.push(m); }
   if (!cleaned.length) cleaned.push({ role: 'user', content: '(대화 시작)' });
   if (cleaned[0].role === 'assistant') cleaned.unshift({ role: 'user', content: '(대화 시작)' });
+  // ★하이브리드 라우팅: 마지막 사용자 발화 + opts(admin·function)로 SIMPLE/DEEP 판별 → Sonnet5 or Opus4.8
+  const _lastUser = cleaned.slice().reverse().find((m) => m.role === 'user');
+  const model = classifyIntent(_lastUser ? _lastUser.content : '', opts) === 'DEEP' ? MODEL_DEEP : MODEL_SIMPLE;
   try {
-    const r = await _anthropic.messages.create({ model: WS_CHAT_MODEL, max_tokens: maxTokens, system: systemPrompt, messages: cleaned });
+    if (process.env.SIMULATE_CLAUDE_FAIL === '1') throw new Error('강제 Claude 실패(스테이징 폴백 실측용)');  // ★기본 OFF · 폴백 시나리오4 검증용
+    const r = await _anthropic.messages.create({ model, max_tokens: maxTokens, system: systemPrompt, messages: cleaned });
+    _logModelUsage(model, r.usage);
     const t = (r.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
-    if (t) return t;
+    if (t) { _lastAskModel = model; return t; }
     throw new Error('빈 응답');
   } catch (e) {
-    const or = await _openai.chat.completions.create({ model: CHAT_MODEL, temperature: 0.5, max_tokens: maxTokens, messages: [{ role: 'system', content: systemPrompt }].concat(cleaned) });
-    return (or.choices[0].message.content || '').trim();
+    // Claude 실패(또는 시뮬레이션) → gpt-4o 폴백. 그것도 실패하면 정직히 안내(대화 안 끊김).
+    try {
+      const or = await _openai.chat.completions.create({ model: MODEL_FALLBACK, temperature: 0.5, max_tokens: maxTokens, messages: [{ role: 'system', content: systemPrompt }].concat(cleaned) });
+      _logModelUsage(MODEL_FALLBACK, or.usage);
+      _lastAskModel = MODEL_FALLBACK;
+      return (or.choices[0].message.content || '').trim();
+    } catch (e2) {
+      return '죄송해요, 지금 잠깐 응답이 어려워요. 잠시 후 다시 한 번 말씀해 주세요. (일시적으로 두 엔진 모두 응답하지 못했어요)';
+    }
   }
 }
+// ★askClaude가 고른 모델을 화면 라벨용으로도 그대로 계산(정직: 실제 쓴 모델 표기)
+function pickedModel(text, opts) { return classifyIntent(text, opts) === 'DEEP' ? MODEL_DEEP : MODEL_SIMPLE; }
 const SKILL_OUT = require('path').join(__dirname, 'out');
 
 const KEY_FILE = process.env.GOOGLE_SA_JSON || '{}';
@@ -732,6 +783,8 @@ async function orderHandler(req, res) {
     const q = String((req.body && (req.body.q || req.body.message)) || req.query.q || '').trim();
     const ma = memberAuth(req);
     const canData = !!(ma && hasDataScope(req)); // ★데이터 스코프까지 있는 회원만 캘린더·시트·드라이브 호출
+    // ★Step2-1: 회장 admin의 관리성 명령(발송·시트 변경 등)은 깊은 모델(Opus4.8)로 라우팅
+    const _admin = _isAdmin(req) && /알림톡|문자|이메일|발송|보내|시트.*(추가|수정|삭제|변경|바꿔)|결재|승인/.test(q);
     if (!q) return res.json({ ok: true, kind: 'idle', text: '무엇이든 말씀하세요 (예: "무보험차상해가 뭐야?" / "이번 주 만기 고객 정리해줘")' });
     // ★MEM-2 과거 설계 재현: "예전/지난 ○○ 설계 불러줘" → genya_mem(userId 격리) 검색 → LLM이 그때처럼 재현/수정. 실패 시 아래 일반 흐름으로 폴백(정직).
     if (/(예전|저번|지난|과거|이전|그때|작년|저번주|지난주).{0,8}(설계|보장|연금|제안|분석)|(불러|가져|찾아).{0,6}(설계|제안서|연금|보장분석)/.test(q)) {
@@ -761,8 +814,8 @@ async function orderHandler(req, res) {
       const job = String((req.body && req.body.job) || req.query.job || '');
       const hist = Array.isArray(req.body && req.body.history) ? req.body.history.slice(-10) : [];
       const sys = genyaPersona(job) + `\n[현재 작업] 지금 사용자는 "${SKILL_CTX[activeSkill]}" 작업을 진행 중이다. 앞서 지니야가 안내한 내용(예: 사진·파일 업로드 요청)을 기억한 채 맥락을 유지하고 그 작업을 이어서 돕는다. 맥락을 잃고 "해당 파일 없음" 같은 엉뚱한 답을 하지 마라. 파일이 필요하면 화면 아래 ＋ 버튼으로 올려달라고 자연스럽게 안내한다.`;
-      const text = await askClaude(sys, hist.concat([{ role: 'user', content: q }]), 1500);
-      out = { kind: '💬 지니야', text, engine: 'claude-sonnet-5' };
+      const text = await askClaude(sys, hist.concat([{ role: 'user', content: q }]), 1500, { admin: _admin });
+      out = { kind: '💬 지니야', text, engine: _lastAskModel || pickedModel(q, { admin: _admin }) };
     } else if (/약관|무보험|대물|자기신체|자동차상해|담보|보장.*(뭐|무엇|차이)/.test(q)) {
       const r = await askYakgwan(q); out = { kind: '📄 약관창고', text: r.answer, sources: r.sources }; // 공통 지식(구글 불필요)
     } else if (/만기|명단|자산가|고객.*(정리|목록|누구)/.test(q)) {
@@ -775,8 +828,8 @@ async function orderHandler(req, res) {
       // ★워크스페이스 대화 = Claude Sonnet 5(askClaude 공통) + 히스토리(-10) + 직업 페르소나
       const job = String((req.body && req.body.job) || req.query.job || '');
       const hist = Array.isArray(req.body && req.body.history) ? req.body.history.slice(-10) : [];
-      const text = await askClaude(genyaPersona(job), hist.concat([{ role: 'user', content: q }]), 1500);
-      out = { kind: '💬 지니야', text, engine: 'claude-sonnet-5' };
+      const text = await askClaude(genyaPersona(job), hist.concat([{ role: 'user', content: q }]), 1500, { admin: _admin });
+      out = { kind: '💬 지니야', text, engine: _lastAskModel || pickedModel(q, { admin: _admin }) };
     }
     // ★연결1: 결정·요청이면 회원 구글시트에 자동 기억(서버 저장 0) — 데이터 스코프 있는 회원만(없으면 조용히 건너뜀)
     let saved = null;
@@ -1123,6 +1176,118 @@ app.post('/api/gmail/send', async (req, res) => {
   } catch (e) { if (scopeGate(e, res, 'gmail')) return; res.status(500).json({ ok: false, error: e.message }); }
 });
 
+// ═══════════════════════════════════════════════════════════════════════════
+// 📱 카카오 알림톡 (Step 5) — 오원트 org 채널(발신프로필)로 정보성 알림 발송
+//   ★검증된 HMAC-SHA256 v4 방식 재사용(기존 /api/send/sms와 동일) → 새 의존성 0(solapi SDK 불필요).
+//   ★오원트 중앙 채널: 키·발신프로필은 ENV(회장님)에서만. (부트캠프 회원은 각자 채널=추후 별도.)
+//   ★관리자 게이트: org 채널 발송은 회장(VIP_EMAIL)만. 남이 org 채널로 못 쏨.
+//   ★휴먼인루프: 반드시 웹에서 [승인] 후 send 호출(preview→승인→send). 대량(10건+)은 confirmBulk 명시.
+//   ★가짜성공 금지: 솔라피 정상 접수일 때만 sent:true. ★제로 인그레스: 수신자·문구 저장 0, 로그=마스킹 요약만.
+//   ★심사 대기: pfId·templateId는 카카오 심사(3~5일, 회장님 수동) 통과 후 ENV 주입 → 그전엔 정직히 '미승인' 에러.
+// ═══════════════════════════════════════════════════════════════════════════
+const SOLAPI_KEY = process.env.SOLAPI_API_KEY || '';
+const SOLAPI_SECRET = process.env.SOLAPI_API_SECRET || '';
+const SOLAPI_PFID = process.env.SOLAPI_PFID || '';                                 // 카카오 발신프로필 ID(채널 등록 후 발급)
+const SOLAPI_FROM = String(process.env.SOLAPI_FROM || '').replace(/[^0-9]/g, '');   // 발신번호(알림톡 실패 시 SMS 대체발송용)
+const SOLAPI_CONFIGURED = !!(SOLAPI_KEY && SOLAPI_SECRET);
+// 심사 통과 시 발급되는 templateId를 ENV로 주입(코드명 → 카카오 templateId). 미주입이면 그 템플릿은 '미승인'.
+//   ★다목적: 지니야는 1인 사업자(재무설계·필라테스·세무·행정·병의원 등) 공용 비서. 발신자는 #{사업자명} 변수로 유연 대응.
+//   ★심사 안전: 전부 순수 정보성(예약·계약·신청 기반). 광고 문구(특가·할인·지금 신청) 금지. 미가입자 광고 금지.
+const ALIMTALK_TEMPLATES = {
+  template_car_insurance_expiry: { name: '자동차보험 만기 안내', vars: ['사업자명', '고객명', '만기일'],           id: process.env.SOLAPI_TPL_CAR_INSURANCE_EXPIRY || '' },
+  template_insurance_expiry:     { name: '보험 만기 안내',       vars: ['사업자명', '고객명', '상품명', '만기일'],   id: process.env.SOLAPI_TPL_INSURANCE_EXPIRY || '' },
+  template_renewal_notice:       { name: '갱신 안내',           vars: ['사업자명', '고객명', '항목', '갱신일'],     id: process.env.SOLAPI_TPL_RENEWAL_NOTICE || '' },
+  template_birthday:             { name: '생일 축하',           vars: ['사업자명', '고객명'],                     id: process.env.SOLAPI_TPL_BIRTHDAY || '' },
+  template_anniversary:          { name: '결혼 기념일 축하',     vars: ['사업자명', '고객명'],                     id: process.env.SOLAPI_TPL_ANNIVERSARY || '' },
+  template_meeting_reminder:     { name: '상담·미팅 리마인더',   vars: ['사업자명', '고객명', '일시', '장소'],       id: process.env.SOLAPI_TPL_MEETING_REMINDER || '' },
+  template_program_info:         { name: '강의·세미나·수업 안내', vars: ['사업자명', '고객명', '프로그램명', '일정'], id: process.env.SOLAPI_TPL_PROGRAM_INFO || '' },
+  template_event_info:           { name: '일정·행사 안내',      vars: ['사업자명', '고객명', '행사명', '일시'],     id: process.env.SOLAPI_TPL_EVENT_INFO || '' },
+};
+function _maskPhone(p) { const s = String(p || '').replace(/[^0-9]/g, ''); if (s.length < 7) return '***'; return s.slice(0, 3) + '****' + s.slice(-4); }
+function _isAdmin(req) { const s = sessionOf(req); return !!(s && String(s.email || '').toLowerCase() === VIP_EMAIL); }
+function _solapiAuth() {
+  const date = new Date().toISOString();
+  const salt = crypto.randomBytes(32).toString('hex');
+  const signature = crypto.createHmac('sha256', SOLAPI_SECRET).update(date + salt).digest('hex');
+  return `HMAC-SHA256 apiKey=${SOLAPI_KEY}, date=${date}, salt=${salt}, signature=${signature}`;
+}
+// 알림톡 1건 메시지 객체 조립(#{변수} → 값). 미설정 값은 정직히 에러(지어내기·조용한 실패 금지).
+function _buildAlimtalk(to, tplCode, variables) {
+  const tpl = ALIMTALK_TEMPLATES[tplCode];
+  if (!tpl) throw new Error('알 수 없는 템플릿 코드: ' + tplCode);
+  if (!SOLAPI_PFID) throw new Error('발신프로필(SOLAPI_PFID) 미설정 — 카카오 채널 등록 후 발급값을 Render 환경변수에 넣어주세요.');
+  if (!tpl.id) throw new Error(`템플릿 "${tpl.name}" 미승인 — 카카오 심사 통과 후 templateId를 환경변수에 주입하면 켜집니다.`);
+  const variableFields = {};
+  Object.keys(variables || {}).forEach((k) => { variableFields['#{' + k + '}'] = String(variables[k] == null ? '' : variables[k]); });
+  return { to: String(to).replace(/[^0-9]/g, ''), from: SOLAPI_FROM, kakaoOptions: { pfId: SOLAPI_PFID, templateId: tpl.id, variables: variableFields, disableSms: false } };
+}
+// 솔라피 다건 발송(단건도 배열 1개). ★가짜성공 금지: 실패목록·groupId 그대로 반환.
+async function _solapiSendMany(messages) {
+  const res = await fetch('https://api.solapi.com/messages/v4/send-many/detail', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: _solapiAuth() },
+    body: JSON.stringify({ messages }),
+  });
+  const out = await res.json().catch(() => ({}));
+  return { httpOk: res.ok, httpStatus: res.status, out };
+}
+// 발송 이력(★제로 인그레스: 수신자 마스킹·문구 미저장·메모리 휘발). 최근 200건.
+const _alimtalkLog = [];
+function _logAlimtalk(entry) { _alimtalkLog.push(entry); if (_alimtalkLog.length > 200) _alimtalkLog.shift(); }
+
+// 📋 템플릿 목록(화면 드롭다운용) — 각 템플릿의 승인여부까지 정직 표시.
+app.get('/api/alimtalk/templates', (req, res) => {
+  res.json({ ok: true, configured: SOLAPI_CONFIGURED, pfIdReady: !!SOLAPI_PFID,
+    templates: Object.keys(ALIMTALK_TEMPLATES).map((code) => ({ code, name: ALIMTALK_TEMPLATES[code].name, vars: ALIMTALK_TEMPLATES[code].vars, approved: !!ALIMTALK_TEMPLATES[code].id })) });
+});
+
+// 🔍 미리보기(승인 게이트 1단계) — 발송 안 함. 수신자(마스킹)·건수·변수 확인용.
+app.post('/api/alimtalk/preview', (req, res) => {
+  try {
+    if (!_isAdmin(req)) return res.status(403).json({ ok: false, error: '오원트 채널 알림톡은 관리자(회장님)만 보낼 수 있어요.' });
+    const b = req.body || {};
+    const code = String(b.template || '');
+    const tpl = ALIMTALK_TEMPLATES[code];
+    if (!tpl) return res.json({ ok: false, error: '템플릿을 선택해 주세요.' });
+    const recipients = Array.isArray(b.recipients) ? b.recipients : (b.to ? [{ to: b.to, variables: b.variables || {} }] : []);
+    if (!recipients.length) return res.json({ ok: false, error: '수신자를 1명 이상 넣어주세요.' });
+    res.json({ ok: true, preview: {
+      템플릿: tpl.name, 승인됨: !!tpl.id, 발신프로필설정: !!SOLAPI_PFID, 건수: recipients.length,
+      대량여부: recipients.length >= 10,
+      수신자샘플: recipients.slice(0, 5).map((r) => ({ 번호: _maskPhone(r.to), 변수: r.variables || {} })),
+      안내: recipients.length >= 10 ? '10건 이상 대량 발송 — 승인 시 confirmBulk:true 필요' : '내용 확인 후 [승인]하면 발송됩니다.',
+    } });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// 📤 발송(승인 게이트 2단계) — 웹 [승인] 후에만 approved:true로 호출. 단건(send_alimtalk)/다건(send_alimtalk_bulk) 공용.
+app.post('/api/alimtalk/send', async (req, res) => {
+  try {
+    if (!_isAdmin(req)) return res.status(403).json({ ok: false, error: '오원트 채널 알림톡은 관리자(회장님)만 보낼 수 있어요.' });
+    if (!SOLAPI_CONFIGURED) return res.json({ ok: false, needsKey: true, message: '솔라피 API 키(SOLAPI_API_KEY/SECRET)를 Render 환경변수에 넣어주세요.' });
+    const b = req.body || {};
+    if (b.approved !== true) return res.json({ ok: false, error: '승인 후에만 발송됩니다(approved:true 필요).' });
+    const code = String(b.template || '');
+    const recipients = Array.isArray(b.recipients) ? b.recipients : (b.to ? [{ to: b.to, variables: b.variables || {} }] : []);
+    if (!recipients.length) return res.json({ ok: false, error: '수신자가 없습니다.' });
+    if (recipients.length >= 10 && b.confirmBulk !== true) return res.json({ ok: false, needsBulkConfirm: true, count: recipients.length, message: `${recipients.length}건 대량 발송입니다. confirmBulk:true로 명시 승인해 주세요.` });
+    let messages;
+    try { messages = recipients.map((r) => _buildAlimtalk(r.to, code, r.variables || {})); }
+    catch (e) { return res.json({ ok: false, error: e.message }); }  // 미승인·미설정 정직 안내
+    const { httpOk, httpStatus, out } = await _solapiSendMany(messages);
+    const failed = (out && Array.isArray(out.failedMessageList)) ? out.failedMessageList.length : 0;
+    const okSent = httpOk && !!(out && (out.groupId || out.groupInfo)) && failed < messages.length;
+    _logAlimtalk({ template: ALIMTALK_TEMPLATES[code].name, count: messages.length, success: okSent ? (messages.length - failed) : 0, fail: okSent ? failed : messages.length, at: new Date().toISOString().slice(0, 16), by: _maskNm((sessionOf(req) || {}).name || '관리자') });
+    if (okSent) return res.json({ ok: true, sent: true, count: messages.length, failed, groupId: (out && (out.groupId || (out.groupInfo && out.groupInfo.groupId))) || null });
+    return res.json({ ok: false, sent: false, error: (out && (out.errorMessage || out.statusMessage || out.message)) || ('솔라피 응답 오류(HTTP ' + httpStatus + ')') });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// 📜 발송 이력(마스킹 요약·메모리) — 회장님 대시보드용.
+app.get('/api/alimtalk/log', (req, res) => {
+  if (!_isAdmin(req)) return res.status(403).json({ ok: false, error: '관리자만 볼 수 있어요.' });
+  res.json({ ok: true, list: _alimtalkLog.slice(-50).reverse() });
+});
+
 // ── 🧾 보상청구서 초안(F-11) — 보험사 양식 + 증빙(여러 장) → 양식 항목을 증빙 값으로 채운 '작성 초안'.
 //    ★보험업법 경계: 손해액 산정·보상 적정성 판단 안 함(서류 정리·기입만). ★휴먼인루프: "제출 전 검토" 명시.
 //    ★제로 인그레스: 양식·증빙 base64는 메모리에서만 처리하고 버림(서버 저장 0). ★지어내기 금지: 증빙에 없으면 [확인 필요].
@@ -1188,6 +1353,15 @@ app.get('/api/status', (req, res) => {
       gmail: '인증 대기', solapi: '회원 키 저장 시', leads: '준비 중(서버 브라우저 미설치)', listening: '준비 중(검색API)',
     },
   });
+});
+// ── 💰 비용 대시보드(Step 2-1): 오늘 지니야 모델 사용량·원화 추정 (관리자만) ──
+app.get('/api/usage', (req, res) => {
+  if (!_isAdmin(req)) return res.status(403).json({ ok: false, error: '관리자만 볼 수 있어요.' });
+  const d = _kstDate();
+  const today = _usage.date === d ? _usage : { date: d, krw: 0, calls: 0, byModel: {} };
+  res.json({ ok: true, date: today.date, krw: Math.round(today.krw || 0), calls: today.calls || 0,
+    byModel: Object.fromEntries(Object.entries(today.byModel || {}).map(([k, v]) => [k, Math.round(v)])),
+    limitKrw: DAILY_COST_THRESHOLD_KRW, over: (today.krw || 0) > DAILY_COST_THRESHOLD_KRW });
 });
 
 // ── 🔑 OAuth 로그인 라우트 ──
