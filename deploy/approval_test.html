@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>지니야 · 결재함 로컬 실측</title>
+<style>
+  :root{ --navy:#0F1A35; --gold:#D4A574; --cream:#F5F3F2; }
+  *{ box-sizing:border-box; }
+  body{ font-family:'Pretendard','맑은 고딕',sans-serif; margin:0; background:var(--cream); color:var(--navy); }
+  .wrap{ max-width:760px; margin:0 auto; padding:20px 16px 60px; }
+  h1{ font-size:19px; margin:8px 0 2px; } h2{ font-size:15px; margin:22px 0 8px; border-left:4px solid var(--gold); padding-left:8px; }
+  .sub{ color:#6b7280; font-size:13px; margin-bottom:8px; }
+  .badge{ display:inline-block; background:var(--navy); color:var(--gold); font-size:11px; padding:3px 9px; border-radius:20px; margin-left:6px; }
+  .warn{ background:#FBF0DC; color:#8a4d18; padding:8px 10px; border-radius:10px; font-size:12.5px; margin:6px 0; }
+  textarea,input{ width:100%; padding:10px 12px; border:1px solid #cfcac4; border-radius:10px; font-size:14px; font-family:inherit; }
+  textarea{ min-height:56px; resize:vertical; }
+  button{ font-family:inherit; cursor:pointer; border:none; border-radius:10px; padding:9px 15px; font-size:13.5px; font-weight:600; margin-top:8px; }
+  .ok{ background:var(--gold); color:var(--navy); } .ghost{ background:#eee; color:#555; } .danger{ background:#c0392b; color:#fff; }
+  .card{ background:#fff; border:1px solid #e5e1dc; border-radius:12px; padding:12px 14px; margin:10px 0; }
+  .card.wait{ border-color:var(--gold); }
+  .kv{ font-size:13px; margin:2px 0; } .kv b{ color:#8a6d3b; }
+  .st{ font-size:12px; font-weight:700; padding:2px 8px; border-radius:20px; }
+  .st-대기{ background:#FBF0DC; color:#8a4d18; } .st-완료{ background:#e6f4ea; color:#2e7d32; } .st-거부{ background:#eee; color:#777; } .st-부분실패,.st-실패{ background:#fbe3e0; color:#c0392b; }
+  .quick button{ background:#fff; border:1px solid #d8d3cc; color:#444; font-weight:500; font-size:12px; margin-right:6px; }
+  pre{ white-space:pre-wrap; font-size:13px; background:#f7f5f2; padding:8px; border-radius:8px; }
+</style></head>
+<body><div class="wrap">
+  <h1>지니야 · 결재함 <span class="badge">로컬 실측</span></h1>
+  <div class="sub">지니야가 발송 건을 결재함에 올리고 → 회장님 승인 → 실제 발송·결과 기록. (로컬은 <b>회장님 본인</b>에게만 발송)</div>
+  <div class="warn" id="testban">🔒 로컬 안전모드 확인 중…</div>
+
+  <h2>1. 결재 만들기 (지니야 자동 생성)</h2>
+  <div class="quick">
+    <button onclick="ex(this)">이번 8월 만기 고객에게 갱신 안내 문자 보내줘</button>
+    <button onclick="ex(this)">삼성 보험 고객에게 안내 메일 보내줘</button>
+  </div>
+  <textarea id="q" placeholder="예: 이번 달 만기 고객에게 갱신 안내 보내줘"></textarea>
+  <button class="ghost" onclick="plan()">초안 만들기</button>
+  <div id="draft"></div>
+
+  <h2>2. 결재함 <button class="ghost" style="font-size:12px;padding:4px 10px" onclick="load()">새로고침</button></h2>
+  <div id="list"><div class="sub">불러오는 중…</div></div>
+</div>
+<script>
+function esc(s){ return String(s==null?'':s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+async function api(url,opt){ const r=await fetch(url,Object.assign({credentials:'same-origin'},opt||{})); return r.json(); }
+function needGoogle(j){ if(j&&(j.needsGoogle||j.needsConnect)){ document.getElementById('list').innerHTML='<div class="warn">⚠️ 구글 연결 필요: <a href="'+(j.connectUrl||'/auth/google/connect')+'">연결</a></div>'; return true; } return false; }
+
+let curDraft=null;
+function ex(b){ document.getElementById('q').value=b.textContent; plan(); }
+async function plan(){
+  const text=document.getElementById('q').value.trim(); if(!text) return;
+  document.getElementById('draft').innerHTML='<div class="sub">초안 만드는 중…</div>';
+  const j=await api('/api/approval/plan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})});
+  if(needGoogle(j)) return;
+  if(!j.ok){ document.getElementById('draft').innerHTML='<div class="warn">'+esc(j.message||'초안 실패')+'</div>'; return; }
+  curDraft=j.draft;
+  document.getElementById('draft').innerHTML='<div class="card wait"><div class="kv"><b>요청</b> '+esc(j.draft.요청내용)+'</div><div class="kv"><b>채널</b> '+esc(j.draft.채널)+' · <b>대상</b> '+j.draft.대상수+'명</div><div class="kv"><b>문구</b></div><pre>'+esc(j.draft.템플릿)+'</pre><button class="ok" onclick="create()">결재함에 올리기</button></div>';
+}
+async function create(){
+  if(!curDraft) return;
+  const j=await api('/api/approval/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(curDraft)});
+  if(needGoogle(j)) return;
+  document.getElementById('draft').innerHTML='<div class="'+(j.ok?'warn':'warn')+'">'+esc(j.message||'')+'</div>';
+  curDraft=null; document.getElementById('q').value=''; load();
+}
+async function load(){
+  const j=await api('/api/approval/list');
+  if(needGoogle(j)) return;
+  const box=document.getElementById('list');
+  if(!j.items||!j.items.length){ box.innerHTML='<div class="sub">결재 건이 없어요.</div>'; return; }
+  box.innerHTML=j.items.map(it=>{
+    const wait=it.승인상태==='대기';
+    let btns=''; if(wait){ btns='<button class="ok" onclick="act(\''+it.id+'\',\'approve\')">승인</button> <button class="danger" onclick="act(\''+it.id+'\',\'reject\')">거부</button>'; }
+    return '<div class="card '+(wait?'wait':'')+'"><div class="kv"><span class="st st-'+esc(it.승인상태)+'">'+esc(it.승인상태)+'</span> <b>'+esc(it.요청내용)+'</b></div><div class="kv">채널 '+esc(it.채널)+' · 대상 '+it.대상수+'명 · '+esc(it.생성일시)+'</div>'+(it.결과&&it.결과!=='-'?'<div class="kv"><b>결과</b> '+esc(it.결과)+'</div>':'')+'<pre>'+esc(it.템플릿)+'</pre>'+btns+'</div>';
+  }).join('');
+}
+async function act(id,action,confirmed){
+  if(action==='approve'&&!confirmed&&!confirm('승인하면 실제 발송됩니다(로컬=회장님 본인에게만). 진행할까요?')) return;
+  const j=await api('/api/approval/act',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,action,confirmed:!!confirmed})});
+  if(needGoogle(j)) return;
+  if(j.needsBulkConfirm){ if(confirm(j.message+'\n\n정말 '+j.count+'명에게 보낼까요?')) return act(id,action,true); return; }
+  alert(j.message||(j.ok?'처리됨':'실패')); load();
+}
+// 안전모드 배너
+api('/api/status').then(()=>{ document.getElementById('testban').innerHTML='🔒 로컬 안전모드: 승인해도 실제 문자·메일은 <b>회장님 본인</b>에게만 갑니다(실고객 보호).'; });
+load();
+</script></body></html>

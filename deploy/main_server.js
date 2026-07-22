@@ -23,6 +23,7 @@ const connectors = require('./connectors_index');     // 🔌 커넥터창고
 const memory = require('./memory_module');                   // 🧠 기억 엔진(회원 시트)
 const genyaMem = require('./genya_mem_module');               // 🧠 MEM 하이브리드C(Firestore genya_mem · 설계요약 저장/검색 · 주민번호·전화 마스킹 · userId 격리)
 const sheetsCrud = require('./sheets_crud_skill');            // 🗂️ Step 2-B · 시트 자연어 CRUD(독립 모듈 · 하이브리드 라우터 무접촉)
+const approval = require('./approval_skill');                 // 🗂️ Step 2-C · 결재함 백엔드(독립 모듈 · 라우터 무접촉)
 const _openai = new (require('openai'))({ apiKey: process.env.OPENAI_API_KEY });
 // ★워크스페이스 대화 = Anthropic Claude Sonnet 5(대표 지시). 온보딩·OCR·약관·문자초안은 OpenAI 유지.
 //   대표가 준 'claude-sonnet-4-6-20250514'는 존재하지 않는 ID → 최신 Sonnet인 claude-sonnet-5로. 날짜접미사 금지.
@@ -1208,6 +1209,48 @@ app.post('/api/gmail/send', async (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
+// 🗂️ Step 2-C · 결재함 백엔드 (독립 · 하이브리드 라우터 무접촉)
+//   발송헬퍼: 기존 /api/send/sms·/api/gmail/send 로직을 함수로 재사용(핸들러 무수정). sent 확인·가짜성공 없음.
+//   결재함은 회원 본인 시트 '결재함' 탭에만(서버 저장 0). 승인 시 명단 재조회→실발송→결과 기록.
+// ═══════════════════════════════════════════════════════════════════════════
+async function _sendSmsFor(ma, to, text) {
+  try {
+    to = String(to || '').replace(/[^0-9]/g, ''); text = String(text || '').trim();
+    if (!to || !text) return { ok: false, sent: false, error: '번호·내용 없음' };
+    const { id, sheets } = await findOrCreateMemberSheet(ma);
+    const kv = {};
+    try { const r = await sheets.spreadsheets.values.get({ spreadsheetId: id, range: '지니야_연결!A1:B10' }); (r.data.values || []).forEach((row) => { if (row && row[0]) kv[row[0]] = row[1] || ''; }); } catch (e) {}
+    const apiKey = kv['솔라피_API_KEY'], apiSecret = kv['솔라피_SECRET'], from = String(kv['솔라피_발신번호'] || '').replace(/[^0-9]/g, '');
+    if (!apiKey || !apiSecret || !from) return { ok: false, sent: false, error: '솔라피 키 미저장' };
+    const date = new Date().toISOString(); const salt = crypto.randomBytes(32).toString('hex');
+    const signature = crypto.createHmac('sha256', apiSecret).update(date + salt).digest('hex');
+    const auth = `HMAC-SHA256 apiKey=${apiKey}, date=${date}, salt=${salt}, signature=${signature}`;
+    const sr = await fetch('https://api.solapi.com/messages/v4/send', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: auth }, body: JSON.stringify({ message: { to, from, text } }) });
+    const out = await sr.json().catch(() => ({}));
+    const okSent = sr.ok && out && (String(out.statusCode) === '2000' || out.status === 'SENDING' || out.messageId);
+    return okSent ? { ok: true, sent: true, id: out.messageId || out.groupId || null } : { ok: false, sent: false, error: (out && (out.errorMessage || out.statusMessage || out.message)) || '솔라피 오류' };
+  } catch (e) { return { ok: false, sent: false, error: e.message }; }
+}
+async function _sendGmailFor(ma, to, subject, text) {
+  try {
+    to = String(to || '').trim(); text = String(text || '').trim();
+    if (!to || !text) return { ok: false, sent: false, error: '수신·내용 없음' };
+    const gmail = google.gmail({ version: 'v1', auth: ma });
+    const subjEnc = '=?UTF-8?B?' + Buffer.from(subject || '(제목 없음)', 'utf-8').toString('base64') + '?=';
+    const mime = ['To: ' + to, 'Subject: ' + subjEnc, 'MIME-Version: 1.0', 'Content-Type: text/plain; charset=UTF-8', 'Content-Transfer-Encoding: base64', '', Buffer.from(text, 'utf-8').toString('base64')].join('\r\n');
+    const raw = Buffer.from(mime, 'utf-8').toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    const r = await gmail.users.messages.send({ userId: 'me', requestBody: { raw } });
+    return (r && r.data && r.data.id) ? { ok: true, sent: true, id: r.data.id } : { ok: false, sent: false, error: 'Gmail 빈 응답' };
+  } catch (e) { return { ok: false, sent: false, error: e.message }; }
+}
+approval.init({ anthropic: _anthropic, model: MODEL_DEEP, getMemberSheet: findOrCreateMemberSheet, ensureTab, sendSms: _sendSmsFor, sendGmail: _sendGmailFor });
+
+app.post('/api/approval/create', async (req, res) => { try { const ma = gateGoogle(req, res); if (!ma) return; res.json(await approval.create(ma, req.body || {})); } catch (e) { res.status(500).json({ ok: false, error: e.message }); } });
+app.get('/api/approval/list', async (req, res) => { try { const ma = gateGoogle(req, res); if (!ma) return; res.json(await approval.list(ma, { status: req.query.status })); } catch (e) { res.status(500).json({ ok: false, error: e.message }); } });
+app.post('/api/approval/act', async (req, res) => { try { const ma = gateGoogle(req, res); if (!ma) return; res.json(await approval.act(ma, req.body || {})); } catch (e) { res.status(500).json({ ok: false, error: e.message }); } });
+app.post('/api/approval/plan', async (req, res) => { try { const ma = gateGoogle(req, res); if (!ma) return; res.json(await approval.plan(ma, (req.body && req.body.text) || '')); } catch (e) { res.status(500).json({ ok: false, error: e.message }); } });
+
+// ═══════════════════════════════════════════════════════════════════════════
 // 📱 카카오 알림톡 (Step 5) — 오원트 org 채널(발신프로필)로 정보성 알림 발송
 //   ★검증된 HMAC-SHA256 v4 방식 재사용(기존 /api/send/sms와 동일) → 새 의존성 0(solapi SDK 불필요).
 //   ★오원트 중앙 채널: 키·발신프로필은 ENV(회장님)에서만. (부트캠프 회원은 각자 채널=추후 별도.)
@@ -1413,6 +1456,7 @@ app.get('/login', (req, res) => {
 // ── 📄 개인정보처리방침 · 서비스 이용약관(구글 앱 인증용) — 정적 페이지 ──
 app.get(['/privacy', '/privacy.html', '/개인정보처리방침'], (req, res) => res.sendFile(path.join(__dirname, 'privacy.html')));
 app.get('/crud-test', (req, res) => res.sendFile(path.join(__dirname, 'crud_test.html'))); // 🗂️ Step 2-B 로컬 실측 콘솔(로컬 전용)
+app.get('/approval-test', (req, res) => res.sendFile(path.join(__dirname, 'approval_test.html'))); // 🗂️ Step 2-C 결재함 로컬 실측 콘솔
 app.get(['/terms', '/terms.html', '/이용약관'], (req, res) => res.sendFile(path.join(__dirname, 'terms.html')));
 
 app.get('/auth/google', (req, res) => {
