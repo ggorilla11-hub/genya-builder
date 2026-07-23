@@ -290,7 +290,7 @@ const YAK = JSON.parse(fs.readFileSync(path.join(__dirname, 'yakgwan_pages.json'
 const app = express();
 app.use(express.json({ limit: '50mb' })); // 자료 업로드(base64) 파싱 — 큰 제안서 PDF 다중 업로드 대비 상향
 // ★배포 반영 확인용(정직): 재배포 후 이 build 값이 바뀌면 새 코드가 실제 활성화됐다는 증거. 공개·민감정보 없음.
-const BUILD_TAG = 'v4.0-day4-vapi-clientData-2026-07-24';
+const BUILD_TAG = 'v4.0-day4-vapi-clientData-expiring-2026-07-24';
 app.get(['/health', '/api/version'], (req, res) => res.json({ ok: true, build: BUILD_TAG, emojiFilter: typeof stripEmoji === 'function', pineconeReady: (function () { try { return personalMem.configured(); } catch (e) { return false; } })(), ts: new Date().toISOString() }));
 // ★🛡️ 수문장 진단(회장님 직접 확인용): 로그인 상태로 이 URL을 열면 — 내 세션 uid·Pinecone연결·최근이벤트를 그대로 보여준다.
 //   명단 올린 뒤 이걸 열어 recentEvents에 roster_upload가 있으면 "기록 OK"(라우팅/타이밍 문제), 없으면 "기록 실패"(uid/훅 문제) → 근본 즉시 판별.
@@ -326,6 +326,17 @@ app.get('/api/vapi-context', async (req, res) => {
           clientData = `[고객명단 · 총 ${clients.length}명]\n` + header.join(' | ') + '\n'
             + show.map((c) => header.map((h) => c[h] || '').join(' | ')).join('\n')
             + (clients.length > 30 ? `\n(상위 30명 표시 · 전체 ${clients.length}명)` : '');
+          // 📇 만기 임박 30일 하이라이트(음성으로 "만기 임박 누구?" 물으면 바로 답하도록 미리 계산)
+          const expCol = header.find((h) => /만기/.test(h));
+          if (expCol) {
+            const today = new Date(); const due = new Date(Date.now() + 30 * 864e5);
+            const expiring = clients.filter((c) => { const d = new Date(c[expCol]); return d instanceof Date && !isNaN(d) && d >= today && d <= due; });
+            if (expiring.length) {
+              clientData += `\n\n[⚠️만기 임박 · 30일 이내 ${expiring.length}명]\n`
+                + expiring.map((c) => header.map((h) => c[h] || '').join(' | ')).join('\n');
+            }
+          }
+          clientData += '\n\n★위 실제 시트 데이터만 근거로 답하고, 없는 값은 지어내지 마라.';
         }
       }
     } catch (e) { console.log('[📇vapi clientData 조회 실패] ' + e.message); }
