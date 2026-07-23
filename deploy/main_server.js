@@ -974,8 +974,13 @@ async function orderHandler(req, res) {
     console.log('[🛡️수문장] order 가드 · uid=' + (_uidG || '(없음)') + ' · pineconeReady=' + personalMem.configured() + ' · match=' + _gateMatch + ' · events=' + (_gateEvents ? 'HIT(' + _gateEvents.slice(0, 40) + '…)' : 'MISS') + ' · q="' + String(q).slice(0, 30) + '"');
     // ★버그수정: activeSkill(localStorage 복원)이 시트·발송 도구 의도를 가로채던 문제 → 명확한 도구 의도면 activeSkill 무시하고 아래 도구 분기로.
     const _toolIntent = /보내|발송|알림톡|결재|승인|시트\s*(목록|리스트|들|현황|뭐|어떤|무슨|조회|검색|추가|수정|삭제)|어떤\s*시트|무슨\s*시트|내\s*(구글\s*)?시트|명단\s*(추가|수정|삭제|변경|조회|보여|알려|몇)|고객\s*(추가|등록|수정|삭제)|([가-힣]{2,4})\s*님?\s*(정보|연락처|주소|생일|만기|상품|알려|조회)/.test(q);
+    // ★이슈#1 근본수정(웹검색 라우팅 가로챔): 최신정보 토픽(시세·환율·세법·판례 등)이면서 고객(○○님) 지칭이 아니면
+    //   시트/캘린더 분기가 "어때/조회/뭐야"로 가로채는 것을 막고 일반대화(웹검색) 우선. ★고객명 시트조회는 그대로 유지.
+    //   보수적: 요즘/최근/오늘 단독은 제외(예: "요즘 만기 고객"이 웹으로 새지 않게). 명확한 최신 토픽 키워드만.
+    const _hasCustomerName = /[가-힣]{2,4}\s*님/.test(q);
+    const _webQuery = !_hasCustomerName && /시세|환율|원[·\s]?달러|주가|주식|코스피|코스닥|나스닥|다우|증시|증권시장|시장\s*동향|금리|기준금리|국채|채권\s*금리|유가|국제유가|금값|금\s*시세|비트코인|가상자산|암호화폐|뉴스|속보|판례|대법원|헌재|법령|시행령|개정안|세법\s*개정|종부세|종합부동산세|양도세|양도소득세|상속세|증여세|재산세|공시지가|기준시가|부동산\s*대책|물가|인플레|경기\s*전망|환테크/.test(q);
     if (_gateEvents) {
-      // 🛡️ 이 방 이벤트 인지 응답(LLM + 수문장 컨텍스트)
+      // 🛡️ 이 방 이벤트 인지 응답(LLM + 수문장 컨텍스트) — 엄마2 Phase6-3 수문장(무접촉 병합)
       const job = String((req.body && req.body.job) || req.query.job || '');
       const hist = Array.isArray(req.body && req.body.history) ? req.body.history.slice(-10) : [];
       const sysG = genyaPersona(job, { email: _uidG }) + '\n[지금 이 방에서 최근 일어난 일 — 실제 발생] 아래는 이 지니야 화면에서 실제로 일어난 이벤트다. "방금 올린/만든/한 것"을 물으면 이걸 근거로 정확히 인지하고 답한다(절대 "안 보인다"고 하지 마라). 단 파일 속 개별 세부(고객별 이름·값)는 실제 분석 결과가 이 대화에 있을 때만 말하고, 없으면 지어내지 말고 "다시 올려주시면 실제 값으로 분석해드릴게요"라고 한다.\n' + _gateEvents;
@@ -996,7 +1001,7 @@ async function orderHandler(req, res) {
         const rc = await approval.runChat(ma, hist.concat([{ role: 'user', content: q }]));
         out = { kind: '🗂️ 결재함', text: rc.reply || '무엇을 보내드릴까요?', pending: rc.pending || null, engine: MODEL_DEEP };
       }
-    } else if (/시트\s*(목록|리스트|들|현황|뭐|어떤|무슨)|어떤\s*시트|무슨\s*시트|내\s*(구글\s*)?시트|([가-힣]{2,4})\s*님?\s*(정보|연락처|주소|생일|만기|상품|알려|조회|어때)|시트\s*(조회|검색|추가|수정|삭제|변경|바꿔)|명단\s*(추가|수정|삭제|변경|고쳐|바꿔|조회|보여|알려|몇)|고객\s*(추가|등록|수정|삭제)|(주소|연락처|번호|생일|만기|상품)\s*(을|를|은|는)?\s*(바꿔|수정|변경|고쳐|추가)/.test(q)) {
+    } else if (!_webQuery && (/시트\s*(목록|리스트|들|현황|뭐|어떤|무슨)|어떤\s*시트|무슨\s*시트|내\s*(구글\s*)?시트|([가-힣]{2,4})\s*님?\s*(정보|연락처|주소|생일|만기|상품|알려|조회|어때)|시트\s*(조회|검색|추가|수정|삭제|변경|바꿔)|명단\s*(추가|수정|삭제|변경|고쳐|바꿔|조회|보여|알려|몇)|고객\s*(추가|등록|수정|삭제)|(주소|연락처|번호|생일|만기|상품)\s*(을|를|은|는)?\s*(바꿔|수정|변경|고쳐|추가)/.test(q))) {
       // 🗂️ Step 2-B: 개별 고객 조회·시트 수정 의도 → 시트 CRUD 도구 루프(읽기=즉시, 쓰기=미리보기+승인). "시트 못 본다" 오답 제거.
       if (!canData) { out = needConnect; }
       else {
@@ -1010,7 +1015,7 @@ async function orderHandler(req, res) {
       if (!canData) { out = needConnect; } else { const s = await connectors.sheet(ma); out = { kind: '🔌 시트 커넥터', text: `7월 만기 ${s.july만기.length}명 · 임박순 ${s.임박순.join(' → ')}\n자산가: ${s.자산가.join(', ')}` }; }
     } else if (/증권|드라이브|서류|파일.*찾/.test(q)) {
       if (!canData) { out = needConnect; } else { const d = await connectors.drive(q.replace(/찾아줘|보여줘|줘/g, '').trim() || '증권', ma); out = { kind: '🔌 드라이브 커넥터', text: d.length ? d.map((f) => '📄 ' + f.name).join('\n') : '해당 파일 없음' }; }
-    } else if (/일정|브리핑|오늘.*(뭐|일정)|아침/.test(q)) {
+    } else if (!_webQuery && /일정|브리핑|오늘.*(뭐|일정)|아침/.test(q)) {
       if (!canData) { out = needConnect; } else { const c = await connectors.calendar(ma); out = { kind: '🔌 캘린더 커넥터', text: c.map((e) => `${e.time} ${e.title}${e.prep[0] ? ' → ' + e.prep[0] : ''}`).join('\n') || '오늘 일정 없음' }; }
     } else {
       // ★워크스페이스 대화 = 하이브리드 라우터(askClaude) + 히스토리(-10) + 직업 페르소나
