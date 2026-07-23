@@ -290,7 +290,7 @@ const YAK = JSON.parse(fs.readFileSync(path.join(__dirname, 'yakgwan_pages.json'
 const app = express();
 app.use(express.json({ limit: '50mb' })); // 자료 업로드(base64) 파싱 — 큰 제안서 PDF 다중 업로드 대비 상향
 // ★배포 반영 확인용(정직): 재배포 후 이 build 값이 바뀌면 새 코드가 실제 활성화됐다는 증거. 공개·민감정보 없음.
-const BUILD_TAG = 'v4.0-day4-sheetcrud-routing-logging-2026-07-24';
+const BUILD_TAG = 'v4.0-day4-active-roster-full-sheetread-2026-07-24';
 app.get(['/health', '/api/version'], (req, res) => res.json({ ok: true, build: BUILD_TAG, emojiFilter: typeof stripEmoji === 'function', pineconeReady: (function () { try { return personalMem.configured(); } catch (e) { return false; } })(), ts: new Date().toISOString() }));
 // ★🛡️ 수문장 진단(회장님 직접 확인용): 로그인 상태로 이 URL을 열면 — 내 세션 uid·Pinecone연결·최근이벤트를 그대로 보여준다.
 //   명단 올린 뒤 이걸 열어 recentEvents에 roster_upload가 있으면 "기록 OK"(라우팅/타이밍 문제), 없으면 "기록 실패"(uid/훅 문제) → 근본 즉시 판별.
@@ -1001,9 +1001,18 @@ async function orderHandler(req, res) {
       // 🛡️ 이 방 이벤트 인지 응답(LLM + 수문장 컨텍스트) — 엄마2 Phase6-3 수문장(무접촉 병합)
       const job = String((req.body && req.body.job) || req.query.job || '');
       const hist = Array.isArray(req.body && req.body.history) ? req.body.history.slice(-10) : [];
-      const sysG = genyaPersona(job, { email: _uidG }) + '\n[지금 이 방에서 최근 일어난 일 — 실제 발생] 아래는 이 지니야 화면에서 실제로 일어난 이벤트다. "방금 올린/만든/한 것"을 물으면 이걸 근거로 정확히 인지하고 답한다(절대 "안 보인다"고 하지 마라). 개별 값을 지어내지는 않는다.\n★명단·시트 저장 이벤트(roster_upload=명단 업로드 등)가 있으면, 그 명단은 이미 회원 구글 시트(고객명단 탭)에 저장돼 있는 것이다. 개별 고객 정보를 물으면 "다시 올려주세요/재업로드"라고 절대 하지 말고, "그 명단은 시트에 저장돼 있어요. \'○○님 정보 알려줘\'라고 하시면 시트에서 바로 조회해 드릴게요"라고 안내한다. 시트에 없는 일회성 파일만 없을 때 다시 올려달라 한다.\n' + _gateEvents;
-      const text = await askClaude(sysG, hist.concat([{ role: 'user', content: q }]), 8192, { admin: _admin });
-      out = { kind: '💬 지니야', text, engine: _lastAskModel || pickedModel(q, { admin: _admin }) };
+      // ★활성 명단 전체 자동 sheet_read(회장님): 명단·전체 관련 요청이고 데이터연결(canData)이 있으면,
+      //   이벤트 인지에서 그치지 말고 실제 회원 시트(고객명단)를 조회해 개별 내용까지 답한다. 개별 이름 없이도 전체 조회.
+      const _rosterFull = /명단|고객|전체|목록|리스트|정리|분석|누구|몇\s*명|어떤|내용|현황/.test(q) && /명단|roster|업로드/.test(_gateEvents);
+      if (_rosterFull && canData) {
+        const rc = await sheetsCrud.runChat(ma, hist.concat([{ role: 'user', content: q }]));
+        console.log('[🛡️수문장→sheetCRUD] 활성명단 전체조회 · q="' + String(q).slice(0, 30) + '" · reply="' + String((rc && rc.reply) || '(빈)').replace(/\n/g, ' ').slice(0, 150) + '"');
+        out = { kind: '🗂️ 고객명단', text: rc.reply || '명단을 시트에서 불러왔어요.', pending: rc.pending || null, engine: MODEL_DEEP };
+      } else {
+        const sysG = genyaPersona(job, { email: _uidG }) + '\n[지금 이 방에서 최근 일어난 일 — 실제 발생] 아래는 이 지니야 화면에서 실제로 일어난 이벤트다. "방금 올린/만든/한 것"을 물으면 이걸 근거로 정확히 인지하고 답한다(절대 "안 보인다"고 하지 마라). 개별 값을 지어내지는 않는다.\n★명단·시트 저장 이벤트(roster_upload=명단 업로드 등)가 있으면, 그 명단은 이미 회원 구글 시트(고객명단 탭)에 저장돼 있는 것이다. 개별 고객 정보를 물으면 "다시 올려주세요/재업로드"라고 절대 하지 말고, "그 명단은 시트에 저장돼 있어요. \'○○님 정보 알려줘\'라고 하시면 시트에서 바로 조회해 드릴게요. (구글 데이터 연결이 필요할 수 있어요)"라고 안내한다. 시트에 없는 일회성 파일만 없을 때 다시 올려달라 한다.\n' + _gateEvents;
+        const text = await askClaude(sysG, hist.concat([{ role: 'user', content: q }]), 8192, { admin: _admin });
+        out = { kind: '💬 지니야', text, engine: _lastAskModel || pickedModel(q, { admin: _admin }) };
+      }
     } else if (activeSkill && SKILL_CTX[activeSkill] && !_toolIntent) {
       // ★카드에서 시작한 작업 맥락: 키워드 라우팅(증권→드라이브 "해당 파일 없음") 건너뛰고 LLM이 맥락 유지해 이어서 답한다
       const job = String((req.body && req.body.job) || req.query.job || '');
