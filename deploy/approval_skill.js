@@ -89,7 +89,8 @@ async function _load(ma) {
 function _obj(row, rowNum) { const o = { _rowNum: rowNum }; HEADER.forEach((h, i) => o[h] = (row && row[i]) || ''); return o; }
 function _rowArr(o) { return HEADER.map((h) => o[h] != null ? String(o[h]) : ''); }
 function _now() { return new Date(Date.now() + 9 * 3600e3).toISOString().replace('T', ' ').slice(0, 16); } // KST 분 단위
-function _genId() { return 'a-' + new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10).replace(/-/g, '') + '-' + String(Date.now() % 100000).padStart(5, '0'); }
+let _idSeq = 0; // 같은 밀리초 다건 생성 시 ID 충돌 방지(모듈 카운터)
+function _genId() { _idSeq = (_idSeq + 1) % 100000; return 'a-' + new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10).replace(/-/g, '') + '-' + String(Date.now() % 100000).padStart(5, '0') + '-' + String(_idSeq).padStart(3, '0'); }
 
 // ═══ 1·2. 결재 생성 (지니야가 올림) ═══
 //   input: { 요청내용, 채널('sms'|'gmail'), criteria:{컬럼:값}, 템플릿, 대상요약? }
