@@ -290,7 +290,7 @@ const YAK = JSON.parse(fs.readFileSync(path.join(__dirname, 'yakgwan_pages.json'
 const app = express();
 app.use(express.json({ limit: '50mb' })); // 자료 업로드(base64) 파싱 — 큰 제안서 PDF 다중 업로드 대비 상향
 // ★배포 반영 확인용(정직): 재배포 후 이 build 값이 바뀌면 새 코드가 실제 활성화됐다는 증거. 공개·민감정보 없음.
-const BUILD_TAG = 'v4.0-day4-session-persist-rootfix-2026-07-24';
+const BUILD_TAG = 'v4.0-day4-session-persist+credentials-2026-07-24';
 app.get(['/health', '/api/version'], (req, res) => res.json({ ok: true, build: BUILD_TAG, emojiFilter: typeof stripEmoji === 'function', pineconeReady: (function () { try { return personalMem.configured(); } catch (e) { return false; } })(), ts: new Date().toISOString() }));
 // ★🛡️ 수문장 진단(회장님 직접 확인용): 로그인 상태로 이 URL을 열면 — 내 세션 uid·Pinecone연결·최근이벤트를 그대로 보여준다.
 //   명단 올린 뒤 이걸 열어 recentEvents에 roster_upload가 있으면 "기록 OK"(라우팅/타이밍 문제), 없으면 "기록 실패"(uid/훅 문제) → 근본 즉시 판별.

@@ -2240,7 +2240,7 @@ function _uploadAnalyze(f){
     pushMsg('me','['+f.name+' 업로드]');
     var wrap=document.createElement('div'); wrap.className='msg gen'; wrap.innerHTML='<div class="av"></div><div class="bubble">파일 읽는 중…</div>';
     var sc=document.getElementById('chatScroll'); if(sc){ sc.appendChild(wrap); sc.scrollTop=sc.scrollHeight; }
-    fetch('/api/coverage/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dataUrl:rd.result,mime:f.type||'',name:f.name})})
+    fetch('/api/coverage/analyze',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({dataUrl:rd.result,mime:f.type||'',name:f.name})})
       .then(function(r){return r.json();}).then(function(d){
         try{ wrap.remove(); }catch(e){}
         if(d&&d.needsConvert){ pushMsg('gen', _sEsc(d.message||'이 형식은 아직 지원 안 돼요. 이미지·PDF·엑셀·텍스트로 올려주세요.')); return; }
@@ -2804,10 +2804,21 @@ function _histForSend(){
   function knowledgeCard(d){ d=d||{}; var it=d.items||[]; var items=it.map(function(k){return '<div class="hc-kn"><div class="kc">'+e(k.c||'')+'</div><div class="kg">'+e(k.g||'')+'</div><div class="kh">'+e(k.h||'')+'</div></div>';}).join(''); return '<div class="holo-card"><div class="hc-title">⚖️ '+e(d.title||'관련 판례')+(it.length?' · '+it.length+'건':'')+'</div>'+items+'</div>'; }
   function drawChart(card){ if(!window.Chart) return; try{ var d=JSON.parse((card.getAttribute('data-chart')||'{}').replace(/&#39;/g,"'")); var id=card.getAttribute('data-cid'); var pe=document.getElementById(id+'p'), be=document.getElementById(id+'b'); if(pe&&d.pie){_charts.push(new Chart(pe,{type:'doughnut',data:{labels:d.pie.labels,datasets:[{data:d.pie.data,backgroundColor:['#00E5FF','#0091B2','#39FFB0','#FF2D2D'],borderColor:'rgba(8,32,42,.9)',borderWidth:2}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{color:'#E0FDFF',font:{size:10},boxWidth:10}}},cutout:'56%'}}));} if(be&&d.bar){_charts.push(new Chart(be,{type:'bar',data:{labels:['자산','부채'],datasets:[{data:[d.bar.자산,d.bar.부채],backgroundColor:['#00E5FF','#FF2D2D'],borderRadius:5}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{ticks:{color:'#8ea3c4'},grid:{color:'rgba(255,255,255,.08)'}},x:{ticks:{color:'#E0FDFF'},grid:{display:false}}}}}));} }catch(ee){} }
   var R={customer:customerCard,customercard:customerCard,list:listCard,listgrid:listCard,listgridcard:listCard,calendar:calendarCard,calendarcard:calendarCard,chart:chartCard,chartcard:chartCard,knowledge:knowledgeCard,knowledgecard:knowledgeCard};
+  // 각 card.type → 렌더러 매핑 (정확 키 → 키워드 폴백, 5종 모두 커버)
+  function pickRenderer(type){
+    var t=String(type||'').toLowerCase().replace(/[_\s-]/g,'');
+    if(R[t]) return R[t];
+    if(/customer|고객/.test(t)) return customerCard;
+    if(/list|grid|명단|만기|roster/.test(t)) return listCard;
+    if(/calendar|schedule|일정|스케줄|주간|week/.test(t)) return calendarCard;
+    if(/chart|asset|graph|자산|재무|차트|분석/.test(t)) return chartCard;
+    if(/knowledge|case|precedent|판례|지식|법/.test(t)) return knowledgeCard;
+    return null;
+  }
   window.renderHoloCards=function(cards){
     var s=document.getElementById('chatScroll'); if(!s) return;
     (cards||[]).forEach(function(c,i){
-      var fn=R[String(c.type||'').toLowerCase().replace(/[_-]/g,'')]; if(!fn) return;
+      var fn=pickRenderer(c&&c.type); if(!fn){ try{ console.warn('[홀로그램] 알 수 없는 카드 type:', c&&c.type); }catch(e){} return; }
       var wrap=document.createElement('div'); wrap.className='msg gen';
       wrap.innerHTML='<div class="av"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3l7 4v6c0 4-3 6.5-7 8-4-1.5-7-4-7-8V7l7-4z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><circle cx="12" cy="11" r="2.2" fill="currentColor"/></svg></div>';
       var holder=document.createElement('div'); holder.style.cssText='flex:1;min-width:0'; holder.innerHTML=fn(c.data||{});
@@ -2825,14 +2836,22 @@ window.sendMsg=function(){
   w.innerHTML='<div class="av"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3l7 4v6c0 4-3 6.5-7 8-4-1.5-7-4-7-8V7l7-4z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><circle cx="12" cy="11" r="2.2" fill="currentColor"/></svg></div><div class="bubble" style="color:#98a4b2">지니야가 생각하는 중…</div>';
   s.appendChild(w); s.scrollTop=s.scrollHeight;
   var job=(GENYA_JOBS[CUR_JOB]||{}).label||'';
-  fetch('/api/order',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({q:v,message:v,job:job,history:_histForSend(),activeSkill:(window._ACTIVE_SKILL||'')})})
+  fetch('/api/order',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({q:v,message:v,job:job,history:_histForSend(),activeSkill:(window._ACTIVE_SKILL||'')})})
    .then(function(r){return r.json();}).then(function(d){ w.remove();
      if(d&&d.needsConnect){ pushMsg('gen',(d.text||'구글 데이터 연결이 필요해요')+' <a href="#" onclick="connectGoogle();return false;" style="color:var(--teal-d);font-weight:700">연결하기 →</a>'); return; }
      var reply=(d&&(d.text||d.answer))||(d&&d.error)||'(응답 없음)';
+     // ★E-4 응답 JSON 파싱: cards는 (1)서버 분리 필드 d.cards 또는 (2)지니야 응답이 { text, cards } JSON 문자열
+     var cards=(d&&d.cards&&Array.isArray(d.cards))?d.cards:null;
+     if(!cards && typeof reply==='string'){
+       var _t=reply.trim();
+       if(_t.charAt(0)==='{' || _t.indexOf('```')===0){
+         try{ var _p=JSON.parse(_t.replace(/^```(json)?/i,'').replace(/```$/,'').trim()); if(_p && Array.isArray(_p.cards)){ cards=_p.cards; reply=_p.text||''; } }catch(e){}
+       }
+     }
      _HIST.push({role:'user',content:v}); _HIST.push({role:'assistant',content:reply}); _persistHist();
-     pushMsg('gen', renderMd(reply));
-     // ★E-4 프론트 도킹: 응답에 cards[] 있으면 v4 JARVIS 홀로그램 렌더 (엄마2 스키마 { text, cards[] })
-     if(d && d.cards && Array.isArray(d.cards) && d.cards.length && window.renderHoloCards){ window.renderHoloCards(d.cards); }
+     if(reply) pushMsg('gen', renderMd(reply));
+     // ★E-4 프론트 도킹: cards[] → v4 JARVIS 홀로그램 렌더
+     if(cards && cards.length && window.renderHoloCards){ window.renderHoloCards(cards); }
    }).catch(function(){ w.remove(); pushMsg('gen','<span style="color:#c0392b">오류(잠시 후 다시)</span>'); });
 };
 // ★배선A: 증권분석 결과(코치 HTML) 렌더 + PDF(인쇄)/엑셀(CSV) 다운로드 + _HIST 요약
@@ -2990,7 +3009,7 @@ window.addFile=function(){ doOCR(); };
   var CONNS=[{k:'sheets',nm:'구글 시트',sub:'고객 명단'},{k:'calendar',nm:'구글 캘린더',sub:'일정·브리핑'},{k:'drive',nm:'구글 드라이브',sub:'자료 저장'},{k:'gmail',nm:'Gmail',sub:'메일·발송'}];
   var _pending=null;
   function esc(s){return String(s==null?'':s).replace(/[&<>]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;'}[c];});}
-  async function api(u,o){var r=await fetch(u,Object.assign({credentials:'same-origin'},o||{}));return r.json();}
+  async function api(u,o){var r=await fetch(u,Object.assign({credentials:'include'},o||{}));return r.json();}
   window.genyaHub=function(){document.getElementById('ghOv').style.display='block';setTimeout(function(){document.getElementById('ghOv').classList.add('on');},10);ghLoad();};
   window.ghClose=function(){document.getElementById('ghOv').classList.remove('on');setTimeout(function(){document.getElementById('ghOv').style.display='none';},220);};
   window.ghLoad=async function(){
