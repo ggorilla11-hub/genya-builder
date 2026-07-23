@@ -108,6 +108,20 @@ approval.init({
   ok('라이브 옵트인 시 실대상 유지', rLive.blocked === false && rLive.to === 'realcustomer@x.com' && rLive.safeMode === false);
   delete process.env.APPROVAL_LIVE_SEND;
 
+  // ═══ 🛠️ 11) Function Calling — 지니야 대화 발송지시→create_approval 도구호출→결재함 저장 ═══
+  ok('runChat 도구 3개 노출', approval.TOOLS.map((t) => t.name).join(',') === 'create_approval,list_approvals,approve_and_send');
+  let _fcStep = 0;
+  approval.init({ anthropic: { messages: { create: async () => {
+    _fcStep++;
+    if (_fcStep === 1) return { content: [{ type: 'tool_use', id: 'tu1', name: 'create_approval', input: { 요청내용: '신상품 안내', 채널: 'gmail', criteria: { 고객명: '김철수' }, 템플릿: '#{고객명}님, 신상품 안내드립니다.' } }] };
+    return { content: [{ type: 'text', text: '결재함에 올렸어요. 승인하시면 보내드릴게요.' }] };
+  } } } });
+  const storeBefore = store.length;
+  const rc = await approval.runChat(ma, [{ role: 'user', content: '김철수님에게 신상품 안내 메일 보내줘' }]);
+  ok('runChat 발송지시→"결재함" 안내', rc.ok && /결재함/.test(rc.reply));
+  ok('runChat 결재함 실제 저장(+1건)', store.length === storeBefore + 1);
+  ok('runChat 승인대기 pending 반환', !!(rc.pending && rc.pending.승인상태 === '대기'));
+
   console.log(`\n결과: ${pass} 통과 / ${fail} 실패`);
   process.exit(fail ? 1 : 0);
 })();
