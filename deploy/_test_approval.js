@@ -3,6 +3,11 @@
 const approval = require('./approval_skill');
 const crud = require('./sheets_crud_skill');
 
+// 🔒 하드가드 테스트를 결정론적으로: 관련 env 비움 → 폴백(회장님 본인)만 검증
+delete process.env.APPROVAL_LIVE_SEND;
+delete process.env.SAFE_EMAIL_WHITELIST; delete process.env.SAFE_PHONE_WHITELIST;
+delete process.env.APPROVAL_TEST_EMAIL; delete process.env.APPROVAL_TEST_TO;
+
 let pass = 0, fail = 0;
 function ok(name, cond, extra) { console.log((cond ? '✅' : '❌') + ' ' + name + (cond ? '' : '  ' + (extra || ''))); cond ? pass++ : fail++; }
 
@@ -77,6 +82,31 @@ approval.init({
   // 7) 거부
   const r = await approval.act(ma, { id: cBulk.approval.id, action: 'reject' });
   ok('거부 성공·발송0', r.ok && r.approval.승인상태 === '거부' && sent.length === 0);
+
+  // ═══ 🔒 8) 하드가드 — safeRecipient 판정(env 미설정 → 회장님 폴백) ═══
+  const rEmail = approval.safeRecipient('gmail', 'realcustomer@x.com');
+  ok('하드가드 실고객 이메일 차단→회장님', rEmail.blocked === true && rEmail.to === 'ggorilla11@gmail.com' && rEmail.test === true);
+  const rEmailVip = approval.safeRecipient('gmail', 'GGorilla11@gmail.com');
+  ok('하드가드 회장님 이메일 허용(대소문자무시)', rEmailVip.blocked === false && rEmailVip.to === 'GGorilla11@gmail.com');
+  const rPhone = approval.safeRecipient('sms', '010-9999-8888');
+  ok('하드가드 실고객 번호 차단→회장님', rPhone.blocked === true && rPhone.to.replace(/[^0-9]/g, '') === '01054245332');
+  const rPhoneVip = approval.safeRecipient('sms', '010-5424-5332');
+  ok('하드가드 회장님 번호 허용', rPhoneVip.blocked === false);
+
+  // 🔒 9) 실고객 대상 대량 발송 시도 → 전부 회장님에게만, 실고객 어디에도 X
+  sent.length = 0;
+  const cSafe = await approval.create(ma, { 요청내용: '실고객 발송 시도', 채널: 'gmail', criteria: {}, 템플릿: '#{고객명}님 안내' });
+  const aSafe = await approval.act(ma, { id: cSafe.approval.id, action: 'approve' });
+  ok('하드가드 3명 시도→전부 회장님 이메일로', sent.length === 3 && sent.every((s) => s.to === 'ggorilla11@gmail.com'), JSON.stringify(sent.map((s) => s.to)));
+  ok('하드가드 실고객(@x.com) 어디에도 발송X', !sent.some((s) => /@x\.com$/.test(s.to)));
+  ok('하드가드 [테스트] 정직표기', sent.every((s) => s.text.startsWith('[테스트] ')));
+  ok('하드가드 안전모드 정직안내', /안전모드/.test(aSafe.approval.결과) && /회장님만/.test(aSafe.message));
+
+  // 🔒 10) 라이브 명시(APPROVAL_LIVE_SEND=1) 시엔 실대상 그대로(옵트인)
+  process.env.APPROVAL_LIVE_SEND = '1';
+  const rLive = approval.safeRecipient('gmail', 'realcustomer@x.com');
+  ok('라이브 옵트인 시 실대상 유지', rLive.blocked === false && rLive.to === 'realcustomer@x.com' && rLive.safeMode === false);
+  delete process.env.APPROVAL_LIVE_SEND;
 
   console.log(`\n결과: ${pass} 통과 / ${fail} 실패`);
   process.exit(fail ? 1 : 0);
