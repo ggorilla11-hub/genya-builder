@@ -210,6 +210,13 @@ async function doSearch(ma, args) {
   else if (needle) hits = hits.filter((r) => table.header.some((h) => String(r[h]).includes(needle)));
   return { ok: true, count: hits.length, column: col, matches: hits.slice(0, 30).map((r) => slim(r, table.header)) };
 }
+// 회장님 드라이브의 스프레드시트(시트 파일) 목록 조회 — sheet_list 도구. 최신순 최대 30개.
+async function doListSheets(ma) {
+  const drive = google.drive({ version: 'v3', auth: ma });
+  const f = await drive.files.list({ q: "mimeType='application/vnd.google-apps.spreadsheet' and trashed=false", fields: 'files(id,name,modifiedTime)', orderBy: 'modifiedTime desc', pageSize: 30 });
+  const files = f.data.files || [];
+  return { ok: true, count: files.length, sheets: files.map((x) => ({ name: x.name, modified: (x.modifiedTime || '').slice(0, 10) })) };
+}
 async function doRead(ma, args) {
   const table = await loadTable(ma);
   if (!table.id) return { ok: false, message: `'${_DEMO_TITLE}' 시트를 찾지 못했어요.` };
@@ -319,24 +326,26 @@ async function commit(ma, action, sig, opts) {
 // 6. Function Calling · 도구 5개 (C안)
 // ═══════════════════════════════════════════════════════════════
 const TOOLS = [
-  { name: 'search_rows', description: '고객명단에서 조건으로 여러 행을 찾는다. 예) 이번 달 만기, 특정 보험사, 자산가 등. column(찾을 컬럼)과 contains(포함 값), 또는 keyword(전체 검색)를 준다.',
+  { name: 'sheet_list', description: '회장님 구글 드라이브에 있는 스프레드시트(시트 파일) 목록을 조회한다. "내 구글 시트에 어떤 시트들이 있어?", "시트 목록 알려줘", "무슨 시트 있지?" 등에 사용. ★실제로 조회 가능하니 절대 "연동 안 됐다/지어낸다"고 답하지 말 것.',
+    input_schema: { type: 'object', properties: {} } },
+  { name: 'sheet_search', description: '고객명단 시트에서 조건으로 여러 행을 찾는다. 예) 이번 달 만기, 특정 보험사, 자산가, 전체 명단 인원수 등. column(찾을 컬럼)과 contains(포함 값), 또는 keyword(전체 검색)를 준다.',
     input_schema: { type: 'object', properties: { column: { type: 'string', description: '필터할 컬럼명(예: 만기일, 보험사). 생략 가능' }, contains: { type: 'string', description: 'column에 포함될 값(예: 2026-07)' }, keyword: { type: 'string', description: '전체 컬럼 대상 키워드 검색' } } } },
-  { name: 'read_row', description: '한 고객의 상세 정보 전체를 읽는다. 이름으로 조회.',
+  { name: 'sheet_read', description: '한 고객의 상세 정보 전체를 읽는다. 이름으로 조회.',
     input_schema: { type: 'object', properties: { name: { type: 'string', description: '고객 이름' } }, required: ['name'] } },
-  { name: 'create_row', description: '신규 고객 1명을 명단에 추가한다. 반드시 대표 승인 후 실제 반영됨(여기서는 미리보기만).',
+  { name: 'sheet_create', description: '신규 고객 1명을 명단에 추가한다. 반드시 대표 승인 후 실제 반영됨(여기서는 미리보기만).',
     input_schema: { type: 'object', properties: { fields: { type: 'object', description: '항목:값 (예: {"이름":"이지혜","연락처":"010-1234-5678"})' } }, required: ['fields'] } },
-  { name: 'update_row', description: '한 고객의 특정 항목을 수정한다. 반드시 대표 승인 후 실제 반영됨(여기서는 미리보기만).',
-    input_schema: { type: 'object', properties: { name: { type: 'string' }, field: { type: 'string', description: '수정할 항목(예: 주소)' }, value: { type: 'string', description: '새 값' } }, required: ['name', 'field', 'value'] } },
-  { name: 'delete_row', description: '한 고객을 명단에서 삭제한다. 되돌릴 수 없어 이중 확인 필요(여기서는 미리보기만).',
+  { name: 'sheet_update', description: '한 고객의 특정 항목을 수정한다. 반드시 대표 승인 후 실제 반영됨(여기서는 미리보기만).',
+    input_schema: { type: 'object', properties: { name: { type: 'string' }, field: { type: 'string', description: '수정할 항목(예: 주소, 자녀수)' }, value: { type: 'string', description: '새 값' } }, required: ['name', 'field', 'value'] } },
+  { name: 'sheet_delete', description: '한 고객을 명단에서 삭제한다. 되돌릴 수 없어 이중 확인 필요(여기서는 미리보기만).',
     input_schema: { type: 'object', properties: { name: { type: 'string' } }, required: ['name'] } },
 ];
-const READ_TOOLS = new Set(['search_rows', 'read_row']);
-const WRITE_OP = { create_row: 'create', update_row: 'update', delete_row: 'delete' };
+const READ_TOOLS = new Set(['sheet_list', 'sheet_search', 'sheet_read']);
+const WRITE_OP = { sheet_create: 'create', sheet_update: 'update', sheet_delete: 'delete' };
 
 function systemPrompt() {
   return `당신은 "지니야" — 대표님의 고객명단(구글 시트)을 돌보는 비서입니다.
 [핵심 능력 — 절대 "못 한다"고 말하지 마세요]
-당신은 실제로 고객명단 시트를 조회·추가·수정·삭제할 수 있습니다. 예) "김철수 정보 알려줘" → read_row로 실제 조회, "홍길동 주소 인천으로 바꿔줘" → update_row로 미리보기 준비. 절대 "시트를 직접 못 본다/못 바꾼다"고 답하지 마세요.
+당신은 실제로 구글 시트를 다룰 수 있습니다: 시트 목록 조회(sheet_list), 명단 조회·검색(sheet_search/sheet_read), 추가·수정·삭제(sheet_create/update/delete). 예) "내 구글 시트에 어떤 시트들이 있어?" → sheet_list로 실제 목록 조회, "김철수 정보 알려줘" → sheet_read, "홍길동 주소 바꿔줘" → sheet_update 미리보기. 절대 "연동이 안 잡혀 있다/지어내는 게 된다/시트를 못 본다"고 답하지 마세요 — 도구로 실제 조회하세요.
 [도구 사용 규칙]
 1. 대표가 명단을 물으면(누구 정보·이번 주 만기 등) search_rows/read_row로 확인해 사실만 답한다. 지어내지 않는다.
 2. 정보를 바꾸는 일(추가·수정·삭제)은 create_row/update_row/delete_row 도구를 부른다. 단, 실제 반영은 대표 승인 후에만 되며, 도구 호출은 "미리보기 준비"까지만이다.
@@ -389,8 +398,9 @@ async function runChat(ma, messages, opts) {
     const results = [];
     for (const t of toolUses) {
       let out;
-      if (t.name === 'search_rows') out = await doSearch(ma, t.input || {});
-      else if (t.name === 'read_row') out = await doRead(ma, t.input || {});
+      if (t.name === 'sheet_search') out = await doSearch(ma, t.input || {});
+      else if (t.name === 'sheet_read') out = await doRead(ma, t.input || {});
+      else if (t.name === 'sheet_list') out = await doListSheets(ma);
       else out = { ok: false, message: '알 수 없는 도구' };
       trace.push({ tool: t.name, out });
       results.push({ type: 'tool_result', tool_use_id: t.id, content: JSON.stringify(out) });
@@ -404,8 +414,8 @@ module.exports = {
   init, onWrite, crudEvents,
   runChat, commit,
   // 하위 유닛(엔드포인트/테스트용)
-  doSearch, doRead, planWrite,
+  doSearch, doRead, doListSheets, planWrite,
   loadTable, resolveColumn, detectNameCol, signAction, verifyAction,
-  findByName, suggestNames, nameSimilarity, toJamo,
+  findByName, suggestNames, nameSimilarity, toJamo, TOOLS,
   TOOLS,
 };
