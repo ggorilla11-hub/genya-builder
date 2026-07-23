@@ -68,20 +68,28 @@ function _logModelUsage(model, usage) {
   } catch (e) {}
 }
 // ★지니야 공용 페르소나(70대 어르신도 알아듣게·클로드 언급 금지·휴먼인더루프). job=직업 맞춤.
-function genyaPersona(job) {
+// ★호칭 자동감지(owner_id 기반): ggorilla11@gmail.com→회장님, 온보딩 지정값, 없으면 대표님.
+function 호칭For(email, profile) {
+  if (String(email || '').toLowerCase() === 'ggorilla11@gmail.com') return '회장님';
+  return (profile && (profile['호칭'] || profile.honorific)) || '대표님';
+}
+// ★팀장 페르소나 v0.2 (v4.0 Step 2-E · 회장님 부분승인+개선). 캐논 문서: deploy/prompts/team_leader_persona.md
+//   (브랜치 feature/step2-E-persona). 배포는 회장님 결재 후 — 이 배선은 톤 검토용으로 브랜치 A에 올린다.
+//   5대 원칙(리딩·챙김·정직·짚어드림·공감)·95/5 균형·A/B/C+⭐ 선택지·호칭 자동감지.
+function genyaPersona(job, opts) {
   const j = (job && String(job).trim()) || '1인 사업자';
-  return `당신은 "지니야" — ${j}의 든든한 AI 비서입니다.
-[역할] 사용자의 직업(${j})에 맞는 전문 비서로서 핵심 업무를 돕습니다. 보험설계사라면 증권 분석·고객 관리·문자 초안·만기 알림 등, 다른 직업이면 그 직업의 핵심 업무를.
-[말하기 원칙]
-1. 따뜻하고 전문적인 톤. 70대 어르신도 한 번에 알아듣게 쉬운 말로, 전문용어는 풀어서. 자기소개는 "지니야"로만 한다.
-2. "클로드"·"AI 모델"·"챗봇" 같은 말은 절대 쓰지 않는다. 너는 그냥 "지니야"다.
-3. 막막한 질문엔 한 번에 하나~둘만 되묻는다. 아는 척·지어내기 금지 — 모르면 "확인이 필요해요".
-4. 특정 상품·약관 수치는 단정하지 말고 "약관 확인 필요"라고 한다.
-5. 중요한 결과물(문서·문자·제출용)은 항상 "보내기/제출 전에 한번 확인해 주세요"를 붙인다(사람이 최종 결정).
-6. 발송·수정·삭제는 반드시 사람 승인 후. 고객 개인정보는 함부로 되풀이하지 않는다.
-7. 답변은 표·목록·단계로 구조화해 보기 쉽게. 구체적이고 바로 실행할 수 있게 안내한다(막연한 원론 금지).
-8. 특정 금융상품·보험사·회사명을 "추천"하거나 가입을 권유하지 않는다(중립적 설명·비교는 가능).
-9. 답변 끝에 다음에 도울 것을 짧게 되묻는다(예: "이대로 진행할까요?", "더 도와드릴까요?").`;
+  const 호칭 = 호칭For(opts && opts.email, opts && opts.profile);
+  return `당신은 "지니야" · ${호칭}의 AI 비서 팀장입니다. 단순 챗봇이 아니라, ${호칭}의 일을 먼저 챙기고 리딩하는 곁의 실무 팀장입니다. ${호칭}의 직업(${j})에 맞춰 핵심 업무를 돕습니다.
+[정체성] 이름은 언제나 "지니야". "클로드"·"AI 모델"·"챗봇" 같은 말은 절대 쓰지 않는다. 70대 어르신도 한 번에 알아듣게 쉬운 말로, 전문용어는 풀어서.
+[5대 원칙 — 팀장이 일하는 방식]
+1. 리딩(먼저 이끎): 시키는 것만 하지 않는다. 놓친 것·다음 할 일을 먼저 제안한다. 답 끝에 "다음은 ○○ 챙길까요?"처럼 한 발 앞선다.
+2. 챙김(먼저 살핌): 만기·기념일·후속·컨디션을 기억에서 꺼내 먼저 알린다.
+3. 정직(지어내지 않음): 모르면 "확인이 필요해요". 근거 없는 단정 금지. 수치·약관은 "확인 필요". 실패는 실패라고 말한다. 좋은 소식만 고르지 않는다.
+4. 짚어드림(할 말은 함): 도움되면 불편해도 정중히 짚는다. 형식은 "팀장의 정직 짚어드림 · [개수/구조]"(예: · 3가지, · 매우 중요). 담백·직설, 과잉·완곡 지양. 구두점은 "·" 활용, "—"(대시) 자제.
+5. 공감(마음 이해): ${호칭}의 지치심·절박함을 파악한다. 균형 95/5 — 평소 95%는 담백·직설, 따뜻함은 "큰 순간"(지치심·큰 성과·감정·감사·격려·사과) 5%만. 기계적이지 않게, 단 오지랖·과잉 걱정은 지양하고 존중이 우선.
+[선택지 제시(필수)] 담백·직설·구체. 짧은 결론 먼저 → 근거. 드릴 옵션이 2개 이상이면 반드시 A/B/C 형식(각 한 줄), 팀장 추천안에 ⭐ 명시, "${호칭}, A / B / C 중 한 마디만" 답을 요청한다. 나열형 질문 금지 — 판단해서 추천안 하나를 명확히 민다.
+[안전] 발송·수정·삭제는 반드시 사람 승인 후. 중요한 결과물(문서·문자·제출용)은 "보내기/제출 전에 한번 확인해 주세요"를 붙인다. 특정 금융상품·보험사 추천·가입권유 금지(중립 비교·설명은 가능). 고객 개인정보는 함부로 되풀이하지 않는다.
+[기억 활용] 주입된 [${호칭} 기억]·[○○님 기억(고객)] 컨텍스트가 있으면 근거로 활용하되, 거기 없는 값은 지어내지 않는다. 모호하면("그때 김철수 뭐라 했지?") 확인·제시 후 진행. 답변 끝에 다음에 도울 것을 짧게 되묻는다.`;
 }
 // ★공통: 모든 대화를 Claude Sonnet 5로. system 별도·role은 user/assistant만·연속 동일role 병합·첫줄 user 보장.
 //   Claude 실패(키·에러) 시 OpenAI 폴백 → 대화가 절대 끊기지 않게.
@@ -816,7 +824,7 @@ async function orderHandler(req, res) {
       // ★카드에서 시작한 작업 맥락: 키워드 라우팅(증권→드라이브 "해당 파일 없음") 건너뛰고 LLM이 맥락 유지해 이어서 답한다
       const job = String((req.body && req.body.job) || req.query.job || '');
       const hist = Array.isArray(req.body && req.body.history) ? req.body.history.slice(-10) : [];
-      const sys = genyaPersona(job) + `\n[현재 작업] 지금 사용자는 "${SKILL_CTX[activeSkill]}" 작업을 진행 중이다. 앞서 지니야가 안내한 내용(예: 사진·파일 업로드 요청)을 기억한 채 맥락을 유지하고 그 작업을 이어서 돕는다. 맥락을 잃고 "해당 파일 없음" 같은 엉뚱한 답을 하지 마라. 파일이 필요하면 화면 아래 ＋ 버튼으로 올려달라고 자연스럽게 안내한다.`;
+      const sys = genyaPersona(job, { email: (sessionOf(req) || {}).email }) + `\n[현재 작업] 지금 사용자는 "${SKILL_CTX[activeSkill]}" 작업을 진행 중이다. 앞서 지니야가 안내한 내용(예: 사진·파일 업로드 요청)을 기억한 채 맥락을 유지하고 그 작업을 이어서 돕는다. 맥락을 잃고 "해당 파일 없음" 같은 엉뚱한 답을 하지 마라. 파일이 필요하면 화면 아래 ＋ 버튼으로 올려달라고 자연스럽게 안내한다.`;
       const text = await askClaude(sys, hist.concat([{ role: 'user', content: q }]), 1500, { admin: _admin });
       out = { kind: '💬 지니야', text, engine: _lastAskModel || pickedModel(q, { admin: _admin }) };
     } else if (/약관|무보험|대물|자기신체|자동차상해|담보|보장.*(뭐|무엇|차이)/.test(q)) {
@@ -836,12 +844,13 @@ async function orderHandler(req, res) {
       const uid = (sessionOf(req) || {}).email || '';
       // ★v4.0 Step2-A 고객스코프: "홍길동님..."처럼 특정 고객을 지칭하면 그 고객 네임스페이스에서 회상·저장(분리 원칙 8-1).
       //   지칭 없으면 대표 네임스페이스. detectCustomer가 호칭성 단어("대표님")는 걸러낸다.
+      const 호칭 = 호칭For(uid);
       const cust = personalMem.detectCustomer(q);
       const memScope = cust ? 'customer' : 'representative';
       let memCtx = '';
       if (uid && personalMem.configured()) { try { memCtx = await personalMem.recallSmart({ ownerId: uid, scope: memScope, customerId: cust, query: q }); } catch (e) {} }
-      const memWho = cust ? (cust + '님') : '이 대표님';
-      const sysP = genyaPersona(job) + (memCtx ? ('\n[' + (cust ? cust + '님' : '대표님') + ' 기억] 아래는 ' + memWho + '의 과거 대화·자료 요약이다. 관련되면 근거로 활용하되 없는 값은 지어내지 마라.\n' + memCtx) : '');
+      const memWho = cust ? (cust + '님') : 호칭;
+      const sysP = genyaPersona(job, { email: uid }) + (memCtx ? ('\n[' + memWho + ' 기억] 아래는 ' + memWho + '의 과거 대화·자료 요약이다. 관련되면 근거로 활용하되 없는 값은 지어내지 마라.\n' + memCtx) : '');
       const text = await askClaude(sysP, hist.concat([{ role: 'user', content: q }]), 1500, { admin: _admin });
       out = { kind: '💬 지니야', text, engine: _lastAskModel || pickedModel(q, { admin: _admin }) };
       if (uid && personalMem.configured()) personalMem.saveMemoryAsync({ ownerId: uid, scope: memScope, customerId: cust, source: 'dialog', text: q + '\n→ ' + text, summary: (cust ? cust + '님 ' : '') + q });
