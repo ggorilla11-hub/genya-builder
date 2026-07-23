@@ -178,7 +178,7 @@ async function askClaude(systemPrompt, messages, maxTokens, opts) {
     let stopped = 'end_turn';
     // ★Phase 팀장-C 실시간 웹검색: opts.webSearch면 Anthropic 서버측 web_search 도구 부착(뉴스·시세·판례·법령 최신 조회).
     //   서버도구=클라 실행루프 불필요·베타헤더 불필요. 최신 변형 web_search_20260209(동적필터링)=Opus4.8·Sonnet5 지원. max_uses로 비용 제어.
-    const _webTools = (opts && opts.webSearch) ? [{ type: 'web_search_20260209', name: 'web_search', max_uses: 5 }] : null;
+    const _webTools = (opts && opts.webSearch) ? [{ type: 'web_search_20260209', name: 'web_search', max_uses: 3 }] : null; // max_uses=3: 최신성 확보 + 응답지연 상한(무거운 DEEP 질문 2분+ 방지)
     let convo = cleaned;
     for (let round = 0; round < 5; round++) {
       const _req = { model, max_tokens: maxTokens, system: systemPrompt, messages: convo };
