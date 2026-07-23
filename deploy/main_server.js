@@ -290,7 +290,7 @@ const YAK = JSON.parse(fs.readFileSync(path.join(__dirname, 'yakgwan_pages.json'
 const app = express();
 app.use(express.json({ limit: '50mb' })); // 자료 업로드(base64) 파싱 — 큰 제안서 PDF 다중 업로드 대비 상향
 // ★배포 반영 확인용(정직): 재배포 후 이 build 값이 바뀌면 새 코드가 실제 활성화됐다는 증거. 공개·민감정보 없음.
-const BUILD_TAG = 'v4.0-day4-master-crm-routing-2026-07-24';
+const BUILD_TAG = 'v4.0-day4-master-crm-crud-complete-2026-07-24';
 app.get(['/health', '/api/version'], (req, res) => res.json({ ok: true, build: BUILD_TAG, emojiFilter: typeof stripEmoji === 'function', pineconeReady: (function () { try { return personalMem.configured(); } catch (e) { return false; } })(), ts: new Date().toISOString() }));
 // ★🛡️ 수문장 진단(회장님 직접 확인용): 로그인 상태로 이 URL을 열면 — 내 세션 uid·Pinecone연결·최근이벤트를 그대로 보여준다.
 //   명단 올린 뒤 이걸 열어 recentEvents에 roster_upload가 있으면 "기록 OK"(라우팅/타이밍 문제), 없으면 "기록 실패"(uid/훅 문제) → 근본 즉시 판별.
@@ -1028,7 +1028,7 @@ async function orderHandler(req, res) {
         const rc = await approval.runChat(ma, hist.concat([{ role: 'user', content: q }]));
         out = { kind: '🗂️ 결재함', text: rc.reply || '무엇을 보내드릴까요?', pending: rc.pending || null, engine: MODEL_DEEP };
       }
-    } else if (!_webQuery && (/시트\s*(목록|리스트|들|현황|뭐|어떤|무슨)|어떤\s*시트|무슨\s*시트|내\s*(구글\s*)?시트|([가-힣]{2,4})\s*님?\s*(정보|연락처|주소|생일|만기|상품|알려|조회|어때)|시트\s*(조회|검색|추가|수정|삭제|변경|바꿔)|명단|만기|자산가|고객\s*(추가|등록|수정|삭제|정리|목록|누구|전체|명단)|(주소|연락처|번호|생일|상품)\s*(을|를|은|는)?\s*(바꿔|수정|변경|고쳐|추가)/.test(q))) {
+    } else if (!_webQuery && (/시트\s*(목록|리스트|들|현황|뭐|어떤|무슨)|어떤\s*시트|무슨\s*시트|내\s*(구글\s*)?시트|([가-힣]{2,4})\s*님?\s*(정보|연락처|주소|생일|만기|상품|알려|조회|어때|추가|등록|삭제|빼|지워|넣어|수정|변경|바꿔)|시트\s*(조회|검색|추가|수정|삭제|변경|바꿔)|명단|만기|자산가|고객\s*(추가|등록|수정|삭제|정리|목록|누구|전체|명단)|(주소|연락처|번호|생일|상품)\s*(을|를|은|는)?\s*(바꿔|수정|변경|고쳐|추가)/.test(q))) {
       // 🗂️ Step 2-B(마스터 CRM): 명단·만기·고객·개별 조회/수정 = 항상 마스터 시트(지니야빌더_데모_명단) CRUD 도구 루프. 데모 커넥터가 아니라 실제 시트.
       // ★라우팅 진단 로깅(엄마2): "김철수 정보 알려줘"가 이 분기로 왔는지·canData·runChat 응답 원문을 Render 로그로 확정. sheetsCrud 내부는 무접촉.
       console.log('[🗂️sheetCRUD 라우팅] 분기진입 · q="' + String(q).slice(0, 40) + '" · canData=' + canData + ' · uid=' + ((sessionOf(req) || {}).email || '(없음)') + ' · hasDataScope=' + hasDataScope(req));
