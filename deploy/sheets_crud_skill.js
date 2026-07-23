@@ -125,15 +125,77 @@ async function loadTable(ma) {
   }
   return { id, gid, header, rows, nameCol, sheets };
 }
-// 이름으로 행 찾기(정확 → 부분)
+// 이름 정규화(공백 제거·소문자) — 오타·띄어쓰기 흔들림 흡수
+function normName(x) { return String(x || '').trim().toLowerCase().replace(/\s+/g, ''); }
+// 이름으로 행 찾기(정확 → 부분). 공백·대소문자 무시.
 function findByName(table, name) {
-  if (!name) return [];
-  const n = String(name).trim();
-  const exact = table.rows.filter((r) => String(r[table.nameCol]).trim() === n);
+  const n = normName(name);
+  if (!n) return [];
+  const exact = table.rows.filter((r) => normName(r[table.nameCol]) === n);
   if (exact.length) return exact;
-  return table.rows.filter((r) => String(r[table.nameCol]).includes(n));
+  return table.rows.filter((r) => normName(r[table.nameCol]).includes(n));
 }
 function slim(r, header) { const o = {}; header.forEach((h) => { if (r[h] !== undefined && r[h] !== '') o[h] = r[h]; }); return o; }
+
+// ── 유사 이름 제안(오타·받침 차이·부분일치) ────────────────────────
+// 한글 음절을 초·중·종성 자모로 분해 → 받침 1개 차이(오정서↔오정석)도 "거의 같음"으로 잡는다.
+const _CHO = 'ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ';
+const _JUNG = 'ㅏㅐㅑㅒㅓㅔㅕㅖㅗㅘㅙㅚㅛㅜㅝㅞㅟㅠㅡㅢㅣ';
+const _JONG = ['', 'ㄱ', 'ㄲ', 'ㄳ', 'ㄴ', 'ㄵ', 'ㄶ', 'ㄷ', 'ㄹ', 'ㄺ', 'ㄻ', 'ㄼ', 'ㄽ', 'ㄾ', 'ㄿ', 'ㅀ', 'ㅁ', 'ㅂ', 'ㅄ', 'ㅅ', 'ㅆ', 'ㅇ', 'ㅈ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ'];
+function _decompose(ch) {
+  const code = ch.charCodeAt(0) - 0xAC00;
+  if (code < 0 || code > 11171) return ch;
+  return _CHO[Math.floor(code / 588)] + _JUNG[Math.floor((code % 588) / 28)] + _JONG[code % 28];
+}
+function toJamo(s) { return String(s).split('').map(_decompose).join(''); }
+function levenshtein(a, b) {
+  const m = a.length, n = b.length;
+  if (!m) return n; if (!n) return m;
+  let prev = Array.from({ length: n + 1 }, (_, j) => j);
+  for (let i = 1; i <= m; i++) {
+    let cur = [i];
+    for (let j = 1; j <= n; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost);
+    }
+    prev = cur;
+  }
+  return prev[n];
+}
+// 두 이름의 닮음 정도(0~1). 정확=1, 포함=0.8 이상, 자모 편집거리로 오타 흡수.
+function nameSimilarity(a, b) {
+  const na = normName(a), nb = normName(b);
+  if (!na || !nb) return 0;
+  if (na === nb) return 1;
+  const ja = toJamo(na), jb = toJamo(nb);
+  const d = levenshtein(ja, jb);
+  let score = 1 - d / (Math.max(ja.length, jb.length) || 1);
+  if (na.includes(nb) || nb.includes(na)) score = Math.max(score, 0.8); // 부분일치 보너스
+  return score;
+}
+// 명단(이름 배열)에서 query와 비슷한 이름 최대 max개 추천(닮음순).
+function suggestNames(names, query, opts) {
+  opts = opts || {};
+  const max = opts.max || 3;
+  const threshold = opts.threshold != null ? opts.threshold : 0.55;
+  const seen = new Set(); const scored = [];
+  for (const nm of names || []) {
+    const name = String(nm || '').trim();
+    if (!name || seen.has(name)) continue; seen.add(name);
+    const s = nameSimilarity(name, query);
+    if (s >= threshold) scored.push({ name, score: s });
+  }
+  scored.sort((a, b) => b.score - a.score);
+  return scored.slice(0, max).map((x) => x.name);
+}
+// 못 찾았을 때 친절 문구(비슷한 이름 제안 포함)
+function notFoundMsg(table, name) {
+  const sugg = suggestNames(table.rows.map((r) => r[table.nameCol]), name, { max: 3 });
+  const msg = sugg.length
+    ? `'${name}'님은 명단에서 못 찾았어요. 혹시 ${sugg.map((s) => `'${s}'`).join(', ')} 님을 찾으시나요?`
+    : `'${name}'님을 명단에서 못 찾았어요.`;
+  return { suggestions: sugg, message: msg };
+}
 
 // ═══════════════════════════════════════════════════════════════
 // 3. 읽기 동작 (즉시 실행 · 승인 불필요)
@@ -152,7 +214,7 @@ async function doRead(ma, args) {
   const table = await loadTable(ma);
   if (!table.id) return { ok: false, message: `'${_DEMO_TITLE}' 시트를 찾지 못했어요.` };
   const hits = findByName(table, args.name);
-  if (!hits.length) return { ok: true, found: 0, message: `'${args.name}'님을 명단에서 못 찾았어요.` };
+  if (!hits.length) { const nf = notFoundMsg(table, args.name); return { ok: true, found: 0, suggestions: nf.suggestions, message: nf.message }; }
   if (hits.length > 1) return { ok: true, found: hits.length, candidates: hits.map((r) => r[table.nameCol]), message: `'${args.name}'과(와) 비슷한 분이 여럿이에요. 누구인지 골라 주세요.` };
   return { ok: true, found: 1, row: slim(hits[0], table.header) };
 }
@@ -183,7 +245,8 @@ async function planWrite(ma, op, raw) {
 
   if (op === 'update') {
     const hits = findByName(table, raw.name);
-    if (hits.length !== 1) return { ok: false, message: hits.length ? `'${raw.name}' 후보가 여럿이에요: ${hits.map((r) => r[table.nameCol]).join(', ')}` : `'${raw.name}'님을 못 찾았어요.` };
+    if (hits.length === 0) { const nf = notFoundMsg(table, raw.name); return { ok: false, suggestions: nf.suggestions, message: nf.message }; }
+    if (hits.length > 1) return { ok: false, candidates: hits.map((r) => r[table.nameCol]), message: `'${raw.name}' 후보가 여럿이에요: ${hits.map((r) => r[table.nameCol]).join(', ')}. 누구인지 정확히 말씀해 주세요.` };
     const col = resolveColumn(raw.field, table.header);
     if (!col) return { ok: false, message: `'${raw.field}' 항목을 시트 컬럼에서 못 찾았어요. (컬럼: ${table.header.join(', ')})` };
     const target = hits[0];
@@ -200,7 +263,8 @@ async function planWrite(ma, op, raw) {
     preview = fields;
   } else if (op === 'delete') {
     const hits = findByName(table, raw.name);
-    if (hits.length !== 1) return { ok: false, message: hits.length ? `'${raw.name}' 후보가 여럿이에요: ${hits.map((r) => r[table.nameCol]).join(', ')}` : `'${raw.name}'님을 못 찾았어요.` };
+    if (hits.length === 0) { const nf = notFoundMsg(table, raw.name); return { ok: false, suggestions: nf.suggestions, message: nf.message }; }
+    if (hits.length > 1) return { ok: false, candidates: hits.map((r) => r[table.nameCol]), message: `'${raw.name}' 후보가 여럿이에요: ${hits.map((r) => r[table.nameCol]).join(', ')}. 누구인지 정확히 말씀해 주세요.` };
     const target = hits[0];
     action.rowNum = target._rowNum; action.name = target[table.nameCol];
     doubleConfirm = true; // ★삭제는 무조건 이중 확인
@@ -340,5 +404,6 @@ module.exports = {
   // 하위 유닛(엔드포인트/테스트용)
   doSearch, doRead, planWrite,
   loadTable, resolveColumn, detectNameCol, signAction, verifyAction,
+  findByName, suggestNames, nameSimilarity, toJamo,
   TOOLS,
 };

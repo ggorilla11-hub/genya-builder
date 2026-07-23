@@ -35,5 +35,18 @@ eq('verify 만료(20분전)', crud.verifyAction(stale, crud.signAction(stale)).o
 // 4) 도구 5개 등록 확인
 eq('도구 5개', crud.TOOLS.map((t) => t.name), ['search_rows', 'read_row', 'create_row', 'update_row', 'delete_row']);
 
+// 5) 후속개선: 유사이름 제안(오타·받침차이·부분·무관)
+const roster = ['오정석', '오정서방', '김철수', '이영희', '이지혜'];
+eq('유사제안 오타(오정서→오정석 포함)', crud.suggestNames(roster, '오정서').includes('오정석'), true);
+eq('유사제안 부분(오정→후보 있음)', crud.suggestNames(roster, '오정').length >= 1, true);
+eq('유사제안 무관(홍길동→없음)', crud.suggestNames(roster, '홍길동'), []);
+eq('유사제안 정확(김철수 1순위)', crud.suggestNames(roster, '김철수')[0], '김철수');
+eq('자모분해 받침(석→ㅅㅓㄱ)', crud.toJamo('석'), 'ㅅㅓㄱ');
+eq('유사도 정확일치=1', crud.nameSimilarity('홍길동', '홍길동'), 1);
+
+// 6) findByName: 공백·대소문자 무시(오타 흡수)
+const _tbl = { nameCol: '고객명', rows: [{ 고객명: '홍 길동' }, { 고객명: '김철수' }] };
+eq('findByName 공백무시(홍길동→홍 길동)', crud.findByName(_tbl, '홍길동').length, 1);
+
 console.log(`\n결과: ${pass} 통과 / ${fail} 실패`);
 process.exit(fail ? 1 : 0);
