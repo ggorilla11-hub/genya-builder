@@ -113,7 +113,7 @@ approval.init({
   let _fcStep = 0;
   approval.init({ anthropic: { messages: { create: async () => {
     _fcStep++;
-    if (_fcStep === 1) return { content: [{ type: 'tool_use', id: 'tu1', name: 'create_approval', input: { 요청내용: '신상품 안내', 채널: 'gmail', criteria: { 고객명: '김철수' }, 템플릿: '#{고객명}님, 신상품 안내드립니다.' } }] };
+    if (_fcStep === 1) return { content: [{ type: 'tool_use', id: 'tu1', name: 'create_approval', input: { title: '신상품 안내', channel: 'gmail', criteria: { 고객명: '김철수' }, template: '#{고객명}님, 신상품 안내드립니다.' } }] };
     return { content: [{ type: 'text', text: '결재함에 올렸어요. 승인하시면 보내드릴게요.' }] };
   } } } });
   const storeBefore = store.length;
