@@ -32,8 +32,8 @@ eq('verify 서명없음', crud.verifyAction(action, '').ok, false);
 const stale = Object.assign({}, action, { ts: Date.now() - 20 * 60 * 1000 });
 eq('verify 만료(20분전)', crud.verifyAction(stale, crud.signAction(stale)).ok, false);
 
-// 4) 도구 5개 등록 확인
-eq('도구 5개', crud.TOOLS.map((t) => t.name), ['search_rows', 'read_row', 'create_row', 'update_row', 'delete_row']);
+// 4) 도구 6개 등록 확인(sheet_list 추가 + sheet_* 정합)
+eq('도구 6개', crud.TOOLS.map((t) => t.name), ['sheet_list', 'sheet_search', 'sheet_read', 'sheet_create', 'sheet_update', 'sheet_delete']);
 
 // 5) 후속개선: 유사이름 제안(오타·받침차이·부분·무관)
 const roster = ['오정석', '오정서방', '김철수', '이영희', '이지혜'];
