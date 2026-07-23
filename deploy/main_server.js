@@ -290,8 +290,20 @@ const YAK = JSON.parse(fs.readFileSync(path.join(__dirname, 'yakgwan_pages.json'
 const app = express();
 app.use(express.json({ limit: '50mb' })); // 자료 업로드(base64) 파싱 — 큰 제안서 PDF 다중 업로드 대비 상향
 // ★배포 반영 확인용(정직): 재배포 후 이 build 값이 바뀌면 새 코드가 실제 활성화됐다는 증거. 공개·민감정보 없음.
-const BUILD_TAG = 'v4.0-day4-teamlead-ABF-project+multitool+tone-2026-07-23';
+const BUILD_TAG = 'v4.0-day4-vapi-voice-mic-2026-07-23';
 app.get(['/health', '/api/version'], (req, res) => res.json({ ok: true, build: BUILD_TAG, emojiFilter: typeof stripEmoji === 'function', ts: new Date().toISOString() }));
+// ★Vapi 음성(엄마2): 프론트에 공개키·어시스턴트ID 전달(Render env·하드코딩0). Vapi Public Key는 클라이언트 공개용이라 반환 OK. 키 없으면 ready:false → 프론트가 마이크 비활성.
+app.get('/api/vapi-config', (req, res) => res.json({ ready: !!(process.env.VAPI_PUBLIC_KEY && process.env.VAPI_ASSISTANT_ID), publicKey: process.env.VAPI_PUBLIC_KEY || '', assistantId: process.env.VAPI_ASSISTANT_ID || '' }));
+// ★한 지니야 뇌: 마이크 클릭 시 회원 컨텍스트(로그인 세션 + Pinecone recall)를 조립해 통화 지니야에 variableValues로 주입 → 통화 지니야 = 텍스트 지니야 동일 기억. 로그인 없으면 게스트.
+app.get('/api/vapi-context', async (req, res) => {
+  try {
+    const uid = (sessionOf(req) || {}).email || '';
+    const who = 호칭For(uid);
+    let recall = '';
+    if (uid && personalMem.configured()) { try { recall = await personalMem.recallSmart({ ownerId: uid, scope: 'representative', query: '최근 상담·요청·자료 요약' }); } catch (e) {} }
+    res.json({ user_id: uid || 'guest', user_name: who, session_id: String(req.query.sid || ''), recall: recall || '' });
+  } catch (e) { res.json({ user_id: 'guest', user_name: '대표님', session_id: '', recall: '' }); }
+});
 // ★카톡 발송기(watcher) 배포 zip — 교육생이 각자 PC에 설치. 공개 정적(개인정보·키·명단 미포함 zip만 배치). zip은 별도 생성.
 app.use('/downloads', express.static(path.join(__dirname, 'downloads')));
 
