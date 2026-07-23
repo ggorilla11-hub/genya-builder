@@ -290,7 +290,7 @@ const YAK = JSON.parse(fs.readFileSync(path.join(__dirname, 'yakgwan_pages.json'
 const app = express();
 app.use(express.json({ limit: '50mb' })); // 자료 업로드(base64) 파싱 — 큰 제안서 PDF 다중 업로드 대비 상향
 // ★배포 반영 확인용(정직): 재배포 후 이 build 값이 바뀌면 새 코드가 실제 활성화됐다는 증거. 공개·민감정보 없음.
-const BUILD_TAG = 'v4.0-day4-master-crm-crud-complete-2026-07-24';
+const BUILD_TAG = 'v4.0-day4-roster-data-inject-2026-07-24';
 app.get(['/health', '/api/version'], (req, res) => res.json({ ok: true, build: BUILD_TAG, emojiFilter: typeof stripEmoji === 'function', pineconeReady: (function () { try { return personalMem.configured(); } catch (e) { return false; } })(), ts: new Date().toISOString() }));
 // ★🛡️ 수문장 진단(회장님 직접 확인용): 로그인 상태로 이 URL을 열면 — 내 세션 uid·Pinecone연결·최근이벤트를 그대로 보여준다.
 //   명단 올린 뒤 이걸 열어 recentEvents에 roster_upload가 있으면 "기록 OK"(라우팅/타이밍 문제), 없으면 "기록 실패"(uid/훅 문제) → 근본 즉시 판별.
@@ -1013,6 +1013,31 @@ async function orderHandler(req, res) {
         const text = await askClaude(sysG, hist.concat([{ role: 'user', content: q }]), 8192, { admin: _admin });
         out = { kind: '💬 지니야', text, engine: _lastAskModel || pickedModel(q, { admin: _admin }) };
       }
+    } else if (canData && /명단|만기|임박|목록|리스트|몇\s*명|인원|전체|자산가|고객\s*(목록|전체|누구|정리|명단)/.test(q) && !/([가-힣]{2,4})\s*님?\s*(정보|연락처|추가|삭제|수정|등록|빼|지워|변경|바꿔)/.test(q)) {
+      // 📇 명단 전체·만기 = 실제 시트 데이터를 먼저 조회해 LLM 프롬프트에 주입(고수 채택·Function Calling 미호출 원천 해결). 개별 이름은 아래 sheetsCrud read_row.
+      const job = String((req.body && req.body.job) || req.query.job || '');
+      const hist = Array.isArray(req.body && req.body.history) ? req.body.history.slice(-10) : [];
+      const uid = (sessionOf(req) || {}).email || '';
+      let extra = '';
+      try {
+        const t = await sheetsCrud.loadTable(ma);
+        const header = (t && t.header) || [];
+        const clients = (t && t.rows) || [];
+        if (!clients.length) { extra = '\n[활성 명단 · 등록된 고객 0명. 우측 상단 "명단·연결"로 올려달라고 안내한다.]\n'; }
+        else if (/만기|임박/.test(q)) {
+          const today = new Date(); const due = new Date(Date.now() + 30 * 864e5);
+          const expCol = header.find((h) => /만기/.test(h));
+          const expiring = expCol ? clients.filter((c) => { const d = new Date(c[expCol]); return d instanceof Date && !isNaN(d) && d >= today && d <= due; }) : [];
+          extra = `\n[만기 임박 30일 이내 · ${expiring.length}명 (전체 ${clients.length}명)]\n` + header.join(' | ') + '\n' + expiring.map((c) => header.map((h) => c[h] || '').join(' | ')).join('\n') + '\n★위 실제 시트 데이터만 근거로 답하고 없는 값은 지어내지 마라.\n';
+        } else {
+          const show = clients.slice(0, 30);
+          extra = `\n[활성 고객명단 · 총 ${clients.length}명]\n` + header.join(' | ') + '\n' + show.map((c) => header.map((h) => c[h] || '').join(' | ')).join('\n') + (clients.length > 30 ? `\n(상위 30명만 표시 · 전체 ${clients.length}명)\n` : '\n') + '★위 실제 시트 데이터만 근거로 답하고 없는 값은 지어내지 마라.\n';
+        }
+      } catch (e) { extra = '\n[명단 조회 오류 — 구글 시트 연결을 확인하라고 안내한다.]\n'; console.log('[📇명단 조회 실패] ' + e.message); }
+      console.log('[📇명단 자동주입] ' + extra.length + 'chars · q="' + String(q).slice(0, 30) + '"');
+      const sysP = genyaPersona(job, { email: uid }) + '\n[활성 고객명단 — 실제 시트 데이터(마스터 시트)]' + extra;
+      const text = await askClaude(sysP, hist.concat([{ role: 'user', content: q }]), 8192, { admin: _admin });
+      out = { kind: '📇 고객명단', text, engine: _lastAskModel || pickedModel(q, { admin: _admin }) };
     } else if (activeSkill && SKILL_CTX[activeSkill] && !_toolIntent) {
       // ★카드에서 시작한 작업 맥락: 키워드 라우팅(증권→드라이브 "해당 파일 없음") 건너뛰고 LLM이 맥락 유지해 이어서 답한다
       const job = String((req.body && req.body.job) || req.query.job || '');
