@@ -921,6 +921,8 @@ async function orderHandler(req, res) {
       const nameM = q.match(/([가-힣]{2,4})님/);
       try { await memory.saveMemory({ type: '요청', subject: nameM ? nameM[1] : '', text: q }, ma); saved = { subject: nameM ? nameM[1] : '', text: q }; } catch (e) {}
     }
+    // ★이모지 0 최종 게이트: askClaude를 안 타는 응답(결재함·커넥터 등)까지 포함해 모든 지니야 text에서 이모지 제거(결정적).
+    if (out && typeof out.text === 'string') out.text = stripEmoji(out.text);
     res.json({ ok: true, ...out, saved });
   } catch (e) {
     // ★권한부족이 여기까지 새면 대화 전체가 막히지 않도록 "연결하기"로 정직히 안내(500 대신)
