@@ -40,9 +40,39 @@ function init(opts) {
   if (opts.sendGmail) _sendGmail = opts.sendGmail;
 }
 
-// 로컬 실측 안전: 설정 시 모든 발송을 회장님 본인 대상으로만(실고객 보호). 프로덕션은 미설정 → 실대상.
-function _testTo() { return String(process.env.APPROVAL_TEST_TO || '').trim(); }
-function _testEmail() { return String(process.env.APPROVAL_TEST_EMAIL || '').trim(); }
+// ═══ 🔒 발송 안전 하드가드 (실고객 오발송 원천차단) ═══
+// 원칙: 라이브 발송을 명시적으로 켜지(APPROVAL_LIVE_SEND=1) 않는 한, 모든 발송을
+//       "안전 화이트리스트"로 강제 리다이렉트한다. 화이트리스트 env를 빠뜨려도
+//       폴백(회장님 본인)으로만 나가 실고객에게는 절대 발송되지 않는다.
+const SAFE_FALLBACK_EMAIL = 'ggorilla11@gmail.com'; // 회장님 본인(오상열)
+const SAFE_FALLBACK_PHONE = '010-5424-5332';        // 회장님 본인(오상열)
+function _liveSend() { return String(process.env.APPROVAL_LIVE_SEND || '') === '1'; }
+function _normPhone(p) { return String(p || '').replace(/[^0-9]/g, ''); }
+function _emailWhitelist() {
+  const raw = String(process.env.SAFE_EMAIL_WHITELIST || process.env.APPROVAL_TEST_EMAIL || '').trim();
+  const list = raw ? raw.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean) : [];
+  return list.length ? list : [SAFE_FALLBACK_EMAIL.toLowerCase()];
+}
+function _phoneWhitelist() {
+  const raw = String(process.env.SAFE_PHONE_WHITELIST || process.env.APPROVAL_TEST_TO || '').trim();
+  const list = raw ? raw.split(',').map((s) => _normPhone(s)).filter(Boolean) : [];
+  return list.length ? list : [_normPhone(SAFE_FALLBACK_PHONE)];
+}
+function _mask(s) { s = String(s || ''); return s.length <= 4 ? '***' : s.slice(0, 2) + '***' + s.slice(-2); }
+// 발송 직전 수신자 안전 판정. 라이브 아니면 화이트리스트로 강제. 반환 {to, blocked, test, safeMode}
+function safeRecipient(channel, to) {
+  const live = _liveSend();
+  if (channel === 'gmail') {
+    const wl = _emailWhitelist(); const orig = String(to || '').trim().toLowerCase();
+    if (live) return { to, blocked: false, test: false, safeMode: false };
+    if (orig && wl.includes(orig)) return { to, blocked: false, test: true, safeMode: true };
+    return { to: wl[0], blocked: true, test: true, safeMode: true };
+  }
+  const wl = _phoneWhitelist(); const orig = _normPhone(to);
+  if (live) return { to, blocked: false, test: false, safeMode: false };
+  if (orig && wl.includes(orig)) return { to, blocked: false, test: true, safeMode: true };
+  return { to: wl[0], blocked: true, test: true, safeMode: true };
+}
 
 // ── 결재함 탭 로드(없으면 헤더 생성). 회원 본인 시트에만. ──
 async function _load(ma) {
@@ -134,12 +164,13 @@ async function act(ma, input) {
     if (targets.length >= BULK && !input.confirmed) {
       return { ok: false, needsBulkConfirm: true, count: targets.length, message: `${targets.length}명에게 발송합니다. 실수 방지를 위해 한 번 더 확인해 주세요.` };
     }
-    // 실제 발송(로컬은 APPROVAL_TEST_TO로만)
+    // 실제 발송(🔒 하드가드: 라이브 아니면 화이트리스트=회장님 본인으로만)
     const result = await _dispatch(ma, o, targets, contactCol);
     o.승인상태 = result.fail === 0 ? '완료' : (result.ok === 0 ? '실패' : '부분실패');
-    o.결과 = `${result.ok}/${targets.length} 성공${result.fail ? ` · 실패 ${result.fail}` : ''}${_testTo() || _testEmail() ? ' (테스트발송)' : ''}`;
+    o.결과 = `${result.ok}/${targets.length} 성공${result.fail ? ` · 실패 ${result.fail}` : ''}${result.safeMode ? ` · 🔒안전모드(실고객 ${result.blocked}명 차단·회장님만)` : ''}`;
     o.수정일시 = _now(); await _updateRow(sheets, sid, o);
-    return { ok: true, approval: _publicView(o), result, message: `발송 완료. ${o.결과}` };
+    const safeMsg = result.safeMode ? ` 🔒 안전 모드예요 — 실제 문자·메일은 회장님 본인에게만 갔어요(실고객 ${result.blocked}명은 보호 차단).` : '';
+    return { ok: true, approval: _publicView(o), result, message: `발송 완료. ${o.결과}${safeMsg}` };
   }
   return { ok: false, message: '알 수 없는 동작이에요(approve/reject/edit).' };
 }
@@ -161,26 +192,25 @@ async function _resolveTargets(ma, criteria, 채널) {
 function _render(tpl, row, header) {
   return String(tpl).replace(/#\{([^}]+)\}/g, (m, name) => { const col = crud.resolveColumn(name.trim(), header); return col && row[col] != null ? String(row[col]) : m; });
 }
-// ── 실제 발송(채널별). 로컬 안전 오버라이드. 가짜성공 없음(sent 확인). ──
+// ── 실제 발송(채널별). 🔒 하드가드: 라이브 아니면 화이트리스트(회장님)로 강제. 가짜성공 없음(sent 확인). ──
 async function _dispatch(ma, o, targets, contactCol) {
   const header = Object.keys(targets[0] || {});
-  let ok = 0, fail = 0; const errors = [];
+  let ok = 0, fail = 0, blocked = 0, safeMode = false; const errors = [];
   for (const row of targets) {
     const text = _render(o.템플릿, row, header);
-    let to = contactCol ? String(row[contactCol]).trim() : '';
+    const rawTo = contactCol ? String(row[contactCol]).trim() : '';
+    const safe = safeRecipient(o.채널, rawTo);
+    if (safe.safeMode) safeMode = true;
+    if (safe.blocked) { blocked++; console.log(`[🔒안전차단] 실고객 ${o.채널} 발송 차단됨: ${_mask(rawTo)} → 회장님 본인(${_mask(safe.to)})으로 대체`); }
+    const body = (safe.test ? '[테스트] ' : '') + text;
     try {
       let r;
-      if (o.채널 === 'gmail') {
-        if (_testEmail()) to = _testEmail(); // 로컬 안전
-        r = await _sendGmail(ma, to, o.요청내용 || '안내', (_testTo() || _testEmail() ? '[테스트] ' : '') + text);
-      } else {
-        if (_testTo()) to = _testTo();        // 로컬 안전
-        r = await _sendSms(ma, to, (_testTo() || _testEmail() ? '[테스트] ' : '') + text);
-      }
+      if (o.채널 === 'gmail') r = await _sendGmail(ma, safe.to, o.요청내용 || '안내', body);
+      else r = await _sendSms(ma, safe.to, body);
       if (r && r.sent) ok++; else { fail++; if (r && r.error) errors.push(r.error); }
     } catch (e) { fail++; errors.push(e.message); }
   }
-  return { ok, fail, errors: errors.slice(0, 3) };
+  return { ok, fail, blocked, safeMode, errors: errors.slice(0, 3) };
 }
 
 // ═══ (편의) 자연어 → 결재 초안 (지니야 자동 생성 보조) ═══
@@ -203,4 +233,4 @@ async function plan(ma, text) {
   } catch (e) { return { ok: false, message: '무엇을 누구에게 보낼지 조금 더 구체적으로 말씀해 주세요.', error: e.message }; }
 }
 
-module.exports = { init, create, list, act, plan, APPROVAL_TAB, HEADER };
+module.exports = { init, create, list, act, plan, APPROVAL_TAB, HEADER, safeRecipient };
