@@ -286,7 +286,7 @@ app.use('/downloads', express.static(path.join(__dirname, 'downloads')));
 // ★세션 복원: 재배포·15분 슬립으로 메모리(sessions)가 비어도, 암호화 쿠키(genya_rt)에서
 //   refresh_token 복원 → 세션 재구성. ★서버 저장 0(쿠키=사용자 브라우저 것) · SA/Firestore 불필요.
 //   대표님·교육생이 15분마다 재로그인하던 무한반복의 근본 해결.
-app.use((req, res, next) => {
+app.use(async (req, res, next) => {
   try {
     const sid = sidOf(req);
     if (sid && !sessions.get(sid)) {
@@ -298,6 +298,17 @@ app.use((req, res, next) => {
         if (p && (p.email || p.rt)) {
           const _sess = { email: p.email || '', name: '', scope: p.scope || '', provider: 'google', restored: true };
           if (p.rt) _sess.tokens = { refresh_token: p.rt };
+          // ★Task A 세션 안정성: 쿠키에 rt가 없지만 이메일이 있으면 durable(Firestore)에서 커넥터 복원.
+          //   → 쿠키 유실·좁아짐·타기기·키회전에도, 한 번이라도 [구글 연결]한 이메일이면 재로그인 즉시 커넥터 자동 유지.
+          if (!_sess.tokens && _sess.email) {
+            try {
+              const _dur = await loadMemberToken(_sess.email);
+              if (_dur && _dur.refresh_token) {
+                _sess.tokens = { refresh_token: _dur.refresh_token };
+                if ((_dur.scope || '').split(' ').length > (_sess.scope || '').split(' ').length) _sess.scope = _dur.scope;
+              }
+            } catch (e) {}
+          }
           sessions.set(sid, _sess);
         }
       }
@@ -1400,6 +1411,8 @@ app.post('/api/approval/create', async (req, res) => { try { const ma = gateGoog
 app.get('/api/approval/list', async (req, res) => { try { const ma = gateGoogle(req, res); if (!ma) return; res.json(await approval.list(ma, { status: req.query.status })); } catch (e) { res.status(500).json({ ok: false, error: e.message }); } });
 app.post('/api/approval/act', async (req, res) => { try { const ma = gateGoogle(req, res); if (!ma) return; res.json(await approval.act(ma, req.body || {})); } catch (e) { res.status(500).json({ ok: false, error: e.message }); } });
 app.post('/api/approval/plan', async (req, res) => { try { const ma = gateGoogle(req, res); if (!ma) return; res.json(await approval.plan(ma, (req.body && req.body.text) || '')); } catch (e) { res.status(500).json({ ok: false, error: e.message }); } });
+// 🔒 안전모드 정직 노출(화이트리스트 값은 비공개·on/off만). 결재함 페이지 배너가 이걸 읽어 실고객 발송 여부를 정직 표시.
+app.get('/api/approval/mode', (req, res) => res.json({ ok: true, live: String(process.env.APPROVAL_LIVE_SEND || '') === '1' }));
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 📱 카카오 알림톡 (Step 5) — 오원트 org 채널(발신프로필)로 정보성 알림 발송
@@ -1564,6 +1577,24 @@ app.get('/api/diag/persist', async (req, res) => {
     res.json(out);
   } catch (e) { out.에러 = e.message; out.진단 = '❌ 암호화 실패'; res.json(out); }
 });
+// 🩺 Task A: durable(Firestore) 커넥터 복원 계층 자가진단 — 더미 이메일로 저장→복원 왕복(토큰 실값 0노출).
+//   이 계층이 실작동해야 재로그인·타기기·재배포·쿠키유실에도 [구글 연결]이 자동 유지된다. 세션 불필요·내가 직접 검증.
+app.get('/api/diag/token-store', async (req, res) => {
+  const out = { 계층: 'durable(Firestore genya_member_tokens) · 이메일키 refresh_token 영속', TOKEN_ENC_KEY: !!_encKey(), SA설정: !!(KEY_FILE && KEY_FILE !== '{}') };
+  if (!out.TOKEN_ENC_KEY || !out.SA설정) { out.진단 = '⚠️ TOKEN_ENC_KEY 또는 GOOGLE_SA_JSON 미설정 — durable 계층 비활성(쿠키 계층만 동작)'; return res.json(out); }
+  const email = 'diag-taska@genya.local';
+  const rt = '1//diag-' + crypto.randomBytes(8).toString('hex');
+  try {
+    await saveMemberToken(email, rt, 'openid email calendar.readonly spreadsheets drive.readonly drive.file');
+    const loaded = await loadMemberToken(email);
+    out.저장 = true;
+    out.복원 = !!(loaded && loaded.refresh_token);
+    out.일치 = !!(loaded && loaded.refresh_token === rt);
+    out.스코프복원 = !!(loaded && /spreadsheets/.test(loaded.scope || ''));
+    out.진단 = (out.일치 && out.스코프복원) ? '✅ durable 복원 실작동 — 재로그인·타기기·재배포에도 커넥터 자동 유지(더미문서 1건 잔존·무해)' : '⚠️ 왕복 불일치';
+    res.json(out);
+  } catch (e) { out.에러 = e.message; out.진단 = '❌ Firestore 왕복 실패'; res.json(out); }
+});
 app.get('/api/status', (req, res) => {
   // ★실제 상태를 정직 반영(런타임 확인 가능한 것 위주)
   res.json({
@@ -1608,6 +1639,9 @@ app.get('/login', (req, res) => {
 app.get(['/privacy', '/privacy.html', '/개인정보처리방침'], (req, res) => res.sendFile(path.join(__dirname, 'privacy.html')));
 app.get('/crud-test', (req, res) => res.sendFile(path.join(__dirname, 'crud_test.html'))); // 🗂️ Step 2-B 로컬 실측 콘솔(로컬 전용)
 app.get('/approval-test', (req, res) => res.sendFile(path.join(__dirname, 'approval_test.html'))); // 🗂️ Step 2-C 결재함 로컬 실측 콘솔
+app.get('/approval', (req, res) => res.sendFile(path.join(__dirname, 'approval.html'))); // 🗂️ Step 2-C 결재함 정식 페이지(Task B · genya.html 무접촉 독립 · ASCII 정식주소)
+// 🗂️ 한글 주소 /결재함: 이 Express 버전은 유니코드 리터럴 라우트를 매칭 못 함(기존 /이용약관·/개인정보처리방침도 동일 404) → path-to-regexp 우회, 디코드 후 직접 매핑. /결재함만 가로채고 나머진 통과.
+app.use((req, res, next) => { let p; try { p = decodeURIComponent(req.path); } catch (e) { p = req.path; } if (p === '/결재함') return res.sendFile(path.join(__dirname, 'approval.html')); next(); });
 app.get(['/terms', '/terms.html', '/이용약관'], (req, res) => res.sendFile(path.join(__dirname, 'terms.html')));
 
 app.get('/auth/google', (req, res) => {
@@ -1651,11 +1685,21 @@ app.get('/auth/google/callback', async (req, res) => {
     //   include_granted_scopes=true라 정상적으론 넓게 오지만, 안전하게 넓은 쪽을 택한다.
     const _old = sessionOf(req);
     const tok = Object.assign({}, tokens);
+    // ★Task A 재로그인 커넥터 유지 — 3중 복원: ①메모리/쿠키 세션(_old) ②이메일 기반 durable(Firestore).
+    //   로그인은 rt를 재발급하지 않으므로, 한 번이라도 [구글 연결]한 이메일이면 어느 기기·재배포·쿠키유실이어도 자동 복원.
     if (!tok.refresh_token && _old && _old.tokens && _old.tokens.refresh_token) tok.refresh_token = _old.tokens.refresh_token;
+    let _durScope = '';
+    if (!tok.refresh_token && ui.data.email) {
+      try { const _dur = await loadMemberToken(ui.data.email); if (_dur && _dur.refresh_token) { tok.refresh_token = _dur.refresh_token; _durScope = _dur.scope || ''; } } catch (e) {}
+    }
     const newScope = tokens.scope || '';
     const oldScope = (_old && _old.scope) || '';
-    const scope = newScope.split(' ').length >= oldScope.split(' ').length ? newScope : oldScope;
+    // 가장 넓은 스코프 채택(로그인=좁음 / 기존연결=넓음 / durable=과거연결 넓음)
+    const scope = [newScope, oldScope, _durScope].filter(Boolean).sort((a, b) => b.split(' ').length - a.split(' ').length)[0] || newScope;
     sessions.set(s, { email: ui.data.email, name: ui.data.name, tokens: tok, scope, provider: 'google' });
+    // ★durable 저장: 구글이 이번에 실제로 rt를 발급했을 때만(=연결 동의) 이메일 키로 Firestore 영속 → 이후 어떤 로그인이든 커넥터 자동 복원.
+    //   preserved rt(=tokens.refresh_token 없음)일 땐 저장 생략 → 중복 문서 누적 방지. 베스트에포트(실패해도 로그인 안 끊김).
+    if (tokens.refresh_token && ui.data.email) { try { await saveMemberToken(ui.data.email, tokens.refresh_token, scope); } catch (e) { console.warn('saveMemberToken 실패(무시):', e.message); } }
     const _sec = process.env.RENDER ? '; Secure' : '';
     const cookies = [`genya_sid=${s}; HttpOnly; Path=/; SameSite=Lax${_sec}`];
     // ★refresh_token(+scope,email)을 암호화해 사용자 쿠키에. 서버 저장 0·재시작 생존.
