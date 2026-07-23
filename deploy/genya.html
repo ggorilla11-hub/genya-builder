@@ -2218,7 +2218,7 @@ function addToolAsk(){ window._ACTIVE_SKILL='add_tool'; pushMsg('gen','어떤 �
       vapi.on('error', function(e){ micState(''); _vapiConnecting=false; vapi=null; tip('음성 오류: '+((e&&e.message)||'연결')); });  // ❌
       // ★한 지니야 뇌: 로그인 세션 + Pinecone recall(엄마2)을 variableValues로 주입 → 통화 지니야가 텍스트 지니야와 같은 기억.
       var ctx={}; try{ ctx=await fetch('/api/vapi-context',{credentials:'include'}).then(function(r){return r.json();}); }catch(e){}
-      await vapi.start(vapiCfg.assistantId, { variableValues: { user_id:(ctx.user_id||'guest'), user_name:(ctx.user_name||'대표님'), session_id:(ctx.session_id||''), recall:(ctx.recall||'') } });
+      await vapi.start(vapiCfg.assistantId, { variableValues: { user_id:(ctx.user_id||'guest'), user_name:(ctx.user_name||'대표님'), session_id:(ctx.session_id||''), recall:(ctx.recall||''), clientData:(ctx.clientData||'') } });
       _vapiConnecting=false; micState('recording');
     }catch(e){ _vapiConnecting=false; micState(''); vapi=null; tip('음성 연결 오류 · 잠시 후 다시'); }
   }

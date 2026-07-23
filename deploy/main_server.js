@@ -290,7 +290,7 @@ const YAK = JSON.parse(fs.readFileSync(path.join(__dirname, 'yakgwan_pages.json'
 const app = express();
 app.use(express.json({ limit: '50mb' })); // 자료 업로드(base64) 파싱 — 큰 제안서 PDF 다중 업로드 대비 상향
 // ★배포 반영 확인용(정직): 재배포 후 이 build 값이 바뀌면 새 코드가 실제 활성화됐다는 증거. 공개·민감정보 없음.
-const BUILD_TAG = 'v4.0-day4-roster-data-inject-2026-07-24';
+const BUILD_TAG = 'v4.0-day4-vapi-clientData-2026-07-24';
 app.get(['/health', '/api/version'], (req, res) => res.json({ ok: true, build: BUILD_TAG, emojiFilter: typeof stripEmoji === 'function', pineconeReady: (function () { try { return personalMem.configured(); } catch (e) { return false; } })(), ts: new Date().toISOString() }));
 // ★🛡️ 수문장 진단(회장님 직접 확인용): 로그인 상태로 이 URL을 열면 — 내 세션 uid·Pinecone연결·최근이벤트를 그대로 보여준다.
 //   명단 올린 뒤 이걸 열어 recentEvents에 roster_upload가 있으면 "기록 OK"(라우팅/타이밍 문제), 없으면 "기록 실패"(uid/훅 문제) → 근본 즉시 판별.
@@ -312,9 +312,27 @@ app.get('/api/vapi-context', async (req, res) => {
     const who = 호칭For(uid);
     let recall = '';
     if (uid && personalMem.configured()) { try { recall = await personalMem.recallSmart({ ownerId: uid, scope: 'representative', query: '최근 상담·요청·자료 요약' }); } catch (e) {} }
+    // 📇 clientData: 통화 시작 시 실제 마스터 시트 명단을 통째로 주입(고수 채택·Function Calling 미사용 → 음성 대화 품질 유지). Vapi 대시보드 프롬프트의 {{clientData}}가 이걸 받는다.
+    let clientData = '고객명단이 아직 연결되지 않았어요. 우측 상단 "명단·연결"에서 구글 시트를 연결해 주세요.';
+    try {
+      const ma = memberAuth(req);
+      if (ma && hasDataScope(req)) {
+        const t = await sheetsCrud.loadTable(ma);
+        const header = (t && t.header) || [];
+        const clients = (t && t.rows) || [];
+        if (!clients.length) { clientData = '고객명단에 등록된 고객이 아직 없어요.'; }
+        else {
+          const show = clients.slice(0, 30);
+          clientData = `[고객명단 · 총 ${clients.length}명]\n` + header.join(' | ') + '\n'
+            + show.map((c) => header.map((h) => c[h] || '').join(' | ')).join('\n')
+            + (clients.length > 30 ? `\n(상위 30명 표시 · 전체 ${clients.length}명)` : '');
+        }
+      }
+    } catch (e) { console.log('[📇vapi clientData 조회 실패] ' + e.message); }
+    console.log('[📇vapi-context] uid=' + (uid || '(게스트)') + ' · clientData=' + clientData.length + 'chars');
     if (uid && personalMem.configured()) personalMem.recordEventAsync({ ownerId: uid, type: 'voice_call', source: 'event', summary: '음성 통화 시작' }); // 🛡️수문장
-    res.json({ user_id: uid || 'guest', user_name: who, session_id: String(req.query.sid || ''), recall: recall || '' });
-  } catch (e) { res.json({ user_id: 'guest', user_name: '대표님', session_id: '', recall: '' }); }
+    res.json({ user_id: uid || 'guest', user_name: who, session_id: String(req.query.sid || ''), recall: recall || '', clientData: clientData });
+  } catch (e) { res.json({ user_id: 'guest', user_name: '대표님', session_id: '', recall: '', clientData: '' }); }
 });
 // ★카톡 발송기(watcher) 배포 zip — 교육생이 각자 PC에 설치. 공개 정적(개인정보·키·명단 미포함 zip만 배치). zip은 별도 생성.
 app.use('/downloads', express.static(path.join(__dirname, 'downloads')));
