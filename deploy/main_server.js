@@ -290,7 +290,7 @@ const YAK = JSON.parse(fs.readFileSync(path.join(__dirname, 'yakgwan_pages.json'
 const app = express();
 app.use(express.json({ limit: '50mb' })); // 자료 업로드(base64) 파싱 — 큰 제안서 PDF 다중 업로드 대비 상향
 // ★배포 반영 확인용(정직): 재배포 후 이 build 값이 바뀌면 새 코드가 실제 활성화됐다는 증거. 공개·민감정보 없음.
-const BUILD_TAG = 'v4.0-day4-gatekeeper-diagnostics-2026-07-24';
+const BUILD_TAG = 'v4.0-day4-session-persist-rootfix-2026-07-24';
 app.get(['/health', '/api/version'], (req, res) => res.json({ ok: true, build: BUILD_TAG, emojiFilter: typeof stripEmoji === 'function', pineconeReady: (function () { try { return personalMem.configured(); } catch (e) { return false; } })(), ts: new Date().toISOString() }));
 // ★🛡️ 수문장 진단(회장님 직접 확인용): 로그인 상태로 이 URL을 열면 — 내 세션 uid·Pinecone연결·최근이벤트를 그대로 보여준다.
 //   명단 올린 뒤 이걸 열어 recentEvents에 roster_upload가 있으면 "기록 OK"(라우팅/타이밍 문제), 없으면 "기록 실패"(uid/훅 문제) → 근본 즉시 판별.
@@ -324,8 +324,10 @@ app.use('/downloads', express.static(path.join(__dirname, 'downloads')));
 //   대표님·교육생이 15분마다 재로그인하던 무한반복의 근본 해결.
 app.use(async (req, res, next) => {
   try {
-    const sid = sidOf(req);
-    if (sid && !sessions.get(sid)) {
+    let sid = sidOf(req);
+    // ★근본수정: 예전엔 sid(genya_sid)가 있을 때만 복원 → genya_sid(세션쿠키) 유실 시 genya_rt(1년치 email)가 있어도 복원 불가("치매").
+    //   이제 세션이 없으면(sid 유실 or sessions에 없음) genya_rt로 복원하고, sid가 유실됐으면 새로 발급·영속 재설정 → uid 항상 유지.
+    if (!(sid && sessions.get(sid))) {
       const m = /(?:^|;\s*)genya_rt=([^;]+)/.exec(req.headers.cookie || '');
       if (m) {
         const p = JSON.parse(_dec(decodeURIComponent(m[1])) || '{}');
@@ -344,6 +346,10 @@ app.use(async (req, res, next) => {
                 if ((_dur.scope || '').split(' ').length > (_sess.scope || '').split(' ').length) _sess.scope = _dur.scope;
               }
             } catch (e) {}
+          }
+          if (!sid) { // ★genya_sid 유실(세션쿠키 소멸 등) → 새 sid 발급 + 영속 재설정 → 이후 요청부터 세션·uid 유지
+            sid = crypto.randomBytes(18).toString('hex');
+            try { res.setHeader('Set-Cookie', `genya_sid=${sid}; HttpOnly; Path=/; SameSite=Lax; Max-Age=31536000${process.env.RENDER ? '; Secure' : ''}`); } catch (e) {}
           }
           sessions.set(sid, _sess);
         }
@@ -1784,7 +1790,7 @@ app.get('/auth/google/callback', async (req, res) => {
     //   preserved rt(=tokens.refresh_token 없음)일 땐 저장 생략 → 중복 문서 누적 방지. 베스트에포트(실패해도 로그인 안 끊김).
     if (tokens.refresh_token && ui.data.email) { try { await saveMemberToken(ui.data.email, tokens.refresh_token, scope); } catch (e) { console.warn('saveMemberToken 실패(무시):', e.message); } }
     const _sec = process.env.RENDER ? '; Secure' : '';
-    const cookies = [`genya_sid=${s}; HttpOnly; Path=/; SameSite=Lax${_sec}`];
+    const cookies = [`genya_sid=${s}; HttpOnly; Path=/; SameSite=Lax; Max-Age=31536000${_sec}`]; // ★영속(1년): 세션쿠키였으면 브라우저 닫을때 소멸→uid유실("치매") → Max-Age로 영속화
     // ★refresh_token(+scope,email)을 암호화해 사용자 쿠키에. 서버 저장 0·재시작 생존.
     //   ★다운로드함 버그 수정: 예전엔 refresh_token 있을 때만 genya_rt 저장 → 재로그인(구글이 rt 안 줌)은 미저장 →
     //     재배포로 sessions Map 비면 복원 불가 → mem "로그인 필요". 이제 email 있으면 항상 저장(rt는 있으면 함께).
@@ -1844,7 +1850,7 @@ app.get('/auth/kakao/callback', async (req, res) => {
     // 3) 세션 (★구글 토큰 없음 → 데이터 기능은 구글 연결 필요). 토큰만 메모리·회원 격리·저장0
     const s = crypto.randomBytes(16).toString('hex');
     sessions.set(s, { email, name, provider: 'kakao' }); // s.tokens(구글) 없음
-    res.setHeader('Set-Cookie', `genya_sid=${s}; HttpOnly; Path=/; SameSite=Lax${process.env.RENDER ? '; Secure' : ''}`);
+    res.setHeader('Set-Cookie', `genya_sid=${s}; HttpOnly; Path=/; SameSite=Lax; Max-Age=31536000${process.env.RENDER ? '; Secure' : ''}`); // ★영속(1년)
     res.redirect('/');
   } catch (e) { res.status(500).send('카카오 로그인 오류: ' + e.message); }
 });
