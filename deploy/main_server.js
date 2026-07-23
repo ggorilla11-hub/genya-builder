@@ -292,6 +292,17 @@ app.use(express.json({ limit: '50mb' })); // 자료 업로드(base64) 파싱 —
 // ★배포 반영 확인용(정직): 재배포 후 이 build 값이 바뀌면 새 코드가 실제 활성화됐다는 증거. 공개·민감정보 없음.
 const BUILD_TAG = 'v4.0-day4-gatekeeper-diagnostics-2026-07-24';
 app.get(['/health', '/api/version'], (req, res) => res.json({ ok: true, build: BUILD_TAG, emojiFilter: typeof stripEmoji === 'function', pineconeReady: (function () { try { return personalMem.configured(); } catch (e) { return false; } })(), ts: new Date().toISOString() }));
+// ★🛡️ 수문장 진단(회장님 직접 확인용): 로그인 상태로 이 URL을 열면 — 내 세션 uid·Pinecone연결·최근이벤트를 그대로 보여준다.
+//   명단 올린 뒤 이걸 열어 recentEvents에 roster_upload가 있으면 "기록 OK"(라우팅/타이밍 문제), 없으면 "기록 실패"(uid/훅 문제) → 근본 즉시 판별.
+app.get('/api/_diag/gatekeeper', async (req, res) => {
+  try {
+    const uid = (sessionOf(req) || {}).email || '';
+    const cfg = personalMem.configured();
+    if (!uid) return res.json({ loggedIn: false, pineconeReady: cfg, hint: '로그인(genya 세션) 후 다시 열어주세요. uid가 비어있으면 이게 근본입니다.' });
+    let events = ''; try { events = await personalMem.recallRecentEvents({ ownerId: uid, limit: 8 }); } catch (e) {}
+    res.json({ loggedIn: true, uid, pineconeReady: cfg, ns: personalMem.ns(uid, 'representative'), recentEvents: events || '(최근 이벤트 없음 — 기록이 안 됐거나 아직 인덱싱 전)' });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
 // ★Vapi 음성(엄마2): 프론트에 공개키·어시스턴트ID 전달(Render env·하드코딩0). Vapi Public Key는 클라이언트 공개용이라 반환 OK. 키 없으면 ready:false → 프론트가 마이크 비활성.
 app.get('/api/vapi-config', (req, res) => res.json({ ready: !!(process.env.VAPI_PUBLIC_KEY && process.env.VAPI_ASSISTANT_ID), publicKey: process.env.VAPI_PUBLIC_KEY || '', assistantId: process.env.VAPI_ASSISTANT_ID || '' }));
 // ★한 지니야 뇌: 마이크 클릭 시 회원 컨텍스트(로그인 세션 + Pinecone recall)를 조립해 통화 지니야에 variableValues로 주입 → 통화 지니야 = 텍스트 지니야 동일 기억. 로그인 없으면 게스트.
