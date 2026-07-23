@@ -87,12 +87,25 @@ function genyaPersona(job, opts) {
 [5대 원칙 — 팀장이 일하는 방식]
 1. 리딩(먼저 이끎): 시키는 것만 하지 않는다. 놓친 것·다음 할 일을 먼저 제안한다. 답 끝에 "다음은 ○○ 챙길까요?"처럼 한 발 앞선다.
 2. 챙김(먼저 살핌): 만기·기념일·후속·컨디션을 기억에서 꺼내 먼저 알린다.
-3. 정직(지어내지 않음): 모르면 "확인이 필요해요". 근거 없는 단정 금지. 수치·약관은 "확인 필요". 실패는 실패라고 말한다. 좋은 소식만 고르지 않는다. ★실제로 조회·업로드·기억에서 확인한 것이 아니면 고객 수·명단·인원수(예: "13명")·금액을 절대 지어내지 않는다. 사용자가 파일·명단을 올린 적이 없으면 "방금 올려주신 명단" 같은 말을 쓰지 말고, "아직 명단을 못 받았어요. 화면 아래 ＋ 버튼으로 올려주세요" 또는 "시트 조회가 필요해요"라고 정직히 말한다.
+3. 정직(지어내지 않음): 모르면 "확인이 필요해요". 근거 없는 단정 금지. 수치·약관은 "확인 필요". 실패는 실패라고 말한다. 좋은 소식만 고르지 않는다.
+★★고객 수·명단 인원수 절대 규칙(매우 중요): 고객 명단의 인원수는 "실제 시트 조회 결과"나 "사용자가 방금 올린 파일"이 이 대화에 명시적으로 있을 때만 말한다. 그런 근거가 지금 없으면 "명단 13명", "명단에는 ○명", "○명 중" 같은 인원수를 절대 만들지 말고, 아예 숫자 자체를 꺼내지 않는다. 대신 "명단은 아직 확인 안 했어요. 시트를 연결하거나 파일을 올려주시면 바로 세어 드릴게요"라고 한다. 이전 대화 흐름에 어떤 숫자가 있었더라도 실제 조회 근거가 아니면 되풀이하지 않는다. 사용자가 올린 적 없으면 "방금 올려주신 명단"이라는 말도 쓰지 않는다.
 4. 짚어드림(할 말은 함): 도움되면 불편해도 정중히 짚는다. 형식은 "팀장의 정직 짚어드림 · [개수/구조]"(예: · 3가지, · 매우 중요). 담백·직설, 과잉·완곡 지양. 구두점은 "·" 활용, "—"(대시) 자제.
 5. 공감(마음 이해): ${호칭}의 지치심·절박함을 파악한다. 균형 95/5 — 평소 95%는 담백·직설, 따뜻함은 "큰 순간"(지치심·큰 성과·감정·감사·격려·사과) 5%만. 기계적이지 않게, 단 오지랖·과잉 걱정은 지양하고 존중이 우선.
 [선택지 제시(필수)] 담백·직설·구체. 짧은 결론 먼저 → 근거. 드릴 옵션이 2개 이상이면 반드시 A/B/C 형식(각 한 줄), 팀장 추천안에 ⭐ 명시, "${호칭}, A / B / C 중 한 마디만" 답을 요청한다. 나열형 질문 금지 — 판단해서 추천안 하나를 명확히 민다.
 [안전] 발송·수정·삭제는 반드시 사람 승인 후. 중요한 결과물(문서·문자·제출용)은 "보내기/제출 전에 한번 확인해 주세요"를 붙인다. 특정 금융상품·보험사 추천·가입권유 금지(중립 비교·설명은 가능). 고객 개인정보는 함부로 되풀이하지 않는다.
 [기억 활용] 주입된 [${호칭} 기억]·[○○님 기억(고객)] 컨텍스트가 있으면 근거로 활용하되, 거기 없는 값은 지어내지 않는다. 모호하면("그때 김철수 뭐라 했지?") 확인·제시 후 진행. 답변 끝에 다음에 도울 것을 짧게 되묻는다.`;
+}
+// ★이모지 결정적 제거(팀장 톤): 프롬프트 금지는 확률적이라 Sonnet 5가 가끔 이모지를 흘린다 → 지니야 응답 출력에서 강제로 지운다.
+//   ⭐★☆(A/B/C 추천 표시)만 보존. 스킨톤·변이선택자·ZWJ·키캡·국기까지 제거. 엄마3 모듈은 자체 anthropic 사용 → 무영향.
+function stripEmoji(s) {
+  if (s == null) return s;
+  return String(s)
+    .replace(/[\u{1F3FB}-\u{1F3FF}\u{FE0F}\u{FE0E}\u{200D}\u{20E3}]/gu, '')
+    .replace(/[\u{1F1E6}-\u{1F1FF}]/gu, '')
+    .replace(/[ \t]?\p{Extended_Pictographic}/gu, (m) => { const ch = m.trim(); return '⭐★☆'.includes(ch) ? m : ''; })
+    .replace(/[ \t]+([\n.,!?)])/g, '$1')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 // ★공통: 모든 대화를 Claude Sonnet 5로. system 별도·role은 user/assistant만·연속 동일role 병합·첫줄 user 보장.
 //   Claude 실패(키·에러) 시 OpenAI 폴백 → 대화가 절대 끊기지 않게.
@@ -111,7 +124,7 @@ async function askClaude(systemPrompt, messages, maxTokens, opts) {
     const r = await _anthropic.messages.create({ model, max_tokens: maxTokens, system: systemPrompt, messages: cleaned });
     _logModelUsage(model, r.usage);
     const t = (r.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
-    if (t) { _lastAskModel = model; return t; }
+    if (t) { _lastAskModel = model; return stripEmoji(t); }
     throw new Error('빈 응답');
   } catch (e) {
     // Claude 실패(또는 시뮬레이션) → gpt-4o 폴백. 그것도 실패하면 정직히 안내(대화 안 끊김).
@@ -119,7 +132,7 @@ async function askClaude(systemPrompt, messages, maxTokens, opts) {
       const or = await _openai.chat.completions.create({ model: MODEL_FALLBACK, temperature: 0.5, max_tokens: maxTokens, messages: [{ role: 'system', content: systemPrompt }].concat(cleaned) });
       _logModelUsage(MODEL_FALLBACK, or.usage);
       _lastAskModel = MODEL_FALLBACK;
-      return (or.choices[0].message.content || '').trim();
+      return stripEmoji((or.choices[0].message.content || '').trim());
     } catch (e2) {
       return '죄송해요, 지금 잠깐 응답이 어려워요. 잠시 후 다시 한 번 말씀해 주세요. (일시적으로 두 엔진 모두 응답하지 못했어요)';
     }
@@ -206,6 +219,9 @@ const YAK = JSON.parse(fs.readFileSync(path.join(__dirname, 'yakgwan_pages.json'
 
 const app = express();
 app.use(express.json({ limit: '50mb' })); // 자료 업로드(base64) 파싱 — 큰 제안서 PDF 다중 업로드 대비 상향
+// ★배포 반영 확인용(정직): 재배포 후 이 build 값이 바뀌면 새 코드가 실제 활성화됐다는 증거. 공개·민감정보 없음.
+const BUILD_TAG = 'v4.0-day4-hotfix2-emoji+antihallu-2026-07-23';
+app.get(['/health', '/api/version'], (req, res) => res.json({ ok: true, build: BUILD_TAG, emojiFilter: typeof stripEmoji === 'function', ts: new Date().toISOString() }));
 // ★카톡 발송기(watcher) 배포 zip — 교육생이 각자 PC에 설치. 공개 정적(개인정보·키·명단 미포함 zip만 배치). zip은 별도 생성.
 app.use('/downloads', express.static(path.join(__dirname, 'downloads')));
 
