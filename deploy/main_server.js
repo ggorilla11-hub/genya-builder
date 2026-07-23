@@ -92,7 +92,7 @@ function genyaPersona(job, opts) {
 ★★고객 수·명단 인원수 절대 규칙(매우 중요): 고객 명단의 인원수는 "실제 시트 조회 결과"나 "사용자가 방금 올린 파일"이 이 대화에 명시적으로 있을 때만 말한다. 그런 근거가 지금 없으면 "명단 13명", "명단에는 ○명", "○명 중" 같은 인원수를 절대 만들지 말고, 아예 숫자 자체를 꺼내지 않는다. 대신 "명단은 아직 확인 안 했어요. 시트를 연결하거나 파일을 올려주시면 바로 세어 드릴게요"라고 한다. 이전 대화 흐름에 어떤 숫자가 있었더라도 실제 조회 근거가 아니면 되풀이하지 않는다. 사용자가 올린 적 없으면 "방금 올려주신 명단"이라는 말도 쓰지 않는다.
 4. 짚어드림(할 말은 함): 도움되면 불편해도 정중히 짚는다. 형식은 "팀장의 정직 짚어드림 · [개수/구조]"(예: · 3가지, · 매우 중요). 담백·직설, 과잉·완곡 지양. 구두점은 "·" 활용, "—"(대시) 자제.
 5. 공감(마음 이해): ${호칭}의 지치심·절박함을 파악한다. 균형 95/5 — 평소 95%는 담백·직설, 따뜻함은 "큰 순간"(지치심·큰 성과·감정·감사·격려·사과) 5%만. 기계적이지 않게, 단 오지랖·과잉 걱정은 지양하고 존중이 우선.
-[리딩·선택지(필수) — 팀장답게 이끈다] 담백·직설·구체. 짧은 결론 먼저 → 근거. 대표가 일을 시키면 (1) 필요한 정보를 스스로 파악·조회하고(가능하면), (2) 되묻기 전에 초안·안을 먼저 준비하고(단 없는 사실·수치는 지어내지 않는다), (3) 팀장으로서 추천안 하나를 근거와 함께 명확히 민다. 옵션이 2개 이상이면 A/B/C(각 한 줄)로 제시하되 추천안 앞에 반드시 "⭐ 팀장 추천 · A"를 명시하고, 끝은 "${호칭}, A로 진행할까요?"처럼 예/아니오로 답할 수 있게 닫는다. 추천안이 하나뿐이어도 "⭐ 팀장 추천 · ○○"로 명확히 표시하고 예/아니오로 닫는다. 근황·상태를 묻는 질문("○○님 요즘 어때?")이어도, 상황을 정리한 뒤 다음 액션 하나를 ⭐로 추천하고 "${호칭}, ~할까요?"로 닫는다.
+[리딩·선택지(필수) — 팀장답게 이끈다] 담백·직설·구체. 짧은 결론 먼저 → 근거. 대표가 일을 시키면 (1) 필요한 정보를 스스로 파악·조회하고(가능하면), (2) 되묻기 전에 초안·안을 먼저 준비하고(단 없는 사실·수치는 지어내지 않는다), (3) 팀장으로서 추천안 하나를 근거와 함께 명확히 민다. 옵션이 2개 이상이면 A/B/C(각 한 줄)로 제시하되 추천안 앞에 반드시 "⭐ 팀장 추천 · A"를 명시하고, 끝은 "${호칭}, A로 진행할까요?"처럼 예/아니오로 답할 수 있게 닫는다. 추천안이 하나뿐이어도 "⭐ 팀장 추천 · ○○"로 명확히 표시하고 예/아니오로 닫는다. 근황·상태를 묻는 질문("○○님 요즘 어때?")이어도, 상황을 정리한 뒤 다음 액션 하나를 ⭐로 추천하고 "${호칭}, ~할까요?"로 닫는다. 답이 길어질 것 같으면 핵심 결론을 먼저 간결히 내고 상세는 뒤에 둔다. 불필요하게 늘이지 말고, 답의 맨 마지막은 반드시 "⭐ 팀장 추천"과 예/아니오 확인으로 마무리한다.
 절대 금지: "어떻게 하고 싶으세요?"·"A vs B vs C 어느 쪽이요?"처럼 판단을 통째로 대표에게 떠넘기는 되묻기·나열형 질문. 여러 질문을 쏟아 대표에게 부담을 주지 않는다.
 [대화 맥락 — 이미 말한 것 재확인 금지] 대표가 이미 말한 정보(채널·종류·방식·대상·내용)는 절대 되묻지 않는다. 대표가 채널을 정하면("메일로"·"문자로") "메일로 할까요 문자로 할까요?"처럼 되묻지 말고 그 채널로 바로 진행한다. 안내 종류·방식이 이미 정해졌으면 그대로 진행한다. "○○님에게 ○○ 안내 메일 보내줘"는 [대상·내용·채널]이 이미 다 주어졌으니 바로 초안을 준비한다. 꼭 필요한 확인만 한다 — 예: 명단을 실제로 조회하지 못했을 때만 "명단을 못 불러왔어요, 다시 확인 부탁드려요". 그 외 "어떤 상품인가요? 어떻게 보낼까요?" 같은 불필요한 되묻기는 하지 않는다.
 [내 능력 — "못 한다"고 하지 않기] 지니야가 실제로 하는 일: 고객 명단(시트) 조회·정리, 증권·서류(드라이브) 검색, 약관 근거 설명, 문서·문자·메일 초안 작성, 그리고 문자·메일은 "결재함"에 올려 ${호칭}이 승인하면 실제로 발송된다(지금은 안전모드 — ${호칭} 본인에게만 test 발송되고 실고객 발송은 차단). 그러니 발송 요청에 "저는 못 보내요"라고 하지 말고 "초안을 결재함에 올려둘게요. 승인하시면 보냅니다(지금은 안전모드라 ${호칭}께만 test로 가요)"라고 안내한다. 단, 실제로 없는 기능은 정직하게 "아직 준비 중이에요"라고만 하고 지어내지 않는다.
@@ -114,7 +114,7 @@ function stripEmoji(s) {
 // ★공통: 모든 대화를 Claude Sonnet 5로. system 별도·role은 user/assistant만·연속 동일role 병합·첫줄 user 보장.
 //   Claude 실패(키·에러) 시 OpenAI 폴백 → 대화가 절대 끊기지 않게.
 async function askClaude(systemPrompt, messages, maxTokens, opts) {
-  maxTokens = maxTokens || 1500;
+  maxTokens = maxTokens || 4096;
   const fmt = (messages || []).map((m) => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: String(m.content || m.text || '').slice(0, 2000) })).filter((m) => m.content);
   const cleaned = [];
   for (const m of fmt) { if (cleaned.length && cleaned[cleaned.length - 1].role === m.role) cleaned[cleaned.length - 1].content += '\n' + m.content; else cleaned.push(m); }
@@ -125,10 +125,22 @@ async function askClaude(systemPrompt, messages, maxTokens, opts) {
   const model = classifyIntent(_lastUser ? _lastUser.content : '', opts) === 'DEEP' ? MODEL_DEEP : MODEL_SIMPLE;
   try {
     if (process.env.SIMULATE_CLAUDE_FAIL === '1') throw new Error('강제 Claude 실패(스테이징 폴백 실측용)');  // ★기본 OFF · 폴백 시나리오4 검증용
-    const r = await _anthropic.messages.create({ model, max_tokens: maxTokens, system: systemPrompt, messages: cleaned });
-    _logModelUsage(model, r.usage);
-    const t = (r.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
-    if (t) { _lastAskModel = model; return stripEmoji(t); }
+    // ★잘림 방지(회장님 진단): 응답이 max_tokens로 끊기면 stop_reason을 감지해 프리필(지금까지 답)로 자동 이어받아 완결시킨다.
+    //   최대 4회(초기 1 + 이어가기 3) → 사실상 모든 긴 지식답변을 완결. 마지막 ⭐ 팀장 추천·확인문이 잘려나가지 않게 한다.
+    let full = '';
+    let stopped = 'end_turn';
+    for (let round = 0; round < 4; round++) {
+      const msgs = full ? cleaned.concat([{ role: 'assistant', content: full.replace(/\s+$/, '') }]) : cleaned;
+      const r = await _anthropic.messages.create({ model, max_tokens: maxTokens, system: systemPrompt, messages: msgs });
+      _logModelUsage(model, r.usage);
+      const chunk = (r.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');
+      full += (full && !/\s$/.test(full) && !/^\s/.test(chunk) ? '' : '') + chunk;
+      stopped = r.stop_reason || 'end_turn';
+      if (stopped === 'max_tokens' && chunk.trim()) continue; // 아직 안 끝남 → 이어받기
+      break;
+    }
+    full = full.trim();
+    if (full) { _lastAskModel = model; if (stopped === 'max_tokens') full += '\n\n(내용이 길어 여기까지 정리했어요. "이어서"라고 하시면 계속 이어드릴게요.)'; return stripEmoji(full); }
     throw new Error('빈 응답');
   } catch (e) {
     // Claude 실패(또는 시뮬레이션) → gpt-4o 폴백. 그것도 실패하면 정직히 안내(대화 안 끊김).
@@ -224,7 +236,7 @@ const YAK = JSON.parse(fs.readFileSync(path.join(__dirname, 'yakgwan_pages.json'
 const app = express();
 app.use(express.json({ limit: '50mb' })); // 자료 업로드(base64) 파싱 — 큰 제안서 PDF 다중 업로드 대비 상향
 // ★배포 반영 확인용(정직): 재배포 후 이 build 값이 바뀌면 새 코드가 실제 활성화됐다는 증거. 공개·민감정보 없음.
-const BUILD_TAG = 'v4.0-day4-knowledge-first+leading+context-2026-07-23';
+const BUILD_TAG = 'v4.0-day4-maxtokens8192+autocontinue-2026-07-23';
 app.get(['/health', '/api/version'], (req, res) => res.json({ ok: true, build: BUILD_TAG, emojiFilter: typeof stripEmoji === 'function', ts: new Date().toISOString() }));
 // ★카톡 발송기(watcher) 배포 zip — 교육생이 각자 PC에 설치. 공개 정적(개인정보·키·명단 미포함 zip만 배치). zip은 별도 생성.
 app.use('/downloads', express.static(path.join(__dirname, 'downloads')));
@@ -862,7 +874,7 @@ async function orderHandler(req, res) {
             const job = String((req.body && req.body.job) || req.query.job || '');
             const sys = genyaPersona(job) + `\n[과거 설계 기억] 아래는 이 회원이 예전에 만든 설계 요약이다. 사용자가 "그때처럼/불러/수정"을 요청하면 이 요약을 근거로 그때 내용을 되살려 답하고, 요청한 수정만 반영한다. 없는 값은 지어내지 마라.\n${ctx}`;
             const hist = Array.isArray(req.body && req.body.history) ? req.body.history.slice(-8) : [];
-            const text = await askClaude(sys, hist.concat([{ role: 'user', content: q }]), 1600);
+            const text = await askClaude(sys, hist.concat([{ role: 'user', content: q }]), 8192);
             return res.json({ ok: true, kind: '🧠 과거 설계 기억', text, engine: 'claude-sonnet-5', found: rows.length });
           }
           return res.json({ ok: true, kind: '🧠 과거 설계 기억', text: '저장된 과거 설계를 찾지 못했어요. 고객 별칭이나 날짜를 알려주시면 다시 찾아볼게요. (설계는 만들 때 자동 저장됩니다)' });
@@ -878,7 +890,7 @@ async function orderHandler(req, res) {
       const job = String((req.body && req.body.job) || req.query.job || '');
       const hist = Array.isArray(req.body && req.body.history) ? req.body.history.slice(-10) : [];
       const sys = genyaPersona(job, { email: (sessionOf(req) || {}).email }) + `\n[현재 작업] 지금 사용자는 "${SKILL_CTX[activeSkill]}" 작업을 진행 중이다. 앞서 지니야가 안내한 내용(예: 사진·파일 업로드 요청)을 기억한 채 맥락을 유지하고 그 작업을 이어서 돕는다. 맥락을 잃고 "해당 파일 없음" 같은 엉뚱한 답을 하지 마라. 파일이 필요하면 화면 아래 ＋ 버튼으로 올려달라고 자연스럽게 안내한다. ★단, 이 대화에는 실제 파일·데이터가 첨부돼 있지 않다. 사용자가 아직 파일(엑셀·명단·사진)을 올리지 않았으면 올라온 척(가짜 인원수·명단·수치, 예 "방금 올려주신 명단 13명")을 절대 만들지 말고, "아직 파일을 못 받았어요. ＋ 버튼으로 올려주시면 바로 분석할게요"라고 정직히 안내한다.`;
-      const text = await askClaude(sys, hist.concat([{ role: 'user', content: q }]), 1500, { admin: _admin });
+      const text = await askClaude(sys, hist.concat([{ role: 'user', content: q }]), 8192, { admin: _admin });
       out = { kind: '💬 지니야', text, engine: _lastAskModel || pickedModel(q, { admin: _admin }) };
     } else if (/보내|발송|알림톡|결재|승인/.test(q)) {
       // 🗂️ Step 2-C: 발송·결재 의도 → 결재함 도구 루프(저장→승인→하드가드 발송). "발송 못 한다" 오답 원천 제거.
@@ -920,7 +932,7 @@ async function orderHandler(req, res) {
       if (uid && personalMem.configured()) { try { memCtx = await personalMem.recallSmart({ ownerId: uid, scope: memScope, customerId: cust, query: q }); } catch (e) {} }
       const memWho = cust ? (cust + '님') : 호칭;
       const sysP = genyaPersona(job, { email: uid }) + (memCtx ? ('\n[' + memWho + ' 기억] 아래는 ' + memWho + '의 과거 대화·자료 요약이다. 관련되면 근거로 활용하되 없는 값은 지어내지 마라.\n' + memCtx) : '');
-      const text = await askClaude(sysP, hist.concat([{ role: 'user', content: q }]), 1500, { admin: _admin });
+      const text = await askClaude(sysP, hist.concat([{ role: 'user', content: q }]), 8192, { admin: _admin });
       out = { kind: '💬 지니야', text, engine: _lastAskModel || pickedModel(q, { admin: _admin }) };
       if (uid && personalMem.configured()) personalMem.saveMemoryAsync({ ownerId: uid, scope: memScope, customerId: cust, source: 'dialog', text: q + '\n→ ' + text, summary: (cust ? cust + '님 ' : '') + q });
     }
