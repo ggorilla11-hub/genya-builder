@@ -123,6 +123,7 @@ ${LEADING_EXAMPLES}
 · 메일(Gmail): 메일 초안 작성·발송(승인 후).
 · 캘린더: 일정 조회·아침 브리핑(연결돼 있을 때).
 · 드라이브: 증권·서류 검색.
+· 최신 정보 조회(웹 검색): 뉴스·시세·세법/판례·법령 개정 등 요즘 소식은 실시간으로 웹을 찾아 확인해 답한다(예: "2026년 종부세 개정", "오늘 코스피", "최근 상속세 판례"). 최신 사실은 지어내지 말고 검색해 확인한 값으로 답하며, 필요하면 근거(출처)를 짧게 곁들인다.
 그러니 발송·조회·수정 요청에 "저는 못 해요"라고 하지 말고, "초안을 결재함에 올려둘게요. 승인하시면 보냅니다(안전모드)"·"시트에서 바로 조회할게요"처럼 실제 방법을 안내한다. 아직 연결/준비 안 된 것만 "그건 아직 준비 중이에요"라고 정직히 말하고 지어내지 않는다.
 [안전 — 발송 시점만 사람] 자료·초안·문서를 "만드는" 것은 무조건 한다(막지 않는다). 사람 승인이 필요한 것은 "실제 발송·수정·삭제"뿐이다. 발송용 결과물엔 "보내기 전 한번 확인, 정확한 값은 세무사·전문가 최종 확인 권장" 같은 주의 문구를 짧게 남긴다. 특정 상품 가입 "권유"만 안 할 뿐, 구조·비교·설명은 충실히 한다. 고객 개인정보는 함부로 되풀이하지 않는다.
 [화면 카드(홀로그램) — 조건부 JSON] 평소 모든 답변은 순수 텍스트다. 오직 ${호칭}이 "화면에 띄워줘"·"카드로 보여줘"·"브리핑해줘"처럼 화면 표시를 명시적으로 요청할 때만, 다른 설명 없이 아래 JSON 하나만 출력한다: {"text":"<한 줄 안내>","cards":[{"type":"<카드종류>","data":{ ... }}]} . 카드종류: CustomerCard(고객 정보)·ListGridCard(명단 그리드)·CalendarCard(일정)·ChartCard(자산·재무 분석)·KnowledgeCard(판례·요약). ★data에는 실제로 조회·기억·업로드로 확인된 값만 넣는다. 고객 자산·연락처·가족 등 확인 안 된 값은 절대 지어내지 않는다 — 실제 데이터가 없으면 JSON·카드를 만들지 말고 그냥 텍스트로 "시트를 연결하시면 카드로 띄워드릴게요"라고 안내한다. 화면 표시 요청이 아니면 절대 JSON을 쓰지 않는다.
@@ -175,14 +176,21 @@ async function askClaude(systemPrompt, messages, maxTokens, opts) {
     //   최대 4회(초기 1 + 이어가기 3) → 사실상 모든 긴 지식답변을 완결. 마지막 ⭐ 팀장 추천·확인문이 잘려나가지 않게 한다.
     let full = '';
     let stopped = 'end_turn';
-    for (let round = 0; round < 4; round++) {
-      const msgs = full ? cleaned.concat([{ role: 'assistant', content: full.replace(/\s+$/, '') }]) : cleaned;
-      const r = await _anthropic.messages.create({ model, max_tokens: maxTokens, system: systemPrompt, messages: msgs });
+    // ★Phase 팀장-C 실시간 웹검색: opts.webSearch면 Anthropic 서버측 web_search 도구 부착(뉴스·시세·판례·법령 최신 조회).
+    //   서버도구=클라 실행루프 불필요·베타헤더 불필요. 최신 변형 web_search_20260209(동적필터링)=Opus4.8·Sonnet5 지원. max_uses로 비용 제어.
+    const _webTools = (opts && opts.webSearch) ? [{ type: 'web_search_20260209', name: 'web_search', max_uses: 3 }] : null; // max_uses=3: 최신성 확보 + 응답지연 상한(무거운 DEEP 질문 2분+ 방지)
+    let convo = cleaned;
+    for (let round = 0; round < 5; round++) {
+      const _req = { model, max_tokens: maxTokens, system: systemPrompt, messages: convo };
+      if (_webTools) _req.tools = _webTools;
+      const r = await _anthropic.messages.create(_req);
       _logModelUsage(model, r.usage);
       const chunk = (r.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');
       full += (full && !/\s$/.test(full) && !/^\s/.test(chunk) ? '' : '') + chunk;
       stopped = r.stop_reason || 'end_turn';
-      if (stopped === 'max_tokens' && chunk.trim()) continue; // 아직 안 끝남 → 이어받기
+      // ★web_search 서버도구 반복 한도(pause_turn) → 어시스턴트 응답 원문 재전송으로 자동 재개(트레일링 server_tool_use=프리필 아님·정상 resume). "이어서" 유저턴 추가 금지.
+      if (stopped === 'pause_turn') { convo = convo.concat([{ role: 'assistant', content: r.content }]); continue; }
+      if (stopped === 'max_tokens' && chunk.trim()) { convo = cleaned.concat([{ role: 'assistant', content: full.replace(/\s+$/, '') }]); continue; } // 잘림 방지 프리필 이어받기
       break;
     }
     full = full.trim();
@@ -949,7 +957,7 @@ async function orderHandler(req, res) {
       const job = String((req.body && req.body.job) || req.query.job || '');
       const hist = Array.isArray(req.body && req.body.history) ? req.body.history.slice(-10) : [];
       const sys = genyaPersona(job, { email: (sessionOf(req) || {}).email }) + `\n[현재 작업] 지금 사용자는 "${SKILL_CTX[activeSkill]}" 작업을 진행 중이다. 앞서 지니야가 안내한 내용(예: 사진·파일 업로드 요청)을 기억한 채 맥락을 유지하고 그 작업을 이어서 돕는다. 맥락을 잃고 "해당 파일 없음" 같은 엉뚱한 답을 하지 마라. 파일이 필요하면 화면 아래 ＋ 버튼으로 올려달라고 자연스럽게 안내한다. ★단, 이 대화에는 실제 파일·데이터가 첨부돼 있지 않다. 사용자가 아직 파일(엑셀·명단·사진)을 올리지 않았으면 올라온 척(가짜 인원수·명단·수치, 예 "방금 올려주신 명단 13명")을 절대 만들지 말고, "아직 파일을 못 받았어요. ＋ 버튼으로 올려주시면 바로 분석할게요"라고 정직히 안내한다.`;
-      const text = await askClaude(sys, hist.concat([{ role: 'user', content: q }]), 8192, { admin: _admin });
+      const text = await askClaude(sys, hist.concat([{ role: 'user', content: q }]), 8192, { admin: _admin, webSearch: true });
       out = { kind: '💬 지니야', text, engine: _lastAskModel || pickedModel(q, { admin: _admin }) };
     } else if (/보내|발송|알림톡|결재|승인/.test(q)) {
       // 🗂️ Step 2-C: 발송·결재 의도 → 결재함 도구 루프(저장→승인→하드가드 발송). "발송 못 한다" 오답 원천 제거.
@@ -991,7 +999,7 @@ async function orderHandler(req, res) {
       if (uid && personalMem.configured()) { try { memCtx = await personalMem.recallSmart({ ownerId: uid, scope: memScope, customerId: cust, query: q }); } catch (e) {} }
       const memWho = cust ? (cust + '님') : 호칭;
       const sysP = genyaPersona(job, { email: uid }) + (memCtx ? ('\n[' + memWho + ' 기억] 아래는 ' + memWho + '의 과거 대화·자료 요약이다. 관련되면 근거로 활용하되 없는 값은 지어내지 마라.\n' + memCtx) : '');
-      const text = await askClaude(sysP, hist.concat([{ role: 'user', content: q }]), 8192, { admin: _admin });
+      const text = await askClaude(sysP, hist.concat([{ role: 'user', content: q }]), 8192, { admin: _admin, webSearch: true });
       out = { kind: '💬 지니야', text, engine: _lastAskModel || pickedModel(q, { admin: _admin }) };
       if (uid && personalMem.configured()) personalMem.saveMemoryAsync({ ownerId: uid, scope: memScope, customerId: cust, source: 'dialog', text: q + '\n→ ' + text, summary: (cust ? cust + '님 ' : '') + q });
     }
