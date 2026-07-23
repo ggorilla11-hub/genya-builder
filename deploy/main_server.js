@@ -114,8 +114,16 @@ ${KNOWLEDGE_FRAMES}
 절대 금지: "어떻게 하고 싶으세요?"·"A vs B vs C 어느 쪽이요?"처럼 판단을 통째로 대표에게 떠넘기는 되묻기·나열형 질문. 여러 질문을 쏟아 대표에게 부담을 주지 않는다.
 ${LEADING_EXAMPLES}
 [대화 맥락 — 이미 말한 것 재확인 금지] 대표가 이미 말한 정보(채널·종류·방식·대상·내용)는 절대 되묻지 않는다. 대표가 채널을 정하면("메일로"·"문자로") "메일로 할까요 문자로 할까요?"처럼 되묻지 말고 그 채널로 바로 진행한다. 안내 종류·방식이 이미 정해졌으면 그대로 진행한다. "○○님에게 ○○ 안내 메일 보내줘"는 [대상·내용·채널]이 이미 다 주어졌으니 바로 초안을 준비한다. 꼭 필요한 확인만 한다 — 예: 명단을 실제로 조회하지 못했을 때만 "명단을 못 불러왔어요, 다시 확인 부탁드려요". 그 외 "어떤 상품인가요? 어떻게 보낼까요?" 같은 불필요한 되묻기는 하지 않는다.
-[내 능력 — "못 한다"고 하지 않기] 지니야가 실제로 하는 일: 고객 명단(시트) 조회·정리, 증권·서류(드라이브) 검색, 약관 근거 설명, 문서·문자·메일 초안 작성, 그리고 문자·메일은 "결재함"에 올려 ${호칭}이 승인하면 실제로 발송된다(지금은 안전모드 — ${호칭} 본인에게만 test 발송되고 실고객 발송은 차단). 그러니 발송 요청에 "저는 못 보내요"라고 하지 말고 "초안을 결재함에 올려둘게요. 승인하시면 보냅니다(지금은 안전모드라 ${호칭}께만 test로 가요)"라고 안내한다. 단, 실제로 없는 기능은 정직하게 "아직 준비 중이에요"라고만 하고 지어내지 않는다.
+[내 능력 — "못 한다"고 하지 않기] 지니야는 다음을 실제로 씁니다(${호칭}이 데이터 연결을 해두신 경우):
+· 고객 명단(구글 시트): 조회·검색·추가·수정·삭제 — 실제 시트에 반영(쓰기는 미리보기 후 승인).
+· 결재함: 문자·메일 초안을 올려두고(저장) → 목록 조회 → ${호칭} 승인 시 실제 발송(지금은 안전모드 — ${호칭} 본인에게만 test로 가고 실고객 발송은 차단).
+· 개인화 기억: 대화·자료를 기억해 다음에 먼저 챙김.
+· 메일(Gmail): 메일 초안 작성·발송(승인 후).
+· 캘린더: 일정 조회·아침 브리핑(연결돼 있을 때).
+· 드라이브: 증권·서류 검색.
+그러니 발송·조회·수정 요청에 "저는 못 해요"라고 하지 말고, "초안을 결재함에 올려둘게요. 승인하시면 보냅니다(안전모드)"·"시트에서 바로 조회할게요"처럼 실제 방법을 안내한다. 아직 연결/준비 안 된 것만 "그건 아직 준비 중이에요"라고 정직히 말하고 지어내지 않는다.
 [안전 — 발송 시점만 사람] 자료·초안·문서를 "만드는" 것은 무조건 한다(막지 않는다). 사람 승인이 필요한 것은 "실제 발송·수정·삭제"뿐이다. 발송용 결과물엔 "보내기 전 한번 확인, 정확한 값은 세무사·전문가 최종 확인 권장" 같은 주의 문구를 짧게 남긴다. 특정 상품 가입 "권유"만 안 할 뿐, 구조·비교·설명은 충실히 한다. 고객 개인정보는 함부로 되풀이하지 않는다.
+[화면 카드(홀로그램) — 조건부 JSON] 평소 모든 답변은 순수 텍스트다. 오직 ${호칭}이 "화면에 띄워줘"·"카드로 보여줘"·"브리핑해줘"처럼 화면 표시를 명시적으로 요청할 때만, 다른 설명 없이 아래 JSON 하나만 출력한다: {"text":"<한 줄 안내>","cards":[{"type":"<카드종류>","data":{ ... }}]} . 카드종류: CustomerCard(고객 정보)·ListGridCard(명단 그리드)·CalendarCard(일정)·ChartCard(자산·재무 분석)·KnowledgeCard(판례·요약). ★data에는 실제로 조회·기억·업로드로 확인된 값만 넣는다. 고객 자산·연락처·가족 등 확인 안 된 값은 절대 지어내지 않는다 — 실제 데이터가 없으면 JSON·카드를 만들지 말고 그냥 텍스트로 "시트를 연결하시면 카드로 띄워드릴게요"라고 안내한다. 화면 표시 요청이 아니면 절대 JSON을 쓰지 않는다.
 [기억 활용] 주입된 [${호칭} 기억]·[○○님 기억(고객)] 컨텍스트가 있으면 근거로 활용하되, 거기 없는 값은 지어내지 않는다. 모호하면("그때 김철수 뭐라 했지?") 확인·제시 후 진행. 답변 끝에 다음에 도울 것을 짧게 되묻는다.`;
 }
 // ★이모지 결정적 제거(팀장 톤): 프롬프트 금지는 확률적이라 Sonnet 5가 가끔 이모지를 흘린다 → 지니야 응답 출력에서 강제로 지운다.
@@ -129,6 +137,18 @@ function stripEmoji(s) {
     .replace(/[ \t]+([\n.,!?)])/g, '$1')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+}
+// ★E-4 홀로그램 카드: 응답이 {text,cards} JSON이면 분리(카드/화면/브리핑 요청 시에만 LLM이 JSON을 낸다).
+//   안전: "cards" 키가 없으면 즉시 일반 텍스트로 간주(일반 대화 무영향). 파싱 실패도 null → 원문 폴백.
+function tryParseCards(s) {
+  if (!s || s.indexOf('"cards"') < 0) return null;
+  try {
+    const a = s.indexOf('{'); const b = s.lastIndexOf('}');
+    if (a < 0 || b <= a) return null;
+    const obj = JSON.parse(s.slice(a, b + 1));
+    if (obj && Array.isArray(obj.cards)) return { text: typeof obj.text === 'string' ? obj.text : '', cards: obj.cards };
+  } catch (e) {}
+  return null;
 }
 // ★공통: 모든 대화를 Claude Sonnet 5로. system 별도·role은 user/assistant만·연속 동일role 병합·첫줄 user 보장.
 //   Claude 실패(키·에러) 시 OpenAI 폴백 → 대화가 절대 끊기지 않게.
@@ -255,7 +275,7 @@ const YAK = JSON.parse(fs.readFileSync(path.join(__dirname, 'yakgwan_pages.json'
 const app = express();
 app.use(express.json({ limit: '50mb' })); // 자료 업로드(base64) 파싱 — 큰 제안서 PDF 다중 업로드 대비 상향
 // ★배포 반영 확인용(정직): 재배포 후 이 build 값이 바뀌면 새 코드가 실제 활성화됐다는 증거. 공개·민감정보 없음.
-const BUILD_TAG = 'v4.0-day4-E1E2-deepframes+leading-fewshot-2026-07-23';
+const BUILD_TAG = 'v4.0-day4-E3E4-tools+hologramcards-2026-07-23';
 app.get(['/health', '/api/version'], (req, res) => res.json({ ok: true, build: BUILD_TAG, emojiFilter: typeof stripEmoji === 'function', ts: new Date().toISOString() }));
 // ★카톡 발송기(watcher) 배포 zip — 교육생이 각자 PC에 설치. 공개 정적(개인정보·키·명단 미포함 zip만 배치). zip은 별도 생성.
 app.use('/downloads', express.static(path.join(__dirname, 'downloads')));
@@ -960,6 +980,11 @@ async function orderHandler(req, res) {
     if (canData && /준비|해줘|만들어|보내|정리|초안|잡아|하기로|예약|하자|올려/.test(q)) {
       const nameM = q.match(/([가-힣]{2,4})님/);
       try { await memory.saveMemory({ type: '요청', subject: nameM ? nameM[1] : '', text: q }, ma); saved = { subject: nameM ? nameM[1] : '', text: q }; } catch (e) {}
+    }
+    // ★E-4 홀로그램 카드 분리: 응답이 {text,cards} JSON이면 카드를 out.cards로 분리(프론트 렌더). 아니면 원문 텍스트 그대로(안전 폴백).
+    if (out && typeof out.text === 'string') {
+      const parsed = tryParseCards(out.text);
+      if (parsed) { out.text = parsed.text; out.cards = parsed.cards; }
     }
     // ★이모지 0 최종 게이트: askClaude를 안 타는 응답(결재함·커넥터 등)까지 포함해 모든 지니야 text에서 이모지 제거(결정적).
     if (out && typeof out.text === 'string') out.text = stripEmoji(out.text);
