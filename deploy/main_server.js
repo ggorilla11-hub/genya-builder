@@ -887,6 +887,14 @@ async function orderHandler(req, res) {
         const rc = await approval.runChat(ma, hist.concat([{ role: 'user', content: q }]));
         out = { kind: '🗂️ 결재함', text: rc.reply || '무엇을 보내드릴까요?', pending: rc.pending || null, engine: MODEL_DEEP };
       }
+    } else if (/([가-힣]{2,4})\s*님?\s*(정보|연락처|주소|생일|만기|상품|알려|조회|어때)|시트\s*(조회|검색|추가|수정|삭제|변경|바꿔)|명단\s*(추가|수정|삭제|변경|고쳐|바꿔)|고객\s*(추가|등록|수정|삭제)|(주소|연락처|번호|생일|만기|상품)\s*(을|를|은|는)?\s*(바꿔|수정|변경|고쳐|추가)/.test(q)) {
+      // 🗂️ Step 2-B: 개별 고객 조회·시트 수정 의도 → 시트 CRUD 도구 루프(읽기=즉시, 쓰기=미리보기+승인). "시트 못 본다" 오답 제거.
+      if (!canData) { out = needConnect; }
+      else {
+        const hist = Array.isArray(req.body && req.body.history) ? req.body.history.slice(-10) : [];
+        const rc = await sheetsCrud.runChat(ma, hist.concat([{ role: 'user', content: q }]));
+        out = { kind: '🗂️ 고객명단', text: rc.reply || '무엇을 도와드릴까요?', pending: rc.pending || null, engine: MODEL_DEEP };
+      }
     } else if (/약관|무보험|대물|자기신체|자동차상해|담보|보장.*(뭐|무엇|차이)/.test(q)) {
       const r = await askYakgwan(q); out = { kind: '📄 약관창고', text: r.answer, sources: r.sources }; // 공통 지식(구글 불필요)
     } else if (/만기|명단|자산가|고객.*(정리|목록|누구)/.test(q)) {
