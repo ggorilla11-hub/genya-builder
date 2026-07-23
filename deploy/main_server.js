@@ -1410,6 +1410,8 @@ app.post('/api/approval/create', async (req, res) => { try { const ma = gateGoog
 app.get('/api/approval/list', async (req, res) => { try { const ma = gateGoogle(req, res); if (!ma) return; res.json(await approval.list(ma, { status: req.query.status })); } catch (e) { res.status(500).json({ ok: false, error: e.message }); } });
 app.post('/api/approval/act', async (req, res) => { try { const ma = gateGoogle(req, res); if (!ma) return; res.json(await approval.act(ma, req.body || {})); } catch (e) { res.status(500).json({ ok: false, error: e.message }); } });
 app.post('/api/approval/plan', async (req, res) => { try { const ma = gateGoogle(req, res); if (!ma) return; res.json(await approval.plan(ma, (req.body && req.body.text) || '')); } catch (e) { res.status(500).json({ ok: false, error: e.message }); } });
+// 🔒 안전모드 정직 노출(화이트리스트 값은 비공개·on/off만). 결재함 페이지 배너가 이걸 읽어 실고객 발송 여부를 정직 표시.
+app.get('/api/approval/mode', (req, res) => res.json({ ok: true, live: String(process.env.APPROVAL_LIVE_SEND || '') === '1' }));
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 📱 카카오 알림톡 (Step 5) — 오원트 org 채널(발신프로필)로 정보성 알림 발송
@@ -1636,6 +1638,9 @@ app.get('/login', (req, res) => {
 app.get(['/privacy', '/privacy.html', '/개인정보처리방침'], (req, res) => res.sendFile(path.join(__dirname, 'privacy.html')));
 app.get('/crud-test', (req, res) => res.sendFile(path.join(__dirname, 'crud_test.html'))); // 🗂️ Step 2-B 로컬 실측 콘솔(로컬 전용)
 app.get('/approval-test', (req, res) => res.sendFile(path.join(__dirname, 'approval_test.html'))); // 🗂️ Step 2-C 결재함 로컬 실측 콘솔
+app.get('/approval', (req, res) => res.sendFile(path.join(__dirname, 'approval.html'))); // 🗂️ Step 2-C 결재함 정식 페이지(Task B · genya.html 무접촉 독립 · ASCII 정식주소)
+// 🗂️ 한글 주소 /결재함: 이 Express 버전은 유니코드 리터럴 라우트를 매칭 못 함(기존 /이용약관·/개인정보처리방침도 동일 404) → path-to-regexp 우회, 디코드 후 직접 매핑. /결재함만 가로채고 나머진 통과.
+app.use((req, res, next) => { let p; try { p = decodeURIComponent(req.path); } catch (e) { p = req.path; } if (p === '/결재함') return res.sendFile(path.join(__dirname, 'approval.html')); next(); });
 app.get(['/terms', '/terms.html', '/이용약관'], (req, res) => res.sendFile(path.join(__dirname, 'terms.html')));
 
 app.get('/auth/google', (req, res) => {
