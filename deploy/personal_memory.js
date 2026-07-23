@@ -16,6 +16,7 @@
 let _Pinecone = null;
 try { _Pinecone = require('@pinecone-database/pinecone').Pinecone; } catch (e) { /* SDK 없으면 no-op */ }
 const OpenAI = require('openai');
+const crypto = require('crypto');
 
 const INDEX_NAME = process.env.PINECONE_INDEX || 'ohwant-genya';
 const EMBED_MODEL = 'text-embedding-3-small'; // 1536차원
@@ -29,15 +30,38 @@ function configured() { return !!(_Pinecone && process.env.PINECONE_API_KEY && p
 function _client() { if (!_pc && configured()) _pc = new _Pinecone({ apiKey: process.env.PINECONE_API_KEY }); return _pc; }
 function _openai() { if (!_oa) _oa = new OpenAI({ apiKey: process.env.OPENAI_API_KEY }); return _oa; }
 
-// ASCII 안전 슬러그(네임스페이스·id용). 대표=이메일앞부분, 고객=Sheets customer_id(예 hong-gd-01) 가정.
+// ASCII 안전 슬러그(네임스페이스·id용). 대표=이메일앞부분, 고객=이름(홍길동) 또는 Sheets customer_id(hong-gd-01).
+// ★한글안전: 예전 방식은 한글을 전부 버려서 "홍길동"·"김철수"가 모두 'unknown'으로 뭉개졌다(고객 분리 불가).
+//   이제 비ASCII(한글 등)가 섞이면 원문 SHA1 앞 10자리를 붙여 이름마다 고유·안정 슬러그를 만든다.
+//   예) '홍길동'→'h1a2b3c4d5' · '홍길동A'→'a-h...' · 순수 ASCII('ggorilla11')는 그대로(기존 데이터 호환).
 function _slug(s) {
-  return String(s == null ? '' : s).toLowerCase().replace(/[^a-z0-9_-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 64) || 'unknown';
+  const raw = String(s == null ? '' : s).trim();
+  const ascii = raw.toLowerCase().replace(/[^a-z0-9_-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
+  const hasNonAscii = /[^\x00-\x7F]/.test(raw);
+  if (hasNonAscii || !ascii) {
+    if (!raw) return 'unknown';
+    const h = 'h' + crypto.createHash('sha1').update(raw).digest('hex').slice(0, 10);
+    return (ascii ? ascii + '-' + h : h).slice(0, 64);
+  }
+  return ascii.slice(0, 64);
 }
 // 네임스페이스 규칙(명세서 2-2)
 function ns(ownerId, scope, customerId) {
   const o = _slug(ownerId);
   if (scope === 'customer' && customerId) return `owner_${o}:customer:${_slug(customerId)}`;
   return `owner_${o}:representative`;
+}
+
+// ── 고객 지칭 감지: 대화에서 "홍길동님" 같은 특정 고객 언급 → 고객 이름 반환(없으면 ''). ──
+//   ★분리 원칙(명세서 8-1): 고객이 지칭되면 그 고객 네임스페이스로 회상·저장을 라우팅한다.
+//   ★호칭성 단어(대표/회장/고객 등)는 고객이 아니므로 제외 → "대표님"을 고객으로 오인하지 않는다.
+const _HONORIFIC_STOP = /^(대표|회장|사장|선생|고객|손님|여러분|사모|실장|부장|과장|팀장|이사|의원|기사|사부|어머|아버|당신|본인|우리|저희)/;
+function detectCustomer(q) {
+  const m = String(q || '').match(/([가-힣]{2,4})님/);
+  if (!m) return '';
+  const name = m[1];
+  if (_HONORIFIC_STOP.test(name)) return '';
+  return name;
 }
 
 // 인덱스 준비(없으면 생성). 최초 1회만 실제 호출.
@@ -126,13 +150,17 @@ async function recallSmart({ ownerId, scope, customerId, query, topK }) {
   return recallContext({ ownerId, scope, customerId, query, topK });
 }
 
-module.exports = { configured, ns, ensureIndex, embed, saveMemory, saveMemoryAsync, recallContext, recallRecent, recallSmart, isRecencyQuery, INDEX_NAME, EMBED_MODEL, EMBED_DIM, DEFAULT_TOPK };
+module.exports = { configured, ns, detectCustomer, ensureIndex, embed, saveMemory, saveMemoryAsync, recallContext, recallRecent, recallSmart, isRecencyQuery, INDEX_NAME, EMBED_MODEL, EMBED_DIM, DEFAULT_TOPK };
 
 // ── 자체 점검(로컬): node personal_memory.js ──
 if (require.main === module) {
   console.log('personal_memory 자체점검');
   console.log('  configured:', configured(), '(PINECONE_API_KEY', process.env.PINECONE_API_KEY ? '있음' : '없음, 코드만 준비됨)');
   console.log('  ns(대표):', ns('ggorilla11', 'representative'));
-  console.log('  ns(고객):', ns('ggorilla11', 'customer', 'hong-gd-01'));
+  console.log('  ns(고객 ASCII):', ns('ggorilla11', 'customer', 'hong-gd-01'));
+  console.log('  ns(고객 한글 홍길동):', ns('ggorilla11', 'customer', '홍길동'));
+  console.log('  ns(고객 한글 김철수):', ns('ggorilla11', 'customer', '김철수'), '← 홍길동과 달라야 정상(분리)');
+  console.log('  detectCustomer("홍길동님 요즘 어때?"):', JSON.stringify(detectCustomer('홍길동님 요즘 어때?')));
+  console.log('  detectCustomer("대표님 안녕?") [호칭제외]:', JSON.stringify(detectCustomer('대표님 안녕?')));
   console.log('  index:', INDEX_NAME, '· dim', EMBED_DIM, '· model', EMBED_MODEL);
 }

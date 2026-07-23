@@ -834,12 +834,17 @@ async function orderHandler(req, res) {
       const job = String((req.body && req.body.job) || req.query.job || '');
       const hist = Array.isArray(req.body && req.body.history) ? req.body.history.slice(-10) : [];
       const uid = (sessionOf(req) || {}).email || '';
+      // ★v4.0 Step2-A 고객스코프: "홍길동님..."처럼 특정 고객을 지칭하면 그 고객 네임스페이스에서 회상·저장(분리 원칙 8-1).
+      //   지칭 없으면 대표 네임스페이스. detectCustomer가 호칭성 단어("대표님")는 걸러낸다.
+      const cust = personalMem.detectCustomer(q);
+      const memScope = cust ? 'customer' : 'representative';
       let memCtx = '';
-      if (uid && personalMem.configured()) { try { memCtx = await personalMem.recallSmart({ ownerId: uid, scope: 'representative', query: q }); } catch (e) {} }
-      const sysP = genyaPersona(job) + (memCtx ? ('\n[대표님 기억] 아래는 이 대표님의 과거 대화·자료 요약이다. 관련되면 근거로 활용하되 없는 값은 지어내지 마라.\n' + memCtx) : '');
+      if (uid && personalMem.configured()) { try { memCtx = await personalMem.recallSmart({ ownerId: uid, scope: memScope, customerId: cust, query: q }); } catch (e) {} }
+      const memWho = cust ? (cust + '님') : '이 대표님';
+      const sysP = genyaPersona(job) + (memCtx ? ('\n[' + (cust ? cust + '님' : '대표님') + ' 기억] 아래는 ' + memWho + '의 과거 대화·자료 요약이다. 관련되면 근거로 활용하되 없는 값은 지어내지 마라.\n' + memCtx) : '');
       const text = await askClaude(sysP, hist.concat([{ role: 'user', content: q }]), 1500, { admin: _admin });
       out = { kind: '💬 지니야', text, engine: _lastAskModel || pickedModel(q, { admin: _admin }) };
-      if (uid && personalMem.configured()) personalMem.saveMemoryAsync({ ownerId: uid, scope: 'representative', source: 'dialog', text: q + '\n→ ' + text, summary: q });
+      if (uid && personalMem.configured()) personalMem.saveMemoryAsync({ ownerId: uid, scope: memScope, customerId: cust, source: 'dialog', text: q + '\n→ ' + text, summary: (cust ? cust + '님 ' : '') + q });
     }
     // ★연결1: 결정·요청이면 회원 구글시트에 자동 기억(서버 저장 0) — 데이터 스코프 있는 회원만(없으면 조용히 건너뜀)
     let saved = null;
