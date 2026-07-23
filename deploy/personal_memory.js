@@ -105,6 +105,30 @@ async function saveMemory({ ownerId, scope, customerId, text, source, summary, i
 // 응답 지연 0: 호출부는 await 없이 이 래퍼로 던지고 잊는다.
 function saveMemoryAsync(args) { try { saveMemory(args).catch(function () {}); } catch (e) {} }
 
+// ── 🛡️ 수문장(이벤트 브릿지): 이 방에서 실제 일어난 이벤트(명단 업로드·시트 생성/수정·로그인·발송·음성 등)를
+//    개인화 기억에 기록 → 매 대화에서 지니야가 "방금 뭐 했지"를 자동 인지. 실제 발생분만 기록(지어내기 아님).
+//    type: roster_upload|file_attach|sheet_create|sheet_update|customer_add|customer_delete|login|voice_call|approval_send|generated 등
+async function recordEvent({ ownerId, type, summary, data, source }) {
+  if (!configured() || !ownerId || !type) return null;
+  const desc = summary || (String(type) + (data ? (' ' + JSON.stringify(data).slice(0, 300)) : ''));
+  return saveMemory({ ownerId, scope: 'representative', source: source || 'event', text: '[이벤트·' + type + '] ' + desc, summary: '[이 방 이벤트] ' + desc });
+}
+function recordEventAsync(args) { try { recordEvent(args).catch(function () {}); } catch (e) {} }
+// ── 🛡️ 최근 이벤트 회상: 매 대화에 주입할 "지금 이 방에서 최근 일어난 일"(source 무관·최근순). ──
+async function recallRecentEvents({ ownerId, limit }) {
+  if (!configured() || !ownerId) return '';
+  try {
+    const idx = await ensureIndex();
+    const vector = await embed('방금 최근에 이 방에서 일어난 일·업로드·생성·수정·발송');
+    const res = await idx.namespace(ns(ownerId, 'representative')).query({ vector, topK: (limit || 5) * 4, includeMetadata: true });
+    const rows = (res.matches || []).map((m) => m.metadata || {})
+      .sort((a, b) => String(b.timestamp || '').localeCompare(String(a.timestamp || '')))
+      .slice(0, limit || 5);
+    if (!rows.length) return '';
+    return rows.map((md) => `· [${String(md.timestamp || '').slice(0, 16).replace('T', ' ')}·${md.source || ''}] ${md.summary || md.text || ''}`).join('\n');
+  } catch (e) { return ''; }
+}
+
 // ── 조회: 사용자 입력과 유사한 기억 Top-K → 프롬프트 주입용 컨텍스트 문자열 ──
 async function recallContext({ ownerId, scope, customerId, query, topK }) {
   if (!configured() || !query || !ownerId) return '';
@@ -150,7 +174,7 @@ async function recallSmart({ ownerId, scope, customerId, query, topK }) {
   return recallContext({ ownerId, scope, customerId, query, topK });
 }
 
-module.exports = { configured, ns, detectCustomer, ensureIndex, embed, saveMemory, saveMemoryAsync, recallContext, recallRecent, recallSmart, isRecencyQuery, INDEX_NAME, EMBED_MODEL, EMBED_DIM, DEFAULT_TOPK };
+module.exports = { configured, ns, detectCustomer, ensureIndex, embed, saveMemory, saveMemoryAsync, recordEvent, recordEventAsync, recallRecentEvents, recallContext, recallRecent, recallSmart, isRecencyQuery, INDEX_NAME, EMBED_MODEL, EMBED_DIM, DEFAULT_TOPK };
 
 // ── 자체 점검(로컬): node personal_memory.js ──
 if (require.main === module) {

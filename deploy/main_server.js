@@ -290,7 +290,7 @@ const YAK = JSON.parse(fs.readFileSync(path.join(__dirname, 'yakgwan_pages.json'
 const app = express();
 app.use(express.json({ limit: '50mb' })); // 자료 업로드(base64) 파싱 — 큰 제안서 PDF 다중 업로드 대비 상향
 // ★배포 반영 확인용(정직): 재배포 후 이 build 값이 바뀌면 새 코드가 실제 활성화됐다는 증거. 공개·민감정보 없음.
-const BUILD_TAG = 'v4.0-day4-fileupload-real-antihallucination-2026-07-23';
+const BUILD_TAG = 'v4.0-day4-gatekeeper-event-bridge-2026-07-23';
 app.get(['/health', '/api/version'], (req, res) => res.json({ ok: true, build: BUILD_TAG, emojiFilter: typeof stripEmoji === 'function', ts: new Date().toISOString() }));
 // ★Vapi 음성(엄마2): 프론트에 공개키·어시스턴트ID 전달(Render env·하드코딩0). Vapi Public Key는 클라이언트 공개용이라 반환 OK. 키 없으면 ready:false → 프론트가 마이크 비활성.
 app.get('/api/vapi-config', (req, res) => res.json({ ready: !!(process.env.VAPI_PUBLIC_KEY && process.env.VAPI_ASSISTANT_ID), publicKey: process.env.VAPI_PUBLIC_KEY || '', assistantId: process.env.VAPI_ASSISTANT_ID || '' }));
@@ -301,6 +301,7 @@ app.get('/api/vapi-context', async (req, res) => {
     const who = 호칭For(uid);
     let recall = '';
     if (uid && personalMem.configured()) { try { recall = await personalMem.recallSmart({ ownerId: uid, scope: 'representative', query: '최근 상담·요청·자료 요약' }); } catch (e) {} }
+    if (uid && personalMem.configured()) personalMem.recordEventAsync({ ownerId: uid, type: 'voice_call', source: 'event', summary: '음성 통화 시작' }); // 🛡️수문장
     res.json({ user_id: uid || 'guest', user_name: who, session_id: String(req.query.sid || ''), recall: recall || '' });
   } catch (e) { res.json({ user_id: 'guest', user_name: '대표님', session_id: '', recall: '' }); }
 });
@@ -1010,7 +1011,12 @@ async function orderHandler(req, res) {
       let memCtx = '';
       if (uid && personalMem.configured()) { try { memCtx = await personalMem.recallSmart({ ownerId: uid, scope: memScope, customerId: cust, query: q }); } catch (e) {} }
       const memWho = cust ? (cust + '님') : 호칭;
-      const sysP = genyaPersona(job, { email: uid }) + (memCtx ? ('\n[' + memWho + ' 기억] 아래는 ' + memWho + '의 과거 대화·자료 요약이다. 관련되면 근거로 활용하되 없는 값은 지어내지 마라.\n' + memCtx) : '');
+      // ★🛡️ 수문장: 이 방에서 방금 일어난 일(명단 업로드·시트·발송 등)을 매 대화에 주입 → "방금 뭐 했지"를 지니야가 자동 인지.
+      let recentEvents = '';
+      if (uid && personalMem.configured()) { try { recentEvents = await personalMem.recallRecentEvents({ ownerId: uid, limit: 5 }); } catch (e) {} }
+      const sysP = genyaPersona(job, { email: uid })
+        + (recentEvents ? ('\n[지금 이 방에서 최근 일어난 일 — 실제 발생] 아래는 이 지니야 화면에서 실제로 일어난 이벤트다. "방금 올린/만든/한 것"을 물으면 이걸 근거로 인지하고 답한다(안 보인다고 하지 마라). 단 파일 속 개별 세부(고객별 값)는 실제 분석 결과가 있을 때만 말한다.\n' + recentEvents) : '')
+        + (memCtx ? ('\n[' + memWho + ' 기억] 아래는 ' + memWho + '의 과거 대화·자료 요약이다. 관련되면 근거로 활용하되 없는 값은 지어내지 마라.\n' + memCtx) : '');
       const text = await askClaude(sysP, hist.concat([{ role: 'user', content: q }]), 8192, { admin: _admin, webSearch: true });
       out = { kind: '💬 지니야', text, engine: _lastAskModel || pickedModel(q, { admin: _admin }) };
       if (uid && personalMem.configured()) personalMem.saveMemoryAsync({ ownerId: uid, scope: memScope, customerId: cust, source: 'dialog', text: q + '\n→ ' + text, summary: (cust ? cust + '님 ' : '') + q });
@@ -1070,7 +1076,10 @@ app.post('/api/roster/import', async (req, res) => {
   try {
     const ma = gateGoogle(req, res); if (!ma) return;
     const b = req.body || {};
-    res.json(await rosterImport.importRoster(ma, { dataUrl: b.dataUrl || b.file || '', mode: b.mode, confirm: !!b.confirm }));
+    const rr = await rosterImport.importRoster(ma, { dataUrl: b.dataUrl || b.file || '', mode: b.mode, confirm: !!b.confirm });
+    // ★🛡️ 수문장: 명단 업로드(변방)를 개인화 기억(중앙)에 기록 → 지니야 대화가 "방금 올린 명단"을 자동 인지. 실제 발생분만.
+    try { const uid = (sessionOf(req) || {}).email || ''; if (uid && rr && rr.ok !== false && personalMem.configured()) { const cnt = rr.total || rr.count || rr.added || rr.saved || (Array.isArray(rr.rows) ? rr.rows.length : 0); personalMem.recordEventAsync({ ownerId: uid, type: 'roster_upload', source: 'upload', summary: '고객 명단 파일 업로드' + (cnt ? (' · ' + cnt + '명') : '') + (b.name ? (' (' + b.name + ')') : '') }); } } catch (e) {}
+    res.json(rr);
   } catch (e) { if (scopeGate(e, res, 'sheets')) return; res.status(500).json({ ok: false, error: e.message }); }
 });
 app.get('/api/profile', async (req, res) => {
