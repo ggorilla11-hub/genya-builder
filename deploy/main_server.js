@@ -290,8 +290,8 @@ const YAK = JSON.parse(fs.readFileSync(path.join(__dirname, 'yakgwan_pages.json'
 const app = express();
 app.use(express.json({ limit: '50mb' })); // 자료 업로드(base64) 파싱 — 큰 제안서 PDF 다중 업로드 대비 상향
 // ★배포 반영 확인용(정직): 재배포 후 이 build 값이 바뀌면 새 코드가 실제 활성화됐다는 증거. 공개·민감정보 없음.
-const BUILD_TAG = 'v4.0-day4-gatekeeper-routing-fix-2026-07-23';
-app.get(['/health', '/api/version'], (req, res) => res.json({ ok: true, build: BUILD_TAG, emojiFilter: typeof stripEmoji === 'function', ts: new Date().toISOString() }));
+const BUILD_TAG = 'v4.0-day4-gatekeeper-diagnostics-2026-07-24';
+app.get(['/health', '/api/version'], (req, res) => res.json({ ok: true, build: BUILD_TAG, emojiFilter: typeof stripEmoji === 'function', pineconeReady: (function () { try { return personalMem.configured(); } catch (e) { return false; } })(), ts: new Date().toISOString() }));
 // ★Vapi 음성(엄마2): 프론트에 공개키·어시스턴트ID 전달(Render env·하드코딩0). Vapi Public Key는 클라이언트 공개용이라 반환 OK. 키 없으면 ready:false → 프론트가 마이크 비활성.
 app.get('/api/vapi-config', (req, res) => res.json({ ready: !!(process.env.VAPI_PUBLIC_KEY && process.env.VAPI_ASSISTANT_ID), publicKey: process.env.VAPI_PUBLIC_KEY || '', assistantId: process.env.VAPI_ASSISTANT_ID || '' }));
 // ★한 지니야 뇌: 마이크 클릭 시 회원 컨텍스트(로그인 세션 + Pinecone recall)를 조립해 통화 지니야에 variableValues로 주입 → 통화 지니야 = 텍스트 지니야 동일 기억. 로그인 없으면 게스트.
@@ -966,10 +966,12 @@ async function orderHandler(req, res) {
     // ★🛡️ 수문장 최우선(라우팅 근본수정): "방금/올린/만든/업로드/한 것" 류 질문은 커넥터·시트 분기(명단→"7월 만기 0명" 오답)보다 먼저,
     //   이 방에서 실제로 일어난 이벤트를 근거로 인지 응답한다. 이벤트가 있을 때만 발동 → 일반 질문 흐름 무영향.
     const _uidG = (sessionOf(req) || {}).email || '';
+    const _gateMatch = /방금|아까|조금\s*전|좀\s*전|최근에|올린|올렸|올려|업로드|만든|만들었|기록한|저장한|한\s*게|했던|뭐\s*했|무슨\s*(파일|명단|자료)/.test(q);
     let _gateEvents = '';
-    if (_uidG && personalMem.configured() && /방금|아까|조금\s*전|좀\s*전|최근에|올린|올렸|올려|업로드|만든|만들었|기록한|저장한|한\s*게|했던|뭐\s*했|무슨\s*(파일|명단|자료)/.test(q)) {
+    if (_uidG && personalMem.configured() && _gateMatch) {
       try { _gateEvents = await personalMem.recallRecentEvents({ ownerId: _uidG, limit: 5 }); } catch (e) {}
     }
+    console.log('[🛡️수문장] order 가드 · uid=' + (_uidG || '(없음)') + ' · pineconeReady=' + personalMem.configured() + ' · match=' + _gateMatch + ' · events=' + (_gateEvents ? 'HIT(' + _gateEvents.slice(0, 40) + '…)' : 'MISS') + ' · q="' + String(q).slice(0, 30) + '"');
     // ★버그수정: activeSkill(localStorage 복원)이 시트·발송 도구 의도를 가로채던 문제 → 명확한 도구 의도면 activeSkill 무시하고 아래 도구 분기로.
     const _toolIntent = /보내|발송|알림톡|결재|승인|시트\s*(목록|리스트|들|현황|뭐|어떤|무슨|조회|검색|추가|수정|삭제)|어떤\s*시트|무슨\s*시트|내\s*(구글\s*)?시트|명단\s*(추가|수정|삭제|변경|조회|보여|알려|몇)|고객\s*(추가|등록|수정|삭제)|([가-힣]{2,4})\s*님?\s*(정보|연락처|주소|생일|만기|상품|알려|조회)/.test(q);
     if (_gateEvents) {
@@ -1092,7 +1094,16 @@ app.post('/api/roster/import', async (req, res) => {
     const b = req.body || {};
     const rr = await rosterImport.importRoster(ma, { dataUrl: b.dataUrl || b.file || '', mode: b.mode, confirm: !!b.confirm });
     // ★🛡️ 수문장: 명단 업로드(변방)를 개인화 기억(중앙)에 기록 → 지니야 대화가 "방금 올린 명단"을 자동 인지. 실제 발생분만.
-    try { const uid = (sessionOf(req) || {}).email || ''; if (uid && rr && rr.ok !== false && personalMem.configured()) { const cnt = rr.total || rr.count || rr.added || rr.saved || (Array.isArray(rr.rows) ? rr.rows.length : 0); personalMem.recordEventAsync({ ownerId: uid, type: 'roster_upload', source: 'upload', summary: '고객 명단 파일 업로드' + (cnt ? (' · ' + cnt + '명') : '') + (b.name ? (' (' + b.name + ')') : '') }); } } catch (e) {}
+    try {
+      const uid = (sessionOf(req) || {}).email || '';
+      const cfg = personalMem.configured();
+      const cnt = (rr && (rr.total || rr.count || rr.added || rr.saved || (Array.isArray(rr.rows) ? rr.rows.length : 0))) || 0;
+      console.log('[🛡️수문장] roster/import 훅 · uid=' + (uid || '(없음)') + ' · pineconeReady=' + cfg + ' · cnt=' + cnt + ' · rr.ok=' + (rr && rr.ok) + ' · confirm=' + (!!b.confirm));
+      if (uid && rr && rr.ok !== false && cfg) {
+        personalMem.recordEventAsync({ ownerId: uid, type: 'roster_upload', source: 'upload', summary: '고객 명단 파일 업로드' + (cnt ? (' · ' + cnt + '명') : '') + (b.name ? (' (' + b.name + ')') : '') });
+        console.log('[🛡️수문장] recordEventAsync 호출됨(roster_upload · ' + cnt + '명)');
+      } else { console.log('[🛡️수문장] recordEvent 건너뜀(uid없음 or pinecone미연결 or rr실패)'); }
+    } catch (e) { console.log('[🛡️수문장] roster 훅 오류: ' + e.message); }
     res.json(rr);
   } catch (e) { if (scopeGate(e, res, 'sheets')) return; res.status(500).json({ ok: false, error: e.message }); }
 });
