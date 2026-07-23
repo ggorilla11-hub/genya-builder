@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>지니야 · 시트 CRUD 로컬 실측</title>
+<style>
+  :root{ --navy:#0F1A35; --gold:#D4A574; --cream:#F5F3F2; }
+  *{ box-sizing:border-box; }
+  body{ font-family:'Pretendard','맑은 고딕',sans-serif; margin:0; background:var(--cream); color:var(--navy); }
+  .wrap{ max-width:720px; margin:0 auto; padding:20px 16px 120px; }
+  h1{ font-size:19px; margin:8px 0 2px; }
+  .sub{ color:#6b7280; font-size:13px; margin-bottom:14px; }
+  .badge{ display:inline-block; background:var(--navy); color:var(--gold); font-size:11px; padding:3px 9px; border-radius:20px; margin-left:6px; vertical-align:middle; }
+  #log{ display:flex; flex-direction:column; gap:12px; }
+  .msg{ padding:12px 14px; border-radius:14px; font-size:14px; line-height:1.55; white-space:pre-wrap; word-break:break-word; }
+  .me{ align-self:flex-end; background:var(--navy); color:#fff; border-bottom-right-radius:4px; max-width:80%; }
+  .ge{ align-self:flex-start; background:#fff; border:1px solid #e5e1dc; border-bottom-left-radius:4px; max-width:88%; }
+  .card{ align-self:flex-start; background:#fff; border:1px solid var(--gold); border-radius:14px; padding:14px; max-width:92%; }
+  .card h4{ margin:0 0 8px; font-size:14px; }
+  .kv{ font-size:13px; }
+  .kv b{ color:#8a6d3b; }
+  .warn{ background:#FBF0DC; color:#8a4d18; padding:8px 10px; border-radius:10px; font-size:12.5px; margin:8px 0; }
+  button{ font-family:inherit; cursor:pointer; border:none; border-radius:10px; padding:9px 16px; font-size:13.5px; font-weight:600; }
+  .ok{ background:var(--gold); color:var(--navy); }
+  .danger{ background:#c0392b; color:#fff; }
+  .ghost{ background:#eee; color:#555; }
+  .bar{ position:fixed; left:0; right:0; bottom:0; background:#fff; border-top:1px solid #e5e1dc; padding:12px 16px; }
+  .bar .in{ max-width:720px; margin:0 auto; display:flex; gap:8px; }
+  #q{ flex:1; padding:11px 13px; border:1px solid #cfcac4; border-radius:12px; font-size:14px; font-family:inherit; }
+  .quick{ display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px; }
+  .quick button{ background:#fff; border:1px solid #d8d3cc; color:#444; font-weight:500; font-size:12px; padding:6px 10px; }
+</style></head>
+<body><div class="wrap">
+  <h1>지니야 · 시트 CRUD <span class="badge">로컬 실측</span></h1>
+  <div class="sub">Step 2-B · 자연어로 고객명단을 읽고·고치기. 쓰기는 <b>미리보기 → 승인</b> 후에만 반영됩니다. (로컬 전용 테스트 화면)</div>
+  <div class="quick">
+    <button onclick="q(this)">홍길동 정보 알려줘</button>
+    <button onclick="q(this)">홍길동 주소 인천으로 바꿔줘</button>
+    <button onclick="q(this)">신규 고객 이지혜 · 010-1234-5678 추가해줘</button>
+    <button onclick="q(this)">박철수 삭제해줘</button>
+    <button onclick="q(this)">이번 달 만기 고객 찾아줘</button>
+  </div>
+  <div id="log"></div>
+</div>
+<div class="bar"><div class="in">
+  <input id="q" placeholder="예: 홍길동 주소 인천으로 바꿔줘" onkeydown="if(event.key==='Enter')send()">
+  <button class="ok" onclick="send()">보내기</button>
+</div></div>
+<script>
+const log = document.getElementById('log');
+function add(cls, html){ const d=document.createElement('div'); d.className=cls; d.innerHTML=html; log.appendChild(d); window.scrollTo(0,document.body.scrollHeight); return d; }
+function esc(s){ return String(s==null?'':s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+function q(b){ document.getElementById('q').value=b.textContent; send(); }
+
+async function send(){
+  const box=document.getElementById('q'); const text=box.value.trim(); if(!text) return; box.value='';
+  add('msg me', esc(text));
+  let r;
+  try{ r = await (await fetch('/api/sheets/crud/chat',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({text})})).json(); }
+  catch(e){ add('msg ge','연결 오류: '+esc(e.message)); return; }
+  if(r.needsGoogle||r.needsConnect){ add('msg ge','⚠️ 구글 연결이 필요해요. <a href="'+(r.connectUrl||'/auth/google/connect')+'">여기서 연결</a> 후 다시 시도하세요.'); return; }
+  add('msg ge', esc(r.reply||'(응답 없음)'));
+  if(r.pending) renderPending(r.pending);
+}
+
+function renderPending(p){
+  const a=p.action||{}; const op={update:'수정',create:'추가',delete:'삭제'}[a.op]||a.op;
+  let rows=''; const pv=p.preview||{};
+  Object.keys(pv).forEach(k=>{ rows += '<div class="kv"><b>'+esc(k)+'</b> : '+esc(typeof pv[k]==='object'?JSON.stringify(pv[k]):pv[k])+'</div>'; });
+  const card=add('card','<h4>📋 '+op+' 미리보기</h4>'+rows+(p.warning?'<div class="warn">⚠️ '+esc(p.warning)+'</div>':'')+'<div class="btns"></div>');
+  const btns=card.querySelector('.btns');
+  if(p.doubleConfirm){
+    const b1=document.createElement('button'); b1.className='danger'; b1.textContent='삭제 진행 (1차)';
+    b1.onclick=()=>{ btns.innerHTML='<div class="warn">되돌릴 수 없습니다. 정말 삭제하려면 아래를 누르세요.</div>'; const b2=document.createElement('button'); b2.className='danger'; b2.textContent='정말 삭제 (최종)'; b2.onclick=()=>commit(p,true,card); const c=document.createElement('button'); c.className='ghost'; c.textContent='취소'; c.style.marginLeft='8px'; c.onclick=()=>{ btns.innerHTML='<span style="color:#888;font-size:12px">취소됨</span>'; }; btns.appendChild(b2); btns.appendChild(c); };
+    btns.appendChild(b1);
+  } else {
+    const b=document.createElement('button'); b.className='ok'; b.textContent='승인';
+    b.onclick=()=>commit(p,false,card); btns.appendChild(b);
+    const c=document.createElement('button'); c.className='ghost'; c.textContent='취소'; c.style.marginLeft='8px'; c.onclick=()=>{ btns.innerHTML='<span style="color:#888;font-size:12px">취소됨</span>'; }; btns.appendChild(c);
+  }
+}
+
+async function commit(p,confirmed,card){
+  const btns=card.querySelector('.btns'); btns.innerHTML='<span style="color:#888;font-size:12px">반영 중…</span>';
+  let r;
+  try{ r=await (await fetch('/api/sheets/crud/commit',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({action:p.action,sig:p.sig,confirmed})})).json(); }
+  catch(e){ btns.innerHTML='<span style="color:#c0392b">오류: '+esc(e.message)+'</span>'; return; }
+  if(r.needsDoubleConfirm){ btns.innerHTML='<span style="color:#c0392b">한 번 더 확인이 필요해요.</span>'; return; }
+  if(r.ok){ btns.innerHTML='<span style="color:#2e7d32;font-weight:600">✅ 반영 완료</span>'; add('msg ge','반영했어요: '+esc(JSON.stringify(r.result))); }
+  else { btns.innerHTML='<span style="color:#c0392b">실패: '+esc(r.message||r.error||'')+'</span>'; }
+}
+</script></body></html>
