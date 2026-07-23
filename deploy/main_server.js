@@ -1306,6 +1306,30 @@ app.post('/api/gmail/send', async (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
+// 📮 Step 2-C+ · 모닝 브리핑(Render Cron 자율) — 회장님 시트 오늘 이벤트 → Gmail 요약
+//   Cron이 세션 없이 호출 → 저장된 회장님 refresh_token으로 인증. CRON_SECRET로 보호(무단호출 방지).
+// ═══════════════════════════════════════════════════════════════════════════
+const morningBrief = require('./morning_brief');
+async function adminAuth() {
+  const tok = await loadMemberToken(VIP_EMAIL);
+  if (!tok || !tok.refresh_token) return null;
+  const c = oaClient(); c.setCredentials({ refresh_token: tok.refresh_token });
+  return c;
+}
+app.get('/api/cron/morning-brief', async (req, res) => {
+  try {
+    if (String(req.query.key || '') !== String(process.env.CRON_SECRET || '__nokey__')) return res.status(403).json({ ok: false, error: 'forbidden' });
+    const ma = await adminAuth();
+    if (!ma) return res.json({ ok: false, error: '회장님 구글 토큰이 저장돼 있지 않아요(로그인 1회 필요).' });
+    const brief = await morningBrief.build((a) => sheetsCrud.loadTable(a), ma);
+    const dry = String(req.query.dry || '') === '1';
+    if (dry) return res.json({ ok: true, dryRun: true, events: brief.count, preview: brief.text });
+    const r = await _sendGmailFor(ma, VIP_EMAIL, '[지니야] 오늘 아침 브리핑', brief.text);
+    return res.json({ ok: true, sent: !!(r && r.sent), events: brief.count, detail: { 만기: brief.만기, 생일: brief.생일, 상담: brief.상담 } });
+  } catch (e) { return res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
 // 🗂️ Step 2-C · 결재함 백엔드 (독립 · 하이브리드 라우터 무접촉)
 //   발송헬퍼: 기존 /api/send/sms·/api/gmail/send 로직을 함수로 재사용(핸들러 무수정). sent 확인·가짜성공 없음.
 //   결재함은 회원 본인 시트 '결재함' 탭에만(서버 저장 0). 승인 시 명단 재조회→실발송→결과 기록.
