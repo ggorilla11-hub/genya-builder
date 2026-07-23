@@ -234,4 +234,57 @@ async function plan(ma, text) {
   } catch (e) { return { ok: false, message: '무엇을 누구에게 보낼지 조금 더 구체적으로 말씀해 주세요.', error: e.message }; }
 }
 
-module.exports = { init, create, list, act, plan, APPROVAL_TAB, HEADER, safeRecipient };
+// ═══ 7. Function Calling · 지니야 대화에 노출되는 결재/발송 도구 3개 ═══
+//   ★회장님 지적 수정: 지니야가 "발송 못 한다"고 답하던 근본원인 = 대화에 발송 도구가 없었음.
+//   이 도구 루프를 orderHandler가 호출 → 지니야가 실제로 결재함 저장·조회·발송(승인 후)을 수행.
+// ★Anthropic API 규칙: input_schema properties 키는 ^[a-zA-Z0-9_.-]{1,64}$ (한글 불가) → 영문 키 사용, 내부에서 한글 필드로 매핑
+const TOOLS = [
+  { name: 'create_approval', description: '회장님이 문자·이메일 발송을 지시하면, 실제로 보내기 전에 발송 초안을 "결재함"에 저장한다. 대상은 고객명단(구글시트)에서 조건으로 자동 조회된다. 저장 후 회장님이 승인하면 실제 발송된다. 예: "김철수님에게 신상품 안내 메일 보내줘" → criteria:{"고객명":"김철수"}, channel:"gmail". ★당신은 실제로 발송할 수 있으니 절대 "직접 못 보낸다"고 답하지 말 것.',
+    input_schema: { type: 'object', properties: { title: { type: 'string', description: '짧은 제목(예: 신상품 안내)' }, channel: { type: 'string', enum: ['sms', 'gmail'], description: '문자면 sms, 이메일이면 gmail' }, criteria: { type: 'object', description: '대상 조건(예: {"고객명":"김철수"} 또는 {"만기일":"2026-08"}). 전체면 {}' }, template: { type: 'string', description: '보낼 문구. #{고객명} 같은 시트 컬럼 치환자 사용. 정보성·존댓말·짧게' } }, required: ['channel', 'template'] } },
+  { name: 'list_approvals', description: '결재함에 올라온 발송 건들을 조회한다(대기/완료 등). "결재함 보여줘", "뭐 올라와 있어?" 등에 사용.',
+    input_schema: { type: 'object', properties: { status: { type: 'string', description: '대기/완료/거부 중 하나로 필터. 생략시 전체' } } } },
+  { name: 'approve_and_send', description: '회장님이 특정 결재 건을 "승인"·"보내"라고 명시적으로 지시할 때만 실제 발송한다. 지니야가 스스로 승인하지 않는다. id는 list_approvals로 확인.',
+    input_schema: { type: 'object', properties: { id: { type: 'string' }, confirmed: { type: 'boolean', description: '10건 이상 대량 발송 재확인 시 true' } }, required: ['id'] } },
+];
+function systemPrompt() {
+  return `당신은 "지니야" — 회장님의 문자·이메일 발송을 결재함으로 처리하는 비서입니다.
+[핵심 능력 — 절대 "못 한다"고 말하지 마세요]
+당신은 실제로 발송할 수 있습니다. 방식: 결재함에 저장(create_approval) → 회장님 승인 → 실제 발송(approve_and_send).
+[규칙]
+1. "○○에게 ○○ 보내줘"라고 하면 create_approval로 결재함에 올리고 "결재함에 올렸어요. 승인하시면 보내드릴게요"라고 안내한다. 절대 "직접 발송은 못 한다"고 하지 않는다.
+2. 대상·문구가 애매하면 한두 가지만 되묻는다. 문구는 정보성·존댓말·짧게 자동 작성.
+3. 스스로 승인·발송하지 않는다. 회장님이 "승인"·"보내"라고 명시할 때만 approve_and_send.
+4. 실측 안전모드에서는 실제로 회장님 본인에게만 발송된다(실고객 보호). 이 점을 정직히 안내한다.
+5. 말투: 따뜻하고 쉽게. '클로드'·'AI' 같은 말은 쓰지 않는다.`;
+}
+// 지니야 대화 루프(자체 도구호출 · 하이브리드 라우터 무접촉). create=저장(발송X), approve_and_send만 실제 발송(하드가드).
+async function runChat(ma, messages) {
+  if (!_anthropic) return { ok: false, reply: '엔진이 초기화되지 않았어요.' };
+  const conv = (messages || []).map((m) => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: String(m.content || m.text || '') })).filter((m) => m.content);
+  if (!conv.length) return { ok: true, reply: '무엇을 보내드릴까요?' };
+  const trace = []; let pending = null;
+  for (let hop = 0; hop < 5; hop++) {
+    let r;
+    try { r = await _anthropic.messages.create({ model: _MODEL, max_tokens: 1200, system: systemPrompt(), tools: TOOLS, messages: conv }); }
+    catch (e) { return { ok: false, reply: '지금 잠깐 응답이 어려워요. 잠시 후 다시 말씀해 주세요.', error: e.message }; }
+    const toolUses = (r.content || []).filter((b) => b.type === 'tool_use');
+    const textOut = (r.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
+    if (!toolUses.length) return { ok: true, reply: textOut || '네, 말씀하세요.', pending, trace };
+    conv.push({ role: 'assistant', content: r.content });
+    const results = [];
+    for (const t of toolUses) {
+      let out;
+      try {
+        if (t.name === 'create_approval') { const i = t.input || {}; out = await create(ma, { 요청내용: i.title, 채널: i.channel, criteria: i.criteria, 템플릿: i.template }); if (out.ok) { pending = out.approval; trace.push({ tool: 'create_approval', id: out.approval && out.approval.id }); } }
+        else if (t.name === 'list_approvals') { out = await list(ma, { status: (t.input && t.input.status) || '' }); }
+        else if (t.name === 'approve_and_send') { out = await act(ma, { id: (t.input && t.input.id) || '', action: 'approve', confirmed: !!(t.input && t.input.confirmed) }); trace.push({ tool: 'approve_and_send', id: t.input && t.input.id }); }
+        else out = { ok: false, message: '알 수 없는 도구' };
+      } catch (e) { out = { ok: false, message: e.message }; }
+      results.push({ type: 'tool_result', tool_use_id: t.id, content: JSON.stringify(out).slice(0, 3000) });
+    }
+    conv.push({ role: 'user', content: results });
+  }
+  return { ok: true, reply: '요청이 조금 복잡해요. 한 가지씩 다시 말씀해 주시겠어요?', pending, trace };
+}
+
+module.exports = { init, create, list, act, plan, runChat, TOOLS, APPROVAL_TAB, HEADER, safeRecipient };

@@ -879,6 +879,14 @@ async function orderHandler(req, res) {
       const sys = genyaPersona(job, { email: (sessionOf(req) || {}).email }) + `\n[현재 작업] 지금 사용자는 "${SKILL_CTX[activeSkill]}" 작업을 진행 중이다. 앞서 지니야가 안내한 내용(예: 사진·파일 업로드 요청)을 기억한 채 맥락을 유지하고 그 작업을 이어서 돕는다. 맥락을 잃고 "해당 파일 없음" 같은 엉뚱한 답을 하지 마라. 파일이 필요하면 화면 아래 ＋ 버튼으로 올려달라고 자연스럽게 안내한다. ★단, 이 대화에는 실제 파일·데이터가 첨부돼 있지 않다. 사용자가 아직 파일(엑셀·명단·사진)을 올리지 않았으면 올라온 척(가짜 인원수·명단·수치, 예 "방금 올려주신 명단 13명")을 절대 만들지 말고, "아직 파일을 못 받았어요. ＋ 버튼으로 올려주시면 바로 분석할게요"라고 정직히 안내한다.`;
       const text = await askClaude(sys, hist.concat([{ role: 'user', content: q }]), 1500, { admin: _admin });
       out = { kind: '💬 지니야', text, engine: _lastAskModel || pickedModel(q, { admin: _admin }) };
+    } else if (/보내|발송|알림톡|결재|승인/.test(q)) {
+      // 🗂️ Step 2-C: 발송·결재 의도 → 결재함 도구 루프(저장→승인→하드가드 발송). "발송 못 한다" 오답 원천 제거.
+      if (!canData) { out = needConnect; }
+      else {
+        const hist = Array.isArray(req.body && req.body.history) ? req.body.history.slice(-10) : [];
+        const rc = await approval.runChat(ma, hist.concat([{ role: 'user', content: q }]));
+        out = { kind: '🗂️ 결재함', text: rc.reply || '무엇을 보내드릴까요?', pending: rc.pending || null, engine: MODEL_DEEP };
+      }
     } else if (/약관|무보험|대물|자기신체|자동차상해|담보|보장.*(뭐|무엇|차이)/.test(q)) {
       const r = await askYakgwan(q); out = { kind: '📄 약관창고', text: r.answer, sources: r.sources }; // 공통 지식(구글 불필요)
     } else if (/만기|명단|자산가|고객.*(정리|목록|누구)/.test(q)) {
