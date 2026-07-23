@@ -924,7 +924,9 @@ async function orderHandler(req, res) {
     const needConnect = { kind: '🔗 구글 데이터 연결 필요', text: '이 질문은 캘린더·시트·드라이브를 읽어야 답할 수 있어요. 아래 버튼으로 한 번만 연결하면 바로 알려드릴게요. (일반 질문은 연결 없이도 대답해요)', needsConnect: true, connectUrl: '/auth/google/connect' };
     const activeSkill = String((req.body && req.body.activeSkill) || '');
     let out = {};
-    if (activeSkill && SKILL_CTX[activeSkill]) {
+    // ★버그수정: activeSkill(localStorage 복원)이 시트·발송 도구 의도를 가로채던 문제 → 명확한 도구 의도면 activeSkill 무시하고 아래 도구 분기로.
+    const _toolIntent = /보내|발송|알림톡|결재|승인|시트\s*(목록|리스트|들|현황|뭐|어떤|무슨|조회|검색|추가|수정|삭제)|어떤\s*시트|무슨\s*시트|내\s*(구글\s*)?시트|명단\s*(추가|수정|삭제|변경|조회|보여|알려|몇)|고객\s*(추가|등록|수정|삭제)|([가-힣]{2,4})\s*님?\s*(정보|연락처|주소|생일|만기|상품|알려|조회)/.test(q);
+    if (activeSkill && SKILL_CTX[activeSkill] && !_toolIntent) {
       // ★카드에서 시작한 작업 맥락: 키워드 라우팅(증권→드라이브 "해당 파일 없음") 건너뛰고 LLM이 맥락 유지해 이어서 답한다
       const job = String((req.body && req.body.job) || req.query.job || '');
       const hist = Array.isArray(req.body && req.body.history) ? req.body.history.slice(-10) : [];
