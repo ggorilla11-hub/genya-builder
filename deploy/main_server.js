@@ -1796,6 +1796,8 @@ app.post('/api/approval/act', async (req, res) => { try {
   ma._email = (sessionOf(req) || {}).email || '';
   await _attachPrefs(ma);
   const b = req.body || {};
+  // ★버튼 헤더(X-Human-Approval:1)도 body 플래그와 동등하게 인정 → 이중 채널. 발화·자동 경로는 이 헤더도 body 플래그도 만들지 않음.
+  if (String(req.headers['x-human-approval'] || '') === '1') b.humanApproval = true;
   const _r = await approval.act(ma, b);
   // 🔒발송 감사 로그(사고 추적): approve(발송 시도)마다 누가·언제·어느 건·humanApproval·결과를 서버 로그에 남긴다.
   //   실고객 연락처·토큰·본문은 남기지 않는다(개인정보·시크릿 금지). humanApproval=false인 발송이 로그에 뜨면 즉시 무단발송 신호.

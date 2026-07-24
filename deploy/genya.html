@@ -2204,7 +2204,9 @@ function apRejectBackend(id){
 }
 function _apAct(id, extra){
   var body=Object.assign({ id:id }, extra||{});
-  fetch('/api/approval/act',{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
+  var _hdrs={'Content-Type':'application/json'};
+  if(body.humanApproval===true){ _hdrs['X-Human-Approval']='1'; } // ★버튼 발송만 헤더+플래그. 발화·자동 경로엔 없음 → 서버가 발송 거부.
+  fetch('/api/approval/act',{method:'POST',credentials:'same-origin',cache:'no-store',headers:_hdrs,body:JSON.stringify(body)})
     .then(function(r){ return r.json(); }).then(function(d){
       if(d && d.needsBulkConfirm){
         if(typeof confirm==='function' && confirm((d.count||'')+'명에게 발송합니다. 실수 방지를 위해 한 번 더 확인해 주세요. 진행할까요?')){ _apAct(id, { action:'approve', confirmed:true, humanApproval:true }); }
