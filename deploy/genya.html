@@ -1682,7 +1682,7 @@ function _renderSendModal(){
         '<p style="font-size:13px;color:#6b7a8d;line-height:1.7;margin:0 0 14px">결재함에서 <b>승인한 카톡</b>의 성공·실패가 여기 실시간으로 뜨려면, 먼저 <b>카톡 발송기(watcher)</b>를 각자 PC에 설치해야 해요.</p>'+
         '<div style="border:1px solid #e2e8ef;border-radius:10px;padding:12px;font-size:12.5px;color:#556;line-height:1.75;margin-bottom:14px">'+
           '· <b>카톡</b>: 발송기(watcher) 설치 → 결재함 승인분이 무인 발송·기록 <span style="color:#0d7a52">(아래에서 설치)</span><br>'+
-          '· <b>문자(솔라피)</b>: 내 문자 발송 키 연결 <span style="color:#98a4b2">(준비 중)</span>'+
+          '· <b>문자(솔라피)</b>: 내 문자 발송 키 연결 <span onclick="closeModal(); if(typeof openSolapiSetup===\'function\'){openSolapiSetup();}" style="color:#0d7a52;cursor:pointer;text-decoration:underline;font-weight:700">등록하기 →</span>'+
         '</div>'+
         '<button onclick="closeModal(); if(typeof openWatcher===\'function\'){openWatcher();}" style="width:100%;background:#1DB088;color:#fff;border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:700;cursor:pointer">🖥️ 카톡 발송기 설치하기 →</button>'+
         '<div style="font-size:11px;color:#98a4b2;margin-top:8px;text-align:center">발송기를 설치하면 발송한 게 여기 기록돼요. 그 전까지는 가짜 숫자 대신 “대기”로 정직하게 표시돼요.</div>'+
@@ -2120,6 +2120,44 @@ function apEdit(id){
 }
 // ▼ 처리완료 카드 펼침/접기(표시 전용).
 function apToggleLog(id){ var el=document.getElementById('aplog-'+id); if(el) el.style.display=(el.style.display==='none'?'block':'none'); }
+// ═══ 📱 솔라피(문자) 키 등록 — 서버 암호화 저장. 문자 비용=회원 자비. Secret 재노출 금지·마스킹만 표시. ═══
+function openSolapiSetup(){
+  showModal(_bizShell('📱','문자 발송 키 등록(솔라피)','문자는 본인 솔라피 계정으로 나가요(비용 자비부담) · 키는 서버에 암호화 저장돼요',
+    '<div id="solapiStatus" style="font-size:12px;color:#8a93a3;margin-bottom:10px">상태 확인 중…</div>'
+    +'<div style="background:#f5f9ff;border:1px solid #d8e6f5;border-radius:10px;padding:12px;margin-bottom:12px">'
+    +'<label style="font-size:12px;font-weight:700;color:#0d3b66">솔라피 API Key</label>'
+    +'<input id="solKey" type="text" autocomplete="off" placeholder="NCSA..." style="width:100%;box-sizing:border-box;margin:4px 0 10px;padding:9px;border:1px solid #cfd8e3;border-radius:8px;font-size:13px;font-family:inherit">'
+    +'<label style="font-size:12px;font-weight:700;color:#0d3b66">솔라피 API Secret</label>'
+    +'<input id="solSecret" type="password" autocomplete="off" placeholder="저장 후 다시 표시되지 않아요" style="width:100%;box-sizing:border-box;margin:4px 0 10px;padding:9px;border:1px solid #cfd8e3;border-radius:8px;font-size:13px;font-family:inherit">'
+    +'<label style="font-size:12px;font-weight:700;color:#0d3b66">발신번호 <span style="color:#8a93a3;font-weight:400">(하이픈 자동 제거)</span></label>'
+    +'<input id="solFrom" type="text" inputmode="numeric" placeholder="01012345678" style="width:100%;box-sizing:border-box;margin:4px 0 4px;padding:9px;border:1px solid #cfd8e3;border-radius:8px;font-size:13px;font-family:inherit">'
+    +'</div>'
+    +'<button onclick="solapiSave()" id="solSaveBtn" style="width:100%;background:var(--teal);color:#fff;border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">서버에 암호화 저장</button>'
+    +'<div style="font-size:11px;color:#8a6d1a;background:#fff7ed;border:1px solid #f0e0c8;border-radius:8px;padding:9px;margin-top:10px;line-height:1.6">🔒 키는 서버에 <b>암호화 저장</b>되고 화면·로그에 다시 안 보여요(앞 4자리만 표시).<br>가입·발급: <b>솔라피 가입 → 발신번호 본인인증 → API Key 발급 (solapi.com)</b></div>'));
+  solapiStatusLoad();
+  setTimeout(function(){ var i=document.getElementById('solKey'); if(i)i.focus(); },100);
+}
+function solapiStatusLoad(){
+  fetch('/api/settings/solapi',{credentials:'same-origin',cache:'no-store'}).then(function(r){return r.json();}).then(function(d){
+    var el=document.getElementById('solapiStatus'); if(!el)return;
+    if(d&&d.registered){ el.innerHTML='✅ 등록됨 · Key <b>'+_sEsc(d.keyMasked||'••••')+'</b> · 발신번호 <b>'+_sEsc(d.sender||'')+'</b> <span style="color:#8a93a3">(새로 저장하면 교체돼요)</span>'; el.style.color='#0f766e'; }
+    else if(d&&d.needsLogin){ el.textContent='로그인 후 등록할 수 있어요.'; el.style.color='#c0392b'; }
+    else { el.textContent='아직 등록된 문자 키가 없어요. 아래에 입력해 주세요.'; el.style.color='#8a93a3'; }
+  }).catch(function(){});
+}
+function solapiSave(){
+  var key=(document.getElementById('solKey').value||'').trim();
+  var secret=(document.getElementById('solSecret').value||'').trim();
+  var from=(document.getElementById('solFrom').value||'').replace(/[^0-9]/g,'');
+  if(!key||!secret||!from){ toast('API Key·Secret·발신번호를 모두 입력해 주세요'); return; }
+  var btn=document.getElementById('solSaveBtn'); btn.disabled=true; btn.textContent='저장 중…';
+  fetch('/api/settings/solapi',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:key,secret:secret,sender:from})})
+    .then(function(r){return r.json();}).then(function(d){
+      btn.disabled=false; btn.textContent='서버에 암호화 저장';
+      if(d&&d.ok){ toast('저장됐어요 — 이제 문자가 본인 계정으로 나가요'); var s=document.getElementById('solSecret'); if(s)s.value=''; var k=document.getElementById('solKey'); if(k)k.value=''; solapiStatusLoad(); }
+      else{ toast((d&&d.message)||'저장 실패'); }
+    }).catch(function(){ btn.disabled=false; btn.textContent='서버에 암호화 저장'; toast('저장 오류 — 잠시 후 다시'); });
+}
 // ★2단계: 백엔드(구글시트) 결재건 승인/반려 → /api/approval/act (approval_skill.act 재사용·발송 하드가드 그대로). 캐시 우회.
 function apApproveBackend(id){
   if(typeof confirm==='function' && !confirm('이 결재 건을 승인하고 발송할까요?\n(안전모드에선 실고객이 아니라 회장님 본인에게만 test 발송)')) return;

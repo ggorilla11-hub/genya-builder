@@ -270,6 +270,51 @@ async function loadMemberToken(email) {
     return { refresh_token: rt, scope: (f.scope && f.scope.stringValue) || '' };
   } catch (e) { return null; }
 }
+
+// ═══ 📱 회원 솔라피 키 서버 암호화 저장 (Firestore · AES-256-GCM · TOKEN_ENC_KEY 재사용) ═══
+//   ★비용원칙: 문자 비용=회원 자비. ★시트 평문 저장 금지(공유/링크 유출 시 남이 회원 계정으로 발송=요금폭탄) → 서버 암호화.
+//   ★키 로그 절대 금지. Secret은 저장 후 다시 노출 안 함(마스킹=앞 4자리+••••••••).
+const SOLAPI_COLL = 'genya_solapi_keys';
+async function saveSolapiKeys(email, apiKey, apiSecret, sender) {
+  if (!email || !apiKey || !apiSecret) return { ok: false, error: '이메일·키·시크릿 필요' };
+  const kEnc = _enc(apiKey), sEnc = _enc(apiSecret);
+  if (!kEnc || !sEnc) return { ok: false, error: 'TOKEN_ENC_KEY 미설정 — 서버 암호화 저장 불가' };
+  await _tokFs().projects.databases.documents.createDocument({ parent: _tokDB, collectionId: SOLAPI_COLL, requestBody: { fields: {
+    email: { stringValue: String(email).toLowerCase() }, keyEnc: { stringValue: kEnc }, secretEnc: { stringValue: sEnc },
+    sender: { stringValue: String(sender || '').replace(/[^0-9]/g, '') }, keyHint: { stringValue: String(apiKey).slice(0, 4) },
+    timestamp: { stringValue: new Date().toISOString() },
+  } } });
+  return { ok: true, keyHint: String(apiKey).slice(0, 4), sender: String(sender || '').replace(/[^0-9]/g, '') };
+}
+async function loadSolapiKeys(email) {
+  if (!email) return null;
+  try {
+    const r = await _tokFs().projects.databases.documents.runQuery({ parent: _tokDB, requestBody: { structuredQuery: {
+      from: [{ collectionId: SOLAPI_COLL }],
+      where: { fieldFilter: { field: { fieldPath: 'email' }, op: 'EQUAL', value: { stringValue: String(email).toLowerCase() } } },
+      limit: 50,
+    } } });
+    const rows = (r.data || []).filter((x) => x.document).map((x) => x.document.fields || {});
+    if (!rows.length) return null;
+    rows.sort((a, b) => String((b.timestamp || {}).stringValue || '').localeCompare(String((a.timestamp || {}).stringValue || '')));
+    const f = rows[0];
+    const kEnc = f.keyEnc && f.keyEnc.stringValue, sEnc = f.secretEnc && f.secretEnc.stringValue;
+    if (!kEnc || !sEnc) return null;
+    const apiKey = _dec(kEnc), apiSecret = _dec(sEnc);
+    if (!apiKey || !apiSecret) return null;
+    return { apiKey, apiSecret, sender: String((f.sender && f.sender.stringValue) || '').replace(/[^0-9]/g, ''), keyHint: (f.keyHint && f.keyHint.stringValue) || String(apiKey).slice(0, 4) };
+  } catch (e) { return null; }
+}
+// 문자 발송 크리덴셜 우선순위: 회원 서버 암호화 저장 우선 → env 폴백(대표님 테스트용). ★키 로그 금지.
+async function _resolveSolapi(email) {
+  let apiKey = '', apiSecret = '', from = '';
+  if (email) { try { const sk = await loadSolapiKeys(email); if (sk) { apiKey = sk.apiKey; apiSecret = sk.apiSecret; from = String(sk.sender || '').replace(/[^0-9]/g, ''); } } catch (e) {} }
+  if (!apiKey) apiKey = process.env.SOLAPI_API_KEY || '';
+  if (!apiSecret) apiSecret = process.env.SOLAPI_API_SECRET || '';
+  if (!from) from = String(process.env.SOLAPI_SENDER || process.env.SOLAPI_FROM || '').replace(/[^0-9]/g, '');
+  return { apiKey, apiSecret, from };
+}
+
 const DEMO_TITLE = '지니야빌더_데모_명단';
 const SHEET_TAB = '고객명단';
 // 🗂️ Step 2-B 초기화: 도구호출=Opus4.8(정확도) · HMAC 서명키=env(없으면 토큰키·API키 순 폴백) · 시트 상수 공유
@@ -991,6 +1036,7 @@ async function orderHandler(req, res) {
   try {
     const q = String((req.body && (req.body.q || req.body.message)) || req.query.q || '').trim();
     const ma = memberAuth(req);
+    if (ma) ma._email = (sessionOf(req) || {}).email || ''; // ★솔라피 회원키 조회용(문자 발송 시)
     const canData = !!(ma && hasDataScope(req)); // ★데이터 스코프까지 있는 회원만 캘린더·시트·드라이브 호출
     // ★Step2-1: 회장 admin의 관리성 명령(발송·시트 변경 등)은 깊은 모델(Opus4.8)로 라우팅
     const _admin = _isAdmin(req) && /알림톡|문자|이메일|발송|보내|시트.*(추가|수정|삭제|변경|바꿔)|결재|승인/.test(q);
@@ -1462,16 +1508,41 @@ app.get('/api/draft/message', async (req, res) => {
 });
 
 // ── 📱 ★문제3: 솔라피 연결정보 저장 = ★회원 본인 구글시트에만(서버 저장 0). 데이터 스코프 없으면 연결 안내 ──
+// ★서버 암호화 저장으로 전환(시트 평문 저장 폐기 — 유출 시 요금폭탄 방지). 하위호환 유지(같은 body).
 app.post('/api/connect/solapi/save', async (req, res) => {
   try {
-    const ma = memberAuth(req);
-    if (!ma || !hasDataScope(req)) return res.json({ ok: true, needsConnect: true, connectUrl: '/auth/google/connect', message: '내 시트에 저장하려면 구글 데이터 연결이 필요해요.' });
-    const key = String((req.body && req.body.key) || ''), secret = String((req.body && req.body.secret) || ''), from = String((req.body && req.body.from) || '');
-    const { id, sheets } = await findOrCreateMemberSheet(ma);
-    await ensureTab(sheets, id, '지니야_연결');
-    await sheets.spreadsheets.values.update({ spreadsheetId: id, range: '지니야_연결!A1', valueInputOption: 'RAW', requestBody: { values: [['솔라피_API_KEY', key], ['솔라피_SECRET', secret], ['솔라피_발신번호', from], ['솔라피_저장일', new Date().toISOString().slice(0, 10)]] } });
-    res.json({ ok: true, saved: true }); // ★오원트 서버엔 저장 안 함, 회원 구글시트에만
-  } catch (e) { if (isScopeError(e)) return res.json({ ok: true, needsConnect: true, connectUrl: '/auth/google/connect' }); res.status(500).json({ ok: false, error: e.message }); }
+    const uid = ((sessionOf(req) || {}).email) || '';
+    if (!uid) return res.json({ ok: false, needsLogin: true, message: '로그인이 필요해요.' });
+    const key = String((req.body && req.body.key) || '').trim(), secret = String((req.body && req.body.secret) || '').trim(), from = String((req.body && req.body.from) || '').replace(/[^0-9]/g, '');
+    if (!key || !secret || !from) return res.json({ ok: false, message: 'API Key·Secret·발신번호를 모두 입력해 주세요.' });
+    const r = await saveSolapiKeys(uid, key, secret, from); // ★서버 암호화(값 로그 금지)
+    if (!r.ok) return res.json({ ok: false, message: r.error || '저장 실패' });
+    res.json({ ok: true, saved: true, keyMasked: r.keyHint + '••••••••', sender: r.sender });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+// ── 📱 회원 솔라피 키 서버 암호화 저장/조회 (Secret 재노출 금지·키 로그 금지) ──
+app.post('/api/settings/solapi', async (req, res) => {
+  try {
+    const uid = ((sessionOf(req) || {}).email) || '';
+    if (!uid) return res.json({ ok: false, needsLogin: true, message: '로그인이 필요해요.' });
+    const key = String((req.body && req.body.key) || '').trim();
+    const secret = String((req.body && req.body.secret) || '').trim();
+    const sender = String((req.body && req.body.sender) || '').replace(/[^0-9]/g, '');
+    if (!key || !secret || !sender) return res.json({ ok: false, message: 'API Key·Secret·발신번호를 모두 입력해 주세요.' });
+    const r = await saveSolapiKeys(uid, key, secret, sender);
+    if (!r.ok) return res.json({ ok: false, message: r.error || '저장 실패' });
+    console.log('[📱솔라피 저장] uid=' + uid + ' · 발신번호 등록됨(키 미출력)'); // ★키 절대 미출력
+    return res.json({ ok: true, keyMasked: r.keyHint + '••••••••', sender: r.sender });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+app.get('/api/settings/solapi', async (req, res) => {
+  try {
+    const uid = ((sessionOf(req) || {}).email) || '';
+    if (!uid) return res.json({ ok: true, registered: false, needsLogin: true });
+    const sk = await loadSolapiKeys(uid);
+    if (!sk) return res.json({ ok: true, registered: false });
+    return res.json({ ok: true, registered: true, keyMasked: (sk.keyHint || '') + '••••••••', sender: sk.sender }); // ★Secret 미노출
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
 // ── 📱 문자(SMS) 실발송 — 회원 본인 솔라피 키로 1건 발송.
@@ -1485,15 +1556,9 @@ app.post('/api/send/sms', async (req, res) => {
     const to = String((req.body && req.body.to) || '').replace(/[^0-9]/g, '');
     const text = String((req.body && req.body.text) || '').trim();
     if (!to || !text) return res.json({ ok: false, error: '받는 번호와 내용을 모두 입력해 주세요.' });
-    // 회원 본인 시트(지니야_연결)에서 솔라피 키 읽기 — 서버 저장 0
-    const { id, sheets } = await findOrCreateMemberSheet(ma);
-    const kv = {};
-    try {
-      const r = await sheets.spreadsheets.values.get({ spreadsheetId: id, range: '지니야_연결!A1:B10' });
-      (r.data.values || []).forEach((row) => { if (row && row[0]) kv[row[0]] = row[1] || ''; });
-    } catch (e) { /* 탭 없음 = 아직 미저장 */ }
-    const apiKey = kv['솔라피_API_KEY'], apiSecret = kv['솔라피_SECRET'], from = String(kv['솔라피_발신번호'] || '').replace(/[^0-9]/g, '');
-    if (!apiKey || !apiSecret || !from) return res.json({ ok: false, needsSolapi: true, message: '먼저 솔라피 API 키와 발신번호를 저장해 주세요.' });
+    // ★회원 서버 암호화 저장 키 우선 → env 폴백(시트 평문 폐기). 키 로그 금지.
+    const { apiKey, apiSecret, from } = await _resolveSolapi((sessionOf(req) || {}).email);
+    if (!apiKey || !apiSecret || !from) return res.json({ ok: false, needsSolapi: true, message: '먼저 솔라피 API 키·발신번호를 등록해 주세요 (설정 → 문자 연결).' });
     // 솔라피 v4 인증: HMAC-SHA256(date+salt, apiSecret)
     const crypto = require('crypto');
     const date = new Date().toISOString();
@@ -1578,20 +1643,10 @@ async function _sendSmsFor(ma, to, text) {
   try {
     to = String(to || '').replace(/[^0-9]/g, ''); text = String(text || '').trim();
     if (!to || !text) return { ok: false, sent: false, error: '번호·내용 없음' };
-    // ★비용원칙(문자=회원 자비부담): 회원 시트(지니야_연결)의 솔라피 키 우선 → 없으면 env(대표님 테스트용) 폴백. 발신번호 하이픈 제거.
-    //   env를 우선하면 회원이 고객에게 보낼 때마다 대표님 개인 솔라피 계정에서 비용이 나가므로, 반드시 회원 키가 먼저다.
-    let apiKey = '', apiSecret = '', from = '';
-    try {
-      const { id, sheets } = await findOrCreateMemberSheet(ma);
-      const kv = {};
-      const r = await sheets.spreadsheets.values.get({ spreadsheetId: id, range: '지니야_연결!A1:B10' }); (r.data.values || []).forEach((row) => { if (row && row[0]) kv[row[0]] = row[1] || ''; });
-      apiKey = kv['솔라피_API_KEY'] || ''; apiSecret = kv['솔라피_SECRET'] || ''; from = String(kv['솔라피_발신번호'] || '').replace(/[^0-9]/g, '');
-    } catch (e) {}
-    if (!apiKey) apiKey = process.env.SOLAPI_API_KEY || '';               // env 폴백(대표님 테스트용으로만)
-    if (!apiSecret) apiSecret = process.env.SOLAPI_API_SECRET || '';
-    if (!from) from = String(process.env.SOLAPI_SENDER || process.env.SOLAPI_FROM || '').replace(/[^0-9]/g, '');
-    if (!apiKey || !apiSecret) return { ok: false, sent: false, error: '솔라피 키를 등록해주세요 — 지니야 설정 → 문자 연결에서 본인 솔라피 API 키·발신번호를 넣으면 문자가 나갑니다. (문자 비용은 본인 솔라피 계정에서 차감돼요)' };
-    if (!from) return { ok: false, sent: false, error: '솔라피 발신번호를 등록해주세요 — 지니야 설정 → 문자 연결.' };
+    // ★비용원칙(문자=회원 자비): 회원 서버 암호화 저장 키 우선 → env(대표님 테스트용) 폴백 → 둘 다 없으면 중단. ★키 로그 금지.
+    const { apiKey, apiSecret, from } = await _resolveSolapi(ma && ma._email);
+    if (!apiKey || !apiSecret) return { ok: false, sent: false, error: '문자 발송을 위해 솔라피 키를 등록해주세요 (지니야 설정 → 문자 연결). 문자 비용은 본인 솔라피 계정에서 차감돼요.' };
+    if (!from) return { ok: false, sent: false, error: '문자 발송을 위해 솔라피 발신번호를 등록해주세요 (지니야 설정 → 문자 연결).' };
     const date = new Date().toISOString(); const salt = crypto.randomBytes(32).toString('hex');
     const signature = crypto.createHmac('sha256', apiSecret).update(date + salt).digest('hex');
     const auth = `HMAC-SHA256 apiKey=${apiKey}, date=${date}, salt=${salt}, signature=${signature}`;
@@ -1615,9 +1670,9 @@ async function _sendGmailFor(ma, to, subject, text) {
 }
 approval.init({ anthropic: _anthropic, model: MODEL_DEEP, getMemberSheet: findOrCreateMemberSheet, ensureTab, sendSms: _sendSmsFor, sendGmail: _sendGmailFor });
 
-app.post('/api/approval/create', async (req, res) => { try { const ma = gateGoogle(req, res); if (!ma) return; res.json(await approval.create(ma, req.body || {})); } catch (e) { res.status(500).json({ ok: false, error: e.message }); } });
+app.post('/api/approval/create', async (req, res) => { try { const ma = gateGoogle(req, res); if (!ma) return; ma._email = (sessionOf(req) || {}).email || ''; res.json(await approval.create(ma, req.body || {})); } catch (e) { res.status(500).json({ ok: false, error: e.message }); } });
 app.get('/api/approval/list', async (req, res) => { try { const ma = gateGoogle(req, res); if (!ma) return; res.json(await approval.list(ma, { status: req.query.status })); } catch (e) { res.status(500).json({ ok: false, error: e.message }); } });
-app.post('/api/approval/act', async (req, res) => { try { const ma = gateGoogle(req, res); if (!ma) return; res.json(await approval.act(ma, req.body || {})); } catch (e) { res.status(500).json({ ok: false, error: e.message }); } });
+app.post('/api/approval/act', async (req, res) => { try { const ma = gateGoogle(req, res); if (!ma) return; ma._email = (sessionOf(req) || {}).email || ''; res.json(await approval.act(ma, req.body || {})); } catch (e) { res.status(500).json({ ok: false, error: e.message }); } });
 app.post('/api/approval/plan', async (req, res) => { try { const ma = gateGoogle(req, res); if (!ma) return; res.json(await approval.plan(ma, (req.body && req.body.text) || '')); } catch (e) { res.status(500).json({ ok: false, error: e.message }); } });
 // 🔒 안전모드 정직 노출(화이트리스트 값은 비공개·on/off만). 결재함 페이지 배너가 이걸 읽어 실고객 발송 여부를 정직 표시.
 app.get('/api/approval/mode', (req, res) => res.json({ ok: true, live: String(process.env.APPROVAL_LIVE_SEND || '') === '1' }));
