@@ -317,19 +317,17 @@ const TOOLS = [
     input_schema: { type: 'object', properties: { title: { type: 'string', description: '짧은 제목(예: 신상품 안내)' }, channel: { type: 'string', enum: ['sms', 'gmail', 'both'], description: '문자=sms, 이메일=gmail, 둘 다 동시=both. ★미지정 시 자동 결정: 고객 이메일+연락처가 둘 다 명단에 있으면 both(메일+문자 동시 발송), 하나만 있으면 그 채널. 회장님이 "메일만/문자만"이라고 명시할 때만 gmail/sms.' }, criteria: { type: 'object', description: '대상 조건(예: {"고객명":"김철수"} 또는 {"만기일":"2026-08"}). 전체면 {}' }, template: { type: 'string', description: '보낼 문구. #{고객명} 같은 시트 컬럼 치환자 사용. 정보성·존댓말·짧게' } }, required: ['template'] } },
   { name: 'list_approvals', description: '결재함에 올라온 발송 건들을 조회한다(대기/완료 등). "결재함 보여줘", "뭐 올라와 있어?" 등에 사용.',
     input_schema: { type: 'object', properties: { status: { type: 'string', description: '대기/완료/거부 중 하나로 필터. 생략시 전체' } } } },
-  { name: 'approve_and_send', description: '회장님이 특정 결재 건을 "승인"·"보내"라고 명시적으로 지시할 때만 실제 발송한다. 지니야가 스스로 승인하지 않는다. id는 list_approvals로 확인.',
-    input_schema: { type: 'object', properties: { id: { type: 'string' }, confirmed: { type: 'boolean', description: '10건 이상 대량 발송 재확인 시 true' } }, required: ['id'] } },
+  // ★안전(휴먼인루프 하드가드): 대화(음성·텍스트)에는 '발송' 도구를 절대 노출하지 않는다. 어떤 발화·명령으로도 자동 발송이 불가능하도록 approve_and_send 도구를 제거했다. 실제 발송은 오직 회장님이 결재함에서 [승인] 버튼을 누를 때(HTTP /api/approval/act → act())만 일어난다.
 ];
 function systemPrompt() {
-  return `당신은 "지니야" — 회장님의 문자·이메일 발송을 결재함으로 처리하는 비서입니다.
-[핵심 능력 — 절대 "못 한다"고 말하지 마세요]
-당신은 실제로 발송할 수 있습니다. 방식: 결재함에 저장(create_approval) → 회장님 승인 → 실제 발송(approve_and_send).
+  return `당신은 "지니야" — 회장님의 문자·이메일 발송을 "결재함"에 올려두는 비서입니다.
+[당신이 하는 일 — 결재함에 올리는 것까지만]
+당신은 발송 초안을 결재함에 올릴 수 있습니다(create_approval). ★그러나 당신은 실제 발송을 하지 않습니다. 실제 발송은 오직 회장님이 결재함 화면에서 직접 [승인] 버튼을 누를 때만 일어납니다(휴먼인루프). 당신에게는 발송(승인) 도구가 없습니다.
 [규칙]
-1. "○○에게 ○○ 보내줘"라고 하면 create_approval로 결재함에 올리고 "결재함에 올렸어요. 승인하시면 보내드릴게요"라고 안내한다. 절대 "직접 발송은 못 한다"고 하지 않는다.
-2. 대상·문구가 애매하면 한두 가지만 되묻는다. 문구는 정보성·존댓말·짧게 자동 작성. 채널은 기본으로 메일+문자를 함께(both) 보낸다 — 고객 이메일·연락처가 둘 다 있으면 both, 하나만 있으면 그 채널. 회장님이 "메일만/문자만"이라고 명시할 때만 하나로.
-3. 스스로 승인·발송하지 않는다. 회장님이 "승인"·"보내"라고 명시할 때만 approve_and_send.
-4. 실측 안전모드에서는 실제로 회장님 본인에게만 발송된다(실고객 보호). 이 점을 정직히 안내한다.
-5. 말투: 따뜻하고 쉽게. '클로드'·'AI' 같은 말은 쓰지 않는다.`;
+1. "○○에게 ○○ 보내줘/올려줘"라고 하면 create_approval로 결재함에 올리고, "결재함에 올려뒀어요. 결재함에서 확인하시고 [승인] 버튼을 누르시면 그때 나갑니다"라고 안내한다. 절대 "발송했어요/보냈어요"라고 하지 않는다(아직 안 나갔다).
+2. 회장님이 "승인해/보내"라고 말해도, 당신은 승인·발송을 실행하지 않는다. "발송은 결재함의 [승인] 버튼으로만 됩니다. 결재함을 열어드릴까요?"라고 안내한다. ★어떤 경우에도 스스로 발송하지 않는다.
+3. 대상·문구가 애매하면 한두 가지만 되묻는다. 문구는 정보성·존댓말·짧게 자동 작성. 채널은 기본으로 메일+문자를 함께(both) — 고객 이메일·연락처가 둘 다 있으면 both, 하나만 있으면 그 채널. 회장님이 "메일만/문자만"이라고 명시할 때만 하나로.
+4. 말투: 따뜻하고 쉽게. '클로드'·'AI' 같은 말은 쓰지 않는다.`;
 }
 // ═══ 명단 주입(큰불 수정) ═══ 질의 속 고객을 실제 시트에서 찾아 컨텍스트로 주입.
 //   loadTable(null)=서비스계정 읽기(회원 OAuth·데이터스코프 없어도 동작). 실패해도 '' 반환(대화 안 끊김).
@@ -355,7 +353,7 @@ async function _rosterContext(userText) {
     return '\n[명단 조회 결과 — 실제 시트 데이터(서비스계정)] 아래는 회원 고객명단 시트에서 찾은 해당 고객의 실제 값이다. 안내문·문자·메일을 쓸 때 이 실제 값(만기일·상품·보험사·연락처 등)을 그대로 반영하고 없는 값은 지어내지 마라. create_approval의 criteria는 이 고객을 정확히 지정하고(예: {"고객명":"홍길동"}), template엔 실제 만기일·상품을 담아 구체적으로 쓴다.\n' + blocks.join('\n');
   } catch (e) { return ''; }
 }
-// 지니야 대화 루프(자체 도구호출 · 하이브리드 라우터 무접촉). create=저장(발송X), approve_and_send만 실제 발송(하드가드).
+// 지니야 대화 루프(자체 도구호출 · 하이브리드 라우터 무접촉). ★대화는 create_approval(결재함 저장)·list_approvals(조회)만 가능 — 발송 도구 없음. 발송은 오직 [승인] 버튼→/api/approval/act→act()에서만.
 async function runChat(ma, messages) {
   if (!_anthropic) return { ok: false, reply: '엔진이 초기화되지 않았어요.' };
   const conv = (messages || []).map((m) => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: String(m.content || m.text || '') })).filter((m) => m.content);
@@ -379,7 +377,7 @@ async function runChat(ma, messages) {
       try {
         if (t.name === 'create_approval') { const i = t.input || {}; out = await create(ma, { 요청내용: i.title, 채널: i.channel, criteria: i.criteria, 템플릿: i.template }); if (out.ok) { pending = out.approval; trace.push({ tool: 'create_approval', id: out.approval && out.approval.id }); } }
         else if (t.name === 'list_approvals') { out = await list(ma, { status: (t.input && t.input.status) || '' }); }
-        else if (t.name === 'approve_and_send') { out = await act(ma, { id: (t.input && t.input.id) || '', action: 'approve', confirmed: !!(t.input && t.input.confirmed) }); trace.push({ tool: 'approve_and_send', id: t.input && t.input.id }); }
+        else if (t.name === 'approve_and_send') { out = { ok: false, message: '발송은 대화로 실행할 수 없습니다. 결재함에 올리는 것까지만 하고, 실제 발송은 회장님이 결재함에서 [승인] 버튼을 누를 때만 됩니다.' }; trace.push({ tool: 'approve_and_send_blocked' }); } // ★하드가드: 대화 루프는 절대 발송(act) 안 함
         else out = { ok: false, message: '알 수 없는 도구' };
       } catch (e) { out = { ok: false, message: e.message }; }
       results.push({ type: 'tool_result', tool_use_id: t.id, content: JSON.stringify(out).slice(0, 3000) });
