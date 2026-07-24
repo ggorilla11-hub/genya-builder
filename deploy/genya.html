@@ -2999,6 +2999,9 @@ window.addFile=function(){ doOCR(); };
   .gh-btn.ghost{background:#eee;color:#555;} .gh-btn.half{width:49%;}
   .gh-pv{background:#f7f5f2;border-radius:9px;padding:10px;font-size:12.5px;margin-top:10px;line-height:1.6;}
   .gh-warn{background:#FBF0DC;color:#8a4d18;border-radius:9px;padding:9px 11px;font-size:12px;margin-top:8px;}
+  .gh-tbl{width:100%;border-collapse:collapse;font-size:11.5px;margin-top:6px;}
+  .gh-tbl th{background:#efe9df;color:#6b5836;padding:5px 6px;text-align:left;position:sticky;top:0;}
+  .gh-tbl td{border-top:1px solid #eee;padding:5px 6px;color:#2a3550;}
 </style>
 <div id="ghOv" onclick="if(event.target===this)ghClose()">
   <div id="ghPanel">
@@ -3008,6 +3011,7 @@ window.addFile=function(){ doOCR(); };
       <div class="gh-card">
         <div><span class="gh-cnt" id="ghCount">–</span><small>명 저장됨</small></div>
         <div style="font-size:12px;color:#6b7280;margin-top:4px;line-height:1.5">올린 명단이 지니야의 실제 명단이 됩니다. 만기·발송·관리가 이 명단으로 돌아가요.</div>
+        <div id="ghList" style="max-height:280px;overflow:auto;margin-top:8px"></div>
         <input type="file" id="ghFile" accept=".xlsx,.xls,.csv" style="display:none" onchange="ghPick(this)">
         <button class="gh-btn" onclick="document.getElementById('ghFile').click()">명단 파일 올리기 (엑셀·CSV)</button>
         <div id="ghPv"></div>
@@ -3029,6 +3033,22 @@ window.addFile=function(){ doOCR(); };
   window.ghLoad=async function(){
     // 명단 수
     try{var s=await api('/api/sheets');document.getElementById('ghCount').textContent=(s&&typeof s.total==='number')?s.total:(s&&(s.needsGoogle||s.needsConnect)?'–':'0');}catch(e){document.getElementById('ghCount').textContent='–';}
+    // 📇 저장된 고객 명단 목록 표시(읽기 전용). 없는 변수 참조 0 · esc/api는 이 IIFE 스코프.
+    try{
+      var rl=await api('/api/roster/list');
+      var el=document.getElementById('ghList');
+      if(el){
+        if(rl&&rl.ok&&Array.isArray(rl.rows)&&rl.rows.length){
+          var H=rl.rows[0];
+          var col=function(cands){ for(var i=0;i<cands.length;i++){ for(var k in H){ if(String(k).indexOf(cands[i])>=0) return k; } } return null; };
+          var cN=col(['고객명','이름','성명']),cP=col(['연락처','전화','휴대폰','번호']),cPr=col(['가입상품','상품']),cE=col(['만기']);
+          var body=rl.rows.map(function(r,i){ return '<tr><td>'+(i+1)+'</td><td>'+esc(cN?r[cN]:'')+'</td><td>'+esc(cP?r[cP]:'')+'</td><td>'+esc(cPr?r[cPr]:'')+'</td><td>'+esc(cE?r[cE]:'')+'</td></tr>'; }).join('');
+          el.innerHTML='<div style="font-size:12px;font-weight:700;color:#8a6d3b;margin:4px 0">총 '+rl.count+'명</div>'
+            +'<table class="gh-tbl"><tr><th>#</th><th>고객명</th><th>연락처</th><th>가입상품</th><th>만기일</th></tr>'+body+'</table>';
+        } else if(rl&&(rl.needsGoogle||rl.needsConnect)){ el.innerHTML=''; }
+        else { el.innerHTML='<div style="color:#8a94a6;font-size:12px;padding:6px 0">아직 올린 명단이 없어요. 아래에서 엑셀·CSV를 올려주세요.</div>'; }
+      }
+    }catch(e){}
     // 연결 상태(실측)
     var box=document.getElementById('ghConns');
     var st;try{st=await api('/api/conn/status');}catch(e){st={};}

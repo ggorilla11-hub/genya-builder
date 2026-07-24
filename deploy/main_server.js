@@ -1200,6 +1200,14 @@ app.post('/api/roster/import', async (req, res) => {
     res.json(rr);
   } catch (e) { if (scopeGate(e, res, 'sheets')) return; res.status(500).json({ ok: false, error: e.message }); }
 });
+// 📇 명단연결 패널용: 현재 회원 시트의 고객 목록 조회(읽기 전용). 기존 loadTable 활용·서버 저장 0.
+app.get('/api/roster/list', async (req, res) => {
+  try {
+    const ma = gateGoogle(req, res); if (!ma) return;
+    const t = await sheetsCrud.loadTable(ma);
+    res.json({ ok: true, count: (t.rows || []).length, header: t.header || [], rows: t.rows || [] });
+  } catch (e) { if (scopeGate(e, res, 'sheets')) return; res.status(500).json({ ok: false, error: e.message }); }
+});
 app.get('/api/profile', async (req, res) => {
   try { const ma = gateGoogle(req, res); if (!ma) return; const { id, sheets } = await findOrCreateMemberSheet(ma);
     let rows = []; try { const g = await sheets.spreadsheets.values.get({ spreadsheetId: id, range: `${PROFILE_TAB}!A1:B20` }); rows = g.data.values || []; } catch (e) {}
