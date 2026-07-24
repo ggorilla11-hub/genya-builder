@@ -479,6 +479,8 @@ app.get('/api/vapi-context', async (req, res) => {
     const connectorStatus = ['시트: 연결됨', '캘린더: ' + (_calR ? (_calW ? '연결됨' : '읽기전용(일정등록 불가)') : '미연결'), '드라이브: ' + (_drvR ? '연결됨' : '미연결'), '메일: ' + (_gmlR ? (_gmlW ? '연결됨(발송 가능)' : '읽기만') : '미연결'), '문자: ' + (solReg ? '등록됨' : '미등록')].join(' / ');
     // 상호(문자 서명·인사용)
     let bizName = ''; try { if (uid) { const pf = await loadMemberPrefs(uid); bizName = pf.bizName || ''; } } catch (e) {}
+    // ★로버스트(앱/구버전 대비): 앱이 today를 variableValues로 안 넘겨도, 항상 넘기는 clientData 맨 앞에 날짜를 박아 음성이 정확한 날짜를 쓰게 한다.
+    clientData = '[오늘: ' + today + ' · 지금 ' + now + '] 이 통화의 날짜·요일·시각은 반드시 이 값을 쓰고 지어내지 마세요.\n' + clientData;
     console.log('[📇vapi-context] uid=' + (uid || '(게스트)') + ' · clientData=' + clientData.length + 'chars · pending=' + pendingCount + ' · today=' + today);
     if (uid && personalMem.configured()) personalMem.recordEventAsync({ ownerId: uid, type: 'voice_call', source: 'event', summary: '음성 통화 시작' }); // 🛡️수문장
     res.json({ user_id: uid || 'guest', user_name: who, session_id: String(req.query.sid || ''), recall: recall || '', clientData: clientData, today: today, now: now, thisWeek: thisWeek, todaySchedule: todaySchedule, pendingCount: pendingCount, connectorStatus: connectorStatus, bizName: bizName });
