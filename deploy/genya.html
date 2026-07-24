@@ -3046,20 +3046,18 @@ window.addFile=function(){ doOCR(); };
       if(el){
         if(rl&&rl.ok&&Array.isArray(rl.rows)&&rl.rows.length){
           var H=rl.rows[0];
-          // 실제 시트 헤더(rl.header)로 매칭 — 공백무시·후보확장·위치폴백(필드명 몰라도 안 깨짐)
+          // ★필드 하드코딩 금지: 시트 헤더(rl.header)를 그대로 동적 사용. 메타(소스파일·업로드일)만 제외.
           var allKeys=(rl.header&&rl.header.length)?rl.header.slice():Object.keys(H).filter(function(k){return k!=='_rowNum';});
-          var colIn=function(keys,cands){ for(var i=0;i<cands.length;i++){ for(var j=0;j<keys.length;j++){ if(String(keys[j]).replace(/\s/g,'').indexOf(cands[i])>=0) return keys[j]; } } return null; };
-          var cSrc=colIn(allKeys,['소스파일']);
+          var cSrc=(allKeys.indexOf('소스파일')>=0)?'소스파일':null;
           var _disp=allKeys.filter(function(h){return h!=='소스파일'&&h!=='업로드일';});
-          var cN=colIn(_disp,['고객명','이름','성명','성함','name'])||_disp[0];
-          var cP=colIn(_disp,['연락처','전화','휴대폰','핸드폰','폰','번호','phone'])||_disp[1];
-          var cPr=colIn(_disp,['가입상품','상품','보험','종목','플랜','product'])||_disp[2];
+          var _show=_disp.slice(0,5); // 카드 요약: 시트 헤더 첫 5개 컬럼(순서대로·컬럼명 무관)
           var grp={},order=[];
           rl.rows.forEach(function(r){ var f=(cSrc&&r[cSrc])?String(r[cSrc]):'(초기 업로드)'; if(!grp[f]){grp[f]=[];order.push(f);} grp[f].push(r); });
           var html='<div style="font-size:12px;font-weight:700;color:#8a6d3b;margin:2px 0 8px">총 '+rl.count+'명 · 파일 '+order.length+'건</div>';
           html+=order.map(function(f){
             var isOld=(f==='(초기 업로드)');
-            var det=grp[f].map(function(r,i){ return '<div style="display:flex;gap:8px;font-size:11.5px;padding:4px 0;border-top:1px solid #f0ece6"><span style="min-width:16px;color:#b0b7c3">'+(i+1)+'</span><span style="min-width:52px;font-weight:600">'+esc(cN?r[cN]:'')+'</span><span style="color:#8a94a6">'+esc(cP?r[cP]:'')+'</span><span style="margin-left:auto">'+esc(cPr?r[cPr]:'')+'</span></div>'; }).join('');
+            var _hd='<div style="display:flex;gap:6px;font-size:10px;color:#b0b7c3;font-weight:700;padding:2px 0">'+_show.map(function(h){return '<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(h)+'</span>';}).join('')+'</div>';
+            var det=_hd+grp[f].map(function(r){ return '<div style="display:flex;gap:6px;font-size:11px;padding:3px 0;border-top:1px solid #f0ece6">'+_show.map(function(h){return '<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(r[h]!=null?r[h]:'')+'</span>';}).join('')+'</div>'; }).join('');
             return '<div class="gh-file"><div class="gh-file-hd" onclick="ghToggle(this)"><span>📄 '+esc(f)+' <b>('+grp[f].length+'명)</b></span><span>'
               +(isOld?'':'<button class="gh-del" title="이 파일 삭제" onclick="event.stopPropagation();ghDelFile(this.getAttribute(\'data-f\'))" data-f="'+esc(f)+'">🗑</button>')
               +'<span class="gh-caret">▾</span></span></div><div class="gh-file-bd" style="display:none">'+det+'</div></div>';
