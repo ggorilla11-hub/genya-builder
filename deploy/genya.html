@@ -3041,12 +3041,19 @@ window.addFile=function(){ doOCR(); };
     // 📇 저장된 명단을 소스파일별 카드로 표시(읽기 전용). esc/api/ghLoad는 이 IIFE 스코프.
     try{
       var rl=await api('/api/roster/list');
+      if(rl&&rl.ok&&typeof rl.count==='number'){var _gc=document.getElementById('ghCount');if(_gc)_gc.textContent=rl.count;} // 상·하단 숫자 통일(loadTable count 기준)
       var el=document.getElementById('ghList');
       if(el){
         if(rl&&rl.ok&&Array.isArray(rl.rows)&&rl.rows.length){
           var H=rl.rows[0];
-          var col=function(cands){ for(var i=0;i<cands.length;i++){ for(var k in H){ if(String(k).indexOf(cands[i])>=0) return k; } } return null; };
-          var cSrc=col(['소스파일']),cN=col(['고객명','이름','성명']),cP=col(['연락처','전화','휴대폰','번호']),cPr=col(['가입상품','상품']);
+          // 실제 시트 헤더(rl.header)로 매칭 — 공백무시·후보확장·위치폴백(필드명 몰라도 안 깨짐)
+          var allKeys=(rl.header&&rl.header.length)?rl.header.slice():Object.keys(H).filter(function(k){return k!=='_rowNum';});
+          var colIn=function(keys,cands){ for(var i=0;i<cands.length;i++){ for(var j=0;j<keys.length;j++){ if(String(keys[j]).replace(/\s/g,'').indexOf(cands[i])>=0) return keys[j]; } } return null; };
+          var cSrc=colIn(allKeys,['소스파일']);
+          var _disp=allKeys.filter(function(h){return h!=='소스파일'&&h!=='업로드일';});
+          var cN=colIn(_disp,['고객명','이름','성명','성함','name'])||_disp[0];
+          var cP=colIn(_disp,['연락처','전화','휴대폰','핸드폰','폰','번호','phone'])||_disp[1];
+          var cPr=colIn(_disp,['가입상품','상품','보험','종목','플랜','product'])||_disp[2];
           var grp={},order=[];
           rl.rows.forEach(function(r){ var f=(cSrc&&r[cSrc])?String(r[cSrc]):'(초기 업로드)'; if(!grp[f]){grp[f]=[];order.push(f);} grp[f].push(r); });
           var html='<div style="font-size:12px;font-weight:700;color:#8a6d3b;margin:2px 0 8px">총 '+rl.count+'명 · 파일 '+order.length+'건</div>';
