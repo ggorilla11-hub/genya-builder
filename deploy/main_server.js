@@ -323,9 +323,9 @@ app.get('/api/vapi-context', async (req, res) => {
     // 📇 clientData: 통화 시작 시 실제 마스터 시트 명단을 통째로 주입(고수 채택·Function Calling 미사용 → 음성 대화 품질 유지). Vapi 대시보드 프롬프트의 {{clientData}}가 이걸 받는다.
     let clientData = '고객명단이 아직 연결되지 않았어요. 우측 상단 "명단·연결"에서 구글 시트를 연결해 주세요.';
     try {
-      const ma = memberAuth(req);
-      if (ma && hasDataScope(req)) {
-        const t = await sheetsCrud.loadTable(ma);
+      // 🔑 SA로 전환: 로그인(uid=신원)만 확인하고, 시트 읽기는 서비스 계정으로(OAuth 데이터스코프·토큰만료 무관).
+      if (uid) {
+        const t = await sheetsCrud.loadTable(null);
         const header = (t && t.header) || [];
         const clients = (t && t.rows) || [];
         if (!clients.length) { clientData = '고객명단에 등록된 고객이 아직 없어요.'; }

@@ -72,8 +72,10 @@ async function importRoster(ma, input) {
     return { ok: true, needsConfirm: true, header, count: rows.length, 신규, 중복, 중복명단, preview: rows.slice(0, 5), message: `${rows.length}명을 읽었어요 (신규 ${신규}명, 이미 있음 ${중복}명). 새로 교체할까요, 기존에 추가할까요?` };
   }
 
-  // 2) 저장
-  const { id, sheets } = await _getMemberSheet(ma);
+  // 2) 저장 — 🔑 SA로 전환: 회원 OAuth 대신 서비스 계정으로 시트 찾기+쓰기(loadTable이 SA 사용, {id, sheets(SA클라)} 반환). ma 없어도 동작.
+  const _st = await crud.loadTable(ma);
+  const id = _st.id, sheets = _st.sheets;
+  if (!id) return { ok: false, message: `'${_TITLE}' 시트를 찾지 못했어요. 서비스 계정에 시트가 공유됐는지 확인해 주세요.` };
   await _ensureTab(sheets, id, _TAB);
   const mode = input.mode === 'append' ? 'append' : 'replace';
   // ★파일별 관리용 메타 태깅: 각 행에 소스파일·업로드일 기록(컬럼 없으면 추가). 기존 컬럼 무접촉.
