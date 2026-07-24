@@ -1668,7 +1668,7 @@ function loadWatcherStatus(){
 // ★2026-07-16: 교육생 화면이 제니야(대표님 서버)를 7초마다 폴링하던 격리 위반 제거.
 //   발송 소스가 아직 없으니 0 정직 표시(가짜 숫자 금지). 교육생 발송 붙으면 자기 서버로 연결.
 function _fetchSend(){ _renderSendKpi(); return Promise.resolve(); }
-function sendDashboard(){ _renderSendModal(); _fetchSend(); }   // 모달 즉시 표시 후 최신값으로 갱신
+function sendDashboard(){ _renderSendModal(); _fetchSend(); _solapiEntryRefresh(); }   // 모달 즉시 표시 후 최신값으로 갱신 + 문자키 진입행 상태
 function _renderSendModal(){
   var s=(_SEND&&_SEND.success)||[], f=(_SEND&&_SEND.fail)||[];
   // ★[C] 발송 이력 0 = 발송 배관(무인 발송기) 미연결. 빈 대기 대신 "다음 행동(배관 연결)"을 안내(가짜 숫자 금지).
@@ -1682,8 +1682,9 @@ function _renderSendModal(){
         '<p style="font-size:13px;color:#6b7a8d;line-height:1.7;margin:0 0 14px">결재함에서 <b>승인한 카톡</b>의 성공·실패가 여기 실시간으로 뜨려면, 먼저 <b>카톡 발송기(watcher)</b>를 각자 PC에 설치해야 해요.</p>'+
         '<div style="border:1px solid #e2e8ef;border-radius:10px;padding:12px;font-size:12.5px;color:#556;line-height:1.75;margin-bottom:14px">'+
           '· <b>카톡</b>: 발송기(watcher) 설치 → 결재함 승인분이 무인 발송·기록 <span style="color:#0d7a52">(아래에서 설치)</span><br>'+
-          '· <b>문자(솔라피)</b>: 내 문자 발송 키 연결 <span onclick="closeModal(); if(typeof openSolapiSetup===\'function\'){openSolapiSetup();}" style="color:#0d7a52;cursor:pointer;text-decoration:underline;font-weight:700">등록하기 →</span>'+
+          '· <b>문자(솔라피)</b>: 내 문자 발송 키 연결 <span style="color:#98a4b2">(아래 버튼)</span>'+
         '</div>'+
+        _solapiEntryHtml()+
         '<button onclick="closeModal(); if(typeof openWatcher===\'function\'){openWatcher();}" style="width:100%;background:#1DB088;color:#fff;border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:700;cursor:pointer">🖥️ 카톡 발송기 설치하기 →</button>'+
         '<div style="font-size:11px;color:#98a4b2;margin-top:8px;text-align:center">발송기를 설치하면 발송한 게 여기 기록돼요. 그 전까지는 가짜 숫자 대신 “대기”로 정직하게 표시돼요.</div>'+
       '</div>'
@@ -1703,6 +1704,7 @@ function _renderSendModal(){
       '<div class="pt"><b>오늘 발송</b><span>✅ 성공 '+s.length+' · ❌ 실패 '+f.length+' · 오늘 '+((_SEND&&_SEND.daily)||0)+'/'+((_SEND&&_SEND.dailyMax)||300)+'</span></div>'+
       '<div class="px" onclick="closeModal()"><svg viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></div></div>'+
     '<div class="sd-wrap">'+
+      _solapiEntryHtml()+
       '<div class="sd-sec"><div class="sd-t fail">❌ 실패 — 다시 보내야 할 사람</div>'+allBtn+frows+'</div>'+
       '<div class="sd-sec"><div class="sd-t ok">✅ 성공 — 도착(카톡에서 최종 확인)</div>'+orows+'</div>'+
     '</div>'
@@ -2056,7 +2058,7 @@ function _apRenderMerged(box, logBox, backend, local){
       +'<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap"><span style="font-size:10px;font-weight:700;color:#fff;background:'+col+';padding:2px 8px;border-radius:9px">'+_sEsc(a.출처||'기타')+'</span>'+(isBk?'<span style="font-size:10px;font-weight:700;color:#2FBF71;background:#eafaf1;padding:2px 8px;border-radius:9px">채팅 결재</span>':'')+(ch?'<span style="font-size:11px;color:#556">📎 '+_sEsc(ch)+'</span>':'')+'</div>'
       +'<div style="border:1px solid #e8edf2;background:#f8fafc;border-radius:8px;padding:9px 11px;font-size:11.5px;color:#33475a;line-height:1.55;white-space:pre-wrap;max-height:140px;overflow:auto;margin-bottom:8px">'+(draft?_sEsc(draft):'<span style="color:#b0b8c2">미리보기 내용 없음</span>')+'</div>'
       +(ch||to?'<div style="font-size:11px;color:#6b7a8d;margin-bottom:9px">'+(ch?'발송: <b style="color:#33475a">'+_sEsc(ch)+'</b>':'')+(to?' · 수신: <b style="color:#33475a">'+_sEsc(to)+'</b>':'')+'</div>':'')
-      +(isBk && a.결과 && /실패/.test(a.결과) ? '<div style="font-size:11px;color:#c0392b;background:#fdecea;border:1px solid #f5c6cb;border-radius:8px;padding:7px 9px;margin-bottom:9px">⚠ '+_sEsc(a.결과)+' — 원인 확인 후 다시 승인하세요.</div>' : '')
+      +(isBk && a.결과 && /실패/.test(a.결과) ? '<div style="font-size:11px;color:#c0392b;background:#fdecea;border:1px solid #f5c6cb;border-radius:8px;padding:7px 9px;margin-bottom:9px">⚠ '+_sEsc(a.결과)+' — 원인 확인 후 다시 승인하세요.'+(/솔라피|문자 키|문자 발송|등록/.test(a.결과)?'<div style="margin-top:6px"><span onclick="closeModal(); if(typeof openSolapiSetup===\'function\'){openSolapiSetup();}" style="display:inline-block;background:var(--teal);color:#fff;border-radius:7px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer">📱 지금 등록하기</span></div>':'')+'</div>' : '')
       +'<div style="display:flex;gap:6px">'
       +'<button onclick="'+(isBk?'apApproveBackend':'apApprove')+'(\''+a.id+'\')" style="flex:1;background:var(--teal);color:#fff;border:none;border-radius:8px;padding:9px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">✅ 승인</button>'
       +'<button onclick="apEdit(\''+a.id+'\')" style="flex:1;background:#fff;color:#8a6d0f;border:1px solid #ecdca8;border-radius:8px;padding:9px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">✏️ 수정요청</button>'
@@ -2157,6 +2159,16 @@ function solapiSave(){
       if(d&&d.ok){ toast('저장됐어요 — 이제 문자가 본인 계정으로 나가요'); var s=document.getElementById('solSecret'); if(s)s.value=''; var k=document.getElementById('solKey'); if(k)k.value=''; solapiStatusLoad(); }
       else{ toast((d&&d.message)||'저장 실패'); }
     }).catch(function(){ btn.disabled=false; btn.textContent='서버에 암호화 저장'; toast('저장 오류 — 잠시 후 다시'); });
+}
+// 발송 모달 등에 넣는 "문자 키 등록/변경" 상시 진입 행. 등록되면 마스킹+변경하기로 표시(발송 이력과 무관하게 항상 보임).
+function _solapiEntryHtml(){
+  return '<div onclick="closeModal(); if(typeof openSolapiSetup===\'function\'){openSolapiSetup();}" style="cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px;border:1px solid #d8e6f5;background:#f5f9ff;border-radius:9px;padding:10px 12px;margin:10px 0"><span style="font-size:12.5px;color:#0d3b66;font-weight:700">📱 <span id="solapiEntryTxt">문자 발송 키 등록하기</span></span><span style="font-size:12px;color:#0d7a52;font-weight:700">→</span></div>';
+}
+function _solapiEntryRefresh(){
+  fetch('/api/settings/solapi',{credentials:'same-origin',cache:'no-store'}).then(function(r){return r.json();}).then(function(d){
+    var t=document.getElementById('solapiEntryTxt'); if(!t)return;
+    t.textContent=(d&&d.registered)?('문자 키: '+(d.keyMasked||'••••')+' · 변경하기'):'문자 발송 키 등록하기';
+  }).catch(function(){});
 }
 // ★2단계: 백엔드(구글시트) 결재건 승인/반려 → /api/approval/act (approval_skill.act 재사용·발송 하드가드 그대로). 캐시 우회.
 function apApproveBackend(id){
@@ -2505,7 +2517,7 @@ function shareSmsSend(){
     .then(function(r){ return r.json(); }).then(function(d){
       if(d && d.ok && d.sent){ closeModal(); toast('✅ 문자 발송됨'); }
       else if(d && d.needsConnect){ if(btn){btn.disabled=false;btn.textContent='✅ 승인 — 발송';} toast('구글 데이터 연결이 필요해요 (본인 시트에 키 저장용)'); }
-      else if(d && d.needsSolapi){ if(btn){btn.disabled=false;btn.textContent='✅ 승인 — 발송';} toast('솔라피 API 키·발신번호를 먼저 저장해 주세요'); }
+      else if(d && d.needsSolapi){ if(btn){btn.disabled=false;btn.textContent='✅ 승인 — 발송';} toast('문자 키가 없어요 — 등록 창을 열게요'); closeModal(); if(typeof openSolapiSetup==='function'){ setTimeout(openSolapiSetup,150); } }
       else { if(btn){btn.disabled=false;btn.textContent='✅ 승인 — 발송';} toast('발송 실패: '+((d&&d.error)||'알 수 없는 오류')); }
     }).catch(function(){ if(btn){btn.disabled=false;btn.textContent='✅ 승인 — 발송';} toast('발송 오류 — 네트워크를 확인해 주세요'); });
 }
@@ -3145,6 +3157,12 @@ window.addFile=function(){ doOCR(); };
       </div>
       <div class="gh-sec">연결 상태</div>
       <div id="ghConns"><div style="color:#8a94a6;font-size:12.5px">확인 중…</div></div>
+      <div class="gh-sec">문자 발송 키 (솔라피)</div>
+      <div class="gh-card">
+        <div id="ghSolapi" style="font-size:12.5px;color:#8a94a6">확인 중…</div>
+        <button class="gh-btn" style="margin-top:8px" onclick="if(typeof openSolapiSetup==='function'){openSolapiSetup();}">📱 문자 키 등록 / 변경</button>
+        <div style="font-size:11px;color:#8a94a6;margin-top:6px;line-height:1.5">문자는 본인 솔라피 계정으로 나가요(건당 약 20원·자비부담). 키는 서버에 암호화 저장돼요.</div>
+      </div>
       <button class="gh-btn ghost" style="margin-top:10px" onclick="ghLoad()">🔄 새로고침</button>
     </div>
   </div>
@@ -3155,7 +3173,8 @@ window.addFile=function(){ doOCR(); };
   var _pending=null,_pendingName='';
   function esc(s){return String(s==null?'':s).replace(/[&<>]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;'}[c];});}
   async function api(u,o){var r=await fetch(u,Object.assign({credentials:'include'},o||{}));return r.json();}
-  window.genyaHub=function(){document.getElementById('ghOv').style.display='block';setTimeout(function(){document.getElementById('ghOv').classList.add('on');},10);ghLoad();};
+  window.ghSolapiStatus=function(){ var el=document.getElementById('ghSolapi'); if(!el)return; fetch('/api/settings/solapi',{credentials:'include',cache:'no-store'}).then(function(r){return r.json();}).then(function(d){ if(d&&d.registered){ el.innerHTML='✅ 등록됨 · Key <b>'+esc(d.keyMasked||'••••')+'</b> · 발신 <b>'+esc(d.sender||'')+'</b>'; el.style.color='#0f766e'; } else if(d&&d.needsLogin){ el.textContent='로그인 후 등록할 수 있어요.'; el.style.color='#c0392b'; } else { el.textContent='아직 미등록 — 아래 버튼으로 등록하세요.'; el.style.color='#c0392b'; } }).catch(function(){ el.textContent=''; }); };
+  window.genyaHub=function(){document.getElementById('ghOv').style.display='block';setTimeout(function(){document.getElementById('ghOv').classList.add('on');},10);ghLoad();ghSolapiStatus();};
   window.ghClose=function(){document.getElementById('ghOv').classList.remove('on');setTimeout(function(){document.getElementById('ghOv').style.display='none';},220);};
   window.ghLoad=async function(){
     // 명단 수
