@@ -1064,6 +1064,7 @@ async function orderHandler(req, res) {
         }
       } catch (e) { extra = '\n[명단 조회 오류 — 구글 시트 연결을 확인하라고 안내한다.]\n'; console.log('[📇명단 조회 실패] ' + e.message); }
       console.log('[📇명단 자동주입] ' + extra.length + 'chars · q="' + String(q).slice(0, 30) + '"');
+      console.log('[📇명단 내용확인] ' + (extra || '').slice(0, 500));
       const sysP = genyaPersona(job, { email: uid }) + '\n[활성 고객명단 — 실제 시트 데이터(마스터 시트)]' + extra;
       const text = await askClaude(sysP, hist.concat([{ role: 'user', content: q }]), 8192, { admin: _admin });
       out = { kind: '📇 고객명단', text, engine: _lastAskModel || pickedModel(q, { admin: _admin }) };
