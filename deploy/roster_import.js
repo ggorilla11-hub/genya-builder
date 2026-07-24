@@ -87,8 +87,12 @@ async function importRoster(ma, input) {
     let existing = [];
     try { const g = await sheets.spreadsheets.values.get({ spreadsheetId: id, range: `${_TAB}!A1:1` }); existing = (g.data.values || [])[0] || []; } catch (e) {}
     if (!existing.length) existing = header.slice();
-    const _outHeader = _withMeta(existing);
-    if (_outHeader.length !== existing.length) { await sheets.spreadsheets.values.update({ spreadsheetId: id, range: `${_TAB}!A1`, valueInputOption: 'RAW', requestBody: { values: [_outHeader] } }); }
+    const _prevLen = existing.length;
+    // ★파일마다 컬럼명이 달라도(예: '고객명' vs '이름') 값이 보존되도록: 새 파일 컬럼 중 시트에 없는 것은 헤더 끝에 추가(합집합). 기존 컬럼·순서·기존 행 정렬은 불변.
+    const _merged = existing.slice();
+    header.forEach((h) => { if (h && _merged.indexOf(h) < 0) _merged.push(h); });
+    const _outHeader = _withMeta(_merged);
+    if (_outHeader.length !== _prevLen) { await sheets.spreadsheets.values.update({ spreadsheetId: id, range: `${_TAB}!A1`, valueInputOption: 'RAW', requestBody: { values: [_outHeader] } }); }
     existing = _outHeader;
     // ★업서트(중복 방지): 이름+연락처가 같으면 그 행을 덮어쓰고, 없으면 새로 추가. (같은 파일 여러 번 눌러도 안 쌓이고, 재업로드는 최신값으로 갱신)
     const _norm = (x) => String(x == null ? '' : x).trim().replace(/\s/g, '').toLowerCase();
