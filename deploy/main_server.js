@@ -315,6 +315,41 @@ async function _resolveSolapi(email) {
   return { apiKey, apiSecret, from };
 }
 
+// ═══ ⚙️ 회원 설정(prefs): 문자 동반 ON/OFF · 상호(문자 서명). 민감정보 아님(서버 저장 OK). ═══
+const PREFS_COLL = 'genya_member_prefs';
+async function saveMemberPrefs(email, prefs) {
+  if (!email) return { ok: false };
+  const p = prefs || {};
+  await _tokFs().projects.databases.documents.createDocument({ parent: _tokDB, collectionId: PREFS_COLL, requestBody: { fields: {
+    email: { stringValue: String(email).toLowerCase() },
+    smsCompanion: { stringValue: p.smsCompanion === false ? 'OFF' : 'ON' },
+    bizName: { stringValue: String(p.bizName || '').slice(0, 40) },
+    timestamp: { stringValue: new Date().toISOString() },
+  } } });
+  return { ok: true };
+}
+async function loadMemberPrefs(email) {
+  const def = { smsCompanion: true, bizName: '' };
+  if (!email) return def;
+  try {
+    const r = await _tokFs().projects.databases.documents.runQuery({ parent: _tokDB, requestBody: { structuredQuery: {
+      from: [{ collectionId: PREFS_COLL }],
+      where: { fieldFilter: { field: { fieldPath: 'email' }, op: 'EQUAL', value: { stringValue: String(email).toLowerCase() } } },
+      limit: 50,
+    } } });
+    const rows = (r.data || []).filter((x) => x.document).map((x) => x.document.fields || {});
+    if (!rows.length) return def;
+    rows.sort((a, b) => String((b.timestamp || {}).stringValue || '').localeCompare(String((a.timestamp || {}).stringValue || '')));
+    const f = rows[0];
+    return { smsCompanion: ((f.smsCompanion && f.smsCompanion.stringValue) || 'ON') !== 'OFF', bizName: (f.bizName && f.bizName.stringValue) || '' };
+  } catch (e) { return def; }
+}
+// 발송 컨텍스트에 회원 설정 부착(문자 동반·상호). ma._email 있어야 함.
+async function _attachPrefs(ma) {
+  if (!ma || !ma._email) return;
+  try { const p = await loadMemberPrefs(ma._email); ma._smsCompanion = p.smsCompanion; ma._bizName = p.bizName; } catch (e) {}
+}
+
 const DEMO_TITLE = '지니야빌더_데모_명단';
 const SHEET_TAB = '고객명단';
 // 🗂️ Step 2-B 초기화: 도구호출=Opus4.8(정확도) · HMAC 서명키=env(없으면 토큰키·API키 순 폴백) · 시트 상수 공유
@@ -1140,6 +1175,7 @@ async function orderHandler(req, res) {
       if (!canData) { out = needConnect; }
       else {
         const hist = Array.isArray(req.body && req.body.history) ? req.body.history.slice(-10) : [];
+        await _attachPrefs(ma); // ★문자 동반 토글·상호 부착(create 채널·_dispatch 서명용)
         const rc = await approval.runChat(ma, hist.concat([{ role: 'user', content: q }]));
         out = { kind: '🗂️ 결재함', text: rc.reply || '무엇을 보내드릴까요?', pending: rc.pending || null, engine: MODEL_DEEP };
       }
@@ -1544,6 +1580,25 @@ app.get('/api/settings/solapi', async (req, res) => {
     return res.json({ ok: true, registered: true, keyMasked: (sk.keyHint || '') + '••••••••', sender: sk.sender }); // ★Secret 미노출
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
+// ── ⚙️ 회원 설정: 문자 동반 ON/OFF · 상호(문자 서명) ──
+app.post('/api/settings/prefs', async (req, res) => {
+  try {
+    const uid = ((sessionOf(req) || {}).email) || '';
+    if (!uid) return res.json({ ok: false, needsLogin: true });
+    const smsCompanion = !(req.body && req.body.smsCompanion === false); // 기본 ON
+    const bizName = String((req.body && req.body.bizName) || '').slice(0, 40);
+    await saveMemberPrefs(uid, { smsCompanion, bizName });
+    return res.json({ ok: true, smsCompanion, bizName });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+app.get('/api/settings/prefs', async (req, res) => {
+  try {
+    const uid = ((sessionOf(req) || {}).email) || '';
+    if (!uid) return res.json({ ok: true, smsCompanion: true, bizName: '', needsLogin: true });
+    const p = await loadMemberPrefs(uid);
+    return res.json({ ok: true, smsCompanion: p.smsCompanion, bizName: p.bizName });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
 
 // ── 📱 문자(SMS) 실발송 — 회원 본인 솔라피 키로 1건 발송.
 //    ★휴먼인루프: 웹에서 사람이 [승인]을 누른 뒤에만 호출된다(자동 발송 없음, 요청당 1건).
@@ -1670,9 +1725,9 @@ async function _sendGmailFor(ma, to, subject, text) {
 }
 approval.init({ anthropic: _anthropic, model: MODEL_DEEP, getMemberSheet: findOrCreateMemberSheet, ensureTab, sendSms: _sendSmsFor, sendGmail: _sendGmailFor });
 
-app.post('/api/approval/create', async (req, res) => { try { const ma = gateGoogle(req, res); if (!ma) return; ma._email = (sessionOf(req) || {}).email || ''; res.json(await approval.create(ma, req.body || {})); } catch (e) { res.status(500).json({ ok: false, error: e.message }); } });
+app.post('/api/approval/create', async (req, res) => { try { const ma = gateGoogle(req, res); if (!ma) return; ma._email = (sessionOf(req) || {}).email || ''; await _attachPrefs(ma); res.json(await approval.create(ma, req.body || {})); } catch (e) { res.status(500).json({ ok: false, error: e.message }); } });
 app.get('/api/approval/list', async (req, res) => { try { const ma = gateGoogle(req, res); if (!ma) return; res.json(await approval.list(ma, { status: req.query.status })); } catch (e) { res.status(500).json({ ok: false, error: e.message }); } });
-app.post('/api/approval/act', async (req, res) => { try { const ma = gateGoogle(req, res); if (!ma) return; ma._email = (sessionOf(req) || {}).email || ''; res.json(await approval.act(ma, req.body || {})); } catch (e) { res.status(500).json({ ok: false, error: e.message }); } });
+app.post('/api/approval/act', async (req, res) => { try { const ma = gateGoogle(req, res); if (!ma) return; ma._email = (sessionOf(req) || {}).email || ''; await _attachPrefs(ma); res.json(await approval.act(ma, req.body || {})); } catch (e) { res.status(500).json({ ok: false, error: e.message }); } });
 app.post('/api/approval/plan', async (req, res) => { try { const ma = gateGoogle(req, res); if (!ma) return; res.json(await approval.plan(ma, (req.body && req.body.text) || '')); } catch (e) { res.status(500).json({ ok: false, error: e.message }); } });
 // 🔒 안전모드 정직 노출(화이트리스트 값은 비공개·on/off만). 결재함 페이지 배너가 이걸 읽어 실고객 발송 여부를 정직 표시.
 app.get('/api/approval/mode', (req, res) => res.json({ ok: true, live: String(process.env.APPROVAL_LIVE_SEND || '') === '1' }));

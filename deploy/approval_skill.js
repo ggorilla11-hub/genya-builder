@@ -100,12 +100,14 @@ async function create(ma, input) {
   // ★Fix1: 채널 기본=메일+문자 동시(both). 미지정이면 명단에 이메일 있으면 메일, 연락처 있으면 문자, 둘 다면 both.
   let 채널 = (input.채널 === 'gmail' || input.채널 === 'sms' || input.채널 === 'both') ? input.채널 : '';
   if (!채널) {
+    const companion = !(ma && ma._smsCompanion === false); // ★문자 동반 토글(기본 ON) — OFF면 메일만
     채널 = 'both';
     try {
       const r = await _resolveTargets(ma, criteria, 'both');
       const anyEmail = r.emailCol && r.targets.some((x) => String(x[r.emailCol] || '').trim());
       const anyPhone = r.phoneCol && r.targets.some((x) => String(x[r.phoneCol] || '').trim());
-      채널 = (anyEmail && anyPhone) ? 'both' : (anyEmail ? 'gmail' : (anyPhone ? 'sms' : 'gmail'));
+      if (!companion) 채널 = anyEmail ? 'gmail' : (anyPhone ? 'sms' : 'gmail'); // 동반 OFF: 메일 우선(문자 안 붙임)
+      else 채널 = (anyEmail && anyPhone) ? 'both' : (anyEmail ? 'gmail' : (anyPhone ? 'sms' : 'gmail'));
     } catch (e) { 채널 = 'gmail'; }
   }
   const 템플릿 = String(input.템플릿 || '').trim();
@@ -250,6 +252,7 @@ async function _dispatch(ma, o, targets, resolved) {
   const emailCol = (resolved && resolved.emailCol) || crud.resolveColumn('이메일', header);
   const phoneCol = (resolved && resolved.phoneCol) || crud.resolveColumn('연락처', header);
   const nameCol = crud.resolveColumn('고객명', header) || crud.resolveColumn('이름', header) || crud.detectNameCol(header);
+  const bizName = (ma && ma._bizName) || ''; // ★문자 서명(상호) — 없으면 서명 생략. 고정 문구 금지.
   const em = { ok: 0, fail: 0 }, sm = { ok: 0, fail: 0 };
   let blocked = 0, safeMode = false; const errors = [];
   const doMail = o.채널 === 'gmail' || o.채널 === 'both';
@@ -273,8 +276,13 @@ async function _dispatch(ma, o, targets, resolved) {
       const safe = safeRecipient('sms', phoneTo);
       if (safe.safeMode) safeMode = true;
       if (safe.blocked) { blocked++; console.log(`[🔒안전차단] 실고객 문자 차단: ${_mask(phoneTo)} → 회장님(${_mask(safe.to)})`); }
+      // ★문자 본문 규칙: 메일 동반(both)이고 45자 초과면 요약+안내(메일 확인 유도). 짧으면 전문. sms 단독은 전문(솔라피 45자 초과 시 자동 LMS).
+      let smsCore = text;
+      if (o.채널 === 'both' && String(text).length > 45) {
+        smsCore = (who ? who + '님, ' : '') + (o.요청내용 || '안내') + ' 자료를 메일로 보내드렸습니다. 확인 부탁드립니다.' + (bizName ? ' - ' + bizName : '');
+      }
       const testPrefix = safe.test ? ('[테스트] 실제 수신자: ' + (who ? who + ' ' : '') + '(' + (phoneTo || '연락처 없음') + ') / ') : '';
-      try { const r = await _sendSms(ma, safe.to, testPrefix + text); if (r && r.sent) sm.ok++; else { sm.fail++; if (r && r.error) errors.push('문자:' + r.error); } } catch (e) { sm.fail++; errors.push('문자:' + e.message); }
+      try { const r = await _sendSms(ma, safe.to, testPrefix + smsCore); if (r && r.sent) sm.ok++; else { sm.fail++; if (r && r.error) errors.push('문자:' + r.error); } } catch (e) { sm.fail++; errors.push('문자:' + e.message); }
     }
   }
   return { email: em, sms: sm, ok: em.ok + sm.ok, fail: em.fail + sm.fail, blocked, safeMode, errors: errors.slice(0, 3) };

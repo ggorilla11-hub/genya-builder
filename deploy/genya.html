@@ -2135,9 +2135,30 @@ function openSolapiSetup(){
     +'<input id="solFrom" type="text" inputmode="numeric" placeholder="01012345678" style="width:100%;box-sizing:border-box;margin:4px 0 4px;padding:9px;border:1px solid #cfd8e3;border-radius:8px;font-size:13px;font-family:inherit">'
     +'</div>'
     +'<button onclick="solapiSave()" id="solSaveBtn" style="width:100%;background:var(--teal);color:#fff;border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">서버에 암호화 저장</button>'
-    +'<div style="font-size:11px;color:#8a6d1a;background:#fff7ed;border:1px solid #f0e0c8;border-radius:8px;padding:9px;margin-top:10px;line-height:1.6">🔒 키는 서버에 <b>암호화 저장</b>되고 화면·로그에 다시 안 보여요(앞 4자리만 표시).<br>가입·발급: <b>솔라피 가입 → 발신번호 본인인증 → API Key 발급 (solapi.com)</b></div>'));
+    +'<div style="font-size:11px;color:#8a6d1a;background:#fff7ed;border:1px solid #f0e0c8;border-radius:8px;padding:9px;margin-top:10px;line-height:1.6">🔒 키는 서버에 <b>암호화 저장</b>되고 화면·로그에 다시 안 보여요(앞 4자리만 표시).<br>가입·발급: <b>솔라피 가입 → 발신번호 본인인증 → API Key 발급 (solapi.com)</b></div>'
+    +'<div style="border-top:1px solid #eef1f4;margin-top:14px;padding-top:12px">'
+    +'<label style="display:flex;align-items:flex-start;gap:8px;font-size:12.5px;color:#0d1b2a;cursor:pointer;line-height:1.5"><input type="checkbox" id="solCompanion" checked style="width:16px;height:16px;margin-top:1px;flex-shrink:0"><span>고객 발송 시 문자도 함께 보내기 <span style="color:#8a93a3">(건당 약 20원, 본인 솔라피 계정 차감)</span></span></label>'
+    +'<label style="font-size:12px;font-weight:700;color:#0d3b66;display:block;margin-top:12px">상호(사업자명) <span style="color:#8a93a3;font-weight:400">— 문자 서명에 표시(없으면 서명 생략)</span></label>'
+    +'<input id="solBiz" type="text" placeholder="예: 오원트금융연구소" style="width:100%;box-sizing:border-box;margin:4px 0 10px;padding:9px;border:1px solid #cfd8e3;border-radius:8px;font-size:13px;font-family:inherit">'
+    +'<button onclick="solapiPrefsSave()" id="solPrefsBtn" style="width:100%;background:#0d1b2a;color:#fff;border:none;border-radius:9px;padding:10px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">문자 동반·상호 설정 저장</button>'
+    +'</div>'));
   solapiStatusLoad();
+  solapiPrefsLoad();
   setTimeout(function(){ var i=document.getElementById('solKey'); if(i)i.focus(); },100);
+}
+function solapiPrefsLoad(){
+  fetch('/api/settings/prefs',{credentials:'same-origin',cache:'no-store'}).then(function(r){return r.json();}).then(function(d){
+    var c=document.getElementById('solCompanion'); if(c) c.checked=!(d&&d.smsCompanion===false);
+    var b=document.getElementById('solBiz'); if(b) b.value=(d&&d.bizName)||'';
+  }).catch(function(){});
+}
+function solapiPrefsSave(){
+  var companion=!!((document.getElementById('solCompanion')||{}).checked);
+  var biz=(((document.getElementById('solBiz')||{}).value)||'').trim();
+  var btn=document.getElementById('solPrefsBtn'); if(btn){btn.disabled=true;btn.textContent='저장 중…';}
+  fetch('/api/settings/prefs',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({smsCompanion:companion,bizName:biz})})
+    .then(function(r){return r.json();}).then(function(d){ if(btn){btn.disabled=false;btn.textContent='문자 동반·상호 설정 저장';} toast(d&&d.ok?'설정을 저장했어요':'저장 실패'); })
+    .catch(function(){ if(btn){btn.disabled=false;btn.textContent='문자 동반·상호 설정 저장';} toast('저장 오류'); });
 }
 function solapiStatusLoad(){
   fetch('/api/settings/solapi',{credentials:'same-origin',cache:'no-store'}).then(function(r){return r.json();}).then(function(d){
@@ -2811,6 +2832,36 @@ function refreshConnState(){
     if(typeof refreshTopKPIs==='function') refreshTopKPIs();
   }).catch(function(){});
 }
+// ═══ 🚀 신규 회원 온보딩 체크리스트 — 첫 로그인/미완료 시 상단 배너. 3개 다 완료 or ×접기면 숨김. 허브에서 다시 열기. ═══
+//   완료 판정: ① /me.hasData(구글+시트 접근) ② roster.count>0(명단 1건+) ③ solapi.registered(문자키). ③은 선택.
+function renderOnboarding(force){
+  if(!force){ try{ if(localStorage.getItem('genya_onb_dismiss')==='1') return; }catch(e){} }
+  Promise.all([
+    fetch('/me',{credentials:'same-origin',cache:'no-store'}).then(function(r){return r.ok?r.json():{};}).catch(function(){return {};}),
+    fetch('/api/roster/list',{credentials:'same-origin',cache:'no-store'}).then(function(r){return r.ok?r.json():{};}).catch(function(){return {};}),
+    fetch('/api/settings/solapi',{credentials:'same-origin',cache:'no-store'}).then(function(r){return r.ok?r.json():{};}).catch(function(){return {};})
+  ]).then(function(res){
+    var me=res[0]||{}, roster=res[1]||{}, sol=res[2]||{};
+    if(!(me&&me.email)) return; // 비로그인이면 표시 안 함
+    var c1=!!(me&&me.hasData), c2=!!(roster&&roster.ok&&(roster.count||0)>0), c3=!!(sol&&sol.registered);
+    var host=document.getElementById('onbCard');
+    if(c1&&c2&&c3 && !force){ if(host)host.remove(); return; }   // 3개 다 완료 → 숨김
+    if(force){ try{localStorage.removeItem('genya_onb_dismiss');}catch(e){} }
+    if(!host){ var tb=document.querySelector('.topbar'); if(!tb) return; tb.insertAdjacentHTML('afterend','<div id="onbCard"></div>'); host=document.getElementById('onbCard'); }
+    function row(done,label,js,hint,badge){
+      return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 0;border-top:1px solid #eef1f4">'
+        +'<div style="display:flex;align-items:flex-start;gap:8px;min-width:0"><span style="font-size:15px;line-height:1.2">'+(done?'✅':'⬜')+'</span><div><b style="font-size:13px;color:#0d1b2a">'+label+'</b>'+(badge?' <span style="font-size:10px;font-weight:700;color:#8a6d0f;background:#fbeec2;padding:1px 7px;border-radius:8px">'+badge+'</span>':'')+(hint?'<div style="font-size:11px;color:#98a4b2;margin-top:1px">'+hint+'</div>':'')+'</div></div>'
+        +(done?'<span style="font-size:11px;color:#0f766e;font-weight:700;white-space:nowrap">완료</span>':(js?'<span onclick="'+js+'" style="font-size:12px;color:#fff;background:var(--teal);padding:6px 12px;border-radius:8px;font-weight:700;cursor:pointer;white-space:nowrap">하기 →</span>':''))
+        +'</div>';
+    }
+    host.innerHTML='<div style="margin:12px 16px 0;background:#fff;border:1px solid #e2e8ef;border-radius:14px;padding:14px 16px;box-shadow:0 1px 6px rgba(13,27,42,.05)">'
+      +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px"><b style="font-size:14px;color:#0d1b2a">🚀 지니야 시작하기</b><span onclick="try{localStorage.setItem(\'genya_onb_dismiss\',\'1\');}catch(e){} var h=document.getElementById(\'onbCard\'); if(h)h.remove();" title="접기(설정에서 다시 열 수 있어요)" style="cursor:pointer;color:#b0b8c2;font-size:16px;line-height:1">×</span></div>'
+      +row(c1,'① 구글 연결하기','connectGoogle()','','')
+      +row(c2,'② 고객 명단 올리기','if(typeof genyaHub===\'function\'){genyaHub();}','','')
+      +row(c3,'③ 문자 발송 키 등록','if(typeof openSolapiSetup===\'function\'){openSolapiSetup();}','선택 — 문자 없이 메일만 써도 돼요','선택')
+      +'</div>';
+  }).catch(function(){});
+}
 // ★상단 KPI 실데이터 계산 (하드코딩 제거·가짜 숫자 금지). 만기=업로드 명단 실값, 약속·발굴=소스 없으면 0 정직표시.
 function _setKpi(id,txt){ var el=document.getElementById(id); if(el) el.textContent=txt; }
 function refreshTopKPIs(dash){
@@ -2859,10 +2910,12 @@ fetch('/me').then(function(r){return r.json();}).then(function(d){
     _goReal(back);
     if(back===5){ applyJob(); if(st) _replayChat(); }
     refreshConnState();
+    setTimeout(function(){ try{ if(typeof renderOnboarding==='function') renderOnboarding(); }catch(e){} },900);
     return;
   }
   _bootRoute();
   if(typeof refreshConnState==='function') refreshConnState();
+  setTimeout(function(){ try{ if(typeof renderOnboarding==='function') renderOnboarding(); }catch(e){} },900);
 }).catch(function(){ _AUTHED=false; _goReal(0); });
 // 서버가 준 직업값(키 또는 라벨) → GENYA_JOBS 키로 변환
 function _resolveJobKey(job, label){
@@ -3163,6 +3216,7 @@ window.addFile=function(){ doOCR(); };
         <button class="gh-btn" style="margin-top:8px" onclick="if(typeof openSolapiSetup==='function'){openSolapiSetup();}">📱 문자 키 등록 / 변경</button>
         <div style="font-size:11px;color:#8a94a6;margin-top:6px;line-height:1.5">문자는 본인 솔라피 계정으로 나가요(건당 약 20원·자비부담). 키는 서버에 암호화 저장돼요.</div>
       </div>
+      <button class="gh-btn ghost" style="margin-top:10px" onclick="ghClose(); if(typeof renderOnboarding==='function'){renderOnboarding(true);}">🚀 시작 체크리스트 다시 보기</button>
       <button class="gh-btn ghost" style="margin-top:10px" onclick="ghLoad()">🔄 새로고침</button>
     </div>
   </div>
