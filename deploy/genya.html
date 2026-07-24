@@ -2370,6 +2370,11 @@ function addToolAsk(){ window._ACTIVE_SKILL='add_tool'; pushMsg('gen','어떤 �
           if(r==='user'||r==='customer'||r==='human') pushMsg('me', t.replace(/[<>]/g,''));       // 사용자(SDK별 role 명칭 방어)
           else if(r==='assistant'||r==='bot'||r==='ai') pushMsg('gen', t.replace(/[<>]/g,''));    // 지니야
           else pushMsg('me', t.replace(/[<>]/g,''));                                              // role 미상이면 일단 사용자로 표시(누락 방지)
+          // ★2단계 음성 카드 띄우기(FC 불필요): 사용자 발화에 "○○ 카드 띄워/스캔/보여줘"가 있으면 화면에 고객카드 표시. 통화는 계속.
+          if(r!=='assistant'&&r!=='bot'&&r!=='ai' && /(카드|스캔)/.test(t) && /(띄워|띄우|보여|열어|뜨|스캔|해줘|해|줘)/.test(t)){
+            var _cm=t.replace(/지니야|고객님|고객|카드|스캔해줘|스캔해|스캔|띄워줘|띄워|띄우|보여줘|보여|열어줘|열어|해줘|줘|증권|서류|자료|파일|명단|이거|저거|화면|을|를|의|좀|씨|님/g,' ').trim().match(/([가-힣]{2,4})/);
+            if(_cm && _cm[1] && typeof openCustomerCard==='function'){ try{ openCustomerCard(_cm[1]); }catch(e){} }
+          }
         }
       }catch(e){} });
       vapi.on('call-end', function(){ micState(''); _vapiConnecting=false; vapi=null; });                              // ⚪ 대기
