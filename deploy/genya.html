@@ -3306,7 +3306,7 @@ window.addFile=function(){ doOCR(); };
             var keys=Object.keys(rows[0]).filter(function(k){ return k!=='소스파일'&&k!=='업로드일'&&k!=='_rowNum'&&rows.some(function(r){return r[k]!=null&&String(r[k])!=='';}); });
             // ★A: 가로 스크롤(overflow-x:auto)로 전체 컬럼 확인 + 자연폭(width 미지정)으로 뒤 컬럼 안 잘림. ★B: 행 클릭→전체 상세 세로 카드.
             var h='<div style="font-size:10.5px;color:#8a94a6;margin:2px 0 5px">↔ 좌우로 밀어 전체 컬럼 보기 · 행을 누르면 전체 상세</div>';
-            h+='<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid #eee;border-radius:8px">';
+            h+='<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;touch-action:pan-x pan-y;max-width:100%;border:1px solid #eee;border-radius:8px">';
             h+='<table style="border-collapse:collapse;font-size:13px;white-space:nowrap">';
             h+='<tr>'+keys.map(function(k){return '<th style="border:1px solid #ddd;padding:5px 8px;background:#f5f5f5;color:#333;text-align:left;white-space:nowrap">'+esc(k)+'</th>';}).join('')+'</tr>';
             h+=rows.map(function(row){return '<tr onclick="ghRowDetail(\''+(row._rowNum!=null?row._rowNum:'')+'\')" style="cursor:pointer">'+keys.map(function(k){return '<td style="border:1px solid #ddd;padding:5px 8px;color:#000;background:#fff;white-space:nowrap">'+esc(row[k]!=null?row[k]:'')+'</td>';}).join('')+'</tr>';}).join('');
