@@ -1185,7 +1185,7 @@ app.post('/api/roster/import', async (req, res) => {
   try {
     const ma = gateGoogle(req, res); if (!ma) return;
     const b = req.body || {};
-    const rr = await rosterImport.importRoster(ma, { dataUrl: b.dataUrl || b.file || '', mode: b.mode, confirm: !!b.confirm });
+    const rr = await rosterImport.importRoster(ma, { dataUrl: b.dataUrl || b.file || '', mode: b.mode, confirm: !!b.confirm, name: b.name });
     // ★🛡️ 수문장: 명단 업로드(변방)를 개인화 기억(중앙)에 기록 → 지니야 대화가 "방금 올린 명단"을 자동 인지. 실제 발생분만.
     try {
       const uid = (sessionOf(req) || {}).email || '';
@@ -1206,6 +1206,26 @@ app.get('/api/roster/list', async (req, res) => {
     const ma = gateGoogle(req, res); if (!ma) return;
     const t = await sheetsCrud.loadTable(ma);
     res.json({ ok: true, count: (t.rows || []).length, header: t.header || [], rows: t.rows || [] });
+  } catch (e) { if (scopeGate(e, res, 'sheets')) return; res.status(500).json({ ok: false, error: e.message }); }
+});
+// 📇 파일별 삭제: 특정 소스파일에서 온 행만 제거(남길 행만 재작성=물리 안전). 개별 고객 아님·파일 단위.
+app.delete('/api/roster/file', async (req, res) => {
+  try {
+    const ma = gateGoogle(req, res); if (!ma) return;
+    const fname = String(req.query.name || '').trim();
+    if (!fname) return res.json({ ok: false, error: '파일명이 없어요.' });
+    const t = await sheetsCrud.loadTable(ma);
+    if (!t.id) return res.json({ ok: false, error: '명단 시트를 찾지 못했어요.' });
+    const srcCol = (t.header || []).find((h) => String(h).replace(/\s/g, '') === '소스파일');
+    if (!srcCol) return res.json({ ok: false, error: '소스파일 정보가 없는 명단이에요(옛 업로드).' });
+    const keep = (t.rows || []).filter((r) => String(r[srcCol] || '') !== fname);
+    const removed = (t.rows || []).length - keep.length;
+    if (!removed) return res.json({ ok: false, error: '해당 파일에서 온 고객을 못 찾았어요.' });
+    const sheets = google.sheets({ version: 'v4', auth: ma });
+    await sheets.spreadsheets.values.clear({ spreadsheetId: t.id, range: `${SHEET_TAB}!A1:Z10000` });
+    const body = [t.header].concat(keep.map((r) => t.header.map((h) => r[h] || '')));
+    await sheets.spreadsheets.values.update({ spreadsheetId: t.id, range: `${SHEET_TAB}!A1`, valueInputOption: 'RAW', requestBody: { values: body } });
+    res.json({ ok: true, removed, remaining: keep.length });
   } catch (e) { if (scopeGate(e, res, 'sheets')) return; res.status(500).json({ ok: false, error: e.message }); }
 });
 app.get('/api/profile', async (req, res) => {

@@ -76,11 +76,20 @@ async function importRoster(ma, input) {
   const { id, sheets } = await _getMemberSheet(ma);
   await _ensureTab(sheets, id, _TAB);
   const mode = input.mode === 'append' ? 'append' : 'replace';
+  // ★파일별 관리용 메타 태깅: 각 행에 소스파일·업로드일 기록(컬럼 없으면 추가). 기존 컬럼 무접촉.
+  const _fname = (String(input.name || '').trim()) || '직접입력';
+  const _uploadDay = new Date().toISOString().slice(0, 10);
+  const _META = ['소스파일', '업로드일'];
+  const _withMeta = (h) => { const out = (h || []).slice(); _META.forEach((m) => { if (out.indexOf(m) < 0) out.push(m); }); return out; };
+  const _rowObj = (r) => { const o = {}; header.forEach((h, i) => o[h] = r[i]); o['소스파일'] = _fname; o['업로드일'] = _uploadDay; return o; };
 
   if (mode === 'append') {
     let existing = [];
     try { const g = await sheets.spreadsheets.values.get({ spreadsheetId: id, range: `${_TAB}!A1:1` }); existing = (g.data.values || [])[0] || []; } catch (e) {}
-    if (!existing.length) { await sheets.spreadsheets.values.update({ spreadsheetId: id, range: `${_TAB}!A1`, valueInputOption: 'RAW', requestBody: { values: [header] } }); existing = header.slice(); }
+    if (!existing.length) existing = header.slice();
+    const _outHeader = _withMeta(existing);
+    if (_outHeader.length !== existing.length) { await sheets.spreadsheets.values.update({ spreadsheetId: id, range: `${_TAB}!A1`, valueInputOption: 'RAW', requestBody: { values: [_outHeader] } }); }
+    existing = _outHeader;
     // ★업서트(중복 방지): 이름+연락처가 같으면 그 행을 덮어쓰고, 없으면 새로 추가. (같은 파일 여러 번 눌러도 안 쌓이고, 재업로드는 최신값으로 갱신)
     const _norm = (x) => String(x == null ? '' : x).trim().replace(/\s/g, '').toLowerCase();
     const _phoneRe = /연락처|전화|휴대폰|핸드폰|폰|번호|phone/i;
@@ -94,16 +103,18 @@ async function importRoster(ma, input) {
       (cur.rows || []).forEach((r) => { const nm = _norm(r[cur.nameCol]); if (!nm) return; key2row[nm + '|' + (exPhoneCol ? _norm(r[exPhoneCol]) : '')] = r._rowNum; });
     } catch (e) { /* 기존 조회 실패 시 전부 신규로 추가 */ }
     const updates = [], inserts = [];
-    rows.forEach((r) => { const o = {}; header.forEach((h, i) => o[h] = r[i]); const line = existing.map((h) => (o[h] != null ? o[h] : '')); const k = _keyUp(r); if (key2row[k] != null) updates.push({ rowNum: key2row[k], line }); else inserts.push(line); });
+    rows.forEach((r) => { const o = _rowObj(r); const line = existing.map((h) => (o[h] != null ? o[h] : '')); const k = _keyUp(r); if (key2row[k] != null) updates.push({ rowNum: key2row[k], line }); else inserts.push(line); });
     if (updates.length) await sheets.spreadsheets.values.batchUpdate({ spreadsheetId: id, requestBody: { valueInputOption: 'RAW', data: updates.map((u) => ({ range: `${_TAB}!A${u.rowNum}`, values: [u.line] })) } });
     if (inserts.length) await sheets.spreadsheets.values.append({ spreadsheetId: id, range: `${_TAB}!A1`, valueInputOption: 'RAW', insertDataOption: 'INSERT_ROWS', requestBody: { values: inserts } });
     return { ok: true, mode, imported: inserts.length, updated: updates.length, header: existing, message: `신규 ${inserts.length}명 추가` + (updates.length ? `, 기존 ${updates.length}명 갱신` : '') + '.' };
   }
 
-  // replace: 기존 내용 비우고 새로 씀
+  // replace: 기존 내용 비우고 새로 씀 (소스파일·업로드일 태깅)
+  const _rHeader = _withMeta(header);
+  const _rRows = rows.map((r) => { const o = _rowObj(r); return _rHeader.map((h) => (o[h] != null ? o[h] : '')); });
   try { await sheets.spreadsheets.values.clear({ spreadsheetId: id, range: `${_TAB}!A1:Z10000` }); } catch (e) {}
-  await sheets.spreadsheets.values.update({ spreadsheetId: id, range: `${_TAB}!A1`, valueInputOption: 'RAW', requestBody: { values: [header].concat(rows) } });
-  return { ok: true, mode, imported: rows.length, header, message: `명단을 새로 저장했어요(${rows.length}명).` };
+  await sheets.spreadsheets.values.update({ spreadsheetId: id, range: `${_TAB}!A1`, valueInputOption: 'RAW', requestBody: { values: [_rHeader].concat(_rRows) } });
+  return { ok: true, mode, imported: rows.length, header: _rHeader, message: `명단을 새로 저장했어요(${rows.length}명).` };
 }
 
 module.exports = { init, parse, importRoster };
