@@ -2376,7 +2376,14 @@ function addToolAsk(){ window._ACTIVE_SKILL='add_tool'; pushMsg('gen','어떤 �
       vapi.on('error', function(e){ micState(''); _vapiConnecting=false; vapi=null; tip('음성 오류: '+((e&&e.message)||'연결')); });  // ❌
       // ★한 지니야 뇌: 로그인 세션 + Pinecone recall(엄마2)을 variableValues로 주입 → 통화 지니야가 텍스트 지니야와 같은 기억.
       var ctx={}; try{ ctx=await fetch('/api/vapi-context',{credentials:'include'}).then(function(r){return r.json();}); }catch(e){}
-      await vapi.start(vapiCfg.assistantId, { variableValues: { user_id:(ctx.user_id||'guest'), user_name:(ctx.user_name||'대표님'), session_id:(ctx.session_id||''), recall:(ctx.recall||''), clientData:(ctx.clientData||'') } });
+      // ★날짜 환각 근본수정: today 등 vapi-context 전체 필드를 variableValues로 넘겨야 프롬프트 {{today}}가 값을 받는다(clientData만 넘기면 today는 빈 값→음성이 24일 지어냄).
+      await vapi.start(vapiCfg.assistantId, { variableValues: {
+        user_id:(ctx.user_id||'guest'), user_name:(ctx.user_name||'대표님'), session_id:(ctx.session_id||''),
+        recall:(ctx.recall||''), clientData:(ctx.clientData||''),
+        today:(ctx.today||''), now:(ctx.now||''), thisWeek:(ctx.thisWeek||''),
+        todaySchedule:(ctx.todaySchedule||''), pendingCount:String(ctx.pendingCount!=null?ctx.pendingCount:''),
+        connectorStatus:(ctx.connectorStatus||''), bizName:(ctx.bizName||'')
+      } });
       _vapiConnecting=false; micState('recording');
     }catch(e){ _vapiConnecting=false; micState(''); vapi=null; tip('음성 연결 오류 · 잠시 후 다시'); }
   }
