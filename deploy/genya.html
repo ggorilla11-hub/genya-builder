@@ -751,6 +751,7 @@
         <div class="composer">
           <div class="up-chips" id="upChips"></div>
           <div class="comp-in">
+            <button class="comp-btn up" title="새 대화 시작 (대화 기록 지우기)" onclick="newChat()"><svg viewBox="0 0 24 24" fill="none"><path d="M4 12a8 8 0 018-8 8 8 0 016 2.7M20 12a8 8 0 01-8 8 8 8 0 01-6-2.7M17 4v3h-3M7 20v-3h3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
             <button class="comp-btn up" title="파일·사진 첨부" onclick="addFile()"><svg viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
             <textarea id="chatInput" rows="1" placeholder="메시지를 입력하세요"></textarea>
             <button class="comp-btn up" title="증권·계약서 OCR 분석" onclick="doOCR()" style="background:var(--teal-l);color:var(--teal-d);"><svg viewBox="0 0 24 24" fill="none"><path d="M4 8V5h3M20 8V5h-3M4 16v3h3M20 16v3h-3M6 12h12" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></button>
@@ -2762,6 +2763,15 @@ var _HIST=[];
 // ★순서3-A 대화지속: _HIST를 localStorage(genya_hist_{userId})에 실시간 저장/복원 + 긴 대화 요약압축(토큰관리) + _ACTIVE_SKILL 저장
 function _histKey(){ try{ return 'genya_hist_'+((window._ME&&window._ME.email)||'anon'); }catch(e){ return 'genya_hist_anon'; } }
 function _persistHist(){ try{ localStorage.setItem(_histKey(), JSON.stringify({ hist:_HIST.slice(-40), skill:(window._ACTIVE_SKILL||''), t:Date.now() })); }catch(e){} } // 용량관리: 최근 40개
+// ★새 대화(히스토리 초기화): _HIST·작업맥락·localStorage·화면 말풍선 전부 리셋. 기존 함수 무접촉.
+function newChat(){
+  try{ _HIST.length=0; }catch(e){}
+  window._ACTIVE_SKILL='';
+  try{ localStorage.removeItem(_histKey()); }catch(e){}
+  var s=document.getElementById('chatScroll'); if(s) s.innerHTML='';
+  pushMsg('gen','새 대화를 시작합니다.');
+  var i=document.getElementById('chatInput'); if(i){ i.value=''; i.focus(); }
+}
 function _restoreHist(){ try{
     var raw=localStorage.getItem(_histKey()); if(!raw) return false;
     var st=JSON.parse(raw); if(!st||!Array.isArray(st.hist)||!st.hist.length) return false;
