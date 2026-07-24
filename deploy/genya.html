@@ -2375,6 +2375,10 @@ function addToolAsk(){ window._ACTIVE_SKILL='add_tool'; pushMsg('gen','어떤 �
             var _cm=t.replace(/지니야|고객님|고객|카드|스캔해줘|스캔해|스캔|띄워줘|띄워|띄우|보여줘|보여|열어줘|열어|해줘|줘|증권|서류|자료|파일|명단|이거|저거|화면|을|를|의|좀|씨|님/g,' ').trim().match(/([가-힣]{2,4})/);
             if(_cm && _cm[1] && typeof openCustomerCard==='function'){ try{ openCustomerCard(_cm[1]); }catch(e){} }
           }
+          // ★음성 결재/발송 실행(FC 불필요): "○○ 결재함에 올려/안내문 발송" 등 액션 발화 → 그 문장을 /api/order로 전달 → 서버 approval이 실제 결재함 등록(명단 주입 포함). Vapi는 말만 하므로 실제 등록은 여기서.
+          if(r!=='assistant'&&r!=='bot'&&r!=='ai' && !/(카드|스캔)/.test(t) && ((/(결재|발송|알림톡|승인)/.test(t) && /(올려|올릴|올려줘|보내|발송|해줘|등록|잡아)/.test(t)) || (/(안내문|문자|메일|이메일|카톡)/.test(t) && /(보내|발송|올려|올릴)/.test(t)))){
+            try{ _voiceExec(t); }catch(e){}
+          }
         }
       }catch(e){} });
       vapi.on('call-end', function(){ micState(''); _vapiConnecting=false; vapi=null; });                              // ⚪ 대기
@@ -3110,6 +3114,16 @@ function sheetWriteCommit(){
         pushMsg('gen', msg); window._SHEET_PENDING=null;
       } else { pushMsg('gen', renderMd('반영하지 못했어요: '+((d&&d.message)||'원인 불명')+'. 다시 시도할까요?')); }
     }).catch(function(){ pushMsg('gen','반영 중 오류가 났어요. 다시 시도할까요?'); });
+}
+// ★음성 액션 실행: 통화 중 결재/발송 발화를 텍스트처럼 /api/order로 보내 서버가 실제 처리. ★실제 등록 결과(서버 d.text)만 표시 → 등록 안 됐으면 "올렸다"고 안 함(환각 방지). Vapi FC 미사용.
+function _voiceExec(q){
+  fetch('/api/order',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({q:q, history:(typeof _histForSend==='function'?_histForSend():[])})})
+    .then(function(r){return r.json();}).then(function(d){
+      if(!d) return;
+      if(d.text) pushMsg('gen', renderMd(d.text)); // 서버가 실제로 올렸을 때만 "결재함에 올렸어요"라고 답함(approval.create 결과)
+      if(d.pending){ try{ if(document.getElementById('apList')) apRender(); }catch(e){} } // 실제 등록됨 → 열려있는 결재함 즉시 갱신
+      if(d.action==='open_card'&&d.customer){ try{ openCustomerCard(d.customer); }catch(e){} }
+    }).catch(function(){ try{ pushMsg('gen','결재 처리 중 오류가 났어요. 잠시 후 다시 말씀해 주세요.'); }catch(e){} });
 }
 // ★명령으로 고객카드 띄우기(자비스): 명단·연결 드로어 열고(genyaHub) → 로스터(_GH_ROWMAP) 로드 대기 → 이름 매칭 → ghRowDetail로 세로 카드. 기존 ghRowDetail 재사용(무접촉).
 function openCustomerCard(name){
