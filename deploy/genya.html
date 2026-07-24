@@ -3220,7 +3220,9 @@ window.addFile=function(){ doOCR(); };
   #ghOv.on #ghPanel{transform:translateX(0);}
   .gh-hd{background:#0F1A35;color:#fff;padding:16px 18px;display:flex;justify-content:space-between;align-items:center;}
   .gh-hd b{font-size:16px;} .gh-x{cursor:pointer;font-size:20px;color:#D4A574;line-height:1;}
-  .gh-bd{padding:16px 18px;overflow-y:auto;flex:1;font-family:'Pretendard','맑은 고딕',sans-serif;color:#0F1A35;}
+  .gh-bd{padding:16px 18px;overflow-y:auto;flex:1;min-width:0;font-family:'Pretendard','맑은 고딕',sans-serif;color:#0F1A35;}
+  /* ★모바일 가로 스크롤 근본수정: flex 자식(.gh-bd) min-width:0 + 아코디언 내부도 폭 줄게 → 안쪽 overflow-x가 실제 스크롤됨 */
+  .gh-file,.gh-file-bd{min-width:0;max-width:100%;}
   .gh-sec{font-size:12px;font-weight:700;color:#8a6d3b;margin:18px 0 8px;letter-spacing:.02em;}
   .gh-row{display:flex;align-items:center;justify-content:space-between;background:#fff;border:1px solid #e5e1dc;border-radius:11px;padding:11px 13px;margin-bottom:8px;}
   .gh-row .nm{font-size:13.5px;font-weight:600;} .gh-row .nm span{display:block;font-weight:400;color:#8a94a6;font-size:11px;}
@@ -3248,6 +3250,7 @@ window.addFile=function(){ doOCR(); };
   <div id="ghPanel">
     <div class="gh-hd"><b>📇 명단 · 연결</b><span class="gh-x" onclick="ghClose()">✕</span></div>
     <div class="gh-bd">
+      <div id="ghDetail"></div>
       <div class="gh-sec">내 고객명단</div>
       <div class="gh-card">
         <div><span class="gh-cnt" id="ghCount">–</span><small>명 저장됨</small></div>
@@ -3305,9 +3308,10 @@ window.addFile=function(){ doOCR(); };
             if(!rows||!rows.length) return '<p style="color:#000;font-size:13px">데이터 없음</p>';
             var keys=Object.keys(rows[0]).filter(function(k){ return k!=='소스파일'&&k!=='업로드일'&&k!=='_rowNum'&&rows.some(function(r){return r[k]!=null&&String(r[k])!=='';}); });
             // ★A: 가로 스크롤(overflow-x:auto)로 전체 컬럼 확인 + 자연폭(width 미지정)으로 뒤 컬럼 안 잘림. ★B: 행 클릭→전체 상세 세로 카드.
-            var h='<div style="font-size:10.5px;color:#8a94a6;margin:2px 0 5px">↔ 좌우로 밀어 전체 컬럼 보기 · 행을 누르면 전체 상세</div>';
-            h+='<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;touch-action:pan-x pan-y;max-width:100%;border:1px solid #eee;border-radius:8px">';
-            h+='<table style="border-collapse:collapse;font-size:13px;white-space:nowrap">';
+            var h='<div style="font-size:10.5px;color:#8a94a6;margin:2px 0 5px">행을 탭하면 전체 정보 · ↔ 좌우로 밀어 컬럼 보기</div>';
+            // ★스크롤 축 분리: 가로만 이 컨테이너(overflow-x:scroll·y:hidden·touch-action:pan-x), 세로는 바깥 드로어가 담당 → 충돌 제거. table width:max-content로 실제 넘침.
+            h+='<div class="gh-xscroll" style="overflow-x:scroll;overflow-y:hidden;width:100%;-webkit-overflow-scrolling:touch;touch-action:pan-x;display:block;border:1px solid #eee;border-radius:8px">';
+            h+='<table style="width:max-content;min-width:100%;border-collapse:collapse;font-size:13px;white-space:nowrap">';
             h+='<tr>'+keys.map(function(k){return '<th style="border:1px solid #ddd;padding:5px 8px;background:#f5f5f5;color:#333;text-align:left;white-space:nowrap">'+esc(k)+'</th>';}).join('')+'</tr>';
             h+=rows.map(function(row){return '<tr onclick="ghRowDetail(\''+(row._rowNum!=null?row._rowNum:'')+'\')" style="cursor:pointer">'+keys.map(function(k){return '<td style="border:1px solid #ddd;padding:5px 8px;color:#000;background:#fff;white-space:nowrap">'+esc(row[k]!=null?row[k]:'')+'</td>';}).join('')+'</tr>';}).join('');
             return h+'</table></div>';
@@ -3350,13 +3354,15 @@ window.addFile=function(){ doOCR(); };
     if(!c.ok){ if(confirm(nm+' 연결에 문제가 있어요.\n원인: '+(c.reason||'연결 필요')+'\n\n지금 재연결할까요?')){ location.href='/auth/google/connect'; } return; }
     alert(nm+'\n인증: '+(c.auth||'-')+'\n읽기: '+(c.read?'가능':'불가')+'\n쓰기: '+(c.write?'가능':('불가'+(c.reason?' ('+c.reason+')':'')))+'\n마지막 확인: '+when);
   };
-  // ★B: 행 클릭 → 그 고객의 전체 컬럼을 세로 카드로(가로 스크롤 없이 가족사항·만기일 등 다 보임). 수정 확인용.
+  // ★B(모바일 최우선): 행 탭 → 그 고객의 전체 컬럼을 세로 카드로 표시. ★모달 대신 드로어 안 인라인(#ghDetail)에 그려 z-index 충돌 원천 제거 → 모바일 탭에서 확실히 뜬다.
   window.ghRowDetail=function(rowNum){
-    var r=(window._GH_ROWMAP||{})[rowNum]; if(!r){ toast('고객 정보를 못 찾았어요'); return; }
+    var r=(window._GH_ROWMAP||{})[rowNum]; var host=document.getElementById('ghDetail'); if(!r||!host){ return; }
     var keys=Object.keys(r).filter(function(k){ return k!=='_rowNum'&&k!=='소스파일'&&k!=='업로드일'&&r[k]!=null&&String(r[k])!==''; });
     var name=r['고객명']||r['이름']||r['성명']||(keys.length?r[keys[0]]:'')||'고객';
-    var det=keys.map(function(k){ return '<div style="display:flex;gap:10px;padding:7px 0;border-bottom:1px solid #f0f3f6"><div style="flex:0 0 100px;font-size:12px;color:#8a93a3;font-weight:700">'+esc(k)+'</div><div style="flex:1;font-size:13px;color:#0d1b2a;word-break:break-word">'+esc(String(r[k]))+'</div></div>'; }).join('');
-    showModal('<div style="max-width:460px;position:relative;padding:20px 22px"><span onclick="closeModal()" style="position:absolute;top:12px;right:14px;cursor:pointer;color:#8a93a3;font-size:22px;width:34px;height:34px;line-height:34px;text-align:center;border-radius:50%;background:#f2f5f8">×</span><div style="font-size:16px;font-weight:800;color:#0d1b2a;margin-bottom:10px">📇 '+esc(String(name))+' — 전체 정보</div><div>'+det+'</div></div>');
+    var det=keys.map(function(k){ return '<div style="display:flex;gap:10px;padding:7px 0;border-bottom:1px solid #f0f3f6"><div style="flex:0 0 96px;font-size:12px;color:#8a93a3;font-weight:700">'+esc(k)+'</div><div style="flex:1;font-size:13px;color:#0d1b2a;word-break:break-word">'+esc(String(r[k]))+'</div></div>'; }).join('');
+    host.innerHTML='<div style="background:#fff;border:1px solid #D4A574;border-radius:12px;padding:14px 16px;box-shadow:0 2px 10px rgba(13,27,42,.08)"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b style="font-size:15px;color:#0d1b2a">📇 '+esc(String(name))+' — 전체 정보</b><span onclick="var g=document.getElementById(\'ghDetail\'); if(g)g.innerHTML=\'\';" style="cursor:pointer;color:#b0b8c2;font-size:20px;line-height:1;padding:0 4px">×</span></div>'+det+'</div>';
+    var bd=document.querySelector('.gh-bd'); if(bd) bd.scrollTop=0;
+    try{ host.scrollIntoView({block:'start',behavior:'smooth'}); }catch(e){}
   };
   window.ghToggle=function(hd){ var bd=hd.nextElementSibling; if(!bd)return; var open=bd.style.display!=='none'; bd.style.display=open?'none':'block'; var c=hd.querySelector('.gh-caret'); if(c)c.textContent=open?'▾':'▴'; };
   window.ghDelFile=async function(f){ if(!confirm('"'+f+'"에서 온 고객 전체를 삭제하시겠습니까? 되돌릴 수 없어요.'))return; var j;try{j=await api('/api/roster/file?name='+encodeURIComponent(f),{method:'DELETE'});}catch(e){alert('삭제 실패: '+e.message);return;} if(j&&j.ok){ghLoad();}else{alert((j&&(j.error||j.message))||'삭제 실패');} };
