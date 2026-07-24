@@ -2033,7 +2033,7 @@ function _apFromBackend(it){
     send:{ channel:(it.채널==='gmail'?'email':'sms'), to:(it.대상수?('대상 '+it.대상수+'명'):'') },
     at:atMs, decidedAt:upMs, status:st, 결과:String(it.결과||'') };
 }
-// 병합 렌더(순수 표시). 대기=카드 / 처리완료=로그. 로컬(리마인더·보상)은 기존 버튼, 백엔드는 1단계에선 읽기전용(버튼 연결=2단계).
+// 병합 렌더. 대기=카드 / 처리완료=로그. 로컬(리마인더·보상)=apApprove/apReject, 백엔드(구글시트 결재)=apApproveBackend/apRejectBackend(/api/approval/act·Gmail 발송·안전모드).
 function _apRenderMerged(box, logBox, backend, local){
   var all=backend.concat(local);
   window._apItems=all; // apEdit이 백엔드·로컬 공통으로 제목 조회
@@ -2055,6 +2055,7 @@ function _apRenderMerged(box, logBox, backend, local){
       +'<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap"><span style="font-size:10px;font-weight:700;color:#fff;background:'+col+';padding:2px 8px;border-radius:9px">'+_sEsc(a.출처||'기타')+'</span>'+(isBk?'<span style="font-size:10px;font-weight:700;color:#2FBF71;background:#eafaf1;padding:2px 8px;border-radius:9px">채팅 결재</span>':'')+(ch?'<span style="font-size:11px;color:#556">📎 '+_sEsc(ch)+'</span>':'')+'</div>'
       +'<div style="border:1px solid #e8edf2;background:#f8fafc;border-radius:8px;padding:9px 11px;font-size:11.5px;color:#33475a;line-height:1.55;white-space:pre-wrap;max-height:140px;overflow:auto;margin-bottom:8px">'+(draft?_sEsc(draft):'<span style="color:#b0b8c2">미리보기 내용 없음</span>')+'</div>'
       +(ch||to?'<div style="font-size:11px;color:#6b7a8d;margin-bottom:9px">'+(ch?'발송: <b style="color:#33475a">'+_sEsc(ch)+'</b>':'')+(to?' · 수신: <b style="color:#33475a">'+_sEsc(to)+'</b>':'')+'</div>':'')
+      +(isBk && a.결과 && /실패/.test(a.결과) ? '<div style="font-size:11px;color:#c0392b;background:#fdecea;border:1px solid #f5c6cb;border-radius:8px;padding:7px 9px;margin-bottom:9px">⚠ '+_sEsc(a.결과)+' — 원인 확인 후 다시 승인하세요.</div>' : '')
       +'<div style="display:flex;gap:6px">'
       +'<button onclick="'+(isBk?'apApproveBackend':'apApprove')+'(\''+a.id+'\')" style="flex:1;background:var(--teal);color:#fff;border:none;border-radius:8px;padding:9px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">✅ 승인</button>'
       +'<button onclick="apEdit(\''+a.id+'\')" style="flex:1;background:#fff;color:#8a6d0f;border:1px solid #ecdca8;border-radius:8px;padding:9px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">✏️ 수정요청</button>'
@@ -2067,7 +2068,7 @@ function _apRenderMerged(box, logBox, backend, local){
     else logBox.innerHTML=done.slice(0,20).map(function(a){
       var ic=a.status==='승인'?'✅':'↩'; var col=a.status==='승인'?'#0f766e':'#c0392b';
       var s=a.send||null; var ch=s&&s.channel?(chMap[s.channel]||s.channel):'';
-      var line=a.status==='승인'?('승인 → '+(a.결과?a.결과:(ch?ch+' 발송 완료':'처리 완료'))):('반려'+(a.반려사유?' · 사유: '+a.반려사유:''));
+      var line=a.status==='승인'?('승인 → '+(a.결과?a.결과:(ch?ch+' 발송 완료':'처리 완료'))):('반려'+(a.반려사유?' · 사유: '+a.반려사유:(a.결과?' · '+a.결과:'')));
       var draft=String(a.미리보기||'');
       return '<div style="border:1px solid #eef1f4;border-radius:10px;margin-bottom:6px;overflow:hidden">'
         +'<div onclick="apToggleLog(\''+a.id+'\')" style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 11px;cursor:pointer">'
@@ -2124,8 +2125,9 @@ function apApproveBackend(id){
   toast('승인·발송 처리 중…'); _apAct(id, { action:'approve' });
 }
 function apRejectBackend(id){
-  if(typeof confirm==='function' && !confirm('이 결재 건을 반려할까요? 발송하지 않습니다.')) return;
-  toast('반려 처리 중…'); _apAct(id, { action:'reject' });
+  var reason=(typeof prompt==='function'?prompt('반려 사유(선택):',''):'');
+  if(reason===null) return; // 취소
+  toast('반려 처리 중…'); _apAct(id, { action:'reject', reason:reason||'' });
 }
 function _apAct(id, extra){
   var body=Object.assign({ id:id }, extra||{});

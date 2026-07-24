@@ -96,8 +96,10 @@ function _genId() { _idSeq = (_idSeq + 1) % 100000; return 'a-' + new Date(Date.
 //   input: { 요청내용, 채널('sms'|'gmail'), criteria:{컬럼:값}, 템플릿, 대상요약? }
 async function create(ma, input) {
   input = input || {};
-  const 채널 = input.채널 === 'gmail' ? 'gmail' : 'sms';
   const criteria = input.criteria || {};
+  // ★5단계: 채널 기본=메일(gmail) 우선. 미지정이면 대상 이메일이 명단에 있으면 gmail, 없으면 sms.
+  let 채널 = input.채널 === 'gmail' ? 'gmail' : (input.채널 === 'sms' ? 'sms' : '');
+  if (!채널) { 채널 = 'gmail'; try { const tg = await _resolveTargets(ma, criteria, 'gmail'); if (!tg.contactCol || !tg.targets.length) 채널 = 'sms'; } catch (e) {} }
   const 템플릿 = String(input.템플릿 || '').trim();
   const 요청내용 = String(input.요청내용 || '').trim() || '(내용 없음)';
   if (!템플릿) return { ok: false, message: '보낼 메시지 템플릿이 비어 있어요.' };
@@ -146,8 +148,9 @@ async function act(ma, input) {
   if (o.승인상태 !== '대기') return { ok: false, message: `이미 처리된 건이에요(현재: ${o.승인상태}).` };
 
   if (action === 'reject') {
-    o.승인상태 = '거부'; o.수정일시 = _now(); await _updateRow(sheets, sid, o);
-    return { ok: true, approval: _publicView(o), message: '거부 처리했어요. 발송하지 않습니다.' };
+    const reason = String(input.reason || '').trim();
+    o.승인상태 = '거부'; o.결과 = reason ? ('사유: ' + reason) : '거부'; o.수정일시 = _now(); await _updateRow(sheets, sid, o);
+    return { ok: true, approval: _publicView(o), message: '반려했어요. 발송하지 않습니다.' + (reason ? ' (사유: ' + reason + ')' : '') };
   }
   if (action === 'edit') {
     const e = input.edits || {};
@@ -167,11 +170,18 @@ async function act(ma, input) {
     }
     // 실제 발송(🔒 하드가드: 라이브 아니면 화이트리스트=회장님 본인으로만)
     const result = await _dispatch(ma, o, targets, contactCol);
-    o.승인상태 = result.fail === 0 ? '완료' : (result.ok === 0 ? '실패' : '부분실패');
-    o.결과 = `${result.ok}/${targets.length} 성공${result.fail ? ` · 실패 ${result.fail}` : ''}${result.safeMode ? ` · 🔒안전모드(실고객 ${result.blocked}명 차단·회장님만)` : ''}`;
+    // ★4단계: 전부 실패면 승인 대기 유지(재시도 가능) + 원인 안내. 상태(승인상태) 안 바꿈.
+    if (result.ok === 0 && result.fail > 0) {
+      o.결과 = `발송 실패(${result.fail}건)${result.errors && result.errors.length ? ' · ' + result.errors[0] : ''}`;
+      o.수정일시 = _now(); await _updateRow(sheets, sid, o); // 승인상태='대기' 그대로
+      return { ok: false, approval: _publicView(o), result, message: `발송 실패 — 승인 대기에 그대로 뒀어요. 원인: ${(result.errors && result.errors[0]) || '알 수 없음'}. 확인 후 다시 승인해 주세요.` };
+    }
+    const 채널명 = o.채널 === 'gmail' ? '메일' : '문자';
+    o.승인상태 = result.fail === 0 ? '완료' : '부분실패';
+    o.결과 = `${채널명} 발송 완료 ${result.ok}/${targets.length}${result.fail ? ` · 실패 ${result.fail}` : ''}${result.safeMode ? ` · 🔒안전모드(회장님 본인에게만)` : ''}`;
     o.수정일시 = _now(); await _updateRow(sheets, sid, o);
-    const safeMsg = result.safeMode ? ` 🔒 안전 모드예요 — 실제 문자·메일은 회장님 본인에게만 갔어요(실고객 ${result.blocked}명은 보호 차단).` : '';
-    return { ok: true, approval: _publicView(o), result, message: `발송 완료. ${o.결과}${safeMsg}` };
+    const safeMsg = result.safeMode ? ` 🔒 안전 모드 — 실제 ${채널명}은 회장님 본인에게만 갔어요(실고객 ${result.blocked}명 보호 차단).` : '';
+    return { ok: true, approval: _publicView(o), result, message: `${o.결과}.${safeMsg}` };
   }
   return { ok: false, message: '알 수 없는 동작이에요(approve/reject/edit).' };
 }
@@ -197,16 +207,23 @@ function _render(tpl, row, header) {
 async function _dispatch(ma, o, targets, contactCol) {
   const header = Object.keys(targets[0] || {});
   let ok = 0, fail = 0, blocked = 0, safeMode = false; const errors = [];
+  const nameCol = crud.resolveColumn('고객명', header) || crud.resolveColumn('이름', header);
   for (const row of targets) {
     const text = _render(o.템플릿, row, header);
     const rawTo = contactCol ? String(row[contactCol]).trim() : '';
+    const who = (nameCol && row[nameCol]) ? String(row[nameCol]) : '';
     const safe = safeRecipient(o.채널, rawTo);
     if (safe.safeMode) safeMode = true;
     if (safe.blocked) { blocked++; console.log(`[🔒안전차단] 실고객 ${o.채널} 발송 차단됨: ${_mask(rawTo)} → 회장님 본인(${_mask(safe.to)})으로 대체`); }
-    const body = (safe.test ? '[테스트] ' : '') + text;
+    const isG = o.채널 === 'gmail';
+    // ★3단계 안전모드 표시: 메일=본문 상단에 실제 수신자 명시, 문자=[테스트] 접두. 제목엔 [테스트].
+    const testHead = (safe.test && isG) ? ('실제 수신자: ' + (who ? who + ' ' : '') + '(' + (rawTo || '연락처 없음') + ')\n\n') : '';
+    const smsPrefix = (safe.test && !isG) ? '[테스트] ' : '';
+    const body = testHead + smsPrefix + text;
+    const subject = (safe.test ? '[테스트] ' : '') + (o.요청내용 || '안내');
     try {
       let r;
-      if (o.채널 === 'gmail') r = await _sendGmail(ma, safe.to, o.요청내용 || '안내', body);
+      if (isG) r = await _sendGmail(ma, safe.to, subject, body);
       else r = await _sendSms(ma, safe.to, body);
       if (r && r.sent) ok++; else { fail++; if (r && r.error) errors.push(r.error); }
     } catch (e) { fail++; errors.push(e.message); }
@@ -240,7 +257,7 @@ async function plan(ma, text) {
 // ★Anthropic API 규칙: input_schema properties 키는 ^[a-zA-Z0-9_.-]{1,64}$ (한글 불가) → 영문 키 사용, 내부에서 한글 필드로 매핑
 const TOOLS = [
   { name: 'create_approval', description: '회장님이 문자·이메일 발송을 지시하면, 실제로 보내기 전에 발송 초안을 "결재함"에 저장한다. 대상은 고객명단(구글시트)에서 조건으로 자동 조회된다. 저장 후 회장님이 승인하면 실제 발송된다. 예: "김철수님에게 신상품 안내 메일 보내줘" → criteria:{"고객명":"김철수"}, channel:"gmail". ★당신은 실제로 발송할 수 있으니 절대 "직접 못 보낸다"고 답하지 말 것.',
-    input_schema: { type: 'object', properties: { title: { type: 'string', description: '짧은 제목(예: 신상품 안내)' }, channel: { type: 'string', enum: ['sms', 'gmail'], description: '문자면 sms, 이메일이면 gmail' }, criteria: { type: 'object', description: '대상 조건(예: {"고객명":"김철수"} 또는 {"만기일":"2026-08"}). 전체면 {}' }, template: { type: 'string', description: '보낼 문구. #{고객명} 같은 시트 컬럼 치환자 사용. 정보성·존댓말·짧게' } }, required: ['channel', 'template'] } },
+    input_schema: { type: 'object', properties: { title: { type: 'string', description: '짧은 제목(예: 신상품 안내)' }, channel: { type: 'string', enum: ['sms', 'gmail'], description: '문자면 sms, 이메일이면 gmail. ★미지정 시 메일(gmail) 우선 — 고객 이메일이 명단에 있으면 gmail, 없으면 sms로 자동 결정된다. 회장님이 "문자로"라고 명시할 때만 sms.' }, criteria: { type: 'object', description: '대상 조건(예: {"고객명":"김철수"} 또는 {"만기일":"2026-08"}). 전체면 {}' }, template: { type: 'string', description: '보낼 문구. #{고객명} 같은 시트 컬럼 치환자 사용. 정보성·존댓말·짧게' } }, required: ['template'] } },
   { name: 'list_approvals', description: '결재함에 올라온 발송 건들을 조회한다(대기/완료 등). "결재함 보여줘", "뭐 올라와 있어?" 등에 사용.',
     input_schema: { type: 'object', properties: { status: { type: 'string', description: '대기/완료/거부 중 하나로 필터. 생략시 전체' } } } },
   { name: 'approve_and_send', description: '회장님이 특정 결재 건을 "승인"·"보내"라고 명시적으로 지시할 때만 실제 발송한다. 지니야가 스스로 승인하지 않는다. id는 list_approvals로 확인.',
@@ -252,7 +269,7 @@ function systemPrompt() {
 당신은 실제로 발송할 수 있습니다. 방식: 결재함에 저장(create_approval) → 회장님 승인 → 실제 발송(approve_and_send).
 [규칙]
 1. "○○에게 ○○ 보내줘"라고 하면 create_approval로 결재함에 올리고 "결재함에 올렸어요. 승인하시면 보내드릴게요"라고 안내한다. 절대 "직접 발송은 못 한다"고 하지 않는다.
-2. 대상·문구가 애매하면 한두 가지만 되묻는다. 문구는 정보성·존댓말·짧게 자동 작성.
+2. 대상·문구가 애매하면 한두 가지만 되묻는다. 문구는 정보성·존댓말·짧게 자동 작성. 채널은 메일(gmail)을 기본으로 한다 — 고객 이메일이 명단에 있으면 gmail, 없으면 sms. 회장님이 "문자로"라고 명시할 때만 sms.
 3. 스스로 승인·발송하지 않는다. 회장님이 "승인"·"보내"라고 명시할 때만 approve_and_send.
 4. 실측 안전모드에서는 실제로 회장님 본인에게만 발송된다(실고객 보호). 이 점을 정직히 안내한다.
 5. 말투: 따뜻하고 쉽게. '클로드'·'AI' 같은 말은 쓰지 않는다.`;
