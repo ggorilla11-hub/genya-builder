@@ -96,11 +96,21 @@ function colLetter(idx) { // 0-based → A,B,...,Z,AA
   while (idx > 0) { const r = (idx - 1) % 26; s = String.fromCharCode(65 + r) + s; idx = Math.floor((idx - 1) / 26); }
   return s;
 }
+// ── 소프트 삭제(영구삭제 차단): 전용 메타 컬럼 '레코드상태'에 '삭제' 표시. 시트 행을 물리적으로 지우지 않는다. ──
+//   ★비즈니스용 '상태'(계약상태 등)와 충돌을 피하려고 전용 컬럼명을 쓴다.
+const STATUS_COL = '레코드상태';
+const DELETED_MARK = '삭제';
+function detectStatusCol(header) { return (header || []).includes(STATUS_COL) ? STATUS_COL : null; }
+function isRecordDeleted(row, statusCol) { return !!statusCol && String((row || {})[statusCol] || '').trim() === DELETED_MARK; }
+function filterVisibleRows(rows, statusCol, includeDeleted) {
+  return (statusCol && !includeDeleted) ? (rows || []).filter((r) => !isRecordDeleted(r, statusCol)) : (rows || []);
+}
 
 // ═══════════════════════════════════════════════════════════════
 // 2. 시트 로드 (제로 인그레스: 읽어서 메모리에만)
 // ═══════════════════════════════════════════════════════════════
-async function loadTable(ma) {
+async function loadTable(ma, opts) {
+  opts = opts || {};   // opts.includeDeleted=true → 삭제 표시된 행도 포함(기본은 제외)
   const drive = google.drive({ version: 'v3', auth: ma });
   const sheets = google.sheets({ version: 'v4', auth: ma });
   const f = await drive.files.list({
@@ -108,7 +118,7 @@ async function loadTable(ma) {
     fields: 'files(id)',
   });
   const id = (f.data.files || [])[0] && f.data.files[0].id;
-  if (!id) return { id: null, gid: null, header: [], rows: [], nameCol: null, sheets };
+  if (!id) return { id: null, gid: null, header: [], rows: [], nameCol: null, statusCol: null, sheets };
   const meta = await sheets.spreadsheets.get({ spreadsheetId: id, fields: 'sheets.properties(title,sheetId)' });
   const tab = (meta.data.sheets || []).find((s) => s.properties.title === _SHEET_TAB);
   const gid = tab ? tab.properties.sheetId : 0;
@@ -123,7 +133,10 @@ async function loadTable(ma) {
     header.forEach((h, j) => { o[h] = r[j] || ''; });
     rows.push(o);
   }
-  return { id, gid, header, rows, nameCol, sheets };
+  // ★기본 조회는 '레코드상태=삭제' 행을 제외한다(includeDeleted=true면 전부). _rowNum은 실제 시트 행번호라 필터해도 유지됨.
+  const statusCol = detectStatusCol(header);
+  const visible = filterVisibleRows(rows, statusCol, opts.includeDeleted);
+  return { id, gid, header, rows: visible, nameCol, statusCol, sheets };
 }
 // 이름 정규화(공백 제거·소문자) — 오타·띄어쓰기 흔들림 흡수
 function normName(x) { return String(x || '').trim().toLowerCase().replace(/\s+/g, ''); }
@@ -310,8 +323,15 @@ async function commit(ma, action, sig, opts) {
     await sheets.spreadsheets.values.append({ spreadsheetId: id, range: `${_SHEET_TAB}!A1`, valueInputOption: 'RAW', insertDataOption: 'INSERT_ROWS', requestBody: { values: [rowArr] } });
     result = { op: 'create', fields: action.fields };
   } else if (action.op === 'delete') {
-    await sheets.spreadsheets.batchUpdate({ spreadsheetId: id, requestBody: { requests: [{ deleteDimension: { range: { sheetId: table.gid, dimension: 'ROWS', startIndex: action.rowNum - 1, endIndex: action.rowNum } } }] } });
-    result = { op: 'delete', name: action.name };
+    // ★영구삭제 차단(soft delete): 물리 행삭제 안 함. 전용 '레코드상태' 컬럼에 '삭제' 표시만 한다.
+    let colIdx = table.header.indexOf(STATUS_COL);
+    if (colIdx < 0) {
+      // 시트에 '레코드상태' 컬럼이 없으면 맨 끝에 헤더를 추가한다.
+      colIdx = table.header.length;
+      await sheets.spreadsheets.values.update({ spreadsheetId: id, range: `${_SHEET_TAB}!${colLetter(colIdx)}1`, valueInputOption: 'RAW', requestBody: { values: [[STATUS_COL]] } });
+    }
+    await sheets.spreadsheets.values.update({ spreadsheetId: id, range: `${_SHEET_TAB}!${colLetter(colIdx)}${action.rowNum}`, valueInputOption: 'RAW', requestBody: { values: [[DELETED_MARK]] } });
+    result = { op: 'delete', name: action.name, soft: true, mark: DELETED_MARK };
   } else {
     return { ok: false, message: '알 수 없는 작업이에요.' };
   }
@@ -418,5 +438,6 @@ module.exports = {
   doSearch, doRead, doListSheets, planWrite,
   loadTable, resolveColumn, detectNameCol, signAction, verifyAction,
   findByName, suggestNames, nameSimilarity, toJamo, TOOLS,
-  TOOLS,
+  // 소프트 삭제(영구삭제 차단) 순수 헬퍼 — 단위테스트/재사용용
+  detectStatusCol, isRecordDeleted, filterVisibleRows, STATUS_COL,
 };

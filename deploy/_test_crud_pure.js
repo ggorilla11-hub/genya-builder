@@ -48,5 +48,22 @@ eq('유사도 정확일치=1', crud.nameSimilarity('홍길동', '홍길동'), 1)
 const _tbl = { nameCol: '고객명', rows: [{ 고객명: '홍 길동' }, { 고객명: '김철수' }] };
 eq('findByName 공백무시(홍길동→홍 길동)', crud.findByName(_tbl, '홍길동').length, 1);
 
+// 7) 소프트 삭제(영구삭제 차단): 레코드상태 컬럼 감지 + loadTable 기본 제외 필터
+eq('STATUS_COL 상수=레코드상태', crud.STATUS_COL, '레코드상태');
+eq('detectStatusCol(레코드상태 있음)', crud.detectStatusCol(['고객명', '레코드상태']), '레코드상태');
+eq('detectStatusCol(없음→null)', crud.detectStatusCol(['고객명', '연락처']), null);
+const _rowsSD = [
+  { 고객명: '김철수', 레코드상태: '' },
+  { 고객명: '이영희', 레코드상태: '삭제' },
+  { 고객명: '박민수', 레코드상태: '삭제 ' },  // 앞뒤 공백도 삭제로 인식
+];
+const _sc = crud.detectStatusCol(['고객명', '레코드상태']);
+eq('isRecordDeleted(빈칸=활성)', crud.isRecordDeleted(_rowsSD[0], _sc), false);
+eq('isRecordDeleted(삭제=참)', crud.isRecordDeleted(_rowsSD[1], _sc), true);
+eq('isRecordDeleted(공백삭제=참)', crud.isRecordDeleted(_rowsSD[2], _sc), true);
+eq('기본조회 삭제 제외(3→김철수만)', crud.filterVisibleRows(_rowsSD, _sc, false).map((r) => r.고객명), ['김철수']);
+eq('includeDeleted=true 전체(3)', crud.filterVisibleRows(_rowsSD, _sc, true).length, 3);
+eq('상태컬럼 없으면 전체유지(3)', crud.filterVisibleRows(_rowsSD, null, false).length, 3);
+
 console.log(`\n결과: ${pass} 통과 / ${fail} 실패`);
 process.exit(fail ? 1 : 0);
