@@ -112,7 +112,7 @@ async function loadTable(ma) {
   const meta = await sheets.spreadsheets.get({ spreadsheetId: id, fields: 'sheets.properties(title,sheetId)' });
   const tab = (meta.data.sheets || []).find((s) => s.properties.title === _SHEET_TAB);
   const gid = tab ? tab.properties.sheetId : 0;
-  const got = await sheets.spreadsheets.values.get({ spreadsheetId: id, range: `${_SHEET_TAB}!A1:Z200` });
+  const got = await sheets.spreadsheets.values.get({ spreadsheetId: id, range: `${_SHEET_TAB}!A1:Z` }); // 행 제한 해제: A1:Z200(=199행)에서 어피티 뒷부분이 잘리던 버그. 전체 행 읽기.
   const values = got.data.values || [];
   const header = values[0] || [];
   const nameCol = detectNameCol(header);
