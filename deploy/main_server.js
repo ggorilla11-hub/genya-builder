@@ -1578,20 +1578,20 @@ async function _sendSmsFor(ma, to, text) {
   try {
     to = String(to || '').replace(/[^0-9]/g, ''); text = String(text || '').trim();
     if (!to || !text) return { ok: false, sent: false, error: '번호·내용 없음' };
-    // ★Fix3: env(SOLAPI_API_KEY/SECRET/SENDER) 우선 → 회원시트(지니야_연결) 폴백. 발신번호 하이픈 제거.
-    let apiKey = process.env.SOLAPI_API_KEY || '';
-    let apiSecret = process.env.SOLAPI_API_SECRET || '';
-    let from = String(process.env.SOLAPI_SENDER || process.env.SOLAPI_FROM || '').replace(/[^0-9]/g, '');
-    if (!apiKey || !apiSecret || !from) {
-      try {
-        const { id, sheets } = await findOrCreateMemberSheet(ma);
-        const kv = {};
-        const r = await sheets.spreadsheets.values.get({ spreadsheetId: id, range: '지니야_연결!A1:B10' }); (r.data.values || []).forEach((row) => { if (row && row[0]) kv[row[0]] = row[1] || ''; });
-        apiKey = apiKey || kv['솔라피_API_KEY']; apiSecret = apiSecret || kv['솔라피_SECRET']; from = from || String(kv['솔라피_발신번호'] || '').replace(/[^0-9]/g, '');
-      } catch (e) {}
-    }
-    if (!apiKey || !apiSecret) return { ok: false, sent: false, error: '솔라피 API 키 미설정 (Render 환경변수 SOLAPI_API_KEY 확인)' };
-    if (!from) return { ok: false, sent: false, error: '솔라피 발신번호 미설정 (Render 환경변수 SOLAPI_SENDER 확인)' };
+    // ★비용원칙(문자=회원 자비부담): 회원 시트(지니야_연결)의 솔라피 키 우선 → 없으면 env(대표님 테스트용) 폴백. 발신번호 하이픈 제거.
+    //   env를 우선하면 회원이 고객에게 보낼 때마다 대표님 개인 솔라피 계정에서 비용이 나가므로, 반드시 회원 키가 먼저다.
+    let apiKey = '', apiSecret = '', from = '';
+    try {
+      const { id, sheets } = await findOrCreateMemberSheet(ma);
+      const kv = {};
+      const r = await sheets.spreadsheets.values.get({ spreadsheetId: id, range: '지니야_연결!A1:B10' }); (r.data.values || []).forEach((row) => { if (row && row[0]) kv[row[0]] = row[1] || ''; });
+      apiKey = kv['솔라피_API_KEY'] || ''; apiSecret = kv['솔라피_SECRET'] || ''; from = String(kv['솔라피_발신번호'] || '').replace(/[^0-9]/g, '');
+    } catch (e) {}
+    if (!apiKey) apiKey = process.env.SOLAPI_API_KEY || '';               // env 폴백(대표님 테스트용으로만)
+    if (!apiSecret) apiSecret = process.env.SOLAPI_API_SECRET || '';
+    if (!from) from = String(process.env.SOLAPI_SENDER || process.env.SOLAPI_FROM || '').replace(/[^0-9]/g, '');
+    if (!apiKey || !apiSecret) return { ok: false, sent: false, error: '솔라피 키를 등록해주세요 — 지니야 설정 → 문자 연결에서 본인 솔라피 API 키·발신번호를 넣으면 문자가 나갑니다. (문자 비용은 본인 솔라피 계정에서 차감돼요)' };
+    if (!from) return { ok: false, sent: false, error: '솔라피 발신번호를 등록해주세요 — 지니야 설정 → 문자 연결.' };
     const date = new Date().toISOString(); const salt = crypto.randomBytes(32).toString('hex');
     const signature = crypto.createHmac('sha256', apiSecret).update(date + salt).digest('hex');
     const auth = `HMAC-SHA256 apiKey=${apiKey}, date=${date}, salt=${salt}, signature=${signature}`;
