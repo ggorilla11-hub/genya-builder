@@ -3036,6 +3036,12 @@ function _histForSend(){
 })();
 window.sendMsg=function(){
   var inp=document.getElementById('chatInput'); var v=(inp.value||'').trim(); if(!v)return;
+  // ★쓰기 미리보기 대기 중 텍스트 승인("응/네/바꿔줘/승인" 등) → [승인·반영] 버튼과 동일하게 실제 commit 실행(LLM이 "기능 없다" 거부하던 문제 근절).
+  if(window._SHEET_PENDING){
+    var _yes = /^\s*(응|네|예|어|엉|그래|그래요|좋아|좋아요|해줘|해|반영|반영해|반영해줘|승인|승인해|확인|맞아|맞아요|ㅇㅇ|ok|오케이|오키|yes)\s*[\.!~]*$/i.test(v) || (v.length<=10 && /(응|네|그래|바꿔|반영|승인|해줘|좋아|맞아|진행)/.test(v));
+    if(_yes){ pushMsg('me', String(v).replace(/[&<>]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c];})); inp.value=''; inp.style.height='auto'; sheetWriteCommit(); return; }
+    window._SHEET_PENDING=null; // 승인이 아니면 대기 해제하고 일반 처리(수정 지시·취소 등)
+  }
   pushMsg('me', String(v).replace(/[&<>]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c];}));
   inp.value=''; inp.style.height='auto';
   var s=document.getElementById('chatScroll'); var w=document.createElement('div'); w.className='msg gen';
