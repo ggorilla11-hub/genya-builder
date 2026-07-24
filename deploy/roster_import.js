@@ -81,10 +81,23 @@ async function importRoster(ma, input) {
     let existing = [];
     try { const g = await sheets.spreadsheets.values.get({ spreadsheetId: id, range: `${_TAB}!A1:1` }); existing = (g.data.values || [])[0] || []; } catch (e) {}
     if (!existing.length) { await sheets.spreadsheets.values.update({ spreadsheetId: id, range: `${_TAB}!A1`, valueInputOption: 'RAW', requestBody: { values: [header] } }); existing = header.slice(); }
-    // 들어온 행을 기존 헤더 순서에 맞춰 매핑(컬럼 순서 달라도 안전)
-    const mapped = rows.map((r) => { const o = {}; header.forEach((h, i) => o[h] = r[i]); return existing.map((h) => (o[h] != null ? o[h] : '')); });
-    await sheets.spreadsheets.values.append({ spreadsheetId: id, range: `${_TAB}!A1`, valueInputOption: 'RAW', insertDataOption: 'INSERT_ROWS', requestBody: { values: mapped } });
-    return { ok: true, mode, imported: rows.length, header: existing, message: `${rows.length}명을 명단에 추가했어요.` };
+    // ★업서트(중복 방지): 이름+연락처가 같으면 그 행을 덮어쓰고, 없으면 새로 추가. (같은 파일 여러 번 눌러도 안 쌓이고, 재업로드는 최신값으로 갱신)
+    const _norm = (x) => String(x == null ? '' : x).trim().replace(/\s/g, '').toLowerCase();
+    const _phoneRe = /연락처|전화|휴대폰|핸드폰|폰|번호|phone/i;
+    const upNameIdx = header.indexOf(crud.detectNameCol(header));
+    const upPhoneIdx = header.findIndex((h) => _phoneRe.test(String(h).replace(/\s/g, '')));
+    const _keyUp = (r) => _norm(upNameIdx >= 0 ? r[upNameIdx] : '') + '|' + (upPhoneIdx >= 0 ? _norm(r[upPhoneIdx]) : '');
+    const key2row = {};
+    try {
+      const cur = await crud.loadTable(ma);
+      const exPhoneCol = (cur.header || []).find((h) => _phoneRe.test(String(h).replace(/\s/g, '')));
+      (cur.rows || []).forEach((r) => { const nm = _norm(r[cur.nameCol]); if (!nm) return; key2row[nm + '|' + (exPhoneCol ? _norm(r[exPhoneCol]) : '')] = r._rowNum; });
+    } catch (e) { /* 기존 조회 실패 시 전부 신규로 추가 */ }
+    const updates = [], inserts = [];
+    rows.forEach((r) => { const o = {}; header.forEach((h, i) => o[h] = r[i]); const line = existing.map((h) => (o[h] != null ? o[h] : '')); const k = _keyUp(r); if (key2row[k] != null) updates.push({ rowNum: key2row[k], line }); else inserts.push(line); });
+    if (updates.length) await sheets.spreadsheets.values.batchUpdate({ spreadsheetId: id, requestBody: { valueInputOption: 'RAW', data: updates.map((u) => ({ range: `${_TAB}!A${u.rowNum}`, values: [u.line] })) } });
+    if (inserts.length) await sheets.spreadsheets.values.append({ spreadsheetId: id, range: `${_TAB}!A1`, valueInputOption: 'RAW', insertDataOption: 'INSERT_ROWS', requestBody: { values: inserts } });
+    return { ok: true, mode, imported: inserts.length, updated: updates.length, header: existing, message: `신규 ${inserts.length}명 추가` + (updates.length ? `, 기존 ${updates.length}명 갱신` : '') + '.' };
   }
 
   // replace: 기존 내용 비우고 새로 씀
