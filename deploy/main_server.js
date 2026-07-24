@@ -57,6 +57,21 @@ const _USD_KRW = 1400;
 const _MODEL_PRICE = { 'claude-opus-4-8': [5, 25], 'claude-sonnet-5': [3, 15], 'gpt-4o': [2.5, 10] };  // [input,output] USD/1M
 const _usage = { date: '', krw: 0, calls: 0, byModel: {}, alerted: false };
 function _kstDate() { return new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10); }
+// ★날짜·시각을 반드시 Asia/Seoul(KST)로 생성 — 텍스트·음성·만기계산 전부 이 헬퍼로 통일(UTC 하루 밀림 방지).
+//   getDate()/toISOString() 직접 사용 금지(UTC라 하루 밀림). anchor=KST 오늘 00:00(만기·주 계산 기준).
+function _seoul() {
+  const now = new Date();
+  const today = new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' }).format(now); // "2026년 7월 25일 토요일"
+  const nowT = new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', hour: 'numeric', minute: 'numeric', hour12: true }).format(now); // "오후 3시 40분"
+  const p = {}; new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short' }).formatToParts(now).forEach((x) => { p[x.type] = x.value; });
+  const y = +p.year, mo = +p.month, d = +p.day;
+  const wd = ({ Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 })[p.weekday] || 0;
+  const anchor = new Date(Date.UTC(y, mo - 1, d)); // KST 오늘 00:00 앵커
+  const fmt = (x) => `${x.getUTCMonth() + 1}월 ${x.getUTCDate()}일`;
+  const mon = new Date(anchor.getTime() + (wd === 0 ? -6 : 1 - wd) * 864e5);
+  const thisWeek = `${fmt(mon)} ~ ${fmt(new Date(mon.getTime() + 6 * 864e5))}`;
+  return { today, now: nowT, thisWeek, y, mo, d, wd, anchor };
+}
 function _logModelUsage(model, usage) {
   try {
     const d = _kstDate();
@@ -99,7 +114,8 @@ const LEADING_EXAMPLES = `[리딩 정답 예시 — 답의 마지막은 이렇�
 function genyaPersona(job, opts) {
   const j = (job && String(job).trim()) || '1인 사업자';
   const 호칭 = 호칭For(opts && opts.email, opts && opts.profile);
-  return `당신은 "지니야" · ${호칭}의 AI 비서 팀장입니다. 단순 챗봇이 아니라, ${호칭}의 일을 먼저 챙기고 리딩하는 곁의 실무 팀장입니다. ${호칭}의 직업(${j})에 맞춰 핵심 업무를 돕습니다.
+  return `[오늘] ${_seoul().today} (Asia/Seoul 기준). 날짜·요일은 반드시 이 값을 쓰고, 임의로 지어내지 마세요.
+당신은 "지니야" · ${호칭}의 AI 비서 팀장입니다. 단순 챗봇이 아니라, ${호칭}의 일을 먼저 챙기고 리딩하는 곁의 실무 팀장입니다. ${호칭}의 직업(${j})에 맞춰 핵심 업무를 돕습니다.
 [정체성] 이름은 언제나 "지니야". "클로드"·"AI 모델"·"챗봇" 같은 말은 절대 쓰지 않는다. 70대 어르신도 한 번에 알아듣게 쉬운 말로, 전문용어는 풀어서.
 [첫 인사 — 처음 만남(첫 접촉·시작 상황일 때만, 처음 한 번)] 사용자가 처음 인사하거나("안녕"·"처음이에요"·"시작"·"뭐 할 수 있어?") 대화를 막 시작한 상황이면, 단조로운 "안녕하세요"가 아니라 팀장의 매력으로 강력하게 자기소개한다. 담기: (1) 소개 — "지니야입니다. 오원트금융연구소 오상열 대표님(CFP 25년 경력)이 만든, 고객 관리 전문 AI 비서예요." (2) 최종 백업 — "저는 늘 최선을 다하고, 제 선에서 어려운 사건은 오상열 회장님께 직접 연결해드려요." (3) 매력 — "24시간 곁에서 함께합니다." (4) 분야 질문 — "${호칭}은 어떤 분야에서 일하세요? (설계사·중개사·변호사·행정사·세무사·컨설턴트 등) 분야에 딱 맞춰 도와드릴게요." (5) 데모 유도 — "원하시면 지금 바로 보여드릴게요: 고객 명단을 올리면 정리·진단하고, 증권·제안서를 올리면 분석하고, 판례·세무 질문은 이론으로 충실히 답해드려요." 이 첫 인사는 처음 한 번만 하고, 이미 대화가 진행 중이면 반복하지 않는다.
 [말투 금지 — 매우 중요] 이모지·이모티콘은 일절 쓰지 않는다(🙂 😊 👍 ✨ 🙏 등 어떤 것도 절대 금지). 이모지 섞인 말투는 흔한 챗봇 톤이라 팀장답지 않다. 느낌표 남발·과잉 격려도 하지 않는다. 담백·직설.
@@ -416,7 +432,7 @@ app.get('/api/vapi-context', async (req, res) => {
           // ★C 캡(승인): 4528명+ 대비 토큰 초과 방지 — 만기 임박 전원 우선 → 나머지 상위행으로 채워 최대 200행.
           const CAP = 200;
           const expCol = header.find((h) => /만기/.test(h));
-          const _t0 = new Date(); const _due = new Date(Date.now() + 30 * 864e5);
+          const _t0 = _seoul().anchor; const _due = new Date(_t0.getTime() + 30 * 864e5); // ★KST 오늘 기준 만기 30일
           const isExp = (c) => { if (!expCol) return false; const d = new Date(c[expCol]); return d instanceof Date && !isNaN(d) && d >= _t0 && d <= _due; };
           const expiring = clients.filter(isExp);
           const rest = clients.filter((c) => !isExp(c));
@@ -429,15 +445,10 @@ app.get('/api/vapi-context', async (req, res) => {
       }
     } catch (e) { console.log('[📇vapi clientData 조회 실패] ' + e.message); }
     // ★C: 날짜·컨텍스트 주입(매 통화 생성, Asia/Seoul). 각 try-catch·실패 시 정직 폴백("없음"/0). Vapi 대시보드 {{today}} 등이 받음.
-    const KST = new Date(Date.now() + 9 * 3600e3);
-    const _dow = ['일', '월', '화', '수', '목', '금', '토'][KST.getUTCDay()];
-    const _y = KST.getUTCFullYear(), _mo = KST.getUTCMonth() + 1, _d = KST.getUTCDate();
-    const today = `${_y}년 ${_mo}월 ${_d}일 ${_dow}요일`;
-    const now = `${String(KST.getUTCHours()).padStart(2, '0')}시 ${String(KST.getUTCMinutes()).padStart(2, '0')}분`;
-    const _monOff = (KST.getUTCDay() === 0 ? -6 : 1 - KST.getUTCDay());
-    const _mon = new Date(KST.getTime() + _monOff * 864e5), _sun = new Date(_mon.getTime() + 6 * 864e5);
-    const _fmt = (x) => `${x.getUTCMonth() + 1}월 ${x.getUTCDate()}일`;
-    const thisWeek = `${_fmt(_mon)} ~ ${_fmt(_sun)}`;
+    // ★날짜·시각 = Asia/Seoul 통일(_seoul()). _y/_mo/_d는 아래 오늘 일정 캘린더 창에 재사용.
+    const _K = _seoul();
+    const _y = _K.y, _mo = _K.mo, _d = _K.d;
+    const today = _K.today, now = _K.now, thisWeek = _K.thisWeek;
     // ma 복원(캘린더·결재대기용): 세션 토큰 없으면 genya_rt.rt → durable에서 refresh_token
     let ma = memberAuth(req), scope = String(grantedScope(req) || '');
     if (uid && (!ma || !scope)) {
@@ -1184,7 +1195,7 @@ async function orderHandler(req, res) {
         const clients = (t && t.rows) || [];
         if (!clients.length) { extra = '\n[활성 명단 · 등록된 고객 0명. 우측 상단 "명단·연결"로 올려달라고 안내한다.]\n'; }
         else if (/만기|임박/.test(q)) {
-          const today = new Date(); const due = new Date(Date.now() + 30 * 864e5);
+          const today = _seoul().anchor; const due = new Date(today.getTime() + 30 * 864e5); // ★KST 오늘 기준 만기 30일
           const expCol = header.find((h) => /만기/.test(h));
           const expiring = expCol ? clients.filter((c) => { const d = new Date(c[expCol]); return d instanceof Date && !isNaN(d) && d >= today && d <= due; }) : [];
           extra = `\n[활성 고객명단 · 총 ${clients.length}명]\n` + header.join(' | ') + '\n'
