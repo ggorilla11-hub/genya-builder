@@ -131,9 +131,11 @@ function normName(x) { return String(x || '').trim().toLowerCase().replace(/\s+/
 function findByName(table, name) {
   const n = normName(name);
   if (!n) return [];
-  const exact = table.rows.filter((r) => normName(r[table.nameCol]) === n);
+  // ★컬럼명 예측 불가(고객명·이름·성명·Name·담당자·대표자…) → 특정 이름컬럼에 한정하지 않고 "모든 컬럼 값"에서 검색. 하드코딩·후보리스트 없음.
+  const scan = (r, test) => Object.keys(r).some((k) => k !== '_rowNum' && test(normName(r[k])));
+  const exact = table.rows.filter((r) => scan(r, (v) => v === n));       // 정확 일치 우선
   if (exact.length) return exact;
-  return table.rows.filter((r) => normName(r[table.nameCol]).includes(n));
+  return table.rows.filter((r) => scan(r, (v) => v && v.includes(n)));   // 없으면 부분 일치
 }
 function slim(r, header) { const o = {}; header.forEach((h) => { if (r[h] !== undefined && r[h] !== '') o[h] = r[h]; }); return o; }
 
@@ -206,8 +208,8 @@ async function doSearch(ma, args) {
   let hits = table.rows;
   const col = args.column ? resolveColumn(args.column, table.header) : null;
   const needle = String(args.contains || args.keyword || '').trim();
-  if (col && needle) hits = hits.filter((r) => String(r[col]).includes(needle));
-  else if (needle) hits = hits.filter((r) => table.header.some((h) => String(r[h]).includes(needle)));
+  // ★특정 컬럼에 한정하지 않고 "전체 컬럼"에서 검색(컬럼명 예측 불가). 요청 컬럼은 참고값으로만 반환.
+  if (needle) hits = hits.filter((r) => table.header.some((h) => String(r[h]).includes(needle)));
   return { ok: true, count: hits.length, column: col, matches: hits.slice(0, 30).map((r) => slim(r, table.header)) };
 }
 // 회장님 드라이브의 스프레드시트(시트 파일) 목록 조회 — sheet_list 도구. 최신순 최대 30개.
@@ -347,7 +349,7 @@ function systemPrompt() {
 [핵심 능력 — 절대 "못 한다"고 말하지 마세요]
 당신은 실제로 구글 시트를 다룰 수 있습니다: 시트 목록 조회(sheet_list), 명단 조회·검색(sheet_search/sheet_read), 추가·수정·삭제(sheet_create/update/delete). 예) "내 구글 시트에 어떤 시트들이 있어?" → sheet_list로 실제 목록 조회, "김철수 정보 알려줘" → sheet_read, "홍길동 주소 바꿔줘" → sheet_update 미리보기. 절대 "연동이 안 잡혀 있다/지어내는 게 된다/시트를 못 본다"고 답하지 마세요 — 도구로 실제 조회하세요.
 [도구 사용 규칙]
-1. 대표가 명단을 물으면(누구 정보·이번 주 만기 등) search_rows/read_row로 확인해 사실만 답한다. 지어내지 않는다.
+1. 대표가 명단을 물으면(누구 정보·이번 주 만기 등) search_rows/read_row로 확인해 사실만 답한다. 지어내지 않는다. ★고객을 찾을 때 특정 컬럼('고객명' 등)에 한정하지 말고, 이름이 어느 컬럼에 있든 전체 데이터에서 검색한다(파일마다 컬럼명이 다를 수 있다: 고객명·이름·성명·Name·담당자 등).
 2. 정보를 바꾸는 일(추가·수정·삭제)은 create_row/update_row/delete_row 도구를 부른다. 단, 실제 반영은 대표 승인 후에만 되며, 도구 호출은 "미리보기 준비"까지만이다.
 3. 수정·삭제는 대상이 한 명으로 특정될 때만 도구를 부른다. 애매하면 먼저 되묻는다.
 4. 삭제는 특히 신중히. 되돌릴 수 없음을 알린다.
