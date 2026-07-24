@@ -3064,6 +3064,8 @@ window.sendMsg=function(){
      if(reply) pushMsg('gen', renderMd(reply));
      // ★E-4 프론트 도킹: cards[] → v4 JARVIS 홀로그램 렌더
      if(cards && cards.length && window.renderHoloCards){ window.renderHoloCards(cards); }
+     // ★고객카드 띄우기 명령 신호(자비스): 명단·연결 드로어 열고 해당 고객 카드(ghRowDetail) 자동 표시
+     if(d && d.action==='open_card' && d.customer){ try{ openCustomerCard(d.customer); }catch(e){} }
      // ★pending 구분: sheetCRUD 쓰기(action+sig)=승인·반영 UI(완료 표현 금지) / 결재함=모달 알림
      if(d && d.pending){
        if(d.pending.action && d.pending.sig){ renderSheetWriteApprove(d.pending); }
@@ -3103,6 +3105,21 @@ function sheetWriteCommit(){
         pushMsg('gen', msg); window._SHEET_PENDING=null;
       } else { pushMsg('gen', renderMd('반영하지 못했어요: '+((d&&d.message)||'원인 불명')+'. 다시 시도할까요?')); }
     }).catch(function(){ pushMsg('gen','반영 중 오류가 났어요. 다시 시도할까요?'); });
+}
+// ★명령으로 고객카드 띄우기(자비스): 명단·연결 드로어 열고(genyaHub) → 로스터(_GH_ROWMAP) 로드 대기 → 이름 매칭 → ghRowDetail로 세로 카드. 기존 ghRowDetail 재사용(무접촉).
+function openCustomerCard(name){
+  if(!name) return;
+  if(typeof genyaHub==='function'){ try{ genyaHub(); }catch(e){} }
+  var norm=function(s){return String(s||'').replace(/\s/g,'').toLowerCase();};
+  var target=norm(name); var tries=0;
+  (function findRow(){
+    var map=window._GH_ROWMAP||{}; var ks=Object.keys(map); var hit=null;
+    ks.forEach(function(k){ if(hit)return; var r=map[k]; ['고객명','이름','성명','성함'].forEach(function(c){ if(!hit && r[c]!=null && norm(r[c])===target) hit=k; }); });
+    if(!hit){ ks.forEach(function(k){ if(hit)return; var r=map[k]; Object.keys(r).forEach(function(c){ if(hit||c==='_rowNum')return; var v=norm(r[c]); if(v && v.length<=8 && v.indexOf(target)>=0) hit=k; }); }); }
+    if(hit){ if(typeof ghRowDetail==='function') ghRowDetail(hit); return; }
+    if(tries++<24){ setTimeout(findRow,150); return; }
+    try{ pushMsg('gen','명단에서 "'+name+'" 고객을 못 찾았어요.'); }catch(e){}
+  })();
 }
 // ★배선A: 증권분석 결과(코치 HTML) 렌더 + PDF(인쇄)/엑셀(CSV) 다운로드 + _HIST 요약
 function _policySummary(d){

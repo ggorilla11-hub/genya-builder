@@ -1171,7 +1171,17 @@ async function orderHandler(req, res) {
     //   보수적: 요즘/최근/오늘 단독은 제외(예: "요즘 만기 고객"이 웹으로 새지 않게). 명확한 최신 토픽 키워드만.
     const _hasCustomerName = /[가-힣]{2,4}\s*님/.test(q);
     const _webQuery = !_hasCustomerName && /시세|환율|원[·\s]?달러|주가|주식|코스피|코스닥|나스닥|다우|증시|증권시장|시장\s*동향|금리|기준금리|국채|채권\s*금리|유가|국제유가|금값|금\s*시세|비트코인|가상자산|암호화폐|뉴스|속보|판례|대법원|헌재|법령|시행령|개정안|세법\s*개정|종부세|종합부동산세|양도세|양도소득세|상속세|증여세|재산세|공시지가|기준시가|부동산\s*대책|물가|인플레|경기\s*전망|환테크/.test(q);
-    if (_gateEvents) {
+    // ★고객카드 띄우기 명령(홍보·자비스): "○○ 카드 띄워/스캔해줘/보여줘/열어줘" → 프론트가 ghRowDetail로 카드 표시. Vapi FC 미사용(텍스트 신호만).
+    const _isCardCmd = /(카드|스캔)/.test(q) && /(띄워|띄우|띄|보여|열어|열|뜨|스캔|해줘|해|줘)/.test(q);
+    let _cardName = '';
+    if (_isCardCmd) { const _c = q.replace(/고객님|고객|카드|스캔해줘|스캔해|스캔|띄워줘|띄워|띄우|보여줘|보여|열어줘|열어|해줘|줘|증권|서류|자료|파일|명단|이거|저거|화면|을|를|의|좀|씨|님/g, ' ').trim(); const _m = _c.match(/([가-힣]{2,4})/); _cardName = _m ? _m[1] : ''; }
+    if (_isCardCmd && _cardName) {
+      let _found = false;
+      try { const t = await sheetsCrud.loadTable(null); if (t && t.rows) _found = sheetsCrud.findByName(t, _cardName).length > 0; } catch (e) {}
+      out = _found
+        ? { kind: '📇 고객카드', action: 'open_card', customer: _cardName, text: _cardName + ' 고객 카드를 띄울게요.' }
+        : { kind: '📇 고객카드', customer: _cardName, text: '명단에서 "' + _cardName + '" 고객을 못 찾았어요. 이름을 다시 확인해 주세요.' };
+    } else if (_gateEvents) {
       // 🛡️ 이 방 이벤트 인지 응답(LLM + 수문장 컨텍스트) — 엄마2 Phase6-3 수문장(무접촉 병합)
       const job = String((req.body && req.body.job) || req.query.job || '');
       const hist = Array.isArray(req.body && req.body.history) ? req.body.history.slice(-10) : [];
