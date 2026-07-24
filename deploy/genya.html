@@ -3051,10 +3051,46 @@ window.sendMsg=function(){
      if(reply) pushMsg('gen', renderMd(reply));
      // ★E-4 프론트 도킹: cards[] → v4 JARVIS 홀로그램 렌더
      if(cards && cards.length && window.renderHoloCards){ window.renderHoloCards(cards); }
-     // ★결재함 즉시반영: 채팅에서 결재를 올리면(d.pending) 열려 있는 결재함 모달을 바로 새로고침(캐시 우회) + 알림
-     if(d && d.pending){ toast('결재함에 올렸어요 — 무기고 결재함비서에서 확인·승인하세요'); try{ if(document.getElementById('apList')) apRender(); }catch(e){} }
+     // ★pending 구분: sheetCRUD 쓰기(action+sig)=승인·반영 UI(완료 표현 금지) / 결재함=모달 알림
+     if(d && d.pending){
+       if(d.pending.action && d.pending.sig){ renderSheetWriteApprove(d.pending); }
+       else { toast('결재함에 올렸어요 — 무기고 결재함비서에서 확인·승인하세요'); try{ if(document.getElementById('apList')) apRender(); }catch(e){} }
+     }
    }).catch(function(){ w.remove(); pushMsg('gen','<span style="color:#c0392b">오류(잠시 후 다시)</span>'); });
 };
+// ★시트 쓰기 승인·반영 — 미리보기(완료 표현 금지) → [승인·반영]=commit(실제 반영) → 성공 시에만 실값(전→후) 보고, 실패 시 원인.
+window._SHEET_PENDING=null;
+function renderSheetWriteApprove(p){
+  window._SHEET_PENDING=p;
+  var pv=p.preview||{}; var op=(p.action&&p.action.op)||'update'; var body;
+  if(op==='update'){ body='<b>수정 미리보기</b><br>대상: '+_sEsc(String(pv.대상||''))+'<br>'+_sEsc(String(pv.항목||''))+': <span style="color:#c0392b">'+_sEsc(String(pv.기존값||'(빈칸)'))+'</span> → <span style="color:#0f766e;font-weight:700">'+_sEsc(String(pv.새값||''))+'</span>'; }
+  else if(op==='create'){ body='<b>추가 미리보기</b><br>'+Object.keys(pv).map(function(k){return _sEsc(k)+': '+_sEsc(String(pv[k]));}).join('<br>'); }
+  else { body='<b>삭제 미리보기</b> (되돌릴 수 없어요)<br>'+Object.keys(pv).map(function(k){return _sEsc(k)+': '+_sEsc(String(pv[k]));}).join('<br>'); }
+  var warn=p.warning?('<div style="color:#c0392b;font-size:11px;margin-top:6px">'+_sEsc(String(p.warning))+'</div>'):'';
+  var s=document.getElementById('chatScroll'); var w=document.createElement('div'); w.className='msg gen';
+  w.innerHTML='<div class="av"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3l7 4v6c0 4-3 6.5-7 8-4-1.5-7-4-7-8V7l7-4z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><circle cx="12" cy="11" r="2.2" fill="currentColor"/></svg></div>'
+    +'<div class="bubble" style="border:1px solid #dbe2ea"><div style="font-size:12.5px;color:#0d1b2a;line-height:1.6">'+body+'</div>'+warn
+    +'<div style="font-size:11px;color:#8a6d1a;margin-top:8px">아직 반영 전이에요. 승인하시면 시트에 반영합니다.</div>'
+    +'<div style="display:flex;gap:7px;margin-top:8px"><button onclick="sheetWriteCommit()" style="flex:1;background:var(--teal);color:#fff;border:none;border-radius:8px;padding:9px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit">✅ 승인·반영</button><button onclick="var m=this.closest(\'.msg\'); if(m)m.remove(); window._SHEET_PENDING=null;" style="padding:9px 14px;border:1px solid #dbe2ea;background:#fff;border-radius:8px;font-size:12.5px;cursor:pointer;font-family:inherit">취소</button></div></div>';
+  s.appendChild(w); s.scrollTop=s.scrollHeight;
+}
+function sheetWriteCommit(){
+  var p=window._SHEET_PENDING; if(!p||!p.action||!p.sig){ toast('반영할 항목이 없어요'); return; }
+  var op=(p.action&&p.action.op)||'update';
+  if(op==='delete' && !confirm('정말 삭제할까요? 되돌릴 수 없어요.')) return;
+  toast('시트에 반영 중…');
+  fetch('/api/sheets/crud/commit',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:p.action, sig:p.sig, confirmed:true})})
+    .then(function(r){return r.json();}).then(function(d){
+      if(d&&d.ok){
+        var rr=d.result||{}; var msg;
+        if(rr.op==='update') msg='✅ 반영 완료 — '+_sEsc(String(rr.항목||''))+': '+_sEsc(String(rr.기존값||'(빈칸)'))+' → '+_sEsc(String(rr.새값||''))+' (시트 '+_sEsc(String(rr.행||''))+'행)';
+        else if(rr.op==='create') msg='✅ 명단에 추가 완료';
+        else if(rr.op==='delete') msg='✅ 삭제 완료 — '+_sEsc(String(rr.name||''));
+        else msg='✅ 반영 완료';
+        pushMsg('gen', msg); window._SHEET_PENDING=null;
+      } else { pushMsg('gen', renderMd('반영하지 못했어요: '+((d&&d.message)||'원인 불명')+'. 다시 시도할까요?')); }
+    }).catch(function(){ pushMsg('gen','반영 중 오류가 났어요. 다시 시도할까요?'); });
+}
 // ★배선A: 증권분석 결과(코치 HTML) 렌더 + PDF(인쇄)/엑셀(CSV) 다운로드 + _HIST 요약
 function _policySummary(d){
   try{ var dd=d.data||{}; var gap=(dd.보장분석||[]).filter(function(r){return r.판정==='부족';}).map(function(r){return r.항목+'(부족 '+r.부족+')';}).slice(0,4).join(', ');

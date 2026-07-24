@@ -264,7 +264,7 @@ async function planWrite(ma, op, raw) {
     if (!col) return { ok: false, message: `'${raw.field}' 항목을 시트 컬럼에서 못 찾았어요. (컬럼: ${table.header.join(', ')})` };
     const target = hits[0];
     action.rowNum = target._rowNum; action.column = col; action.value = String(raw.value);
-    action.name = target[table.nameCol];
+    action.name = target[table.nameCol]; action.before = (target[col] != null ? String(target[col]) : ''); // ★변경 전 값(commit 실값 보고용·서명에 포함)
     preview = { 대상: action.name, 항목: col, 기존값: target[col] || '(빈칸)', 새값: action.value };
   } else if (op === 'create') {
     const fields = {};
@@ -310,7 +310,7 @@ async function commit(ma, action, sig, opts) {
     if (colIdx < 0) return { ok: false, message: `'${action.column}' 컬럼이 사라졌어요.` };
     const a1 = `${_SHEET_TAB}!${colLetter(colIdx)}${action.rowNum}`;
     await sheets.spreadsheets.values.update({ spreadsheetId: id, range: a1, valueInputOption: 'RAW', requestBody: { values: [[action.value]] } });
-    result = { op: 'update', name: action.name, 항목: action.column, 새값: action.value };
+    result = { op: 'update', name: action.name, 항목: action.column, 기존값: (action.before != null ? action.before : ''), 새값: action.value, 행: action.rowNum };
   } else if (action.op === 'create') {
     const rowArr = table.header.map((h) => action.fields[h] || '');
     await sheets.spreadsheets.values.append({ spreadsheetId: id, range: `${_SHEET_TAB}!A1`, valueInputOption: 'RAW', insertDataOption: 'INSERT_ROWS', requestBody: { values: [rowArr] } });
@@ -359,7 +359,8 @@ function systemPrompt() {
 4. 삭제는 특히 신중히. 되돌릴 수 없음을 알린다.
 5. 말투: 70대 어르신도 알아듣게 따뜻하고 쉽게. '클로드'·'AI' 같은 말은 쓰지 않는다. ★이모지·이모티콘(😊 📋 ⭐ 등)은 절대 쓰지 않는다(장식 기호 금지).
 6. 항목 이름은 대표가 말한 대로 도구에 넘긴다(주소·연락처 등). 시스템이 실제 컬럼에 맞춰준다.
-7. 선택지가 여럿이면 가장 알맞은 하나를 추천으로 명시하고("추천: ○○"), "회장님, 이걸로 진행할까요?"처럼 확인을 받는다. 없는 정보는 지어내지 않는다.`;
+7. 선택지가 여럿이면 가장 알맞은 하나를 추천으로 명시하고("추천: ○○"), "회장님, 이걸로 진행할까요?"처럼 확인을 받는다. 없는 정보는 지어내지 않는다.
+8. ★★완료 표현 환각 금지: 도구 실행 결과(승인 후 실제 반영) 없이 "완료/변경했다/반영했다/업데이트했다"로 절대 답하지 마라. 수정·추가·삭제 요청은 반드시 도구(update_row/create_row/delete_row)를 불러 미리보기를 만들고, 답은 "이렇게 바꿀까요? 승인하시면 반영합니다"로 물어라(완료형 금지). 실제 반영은 대표 승인 후에만 되며 그때 시스템이 실값으로 보고한다.`;
 }
 
 // ═══════════════════════════════════════════════════════════════
