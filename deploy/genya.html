@@ -3056,8 +3056,9 @@ window.addFile=function(){ doOCR(); };
           var html='<div style="font-size:12px;font-weight:700;color:#8a6d3b;margin:2px 0 8px">총 '+rl.count+'명 · 파일 '+order.length+'건</div>';
           html+=order.map(function(f){
             var isOld=(f==='(초기 업로드)');
-            var _hd='<div style="display:flex;gap:6px;font-size:10px;color:#b0b7c3;font-weight:700;padding:2px 0">'+_show.map(function(h){return '<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(h)+'</span>';}).join('')+'</div>';
-            var det=_hd+grp[f].map(function(r){ return '<div style="display:flex;gap:6px;font-size:11px;padding:3px 0;border-top:1px solid #f0ece6">'+_show.map(function(h){return '<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(r[h]!=null?r[h]:'')+'</span>';}).join('')+'</div>'; }).join('');
+            var _th='<tr>'+_show.map(function(h){return '<th style="text-align:left;padding:5px 7px;color:#555;background:#f4f1ec;font-size:11px;border-bottom:1px solid #ddd;white-space:nowrap">'+esc(h)+'</th>';}).join('')+'</tr>';
+            var _tb=grp[f].map(function(r){ return '<tr>'+_show.map(function(h){return '<td style="padding:5px 7px;color:#000;background:#fff;font-size:14px;border-bottom:1px solid #eee;word-break:break-all">'+esc(r[h]!=null?r[h]:'')+'</td>';}).join('')+'</tr>'; }).join('');
+            var det='<table style="width:100%;border-collapse:collapse;background:#fff;color:#000;font-size:14px">'+_th+_tb+'</table>';
             return '<div class="gh-file"><div class="gh-file-hd" onclick="ghToggle(this)"><span>📄 '+esc(f)+' <b>('+grp[f].length+'명)</b></span><span>'
               +(isOld?'':'<button class="gh-del" title="이 파일 삭제" onclick="event.stopPropagation();ghDelFile(this.getAttribute(\'data-f\'))" data-f="'+esc(f)+'">🗑</button>')
               +'<span class="gh-caret">▾</span></span></div><div class="gh-file-bd" style="display:none">'+det+'</div></div>';
