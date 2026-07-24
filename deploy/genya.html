@@ -3002,6 +3002,11 @@ window.addFile=function(){ doOCR(); };
   .gh-tbl{width:100%;border-collapse:collapse;font-size:11.5px;margin-top:6px;}
   .gh-tbl th{background:#efe9df;color:#6b5836;padding:5px 6px;text-align:left;position:sticky;top:0;}
   .gh-tbl td{border-top:1px solid #eee;padding:5px 6px;color:#2a3550;}
+  .gh-file{border:1px solid #e5e1dc;border-radius:10px;margin-bottom:7px;background:#fff;overflow:hidden;}
+  .gh-file-hd{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;cursor:pointer;font-size:12.5px;font-weight:600;}
+  .gh-del{background:none;border:none;cursor:pointer;font-size:14px;margin-right:6px;}
+  .gh-caret{color:#b09a6f;}
+  .gh-file-bd{padding:2px 12px 8px;}
 </style>
 <div id="ghOv" onclick="if(event.target===this)ghClose()">
   <div id="ghPanel">
@@ -3025,7 +3030,7 @@ window.addFile=function(){ doOCR(); };
 <script>
 (function(){
   var CONNS=[{k:'sheets',nm:'구글 시트',sub:'고객 명단'},{k:'calendar',nm:'구글 캘린더',sub:'일정·브리핑'},{k:'drive',nm:'구글 드라이브',sub:'자료 저장'},{k:'gmail',nm:'Gmail',sub:'메일·발송'}];
-  var _pending=null;
+  var _pending=null,_pendingName='';
   function esc(s){return String(s==null?'':s).replace(/[&<>]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;'}[c];});}
   async function api(u,o){var r=await fetch(u,Object.assign({credentials:'include'},o||{}));return r.json();}
   window.genyaHub=function(){document.getElementById('ghOv').style.display='block';setTimeout(function(){document.getElementById('ghOv').classList.add('on');},10);ghLoad();};
@@ -3033,7 +3038,7 @@ window.addFile=function(){ doOCR(); };
   window.ghLoad=async function(){
     // 명단 수
     try{var s=await api('/api/sheets');document.getElementById('ghCount').textContent=(s&&typeof s.total==='number')?s.total:(s&&(s.needsGoogle||s.needsConnect)?'–':'0');}catch(e){document.getElementById('ghCount').textContent='–';}
-    // 📇 저장된 고객 명단 목록 표시(읽기 전용). 없는 변수 참조 0 · esc/api는 이 IIFE 스코프.
+    // 📇 저장된 명단을 소스파일별 카드로 표시(읽기 전용). esc/api/ghLoad는 이 IIFE 스코프.
     try{
       var rl=await api('/api/roster/list');
       var el=document.getElementById('ghList');
@@ -3041,12 +3046,20 @@ window.addFile=function(){ doOCR(); };
         if(rl&&rl.ok&&Array.isArray(rl.rows)&&rl.rows.length){
           var H=rl.rows[0];
           var col=function(cands){ for(var i=0;i<cands.length;i++){ for(var k in H){ if(String(k).indexOf(cands[i])>=0) return k; } } return null; };
-          var cN=col(['고객명','이름','성명']),cP=col(['연락처','전화','휴대폰','번호']),cPr=col(['가입상품','상품']),cE=col(['만기']);
-          var body=rl.rows.map(function(r,i){ return '<tr><td>'+(i+1)+'</td><td>'+esc(cN?r[cN]:'')+'</td><td>'+esc(cP?r[cP]:'')+'</td><td>'+esc(cPr?r[cPr]:'')+'</td><td>'+esc(cE?r[cE]:'')+'</td></tr>'; }).join('');
-          el.innerHTML='<div style="font-size:12px;font-weight:700;color:#8a6d3b;margin:4px 0">총 '+rl.count+'명</div>'
-            +'<table class="gh-tbl"><tr><th>#</th><th>고객명</th><th>연락처</th><th>가입상품</th><th>만기일</th></tr>'+body+'</table>';
+          var cSrc=col(['소스파일']),cN=col(['고객명','이름','성명']),cP=col(['연락처','전화','휴대폰','번호']),cPr=col(['가입상품','상품']);
+          var grp={},order=[];
+          rl.rows.forEach(function(r){ var f=(cSrc&&r[cSrc])?String(r[cSrc]):'(초기 업로드)'; if(!grp[f]){grp[f]=[];order.push(f);} grp[f].push(r); });
+          var html='<div style="font-size:12px;font-weight:700;color:#8a6d3b;margin:2px 0 8px">총 '+rl.count+'명 · 파일 '+order.length+'건</div>';
+          html+=order.map(function(f){
+            var isOld=(f==='(초기 업로드)');
+            var det=grp[f].map(function(r,i){ return '<div style="display:flex;gap:8px;font-size:11.5px;padding:4px 0;border-top:1px solid #f0ece6"><span style="min-width:16px;color:#b0b7c3">'+(i+1)+'</span><span style="min-width:52px;font-weight:600">'+esc(cN?r[cN]:'')+'</span><span style="color:#8a94a6">'+esc(cP?r[cP]:'')+'</span><span style="margin-left:auto">'+esc(cPr?r[cPr]:'')+'</span></div>'; }).join('');
+            return '<div class="gh-file"><div class="gh-file-hd" onclick="ghToggle(this)"><span>📄 '+esc(f)+' <b>('+grp[f].length+'명)</b></span><span>'
+              +(isOld?'':'<button class="gh-del" title="이 파일 삭제" onclick="event.stopPropagation();ghDelFile(this.getAttribute(\'data-f\'))" data-f="'+esc(f)+'">🗑</button>')
+              +'<span class="gh-caret">▾</span></span></div><div class="gh-file-bd" style="display:none">'+det+'</div></div>';
+          }).join('');
+          el.innerHTML=html;
         } else if(rl&&(rl.needsGoogle||rl.needsConnect)){ el.innerHTML=''; }
-        else { el.innerHTML='<div style="color:#8a94a6;font-size:12px;padding:6px 0">아직 올린 명단이 없어요. 아래에서 엑셀·CSV를 올려주세요.</div>'; }
+        else { el.innerHTML='<div style="color:#8a94a6;font-size:12px;padding:6px 0">아직 올린 명단이 없어요. 아래에서 올려주세요.</div>'; }
       }
     }catch(e){}
     // 연결 상태(실측)
@@ -3055,6 +3068,8 @@ window.addFile=function(){ doOCR(); };
     if(st&&(st.needsGoogle||st.needsConnect)){box.innerHTML='<div class="gh-warn">구글 연결이 필요해요. <a href="/auth/google/connect">지금 연결하기</a></div>';return;}
     box.innerHTML=CONNS.map(function(c){var on=!!st[c.k];return '<div class="gh-row '+(on?'on':'off')+'"><div class="nm">'+esc(c.nm)+'<span>'+esc(c.sub)+'</span></div><div class="gh-st '+(on?'gh-on':'gh-off')+'"><span class="gh-dot"></span>'+(on?'연결됨':'미연결')+(on?'':'<button class="gh-relink" onclick="location.href=\'/auth/google/connect\'">연결</button>')+'</div></div>';}).join('');
   };
+  window.ghToggle=function(hd){ var bd=hd.nextElementSibling; if(!bd)return; var open=bd.style.display!=='none'; bd.style.display=open?'none':'block'; var c=hd.querySelector('.gh-caret'); if(c)c.textContent=open?'▾':'▴'; };
+  window.ghDelFile=async function(f){ if(!confirm('"'+f+'"에서 온 고객 전체를 삭제하시겠습니까? 되돌릴 수 없어요.'))return; var j;try{j=await api('/api/roster/file?name='+encodeURIComponent(f),{method:'DELETE'});}catch(e){alert('삭제 실패: '+e.message);return;} if(j&&j.ok){ghLoad();}else{alert((j&&(j.error||j.message))||'삭제 실패');} };
   window.ghPick=function(inp){
     var f=inp.files&&inp.files[0];if(!f)return;
     var rd=new FileReader();
@@ -3063,7 +3078,7 @@ window.addFile=function(){ doOCR(); };
       var j;try{j=await api('/api/roster/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dataUrl:rd.result,confirm:false})});}catch(e){document.getElementById('ghPv').innerHTML='<div class="gh-warn">오류: '+esc(e.message)+'</div>';return;}
       if(j&&(j.needsGoogle||j.needsConnect)){document.getElementById('ghPv').innerHTML='<div class="gh-warn">구글 연결이 필요해요. <a href="/auth/google/connect">연결</a></div>';return;}
       if(!j.ok){document.getElementById('ghPv').innerHTML='<div class="gh-warn">'+esc(j.message||'읽기 실패')+'</div>';return;}
-      _pending=rd.result;
+      _pending=rd.result;_pendingName=(f&&f.name)||'';
       document.getElementById('ghPv').innerHTML='<div class="gh-pv">📄 <b>'+j.count+'명</b> 읽음 · 신규 <b>'+j.신규+'</b>명 · 이미 있음 <b>'+j.중복+'</b>명'+(j.중복명단&&j.중복명단.length?'<br><span style="color:#8a94a6">중복: '+esc(j.중복명단.join(', '))+(j.중복>j.중복명단.length?' 외':'')+'</span>':'')+'<br>항목: '+esc((j.header||[]).join(', '))+'</div><div style="display:flex;gap:2%;margin-top:8px"><button class="gh-btn half" onclick="ghSave(\'replace\')">기존 교체(덮어쓰기)</button><button class="gh-btn half ghost" onclick="ghSave(\'append\')">기존에 추가</button></div>';
     };
     rd.readAsDataURL(f);inp.value='';
@@ -3072,7 +3087,7 @@ window.addFile=function(){ doOCR(); };
     if(!_pending)return;
     if(mode==='replace'&&!confirm('기존 명단을 덮어쓰고 새로 저장할까요? 되돌릴 수 없어요.'))return;
     document.getElementById('ghPv').innerHTML='<div class="gh-warn">저장 중…</div>';
-    var j;try{j=await api('/api/roster/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dataUrl:_pending,mode:mode,confirm:true})});}catch(e){document.getElementById('ghPv').innerHTML='<div class="gh-warn">오류: '+esc(e.message)+'</div>';return;}
+    var j;try{j=await api('/api/roster/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dataUrl:_pending,mode:mode,confirm:true,name:_pendingName})});}catch(e){document.getElementById('ghPv').innerHTML='<div class="gh-warn">오류: '+esc(e.message)+'</div>';return;}
     if(j.ok){document.getElementById('ghPv').innerHTML='<div class="gh-pv" style="color:#2e7d32">✅ '+esc(j.message)+'</div>';_pending=null;ghLoad();if(window._MGMTFILE!==undefined){try{window._MGMTFILE=null;}catch(e){}}}
     else{document.getElementById('ghPv').innerHTML='<div class="gh-warn">'+esc(j.message||j.error||'실패')+'</div>';}
   };
