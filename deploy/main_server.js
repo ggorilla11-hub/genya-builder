@@ -292,6 +292,14 @@ app.use(express.json({ limit: '50mb' })); // 자료 업로드(base64) 파싱 —
 // ★배포 반영 확인용(정직): 재배포 후 이 build 값이 바뀌면 새 코드가 실제 활성화됐다는 증거. 공개·민감정보 없음.
 const BUILD_TAG = 'v4.0-day4-vapi-clientData-expiring-2026-07-24';
 app.get(['/health', '/api/version'], (req, res) => res.json({ ok: true, build: BUILD_TAG, emojiFilter: typeof stripEmoji === 'function', pineconeReady: (function () { try { return personalMem.configured(); } catch (e) { return false; } })(), ts: new Date().toISOString() }));
+// 🔑 SA 전환 확인용 진단: 로그인·OAuth 없이 서비스 계정만으로 실제 시트를 읽어 본다. ok:true면 SA 영구접근 성공(토큰만료 무관).
+//   loadTable(null)은 ma 없이 SA로 이름검색+읽기를 그대로 수행. 개인정보 행은 반환하지 않고 건수만 노출.
+app.get('/api/diag/auth-test', async (req, res) => {
+  try {
+    const t = await sheetsCrud.loadTable(null);
+    res.json({ ok: !!t.id, method: 'service_account', found: !!t.id, rows: (t.rows || []).length });
+  } catch (e) { res.json({ ok: false, method: 'service_account', error: e.message }); }
+});
 // ★🛡️ 수문장 진단(회장님 직접 확인용): 로그인 상태로 이 URL을 열면 — 내 세션 uid·Pinecone연결·최근이벤트를 그대로 보여준다.
 //   명단 올린 뒤 이걸 열어 recentEvents에 roster_upload가 있으면 "기록 OK"(라우팅/타이밍 문제), 없으면 "기록 실패"(uid/훅 문제) → 근본 즉시 판별.
 app.get('/api/_diag/gatekeeper', async (req, res) => {

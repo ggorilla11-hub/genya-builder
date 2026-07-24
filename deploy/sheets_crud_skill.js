@@ -104,6 +104,7 @@ function colLetter(idx) { // 0-based → A,B,...,Z,AA
 async function loadTable(ma) {
   // 🔑 시트 접근 = 서비스 계정(ma 없어도 동작). 로그인 OAuth는 사용자 인증 전용으로 별개 유지.
   const auth = await getServiceAuth();
+  console.log('[🔑인증] 시트 접근: 서비스 계정 사용'); // 이 줄이 찍히면 SA 접근(토큰만료 무관). 안 찍히면 아직 OAuth 경로.
   const drive = google.drive({ version: 'v3', auth });
   const sheets = google.sheets({ version: 'v4', auth });
   const f = await drive.files.list({

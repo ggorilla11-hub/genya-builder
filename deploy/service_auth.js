@@ -17,6 +17,8 @@ async function getServiceAuth() {
     ],
   });
   _auth = await auth.getClient();
+  // 확인용 로그(1회): 어떤 서비스 계정으로 붙었는지. ★키(private_key) 등 시크릿은 절대 안 찍음 — 이메일만.
+  console.log('[🔑SA] 서비스계정 인증 준비 완료 · ' + (creds.client_email || '(client_email 없음)'));
   return _auth;
 }
 
