@@ -2370,14 +2370,22 @@ function addToolAsk(){ window._ACTIVE_SKILL='add_tool'; pushMsg('gen','어떤 �
           if(r==='user'||r==='customer'||r==='human') pushMsg('me', t.replace(/[<>]/g,''));       // 사용자(SDK별 role 명칭 방어)
           else if(r==='assistant'||r==='bot'||r==='ai') pushMsg('gen', t.replace(/[<>]/g,''));    // 지니야
           else pushMsg('me', t.replace(/[<>]/g,''));                                              // role 미상이면 일단 사용자로 표시(누락 방지)
-          // ★2단계 음성 카드 띄우기(FC 불필요): 사용자 발화에 "○○ 카드 띄워/스캔/보여줘"가 있으면 화면에 고객카드 표시. 통화는 계속.
-          if(r!=='assistant'&&r!=='bot'&&r!=='ai' && /(카드|스캔)/.test(t) && /(띄워|띄우|보여|열어|뜨|스캔|해줘|해|줘)/.test(t)){
-            var _cm=t.replace(/지니야|고객님|고객|카드|스캔해줘|스캔해|스캔|띄워줘|띄워|띄우|보여줘|보여|열어줘|열어|해줘|줘|증권|서류|자료|파일|명단|이거|저거|화면|을|를|의|좀|씨|님/g,' ').trim().match(/([가-힣]{2,4})/);
-            if(_cm && _cm[1] && typeof openCustomerCard==='function'){ try{ openCustomerCard(_cm[1]); }catch(e){} }
-          }
-          // ★음성 결재/발송 실행(FC 불필요): "○○ 결재함에 올려/안내문 발송" 등 액션 발화 → 그 문장을 /api/order로 전달 → 서버 approval이 실제 결재함 등록(명단 주입 포함). Vapi는 말만 하므로 실제 등록은 여기서.
-          if(r!=='assistant'&&r!=='bot'&&r!=='ai' && !/(카드|스캔)/.test(t) && ((/(결재|결제|발송|알림톡|승인)/.test(t) && /(올려|올릴|올려줘|보내|발송|해줘|등록|잡아)/.test(t)) || (/(안내문|문자|메일|이메일|카톡)/.test(t) && /(보내|발송|올려|올릴)/.test(t)))){
-            try{ _voiceExec(t); }catch(e){}
+          // ★PC 음성 근본수정: PC STT는 한 문장을 여러 개의 final 조각으로 쪼개 보내는 경우가 있어(폰은 통문장으로 옴) 조각마다 검사하면 "결재"와 "올려"가 서로 다른 조각에 흩어져 감지가 안 됨 → 최근 사용자 발화(final)를 이어붙인 버퍼로 검사. 발동 시 버퍼를 비우고 4초 쿨다운으로 중복 등록을 막는다(폰 통문장 경로는 그대로 즉시 동작).
+          if(r!=='assistant'&&r!=='bot'&&r!=='ai'){
+            var _now=Date.now();
+            if(!window._vBuf || (_now-(window._vBufAt||0))>7000) window._vBuf='';   // 7초 이상 조용하면 새 발화로 리셋
+            window._vBuf=(window._vBuf?window._vBuf+' ':'')+t; window._vBufAt=_now;
+            var B=window._vBuf;
+            var _cool=(_now-(window._vFireAt||0))<4000;  // 방금 발동했으면 잠시 무시(중복 결재 차단)
+            // (1) 카드 띄우기: "○○ 카드 띄워/스캔/보여줘"
+            if(/(카드|스캔)/.test(B) && /(띄워|띄우|보여|열어|뜨|스캔|해줘|해|줘)/.test(B)){
+              var _cm=B.replace(/지니야|고객님|고객|카드|스캔해줘|스캔해|스캔|띄워줘|띄워|띄우|보여줘|보여|열어줘|열어|해줘|줘|증권|서류|자료|파일|명단|이거|저거|화면|을|를|의|좀|씨|님/g,' ').trim().match(/([가-힣]{2,4})/);
+              if(_cm && _cm[1] && typeof openCustomerCard==='function'){ try{ openCustomerCard(_cm[1]); }catch(e){} window._vBuf=''; window._vFireAt=_now; }
+            }
+            // (2) 결재/발송 실행(FC 불필요): "○○ 결재함에 올려/안내문 발송" → 누적 문장 전체를 /api/order로 전달 → 서버 approval이 실제 결재함 등록. Vapi는 말만 하므로 실제 등록은 여기서.
+            else if(!_cool && !/(카드|스캔)/.test(B) && ((/(결재|결제|발송|알림톡|승인)/.test(B) && /(올려|올릴|올려줘|보내|발송|해줘|등록|잡아)/.test(B)) || (/(안내문|문자|메일|이메일|카톡)/.test(B) && /(보내|발송|올려|올릴)/.test(B)))){
+              try{ _voiceExec(B); }catch(e){} window._vBuf=''; window._vFireAt=_now;
+            }
           }
         }
       }catch(e){} });
