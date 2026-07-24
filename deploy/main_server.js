@@ -2057,6 +2057,57 @@ app.get('/api/conn/status', async (req, res) => {
   res.json({ ok: true, loggedIn: true, ...out });
 });
 
+// ── ✅ 커넥터 실헬스체크: 읽기=실제 API 호출, 쓰기=스코프 실확인. 솔라피=키 존재+잔액. ★토큰·키 미노출·미로그. 각각 try-catch. ──
+function _connReason(e) { const m = String((e && e.message) || ''); if (/invalid_grant|expired|401|unauthor/i.test(m)) return '토큰 만료 — 재연결 필요'; if (/insufficient|403|scope|permission/i.test(m)) return '권한(스코프) 부족 — 재연결 필요'; if (/로그인/.test(m)) return '로그인/구글 연결 필요'; return '연결 필요'; }
+function _maskPhone(p) { p = String(p || '').replace(/[^0-9]/g, ''); return p.length >= 8 ? p.slice(0, 7) + '****' : (p ? '****' : ''); }
+async function _solapiBalance(apiKey, apiSecret) {
+  const date = new Date().toISOString(); const salt = crypto.randomBytes(32).toString('hex');
+  const signature = crypto.createHmac('sha256', apiSecret).update(date + salt).digest('hex');
+  const auth = `HMAC-SHA256 apiKey=${apiKey}, date=${date}, salt=${salt}, signature=${signature}`;
+  const r = await fetch('https://api.solapi.com/cash/v1/balance', { headers: { Authorization: auth } });
+  if (!r.ok) throw new Error('balance http ' + r.status);
+  const j = await r.json().catch(() => ({}));
+  const bal = (typeof j.balance === 'number') ? j.balance : (typeof j.point === 'number' ? j.point : (j.balance != null ? Number(j.balance) : null));
+  return bal;
+}
+app.get('/api/connectors/health', async (req, res) => {
+  const uid = (sessionOf(req) || {}).email || '';
+  const ma = memberAuth(req);
+  const sc = String(grantedScope(req) || '');
+  const out = {};
+  // 1. 시트 (서비스계정): loadTable 읽기 → SA는 소유/공유 시트에 쓰기 가능
+  try { const t = await sheetsCrud.loadTable(null); out.sheets = { ok: true, read: true, write: true, auth: 'service_account', count: (t && t.rows && t.rows.length) || 0 }; }
+  catch (e) { out.sheets = { ok: false, read: false, write: false, auth: 'service_account', reason: '시트 접근 실패(SA 설정 확인)' }; }
+  // 2. 캘린더 (OAuth): events.list 읽기 + 쓰기 스코프 실확인(calendar / calendar.events)
+  try {
+    if (!ma) throw new Error('로그인 필요');
+    await google.calendar({ version: 'v3', auth: ma }).events.list({ calendarId: 'primary', maxResults: 1, timeMin: new Date().toISOString() });
+    const w = /auth\/calendar(\.events)?(\s|$)/.test(sc);
+    out.calendar = { ok: true, read: true, write: w, auth: 'oauth', reason: w ? undefined : '쓰기 스코프 없음(readonly) — 일정 등록 불가' };
+  } catch (e) { out.calendar = { ok: false, read: false, write: false, auth: 'oauth', reason: _connReason(e) }; }
+  // 3. 드라이브 (OAuth): files.list 읽기 + 쓰기 스코프(drive / drive.file)
+  try {
+    if (!ma) throw new Error('로그인 필요');
+    await google.drive({ version: 'v3', auth: ma }).files.list({ pageSize: 1, fields: 'files(id)' });
+    const w = /auth\/drive(\.file)?(\s|$)/.test(sc);
+    out.drive = { ok: true, read: true, write: w, auth: 'oauth', reason: w ? undefined : '쓰기 스코프 없음' };
+  } catch (e) { out.drive = { ok: false, read: false, write: false, auth: 'oauth', reason: _connReason(e) }; }
+  // 4. Gmail (OAuth): getProfile 읽기 + 발송 스코프(gmail.send)
+  try {
+    if (!ma) throw new Error('로그인 필요');
+    await google.gmail({ version: 'v1', auth: ma }).users.getProfile({ userId: 'me' });
+    const w = /auth\/gmail\.send/.test(sc) || /mail\.google\.com/.test(sc);
+    out.gmail = { ok: true, read: true, write: w, auth: 'oauth', reason: w ? undefined : '발송 스코프 없음' };
+  } catch (e) { out.gmail = { ok: false, read: false, write: false, auth: 'oauth', reason: _connReason(e) }; }
+  // 5. 솔라피: 저장 키 존재 + 잔액 조회(키·시크릿 미노출)
+  try {
+    const sk = uid ? await loadSolapiKeys(uid) : null;
+    if (!sk) { out.solapi = { ok: false, registered: false, reason: '미등록' }; }
+    else { let bal = null; try { bal = await _solapiBalance(sk.apiKey, sk.apiSecret); } catch (e) { bal = null; } out.solapi = { ok: bal != null, registered: true, sender: _maskPhone(sk.sender), balance: bal, reason: bal == null ? '잔액 조회 실패 — 키 확인' : undefined }; }
+  } catch (e) { out.solapi = { ok: false, registered: false, reason: '확인 실패' }; }
+  res.json({ ok: true, checkedAt: new Date().toISOString(), ...out });
+});
+
 // ── 💬 카카오 로그인 라우트 (구글과 동일 구조: authorize → callback) ──
 app.get('/auth/kakao', (req, res) => {
   if (!KA_CONFIGURED) return res.status(503).send('카카오 미설정 — KAKAO_REST_KEY 필요');
