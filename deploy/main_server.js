@@ -1791,7 +1791,21 @@ approval.init({ anthropic: _anthropic, model: MODEL_DEEP, getMemberSheet: findOr
 
 app.post('/api/approval/create', async (req, res) => { try { const ma = gateGoogle(req, res); if (!ma) return; ma._email = (sessionOf(req) || {}).email || ''; await _attachPrefs(ma); res.json(await approval.create(ma, req.body || {})); } catch (e) { res.status(500).json({ ok: false, error: e.message }); } });
 app.get('/api/approval/list', async (req, res) => { try { const ma = gateGoogle(req, res); if (!ma) return; res.json(await approval.list(ma, { status: req.query.status })); } catch (e) { res.status(500).json({ ok: false, error: e.message }); } });
-app.post('/api/approval/act', async (req, res) => { try { const ma = gateGoogle(req, res); if (!ma) return; ma._email = (sessionOf(req) || {}).email || ''; await _attachPrefs(ma); res.json(await approval.act(ma, req.body || {})); } catch (e) { res.status(500).json({ ok: false, error: e.message }); } });
+app.post('/api/approval/act', async (req, res) => { try {
+  const ma = gateGoogle(req, res); if (!ma) return;
+  ma._email = (sessionOf(req) || {}).email || '';
+  await _attachPrefs(ma);
+  const b = req.body || {};
+  const _r = await approval.act(ma, b);
+  // 🔒발송 감사 로그(사고 추적): approve(발송 시도)마다 누가·언제·어느 건·humanApproval·결과를 서버 로그에 남긴다.
+  //   실고객 연락처·토큰·본문은 남기지 않는다(개인정보·시크릿 금지). humanApproval=false인 발송이 로그에 뜨면 즉시 무단발송 신호.
+  if (String(b.action || '') === 'approve') {
+    const _out = (_r && _r.ok) ? ('발송실행(' + String((_r.approval && _r.approval.승인상태) || '') + (_r.result && _r.result.safeMode ? '·안전모드' : '') + ')')
+      : (_r && _r.blockedNoHuman ? '★차단:버튼아님(humanApproval없음)' : (_r && _r.needsBulkConfirm ? '대량재확인대기' : '실패:' + String((_r && _r.message) || '').slice(0, 40)));
+    console.log('[🔒감사·발송]', _seoul().today, _seoul().now, '· 요청자=' + (ma._email || '(unknown)'), '· id=' + String(b.id || ''), '· humanApproval=' + (b.humanApproval === true), '· 결과=' + _out);
+  }
+  res.json(_r);
+} catch (e) { res.status(500).json({ ok: false, error: e.message }); } });
 app.post('/api/approval/plan', async (req, res) => { try { const ma = gateGoogle(req, res); if (!ma) return; res.json(await approval.plan(ma, (req.body && req.body.text) || '')); } catch (e) { res.status(500).json({ ok: false, error: e.message }); } });
 // 🔒 안전모드 정직 노출(화이트리스트 값은 비공개·on/off만). 결재함 페이지 배너가 이걸 읽어 실고객 발송 여부를 정직 표시.
 app.get('/api/approval/mode', (req, res) => res.json({ ok: true, live: String(process.env.APPROVAL_LIVE_SEND || '') === '1' }));
