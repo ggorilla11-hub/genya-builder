@@ -24,6 +24,7 @@
 const crypto = require('crypto');
 const { google } = require('googleapis');
 const { EventEmitter } = require('events');
+const { getServiceAuth } = require('./service_auth'); // 🔑 시트 접근은 서비스 계정으로(로그인 OAuth는 사용자 인증용으로 유지)
 
 // ── 주입 설정(main_server가 init으로 넘김) ──
 let _anthropic = null;
@@ -101,8 +102,10 @@ function colLetter(idx) { // 0-based → A,B,...,Z,AA
 // 2. 시트 로드 (제로 인그레스: 읽어서 메모리에만)
 // ═══════════════════════════════════════════════════════════════
 async function loadTable(ma) {
-  const drive = google.drive({ version: 'v3', auth: ma });
-  const sheets = google.sheets({ version: 'v4', auth: ma });
+  // 🔑 시트 접근 = 서비스 계정(ma 없어도 동작). 로그인 OAuth는 사용자 인증 전용으로 별개 유지.
+  const auth = await getServiceAuth();
+  const drive = google.drive({ version: 'v3', auth });
+  const sheets = google.sheets({ version: 'v4', auth });
   const f = await drive.files.list({
     q: `mimeType='application/vnd.google-apps.spreadsheet' and name='${_DEMO_TITLE}' and trashed=false`,
     fields: 'files(id)',
