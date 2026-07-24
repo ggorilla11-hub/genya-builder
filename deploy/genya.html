@@ -2009,27 +2009,71 @@ function openApproval(){
     +'<div id="apLog"></div>'));
   apRender();
 }
+// ★1단계(백엔드 통일): localStorage(리마인더·보상)만 보던 결재함을 백엔드 구글시트 결재함(/api/approval/list)과 병합.
+//   → "채팅 지니야가 올렸는데 무기고엔 안 보임" 해결. 백엔드 조회 실패(비로그인·스코프없음)여도 로컬만 그려 끊김 없음.
 function apRender(){
   var box=document.getElementById('apList'); var logBox=document.getElementById('apLog'); if(!box) return;
-  var q=_bizGet('genya_approvals');
-  var pending=q.filter(function(x){return x.status==='대기';});
-  var done=q.filter(function(x){return x.status!=='대기';});
+  var local=_bizGet('genya_approvals');
+  box.innerHTML='<div style="text-align:center;padding:18px;color:#98a4b2;font-size:12px">불러오는 중…</div>';
+  fetch('/api/approval/list',{credentials:'same-origin'})
+    .then(function(r){ return r&&r.ok?r.json():null; })
+    .then(function(d){ _apRenderMerged(box, logBox, (d&&d.items)?d.items.map(_apFromBackend):[], local); })
+    .catch(function(){ _apRenderMerged(box, logBox, [], local); });
+}
+// 백엔드 결재건(회원 구글시트 '결재함' 탭) → 무기고 카드 공통 형태로 변환. _src='backend' 표식으로 버튼 분기(2단계 연결 예정).
+function _apFromBackend(it){
+  var chMap={sms:'문자',gmail:'이메일'};
+  var raw=String(it.승인상태||'대기');
+  var st = raw==='대기' ? '대기' : (raw==='거부' ? '반려' : '승인'); // 완료·실패·부분실패 → 처리완료(승인계열)
+  var atMs = Date.parse(String(it.생성일시||'').replace(' ','T')) || Date.now();
+  var upMs = Date.parse(String(it.수정일시||'').replace(' ','T')) || atMs;
+  return { _src:'backend', id:it.id, 제목:it.요청내용||'(제목 없음)', 출처:'발송',
+    미리보기:String(it.템플릿||'')+(it.대상수?('\n\n· 대상 '+it.대상수+'명 · 채널 '+(chMap[it.채널]||it.채널||'')):''),
+    send:{ channel:(it.채널==='gmail'?'email':'sms'), to:(it.대상수?('대상 '+it.대상수+'명'):'') },
+    at:atMs, decidedAt:upMs, status:st, 결과:String(it.결과||'') };
+}
+// 병합 렌더(순수 표시). 대기=카드 / 처리완료=로그. 로컬(리마인더·보상)은 기존 버튼, 백엔드는 1단계에선 읽기전용(버튼 연결=2단계).
+function _apRenderMerged(box, logBox, backend, local){
+  var all=backend.concat(local);
+  var pending=all.filter(function(x){return x.status==='대기';}).sort(function(a,b){return (b.at||0)-(a.at||0);});
+  var done=all.filter(function(x){return x.status!=='대기';}).sort(function(a,b){return (b.decidedAt||b.at||0)-(a.decidedAt||a.at||0);});
   var cnt=document.getElementById('apCount'); if(cnt) cnt.textContent=pending.length?('· '+pending.length+'건'):'';
   var srcBadge={ '리마인더':'#3B8FD4','보상':'#9B7EDE','홍보마케팅':'#E06B9E','발송':'#2FBF71' };
-  if(!pending.length){ box.innerHTML='<div style="text-align:center;padding:22px;color:#98a4b2;font-size:12.5px">승인 대기 중인 게 없어요.<br>리마인더 마감·보상 서류가 생기면 여기로 올라와요.</div>'; }
+  var chMap={kakao:'카톡',sms:'문자',email:'이메일'};
+  if(!pending.length){ box.innerHTML='<div style="text-align:center;padding:22px;color:#98a4b2;font-size:12.5px">승인 대기 중인 게 없어요.<br>리마인더 마감·보상 서류·채팅 결재가 생기면 여기로 올라와요.</div>'; }
   else box.innerHTML=pending.map(function(a){
     var col=srcBadge[a.출처]||'#8a93a3';
-    return '<div style="border:1px solid #e2e8ef;border-radius:10px;padding:11px;margin-bottom:8px">'
-      +'<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px"><span style="font-size:10px;font-weight:700;color:#fff;background:'+col+';padding:2px 8px;border-radius:9px">'+_sEsc(a.출처||'기타')+'</span><b style="font-size:12.5px;color:#0d1b2a">'+_sEsc(a.제목||'')+'</b></div>'
-      +'<div style="font-size:11.5px;color:#556;line-height:1.5;margin-bottom:8px">'+_sEsc(String(a.미리보기||'').slice(0,160))+'</div>'
-      +'<div style="display:flex;gap:7px"><button onclick="apApprove(\''+a.id+'\')" style="flex:1;background:var(--teal);color:#fff;border:none;border-radius:7px;padding:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">✅ 승인</button>'
-      +'<button onclick="apReject(\''+a.id+'\')" style="flex:1;background:#fff;color:#c0392b;border:1px solid #f0c8c0;border-radius:7px;padding:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">↩ 반려</button></div></div>';
+    var s=a.send||null;
+    var ch=s&&s.channel?(chMap[s.channel]||s.channel):'';
+    var to=s?(s.to||s.name||''):'';
+    var draft=String(a.미리보기||'').slice(0,400);
+    var isBk=a._src==='backend';
+    return '<div style="border:1px solid #e2e8ef;border-radius:12px;padding:13px;margin-bottom:9px;background:#fff">'
+      +'<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:6px"><b style="font-size:13.5px;color:#0d1b2a;line-height:1.35;flex:1;min-width:0">'+_sEsc(a.제목||'(제목 없음)')+'</b><span style="font-size:10.5px;color:#98a4b2;white-space:nowrap;flex-shrink:0">'+_bizTime(a.at)+'</span></div>'
+      +'<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap"><span style="font-size:10px;font-weight:700;color:#fff;background:'+col+';padding:2px 8px;border-radius:9px">'+_sEsc(a.출처||'기타')+'</span>'+(isBk?'<span style="font-size:10px;font-weight:700;color:#2FBF71;background:#eafaf1;padding:2px 8px;border-radius:9px">채팅 결재</span>':'')+(ch?'<span style="font-size:11px;color:#556">📎 '+_sEsc(ch)+'</span>':'')+'</div>'
+      +'<div style="border:1px solid #e8edf2;background:#f8fafc;border-radius:8px;padding:9px 11px;font-size:11.5px;color:#33475a;line-height:1.55;white-space:pre-wrap;max-height:140px;overflow:auto;margin-bottom:8px">'+(draft?_sEsc(draft):'<span style="color:#b0b8c2">미리보기 내용 없음</span>')+'</div>'
+      +(ch||to?'<div style="font-size:11px;color:#6b7a8d;margin-bottom:9px">'+(ch?'발송: <b style="color:#33475a">'+_sEsc(ch)+'</b>':'')+(to?' · 수신: <b style="color:#33475a">'+_sEsc(to)+'</b>':'')+'</div>':'')
+      +(isBk
+        ? '<div style="font-size:11px;color:#8a6d1a;background:#fff7ed;border:1px solid #f0e0c8;border-radius:8px;padding:8px 10px;line-height:1.55">채팅 지니야가 올린 결재예요. 승인·반려 버튼 연결은 다음 단계예요 — 지금은 채팅에 “승인” 또는 “거부”라고 말하면 바로 처리돼요.</div>'
+        : '<div style="display:flex;gap:6px">'
+          +'<button onclick="apApprove(\''+a.id+'\')" style="flex:1;background:var(--teal);color:#fff;border:none;border-radius:8px;padding:9px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">✅ 승인</button>'
+          +'<button onclick="apEdit(\''+a.id+'\')" style="flex:1;background:#fff;color:#8a6d0f;border:1px solid #ecdca8;border-radius:8px;padding:9px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">✏️ 수정요청</button>'
+          +'<button onclick="apReject(\''+a.id+'\')" style="flex:1;background:#fff;color:#c0392b;border:1px solid #f0c8c0;border-radius:8px;padding:9px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">↩ 반려</button></div>')
+      +'</div>';
   }).join('');
   if(logBox){
     if(!done.length){ logBox.innerHTML='<div style="font-size:11.5px;color:#98a4b2;padding:6px">아직 처리 내역이 없어요.</div>'; }
     else logBox.innerHTML=done.slice(0,20).map(function(a){
       var ic=a.status==='승인'?'✅':'↩'; var col=a.status==='승인'?'#0f766e':'#c0392b';
-      return '<div style="font-size:11px;color:#556;padding:4px 0;border-bottom:1px solid #f0f3f6"><span style="color:'+col+';font-weight:700">'+ic+' '+_sEsc(a.status)+'</span> · '+_sEsc(a.제목||'')+(a.반려사유?(' <span style="color:#c0392b">('+_sEsc(a.반려사유)+')</span>'):'')+' <span style="color:#b0b8c2">'+_bizTime(a.decidedAt||a.at)+'</span></div>';
+      var s=a.send||null; var ch=s&&s.channel?(chMap[s.channel]||s.channel):'';
+      var line=a.status==='승인'?('승인 → '+(a.결과?a.결과:(ch?ch+' 발송 완료':'처리 완료'))):('반려'+(a.반려사유?' · 사유: '+a.반려사유:''));
+      var draft=String(a.미리보기||'');
+      return '<div style="border:1px solid #eef1f4;border-radius:10px;margin-bottom:6px;overflow:hidden">'
+        +'<div onclick="apToggleLog(\''+a.id+'\')" style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 11px;cursor:pointer">'
+        +'<div style="flex:1;min-width:0"><b style="font-size:12px;color:#0d1b2a">'+_sEsc(a.제목||'')+'</b><div style="font-size:11px;color:'+col+';margin-top:2px;font-weight:700">'+ic+' '+_sEsc(line)+'</div></div>'
+        +'<div style="text-align:right;white-space:nowrap;flex-shrink:0"><div style="font-size:10.5px;color:#b0b8c2">'+_bizTime(a.decidedAt||a.at)+'</div>'+(draft?'<span style="font-size:10.5px;color:#8a93a3">펼침 ▼</span>':'')+'</div></div>'
+        +(draft?'<div id="aplog-'+a.id+'" style="display:none;border-top:1px solid #f0f3f6;background:#f8fafc;padding:9px 11px;font-size:11px;color:#556;line-height:1.55;white-space:pre-wrap;max-height:160px;overflow:auto">'+_sEsc(draft.slice(0,600))+'</div>':'')
+        +'</div>';
     }).join('');
   }
 }
@@ -2061,6 +2105,17 @@ function apReject(id){
   q.forEach(function(a){ if(a.id===id){ a.status='반려'; a.반려사유=reason; a.decidedAt=Date.now(); } });
   _bizSet('genya_approvals', q); toast('반려됨'); apRender();
 }
+// ✏️ 수정요청 — 모달 닫고 대화창에 수정 요청을 자동 입력(전송은 대표님이). 로컬·백엔드 공통.
+function apEdit(id){
+  var item=null; _bizGet('genya_approvals').forEach(function(a){ if(a.id===id) item=a; });
+  var title=(item&&item.제목)||'결재 건';
+  closeModal();
+  var ci=document.getElementById('chatInput');
+  if(ci){ ci.value='['+title+'] 이 결재 초안을 이렇게 고쳐줘: '; ci.focus(); try{ ci.setSelectionRange(ci.value.length, ci.value.length); }catch(e){} }
+  toast('대화창에 수정 요청을 넣었어요 — 어떻게 고칠지 이어서 적어주세요');
+}
+// ▼ 처리완료 카드 펼침/접기(표시 전용).
+function apToggleLog(id){ var el=document.getElementById('aplog-'+id); if(el) el.style.display=(el.style.display==='none'?'block':'none'); }
 
 // ═══ 🖥️ 카톡 발송기(watcher) 설치 안내 — 교육생이 각자 PC에 설치. ★대표·교육생 모두. 실제 설치·연결은 대표PC 실증 대기.
 function _watStep(n,ic,title,desc){
