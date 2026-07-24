@@ -2195,7 +2195,7 @@ function _solapiEntryRefresh(){
 // ★2단계: 백엔드(구글시트) 결재건 승인/반려 → /api/approval/act (approval_skill.act 재사용·발송 하드가드 그대로). 캐시 우회.
 function apApproveBackend(id){
   if(typeof confirm==='function' && !confirm('이 결재 건을 승인하고 발송할까요?\n(안전모드에선 실고객이 아니라 회장님 본인에게만 test 발송)')) return;
-  toast('승인·발송 처리 중…'); _apAct(id, { action:'approve' });
+  toast('승인·발송 처리 중…'); _apAct(id, { action:'approve', humanApproval:true }); // ★humanApproval=버튼 클릭에서만 생성 → 서버 act()가 이 플래그 없으면 발송 거부
 }
 function apRejectBackend(id){
   var reason=(typeof prompt==='function'?prompt('반려 사유(선택):',''):'');
@@ -2207,7 +2207,7 @@ function _apAct(id, extra){
   fetch('/api/approval/act',{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
     .then(function(r){ return r.json(); }).then(function(d){
       if(d && d.needsBulkConfirm){
-        if(typeof confirm==='function' && confirm((d.count||'')+'명에게 발송합니다. 실수 방지를 위해 한 번 더 확인해 주세요. 진행할까요?')){ _apAct(id, { action:'approve', confirmed:true }); }
+        if(typeof confirm==='function' && confirm((d.count||'')+'명에게 발송합니다. 실수 방지를 위해 한 번 더 확인해 주세요. 진행할까요?')){ _apAct(id, { action:'approve', confirmed:true, humanApproval:true }); }
         else { toast('취소했어요'); apRender(); }
         return;
       }

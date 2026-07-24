@@ -187,6 +187,11 @@ async function act(ma, input) {
     return { ok: true, approval: _publicView(o), message: '수정했어요. 여전히 승인 대기 상태예요.' };
   }
   if (action === 'approve') {
+    // ★★휴먼인루프 하드가드(서버 최종 방어선): 발송은 회장님이 화면 결재함의 [승인] 버튼을 직접 눌러 humanApproval:true를 보낸 요청에서만 실행한다.
+    //   발화·텍스트·LLM 도구·자동 스케줄 등 '버튼이 아닌' 어떤 경로도 이 플래그를 만들지 않으므로 발송 불가(fail-closed). 실제 사고 재발 차단.
+    if (input.humanApproval !== true) {
+      return { ok: false, blockedNoHuman: true, message: '발송은 화면 결재함의 [승인] 버튼을 직접 눌러야만 됩니다. 발화·명령으로는 발송되지 않아요.' };
+    }
     const criteria = (() => { try { return JSON.parse(o.기준JSON || '{}'); } catch (e) { return {}; } })();
     const resolved = await _resolveTargets(ma, criteria, o.채널);
     const targets = resolved.targets;
