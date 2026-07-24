@@ -396,7 +396,10 @@ app.get('/api/vapi-config', (req, res) => res.json({ ready: !!(process.env.VAPI_
 // ★한 지니야 뇌: 마이크 클릭 시 회원 컨텍스트(로그인 세션 + Pinecone recall)를 조립해 통화 지니야에 variableValues로 주입 → 통화 지니야 = 텍스트 지니야 동일 기억. 로그인 없으면 게스트.
 app.get('/api/vapi-context', async (req, res) => {
   try {
-    const uid = (sessionOf(req) || {}).email || '';
+    let uid = (sessionOf(req) || {}).email || '';
+    // ★guest 버그 근본수정: 이 라우트는 세션 복원 미들웨어(아래 등록)보다 먼저라, 재배포·다중 인스턴스로 메모리 세션이 비면 guest로 떨어졌다.
+    //   → 항상 전송되는 암호화 쿠키(genya_rt)에서 로그인 이메일을 직접 복원(신원만·SA 시트읽기와 무관). 실패해도 guest 폴백(무해).
+    if (!uid) { try { const m = /(?:^|;\s*)genya_rt=([^;]+)/.exec(req.headers.cookie || ''); if (m) { const p = JSON.parse(_dec(decodeURIComponent(m[1])) || '{}'); if (p && p.email) uid = p.email; } } catch (e) {} }
     const who = 호칭For(uid);
     let recall = '';
     if (uid && personalMem.configured()) { try { recall = await personalMem.recallSmart({ ownerId: uid, scope: 'representative', query: '최근 상담·요청·자료 요약' }); } catch (e) {} }
