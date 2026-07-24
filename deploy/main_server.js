@@ -1057,7 +1057,10 @@ async function orderHandler(req, res) {
           const today = new Date(); const due = new Date(Date.now() + 30 * 864e5);
           const expCol = header.find((h) => /만기/.test(h));
           const expiring = expCol ? clients.filter((c) => { const d = new Date(c[expCol]); return d instanceof Date && !isNaN(d) && d >= today && d <= due; }) : [];
-          extra = `\n[만기 임박 30일 이내 · ${expiring.length}명 (전체 ${clients.length}명)]\n` + header.join(' | ') + '\n' + expiring.map((c) => header.map((h) => c[h] || '').join(' | ')).join('\n') + '\n★위 실제 시트 데이터만 근거로 답하고 없는 값은 지어내지 마라.\n';
+          extra = `\n[활성 고객명단 · 총 ${clients.length}명]\n` + header.join(' | ') + '\n'
+            + clients.map((c) => header.map((h) => c[h] || '').join(' | ')).join('\n')
+            + `\n\n[만기 임박 30일 이내 · ${expiring.length}명]\n` + (expiring.length ? expiring.map((c) => header.map((h) => c[h] || '').join(' | ')).join('\n') : '(없음)')
+            + '\n★특정 고객 이름이 있으면 위 전체 명단에서 그 사람을 찾아 만기를 답하라. "만기 임박"만 물으면 30일 이내만 강조하라. 없는 값은 지어내지 마라.\n';
         } else {
           const show = clients.slice(0, 30);
           extra = `\n[활성 고객명단 · 총 ${clients.length}명]\n` + header.join(' | ') + '\n' + show.map((c) => header.map((h) => c[h] || '').join(' | ')).join('\n') + (clients.length > 30 ? `\n(상위 30명만 표시 · 전체 ${clients.length}명)\n` : '\n') + '★위 실제 시트 데이터만 근거로 답하고 없는 값은 지어내지 마라.\n';
