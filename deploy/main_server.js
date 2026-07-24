@@ -1022,13 +1022,15 @@ async function orderHandler(req, res) {
     //   이 방에서 실제로 일어난 이벤트를 근거로 인지 응답한다. 이벤트가 있을 때만 발동 → 일반 질문 흐름 무영향.
     const _uidG = (sessionOf(req) || {}).email || '';
     const _gateMatch = /방금|아까|조금\s*전|좀\s*전|최근에|올린|올렸|올려|업로드|만든|만들었|기록한|저장한|한\s*게|했던|뭐\s*했|무슨\s*(파일|명단|자료)/.test(q);
+    // ★라우팅 우선순위(회장님 지시): approval > sheetCRUD > events > 일반. 도구 의도(결재·발송·올려·고객데이터)면 events 수문장을 건너뛴다.
+    //   ★_toolIntent를 events 게이트보다 먼저 정의(이동) + "올려/초안" 보강(결재함 요청이 events=HIT로 새던 버그 차단).
+    const _toolIntent = /보내|발송|알림톡|결재|승인|올려\s*(줘|둬|둘|놔|주세요)|초안.{0,10}(올려|결재|발송|보내|저장)|시트\s*(목록|리스트|들|현황|뭐|어떤|무슨|조회|검색|추가|수정|삭제)|어떤\s*시트|무슨\s*시트|내\s*(구글\s*)?시트|명단\s*(추가|수정|삭제|변경|조회|보여|알려|몇)|고객\s*(추가|등록|수정|삭제)|([가-힣]{2,4})\s*님?\s*(정보|연락처|전화번호|전화|휴대폰|핸드폰|번호|이메일|메일|주소|생일|생년월일|나이|성별|직업|만기|상품|알려|조회)/.test(q);
     let _gateEvents = '';
-    if (_uidG && personalMem.configured() && _gateMatch) {
+    if (_uidG && personalMem.configured() && _gateMatch && !_toolIntent) {
       try { _gateEvents = await personalMem.recallRecentEvents({ ownerId: _uidG, limit: 5 }); } catch (e) {}
     }
     console.log('[🛡️수문장] order 가드 · uid=' + (_uidG || '(없음)') + ' · pineconeReady=' + personalMem.configured() + ' · match=' + _gateMatch + ' · events=' + (_gateEvents ? 'HIT(' + _gateEvents.slice(0, 40) + '…)' : 'MISS') + ' · q="' + String(q).slice(0, 30) + '"');
-    // ★버그수정: activeSkill(localStorage 복원)이 시트·발송 도구 의도를 가로채던 문제 → 명확한 도구 의도면 activeSkill 무시하고 아래 도구 분기로.
-    const _toolIntent = /보내|발송|알림톡|결재|승인|시트\s*(목록|리스트|들|현황|뭐|어떤|무슨|조회|검색|추가|수정|삭제)|어떤\s*시트|무슨\s*시트|내\s*(구글\s*)?시트|명단\s*(추가|수정|삭제|변경|조회|보여|알려|몇)|고객\s*(추가|등록|수정|삭제)|([가-힣]{2,4})\s*님?\s*(정보|연락처|전화번호|전화|휴대폰|핸드폰|번호|이메일|메일|주소|생일|생년월일|나이|성별|직업|만기|상품|알려|조회)/.test(q);
+    // ★버그수정: activeSkill(localStorage 복원)이 시트·발송 도구 의도를 가로채던 문제 → _toolIntent(위에서 정의)면 activeSkill·events·명단 분기를 건너뛰고 approval/sheetCRUD 도구 분기로.
     // ★이슈#1 근본수정(웹검색 라우팅 가로챔): 최신정보 토픽(시세·환율·세법·판례 등)이면서 고객(○○님) 지칭이 아니면
     //   시트/캘린더 분기가 "어때/조회/뭐야"로 가로채는 것을 막고 일반대화(웹검색) 우선. ★고객명 시트조회는 그대로 유지.
     //   보수적: 요즘/최근/오늘 단독은 제외(예: "요즘 만기 고객"이 웹으로 새지 않게). 명확한 최신 토픽 키워드만.
@@ -1050,7 +1052,7 @@ async function orderHandler(req, res) {
         const text = await askClaude(sysG, hist.concat([{ role: 'user', content: q }]), 8192, { admin: _admin });
         out = { kind: '💬 지니야', text, engine: _lastAskModel || pickedModel(q, { admin: _admin }) };
       }
-    } else if (canData && /명단|만기|임박|목록|리스트|몇\s*명|인원|전체|자산가|고객\s*(목록|전체|누구|정리|명단)/.test(q) && !/([가-힣]{2,4})\s*님?\s*(정보|연락처|추가|삭제|수정|등록|빼|지워|변경|바꿔)/.test(q)) {
+    } else if (!_toolIntent && canData && /명단|만기|임박|목록|리스트|몇\s*명|인원|전체|자산가|고객\s*(목록|전체|누구|정리|명단)/.test(q) && !/([가-힣]{2,4})\s*님?\s*(정보|연락처|추가|삭제|수정|등록|빼|지워|변경|바꿔)/.test(q)) {
       // 📇 명단 전체·만기 = 실제 시트 데이터를 먼저 조회해 LLM 프롬프트에 주입(고수 채택·Function Calling 미호출 원천 해결). 개별 이름은 아래 sheetsCrud read_row.
       const job = String((req.body && req.body.job) || req.query.job || '');
       const hist = Array.isArray(req.body && req.body.history) ? req.body.history.slice(-10) : [];
