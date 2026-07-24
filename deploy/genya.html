@@ -3309,8 +3309,8 @@ window.addFile=function(){ doOCR(); };
             var keys=Object.keys(rows[0]).filter(function(k){ return k!=='소스파일'&&k!=='업로드일'&&k!=='_rowNum'&&rows.some(function(r){return r[k]!=null&&String(r[k])!=='';}); });
             // ★A: 가로 스크롤(overflow-x:auto)로 전체 컬럼 확인 + 자연폭(width 미지정)으로 뒤 컬럼 안 잘림. ★B: 행 클릭→전체 상세 세로 카드.
             var h='<div style="font-size:10.5px;color:#8a94a6;margin:2px 0 5px">행을 탭하면 전체 정보 · ↔ 좌우로 밀어 컬럼 보기</div>';
-            // ★스크롤 축 분리: 가로만 이 컨테이너(overflow-x:scroll·y:hidden·touch-action:pan-x), 세로는 바깥 드로어가 담당 → 충돌 제거. table width:max-content로 실제 넘침.
-            h+='<div class="gh-xscroll" style="overflow-x:scroll;overflow-y:hidden;width:100%;-webkit-overflow-scrolling:touch;touch-action:pan-x;display:block;border:1px solid #eee;border-radius:8px">';
+            // ★스크롤 축 분리: 이 컨테이너=가로 스크롤(overflow-x:scroll·y:hidden). touch-action:pan-x pan-y로 세로 팬은 막지 않고 바깥 드로어(.gh-bd overflow-y:auto)로 체이닝 → 400명 목록 세로 스크롤 유지. table width:max-content로 실제 넘침.
+            h+='<div class="gh-xscroll" style="overflow-x:scroll;overflow-y:hidden;width:100%;-webkit-overflow-scrolling:touch;touch-action:pan-x pan-y;display:block;border:1px solid #eee;border-radius:8px">';
             h+='<table style="width:max-content;min-width:100%;border-collapse:collapse;font-size:13px;white-space:nowrap">';
             h+='<tr>'+keys.map(function(k){return '<th style="border:1px solid #ddd;padding:5px 8px;background:#f5f5f5;color:#333;text-align:left;white-space:nowrap">'+esc(k)+'</th>';}).join('')+'</tr>';
             h+=rows.map(function(row){return '<tr onclick="ghRowDetail(\''+(row._rowNum!=null?row._rowNum:'')+'\')" style="cursor:pointer">'+keys.map(function(k){return '<td style="border:1px solid #ddd;padding:5px 8px;color:#000;background:#fff;white-space:nowrap">'+esc(row[k]!=null?row[k]:'')+'</td>';}).join('')+'</tr>';}).join('');
