@@ -97,9 +97,17 @@ function _genId() { _idSeq = (_idSeq + 1) % 100000; return 'a-' + new Date(Date.
 async function create(ma, input) {
   input = input || {};
   const criteria = input.criteria || {};
-  // ★5단계: 채널 기본=메일(gmail) 우선. 미지정이면 대상 이메일이 명단에 있으면 gmail, 없으면 sms.
-  let 채널 = input.채널 === 'gmail' ? 'gmail' : (input.채널 === 'sms' ? 'sms' : '');
-  if (!채널) { 채널 = 'gmail'; try { const tg = await _resolveTargets(ma, criteria, 'gmail'); if (!tg.contactCol || !tg.targets.length) 채널 = 'sms'; } catch (e) {} }
+  // ★Fix1: 채널 기본=메일+문자 동시(both). 미지정이면 명단에 이메일 있으면 메일, 연락처 있으면 문자, 둘 다면 both.
+  let 채널 = (input.채널 === 'gmail' || input.채널 === 'sms' || input.채널 === 'both') ? input.채널 : '';
+  if (!채널) {
+    채널 = 'both';
+    try {
+      const r = await _resolveTargets(ma, criteria, 'both');
+      const anyEmail = r.emailCol && r.targets.some((x) => String(x[r.emailCol] || '').trim());
+      const anyPhone = r.phoneCol && r.targets.some((x) => String(x[r.phoneCol] || '').trim());
+      채널 = (anyEmail && anyPhone) ? 'both' : (anyEmail ? 'gmail' : (anyPhone ? 'sms' : 'gmail'));
+    } catch (e) { 채널 = 'gmail'; }
+  }
   const 템플릿 = String(input.템플릿 || '').trim();
   const 요청내용 = String(input.요청내용 || '').trim() || '(내용 없음)';
   if (!템플릿) return { ok: false, message: '보낼 메시지 템플릿이 비어 있어요.' };
@@ -122,11 +130,27 @@ function _publicView(o) {
 async function list(ma, opts) {
   opts = opts || {};
   const { values } = await _load(ma);
-  const items = [];
-  for (let i = 1; i < values.length; i++) { const r = values[i]; if (!r || !r[0]) continue; items.push(_publicView(_obj(r, i + 1))); }
-  items.reverse(); // 최신순
+  const raws = [];
+  for (let i = 1; i < values.length; i++) { const r = values[i]; if (!r || !r[0]) continue; raws.push(_obj(r, i + 1)); }
+  raws.reverse(); // 최신순
+  // ★Fix2C: 미리보기에 실제 이름 치환(검수용·읽을 때만 계산·시트 저장 안 함). 로스터 1회 로드(SA).
+  let table = null; try { table = await crud.loadTable(null); } catch (e) {}
+  const items = raws.map((o) => { const v = _publicView(o); v.미리보기 = _previewFor(o, table); return v; });
   const filtered = opts.status ? items.filter((x) => x.승인상태 === opts.status) : items;
   return { ok: true, count: filtered.length, 대기: items.filter((x) => x.승인상태 === '대기').length, items: filtered };
+}
+// ★Fix2C: 결재건 미리보기 렌더 — 대상 1명이면 실제 이름 치환("강수연님..."), 여러 명이면 원문+안내. PII 미저장(읽을 때 계산).
+function _previewFor(o, table) {
+  const tpl = String(o.템플릿 || '');
+  if (!table || !Array.isArray(table.rows) || !table.rows.length) return tpl;
+  let criteria = {}; try { criteria = JSON.parse(o.기준JSON || '{}'); } catch (e) {}
+  let rows = table.rows;
+  Object.entries(criteria || {}).forEach(([k, v]) => { const col = crud.resolveColumn(k, table.header); if (col) rows = rows.filter((r) => String(r[col]).includes(String(v))); });
+  if (!rows.length) return tpl;
+  if (rows.length === 1) return _render(tpl, rows[0], table.header);
+  const nameCol = crud.resolveColumn('고객명', table.header) || crud.detectNameCol(table.header);
+  const firstName = (nameCol && rows[0][nameCol]) ? String(rows[0][nameCol]) : '첫 대상';
+  return tpl + '\n\n(' + firstName + ' 외 ' + (rows.length - 1) + '명에게 각각 이름 치환되어 발송)';
 }
 
 async function _find(ma, id) {
@@ -162,25 +186,29 @@ async function act(ma, input) {
   }
   if (action === 'approve') {
     const criteria = (() => { try { return JSON.parse(o.기준JSON || '{}'); } catch (e) { return {}; } })();
-    const { targets, contactCol } = await _resolveTargets(ma, criteria, o.채널);
+    const resolved = await _resolveTargets(ma, criteria, o.채널);
+    const targets = resolved.targets;
     if (!targets.length) { o.승인상태 = '완료'; o.결과 = '대상 0명(발송 없음)'; o.수정일시 = _now(); await _updateRow(sheets, sid, o); return { ok: true, approval: _publicView(o), message: '지금 조건에 맞는 대상이 없어 발송하지 않았어요.' }; }
     // 대량 이중확인
     if (targets.length >= BULK && !input.confirmed) {
       return { ok: false, needsBulkConfirm: true, count: targets.length, message: `${targets.length}명에게 발송합니다. 실수 방지를 위해 한 번 더 확인해 주세요.` };
     }
-    // 실제 발송(🔒 하드가드: 라이브 아니면 화이트리스트=회장님 본인으로만)
-    const result = await _dispatch(ma, o, targets, contactCol);
+    // 실제 발송(🔒 하드가드: 라이브 아니면 화이트리스트=회장님 본인으로만). both=메일+문자 독립 발송.
+    const result = await _dispatch(ma, o, targets, resolved);
     // ★4단계: 전부 실패면 승인 대기 유지(재시도 가능) + 원인 안내. 상태(승인상태) 안 바꿈.
     if (result.ok === 0 && result.fail > 0) {
       o.결과 = `발송 실패(${result.fail}건)${result.errors && result.errors.length ? ' · ' + result.errors[0] : ''}`;
       o.수정일시 = _now(); await _updateRow(sheets, sid, o); // 승인상태='대기' 그대로
       return { ok: false, approval: _publicView(o), result, message: `발송 실패 — 승인 대기에 그대로 뒀어요. 원인: ${(result.errors && result.errors[0]) || '알 수 없음'}. 확인 후 다시 승인해 주세요.` };
     }
-    const 채널명 = o.채널 === 'gmail' ? '메일' : '문자';
+    // ★Fix1: 채널별 성공/실패 각각 표시 (메일 N건 성공 / 문자 N건 성공)
+    const parts = [];
+    if (o.채널 === 'gmail' || o.채널 === 'both') parts.push(`메일 ${result.email.ok}건 성공${result.email.fail ? `/실패 ${result.email.fail}` : ''}`);
+    if (o.채널 === 'sms' || o.채널 === 'both') parts.push(`문자 ${result.sms.ok}건 성공${result.sms.fail ? `/실패 ${result.sms.fail}` : ''}`);
     o.승인상태 = result.fail === 0 ? '완료' : '부분실패';
-    o.결과 = `${채널명} 발송 완료 ${result.ok}/${targets.length}${result.fail ? ` · 실패 ${result.fail}` : ''}${result.safeMode ? ` · 🔒안전모드(회장님 본인에게만)` : ''}`;
+    o.결과 = parts.join(' / ') + (result.safeMode ? ` · 🔒안전모드(회장님 본인에게만)` : '');
     o.수정일시 = _now(); await _updateRow(sheets, sid, o);
-    const safeMsg = result.safeMode ? ` 🔒 안전 모드 — 실제 ${채널명}은 회장님 본인에게만 갔어요(실고객 ${result.blocked}명 보호 차단).` : '';
+    const safeMsg = result.safeMode ? ` 🔒 안전 모드 — 실제 메일·문자는 회장님 본인에게만 갔어요(실고객 ${result.blocked}명 보호 차단).` : '';
     return { ok: true, approval: _publicView(o), result, message: `${o.결과}.${safeMsg}` };
   }
   return { ok: false, message: '알 수 없는 동작이에요(approve/reject/edit).' };
@@ -189,46 +217,67 @@ async function act(ma, input) {
 // ── 명단 재조회: criteria로 필터(동의어 컬럼 지원). 채널별 연락처 컬럼 확인. ──
 async function _resolveTargets(ma, criteria, 채널) {
   const table = await crud.loadTable(ma); // Step 2-B 재사용
-  const contactCol = 채널 === 'gmail' ? crud.resolveColumn('이메일', table.header) : crud.resolveColumn('연락처', table.header);
+  const emailCol = crud.resolveColumn('이메일', table.header);
+  const phoneCol = crud.resolveColumn('연락처', table.header);
   let rows = table.rows;
   Object.entries(criteria || {}).forEach(([k, v]) => {
     const col = crud.resolveColumn(k, table.header); if (!col) return;
     const val = String(v);
     rows = rows.filter((r) => String(r[col]).includes(val));
   });
-  const targets = rows.filter((r) => !contactCol || String(r[contactCol]).trim()); // 연락처 있는 대상만
-  return { targets, contactCol, header: table.header };
+  const hasE = (r) => emailCol && String(r[emailCol] || '').trim();
+  const hasP = (r) => phoneCol && String(r[phoneCol] || '').trim();
+  // ★Fix1: both=이메일 또는 연락처 하나라도 있으면 대상. gmail/sms=해당 연락처 있는 대상만(컬럼 없으면 전체→안전모드로 회장님).
+  let targets;
+  if (채널 === 'gmail') targets = rows.filter((r) => !emailCol || hasE(r));
+  else if (채널 === 'sms') targets = rows.filter((r) => !phoneCol || hasP(r));
+  else targets = rows.filter((r) => hasE(r) || hasP(r));
+  const contactCol = 채널 === 'gmail' ? emailCol : (채널 === 'sms' ? phoneCol : null); // 하위호환
+  return { targets, contactCol, emailCol, phoneCol, header: table.header };
 }
-// ── #{컬럼} 치환(동의어 지원) ──
+// ── #{컬럼} 치환(동의어 지원). ★Fix2A: 이름류 토큰이 안 풀리면 이름컬럼 자동감지(detectNameCol)로 폴백 → 고객이 #{고객명} 받는 일 원천 차단. ──
 function _render(tpl, row, header) {
-  return String(tpl).replace(/#\{([^}]+)\}/g, (m, name) => { const col = crud.resolveColumn(name.trim(), header); return col && row[col] != null ? String(row[col]) : m; });
+  return String(tpl).replace(/#\{([^}]+)\}/g, (m, name) => {
+    const key = name.trim();
+    let col = crud.resolveColumn(key, header);
+    if (!col && /^(고객명|이름|성명|성함|고객|name)$/i.test(key)) col = crud.detectNameCol(header);
+    return (col && row[col] != null && String(row[col]).trim()) ? String(row[col]) : m;
+  });
 }
 // ── 실제 발송(채널별). 🔒 하드가드: 라이브 아니면 화이트리스트(회장님)로 강제. 가짜성공 없음(sent 확인). ──
-async function _dispatch(ma, o, targets, contactCol) {
-  const header = Object.keys(targets[0] || {});
-  let ok = 0, fail = 0, blocked = 0, safeMode = false; const errors = [];
-  const nameCol = crud.resolveColumn('고객명', header) || crud.resolveColumn('이름', header);
+async function _dispatch(ma, o, targets, resolved) {
+  const header = Object.keys(targets[0] || {}).filter((k) => k !== '_rowNum');
+  const emailCol = (resolved && resolved.emailCol) || crud.resolveColumn('이메일', header);
+  const phoneCol = (resolved && resolved.phoneCol) || crud.resolveColumn('연락처', header);
+  const nameCol = crud.resolveColumn('고객명', header) || crud.resolveColumn('이름', header) || crud.detectNameCol(header);
+  const em = { ok: 0, fail: 0 }, sm = { ok: 0, fail: 0 };
+  let blocked = 0, safeMode = false; const errors = [];
+  const doMail = o.채널 === 'gmail' || o.채널 === 'both';
+  const doSms = o.채널 === 'sms' || o.채널 === 'both';
   for (const row of targets) {
     const text = _render(o.템플릿, row, header);
-    const rawTo = contactCol ? String(row[contactCol]).trim() : '';
     const who = (nameCol && row[nameCol]) ? String(row[nameCol]) : '';
-    const safe = safeRecipient(o.채널, rawTo);
-    if (safe.safeMode) safeMode = true;
-    if (safe.blocked) { blocked++; console.log(`[🔒안전차단] 실고객 ${o.채널} 발송 차단됨: ${_mask(rawTo)} → 회장님 본인(${_mask(safe.to)})으로 대체`); }
-    const isG = o.채널 === 'gmail';
-    // ★3단계 안전모드 표시: 메일=본문 상단에 실제 수신자 명시, 문자=[테스트] 접두. 제목엔 [테스트].
-    const testHead = (safe.test && isG) ? ('실제 수신자: ' + (who ? who + ' ' : '') + '(' + (rawTo || '연락처 없음') + ')\n\n') : '';
-    const smsPrefix = (safe.test && !isG) ? '[테스트] ' : '';
-    const body = testHead + smsPrefix + text;
-    const subject = (safe.test ? '[테스트] ' : '') + (o.요청내용 || '안내');
-    try {
-      let r;
-      if (isG) r = await _sendGmail(ma, safe.to, subject, body);
-      else r = await _sendSms(ma, safe.to, body);
-      if (r && r.sent) ok++; else { fail++; if (r && r.error) errors.push(r.error); }
-    } catch (e) { fail++; errors.push(e.message); }
+    const emailTo = emailCol ? String(row[emailCol] || '').trim() : '';
+    const phoneTo = phoneCol ? String(row[phoneCol] || '').trim() : '';
+    // 📧 메일 (both/gmail이고 이메일이 있거나 gmail 명시) — 문자와 독립
+    if (doMail && (emailTo || o.채널 === 'gmail')) {
+      const safe = safeRecipient('gmail', emailTo);
+      if (safe.safeMode) safeMode = true;
+      if (safe.blocked) { blocked++; console.log(`[🔒안전차단] 실고객 메일 차단: ${_mask(emailTo)} → 회장님(${_mask(safe.to)})`); }
+      const testHead = safe.test ? ('실제 수신자: ' + (who ? who + ' ' : '') + '(' + (emailTo || '이메일 없음') + ')\n\n') : '';
+      const subject = (safe.test ? '[테스트] ' : '') + (o.요청내용 || '안내');
+      try { const r = await _sendGmail(ma, safe.to, subject, testHead + text); if (r && r.sent) em.ok++; else { em.fail++; if (r && r.error) errors.push('메일:' + r.error); } } catch (e) { em.fail++; errors.push('메일:' + e.message); }
+    }
+    // 📱 문자 (both/sms이고 연락처가 있거나 sms 명시) — 메일과 독립
+    if (doSms && (phoneTo || o.채널 === 'sms')) {
+      const safe = safeRecipient('sms', phoneTo);
+      if (safe.safeMode) safeMode = true;
+      if (safe.blocked) { blocked++; console.log(`[🔒안전차단] 실고객 문자 차단: ${_mask(phoneTo)} → 회장님(${_mask(safe.to)})`); }
+      const testPrefix = safe.test ? ('[테스트] 실제 수신자: ' + (who ? who + ' ' : '') + '(' + (phoneTo || '연락처 없음') + ') / ') : '';
+      try { const r = await _sendSms(ma, safe.to, testPrefix + text); if (r && r.sent) sm.ok++; else { sm.fail++; if (r && r.error) errors.push('문자:' + r.error); } } catch (e) { sm.fail++; errors.push('문자:' + e.message); }
+    }
   }
-  return { ok, fail, blocked, safeMode, errors: errors.slice(0, 3) };
+  return { email: em, sms: sm, ok: em.ok + sm.ok, fail: em.fail + sm.fail, blocked, safeMode, errors: errors.slice(0, 3) };
 }
 
 // ═══ (편의) 자연어 → 결재 초안 (지니야 자동 생성 보조) ═══
@@ -257,7 +306,7 @@ async function plan(ma, text) {
 // ★Anthropic API 규칙: input_schema properties 키는 ^[a-zA-Z0-9_.-]{1,64}$ (한글 불가) → 영문 키 사용, 내부에서 한글 필드로 매핑
 const TOOLS = [
   { name: 'create_approval', description: '회장님이 문자·이메일 발송을 지시하면, 실제로 보내기 전에 발송 초안을 "결재함"에 저장한다. 대상은 고객명단(구글시트)에서 조건으로 자동 조회된다. 저장 후 회장님이 승인하면 실제 발송된다. 예: "김철수님에게 신상품 안내 메일 보내줘" → criteria:{"고객명":"김철수"}, channel:"gmail". ★당신은 실제로 발송할 수 있으니 절대 "직접 못 보낸다"고 답하지 말 것.',
-    input_schema: { type: 'object', properties: { title: { type: 'string', description: '짧은 제목(예: 신상품 안내)' }, channel: { type: 'string', enum: ['sms', 'gmail'], description: '문자면 sms, 이메일이면 gmail. ★미지정 시 메일(gmail) 우선 — 고객 이메일이 명단에 있으면 gmail, 없으면 sms로 자동 결정된다. 회장님이 "문자로"라고 명시할 때만 sms.' }, criteria: { type: 'object', description: '대상 조건(예: {"고객명":"김철수"} 또는 {"만기일":"2026-08"}). 전체면 {}' }, template: { type: 'string', description: '보낼 문구. #{고객명} 같은 시트 컬럼 치환자 사용. 정보성·존댓말·짧게' } }, required: ['template'] } },
+    input_schema: { type: 'object', properties: { title: { type: 'string', description: '짧은 제목(예: 신상품 안내)' }, channel: { type: 'string', enum: ['sms', 'gmail', 'both'], description: '문자=sms, 이메일=gmail, 둘 다 동시=both. ★미지정 시 자동 결정: 고객 이메일+연락처가 둘 다 명단에 있으면 both(메일+문자 동시 발송), 하나만 있으면 그 채널. 회장님이 "메일만/문자만"이라고 명시할 때만 gmail/sms.' }, criteria: { type: 'object', description: '대상 조건(예: {"고객명":"김철수"} 또는 {"만기일":"2026-08"}). 전체면 {}' }, template: { type: 'string', description: '보낼 문구. #{고객명} 같은 시트 컬럼 치환자 사용. 정보성·존댓말·짧게' } }, required: ['template'] } },
   { name: 'list_approvals', description: '결재함에 올라온 발송 건들을 조회한다(대기/완료 등). "결재함 보여줘", "뭐 올라와 있어?" 등에 사용.',
     input_schema: { type: 'object', properties: { status: { type: 'string', description: '대기/완료/거부 중 하나로 필터. 생략시 전체' } } } },
   { name: 'approve_and_send', description: '회장님이 특정 결재 건을 "승인"·"보내"라고 명시적으로 지시할 때만 실제 발송한다. 지니야가 스스로 승인하지 않는다. id는 list_approvals로 확인.',
@@ -269,7 +318,7 @@ function systemPrompt() {
 당신은 실제로 발송할 수 있습니다. 방식: 결재함에 저장(create_approval) → 회장님 승인 → 실제 발송(approve_and_send).
 [규칙]
 1. "○○에게 ○○ 보내줘"라고 하면 create_approval로 결재함에 올리고 "결재함에 올렸어요. 승인하시면 보내드릴게요"라고 안내한다. 절대 "직접 발송은 못 한다"고 하지 않는다.
-2. 대상·문구가 애매하면 한두 가지만 되묻는다. 문구는 정보성·존댓말·짧게 자동 작성. 채널은 메일(gmail)을 기본으로 한다 — 고객 이메일이 명단에 있으면 gmail, 없으면 sms. 회장님이 "문자로"라고 명시할 때만 sms.
+2. 대상·문구가 애매하면 한두 가지만 되묻는다. 문구는 정보성·존댓말·짧게 자동 작성. 채널은 기본으로 메일+문자를 함께(both) 보낸다 — 고객 이메일·연락처가 둘 다 있으면 both, 하나만 있으면 그 채널. 회장님이 "메일만/문자만"이라고 명시할 때만 하나로.
 3. 스스로 승인·발송하지 않는다. 회장님이 "승인"·"보내"라고 명시할 때만 approve_and_send.
 4. 실측 안전모드에서는 실제로 회장님 본인에게만 발송된다(실고객 보호). 이 점을 정직히 안내한다.
 5. 말투: 따뜻하고 쉽게. '클로드'·'AI' 같은 말은 쓰지 않는다.`;

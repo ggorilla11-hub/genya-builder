@@ -1578,11 +1578,20 @@ async function _sendSmsFor(ma, to, text) {
   try {
     to = String(to || '').replace(/[^0-9]/g, ''); text = String(text || '').trim();
     if (!to || !text) return { ok: false, sent: false, error: '번호·내용 없음' };
-    const { id, sheets } = await findOrCreateMemberSheet(ma);
-    const kv = {};
-    try { const r = await sheets.spreadsheets.values.get({ spreadsheetId: id, range: '지니야_연결!A1:B10' }); (r.data.values || []).forEach((row) => { if (row && row[0]) kv[row[0]] = row[1] || ''; }); } catch (e) {}
-    const apiKey = kv['솔라피_API_KEY'], apiSecret = kv['솔라피_SECRET'], from = String(kv['솔라피_발신번호'] || '').replace(/[^0-9]/g, '');
-    if (!apiKey || !apiSecret || !from) return { ok: false, sent: false, error: '솔라피 키 미저장' };
+    // ★Fix3: env(SOLAPI_API_KEY/SECRET/SENDER) 우선 → 회원시트(지니야_연결) 폴백. 발신번호 하이픈 제거.
+    let apiKey = process.env.SOLAPI_API_KEY || '';
+    let apiSecret = process.env.SOLAPI_API_SECRET || '';
+    let from = String(process.env.SOLAPI_SENDER || process.env.SOLAPI_FROM || '').replace(/[^0-9]/g, '');
+    if (!apiKey || !apiSecret || !from) {
+      try {
+        const { id, sheets } = await findOrCreateMemberSheet(ma);
+        const kv = {};
+        const r = await sheets.spreadsheets.values.get({ spreadsheetId: id, range: '지니야_연결!A1:B10' }); (r.data.values || []).forEach((row) => { if (row && row[0]) kv[row[0]] = row[1] || ''; });
+        apiKey = apiKey || kv['솔라피_API_KEY']; apiSecret = apiSecret || kv['솔라피_SECRET']; from = from || String(kv['솔라피_발신번호'] || '').replace(/[^0-9]/g, '');
+      } catch (e) {}
+    }
+    if (!apiKey || !apiSecret) return { ok: false, sent: false, error: '솔라피 API 키 미설정 (Render 환경변수 SOLAPI_API_KEY 확인)' };
+    if (!from) return { ok: false, sent: false, error: '솔라피 발신번호 미설정 (Render 환경변수 SOLAPI_SENDER 확인)' };
     const date = new Date().toISOString(); const salt = crypto.randomBytes(32).toString('hex');
     const signature = crypto.createHmac('sha256', apiSecret).update(date + salt).digest('hex');
     const auth = `HMAC-SHA256 apiKey=${apiKey}, date=${date}, salt=${salt}, signature=${signature}`;
@@ -1625,7 +1634,7 @@ app.get('/api/approval/mode', (req, res) => res.json({ ok: true, live: String(pr
 const SOLAPI_KEY = process.env.SOLAPI_API_KEY || '';
 const SOLAPI_SECRET = process.env.SOLAPI_API_SECRET || '';
 const SOLAPI_PFID = process.env.SOLAPI_PFID || '';                                 // 카카오 발신프로필 ID(채널 등록 후 발급)
-const SOLAPI_FROM = String(process.env.SOLAPI_FROM || '').replace(/[^0-9]/g, '');   // 발신번호(알림톡 실패 시 SMS 대체발송용)
+const SOLAPI_FROM = String(process.env.SOLAPI_SENDER || process.env.SOLAPI_FROM || '').replace(/[^0-9]/g, '');   // ★Fix3: SOLAPI_SENDER 우선(없으면 기존 SOLAPI_FROM) — 발신번호(알림톡·SMS 대체발송용)
 const SOLAPI_CONFIGURED = !!(SOLAPI_KEY && SOLAPI_SECRET);
 // 심사 통과 시 발급되는 templateId를 ENV로 주입(코드명 → 카카오 templateId). 미주입이면 그 템플릿은 '미승인'.
 //   ★다목적: 지니야는 1인 사업자(재무설계·필라테스·세무·행정·병의원 등) 공용 비서. 발신자는 #{사업자명} 변수로 유연 대응.

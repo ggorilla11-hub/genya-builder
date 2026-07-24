@@ -2023,14 +2023,15 @@ function apRender(){
 }
 // 백엔드 결재건(회원 구글시트 '결재함' 탭) → 무기고 카드 공통 형태로 변환. _src='backend' 표식으로 버튼 분기(2단계 연결 예정).
 function _apFromBackend(it){
-  var chMap={sms:'문자',gmail:'이메일'};
+  var chMap={sms:'문자',gmail:'이메일',both:'메일+문자'};
   var raw=String(it.승인상태||'대기');
   var st = raw==='대기' ? '대기' : (raw==='거부' ? '반려' : '승인'); // 완료·실패·부분실패 → 처리완료(승인계열)
   var atMs = Date.parse(String(it.생성일시||'').replace(' ','T')) || Date.now();
   var upMs = Date.parse(String(it.수정일시||'').replace(' ','T')) || atMs;
+  var chDisp = chMap[it.채널]||it.채널||'';
   return { _src:'backend', id:it.id, 제목:it.요청내용||'(제목 없음)', 출처:'발송',
-    미리보기:String(it.템플릿||'')+(it.대상수?('\n\n· 대상 '+it.대상수+'명 · 채널 '+(chMap[it.채널]||it.채널||'')):''),
-    send:{ channel:(it.채널==='gmail'?'email':'sms'), to:(it.대상수?('대상 '+it.대상수+'명'):'') },
+    미리보기:String(it.미리보기||it.템플릿||'')+(it.대상수?('\n\n· 대상 '+it.대상수+'명 · 채널 '+chDisp):''), // ★Fix2C: 서버가 렌더한 실제 이름 미리보기
+    send:{ channel:(it.채널==='gmail'?'email':(it.채널==='both'?'both':'sms')), to:(it.대상수?('대상 '+it.대상수+'명'):'') },
     at:atMs, decidedAt:upMs, status:st, 결과:String(it.결과||'') };
 }
 // 병합 렌더. 대기=카드 / 처리완료=로그. 로컬(리마인더·보상)=apApprove/apReject, 백엔드(구글시트 결재)=apApproveBackend/apRejectBackend(/api/approval/act·Gmail 발송·안전모드).
@@ -2041,7 +2042,7 @@ function _apRenderMerged(box, logBox, backend, local){
   var done=all.filter(function(x){return x.status!=='대기';}).sort(function(a,b){return (b.decidedAt||b.at||0)-(a.decidedAt||a.at||0);});
   var cnt=document.getElementById('apCount'); if(cnt) cnt.textContent=pending.length?('· '+pending.length+'건'):'';
   var srcBadge={ '리마인더':'#3B8FD4','보상':'#9B7EDE','홍보마케팅':'#E06B9E','발송':'#2FBF71' };
-  var chMap={kakao:'카톡',sms:'문자',email:'이메일'};
+  var chMap={kakao:'카톡',sms:'문자',email:'이메일',both:'메일+문자'};
   if(!pending.length){ box.innerHTML='<div style="text-align:center;padding:22px;color:#98a4b2;font-size:12.5px">승인 대기 중인 게 없어요.<br>리마인더 마감·보상 서류·채팅 결재가 생기면 여기로 올라와요.</div>'; }
   else box.innerHTML=pending.map(function(a){
     var col=srcBadge[a.출처]||'#8a93a3';
