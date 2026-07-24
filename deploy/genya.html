@@ -3053,15 +3053,18 @@ window.addFile=function(){ doOCR(); };
           var grp={},order=[];
           rl.rows.forEach(function(r){ var f=(cSrc&&r[cSrc])?String(r[cSrc]):'(초기 업로드)'; if(!grp[f]){grp[f]=[];order.push(f);} grp[f].push(r); });
           var html='<div style="font-size:12px;font-weight:700;color:#8a6d3b;margin:2px 0 8px">총 '+rl.count+'명 · 파일 '+order.length+'건</div>';
+          // 동적 테이블: 각 파일의 실제 키로만 그림(컬럼명 하드코딩 금지). 메타 제외 + 그 그룹에 값이 있는 컬럼만. 인라인 색상으로 CSS 충돌 차단.
+          function renderGroupTable(rows){
+            if(!rows||!rows.length) return '<p style="color:#000;font-size:13px">데이터 없음</p>';
+            var keys=Object.keys(rows[0]).filter(function(k){ return k!=='소스파일'&&k!=='업로드일'&&k!=='_rowNum'&&rows.some(function(r){return r[k]!=null&&String(r[k])!=='';}); });
+            var h='<table style="width:100%;border-collapse:collapse;font-size:13px">';
+            h+='<tr>'+keys.map(function(k){return '<th style="border:1px solid #ddd;padding:4px 6px;background:#f5f5f5;color:#333;text-align:left;white-space:nowrap">'+esc(k)+'</th>';}).join('')+'</tr>';
+            h+=rows.map(function(row){return '<tr>'+keys.map(function(k){return '<td style="border:1px solid #ddd;padding:4px 6px;color:#000;background:#fff">'+esc(row[k]!=null?row[k]:'')+'</td>';}).join('')+'</tr>';}).join('');
+            return h+'</table>';
+          }
           html+=order.map(function(f){
             var isOld=(f==='(초기 업로드)');
-            var _rows=grp[f];
-            // ★파일마다 컬럼이 다르므로(예: 초기=고객명·연락처 / 어피티=이름·휴대폰번호) 그룹별로 실제 값이 든 컬럼만 골라 표시. 특정 컬럼명 하드코딩 금지·row[headerKey] 동적 매핑.
-            var _cols=_disp.filter(function(h){return _rows.some(function(r){return r[h]!=null&&String(r[h]).trim()!=='';});}).slice(0,5);
-            if(!_cols.length)_cols=_disp.slice(0,5);
-            var _th='<tr>'+_cols.map(function(h){return '<th style="text-align:left;padding:5px 7px;color:#555;background:#f4f1ec;font-size:11px;border-bottom:1px solid #ddd;white-space:nowrap">'+esc(h)+'</th>';}).join('')+'</tr>';
-            var _tb=_rows.map(function(r){ return '<tr>'+_cols.map(function(h){return '<td style="padding:5px 7px;color:#000;background:#fff;font-size:14px;border-bottom:1px solid #eee;word-break:break-all">'+esc(r[h]!=null?r[h]:'')+'</td>';}).join('')+'</tr>'; }).join('');
-            var det='<table style="width:100%;border-collapse:collapse;background:#fff;color:#000;font-size:14px">'+_th+_tb+'</table>';
+            var det=renderGroupTable(grp[f]);
             return '<div class="gh-file"><div class="gh-file-hd" onclick="ghToggle(this)"><span>📄 '+esc(f)+' <b>('+grp[f].length+'명)</b></span><span>'
               +(isOld?'':'<button class="gh-del" title="이 파일 삭제" onclick="event.stopPropagation();ghDelFile(this.getAttribute(\'data-f\'))" data-f="'+esc(f)+'">🗑</button>')
               +'<span class="gh-caret">▾</span></span></div><div class="gh-file-bd" style="display:none">'+det+'</div></div>';
