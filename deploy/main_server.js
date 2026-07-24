@@ -413,27 +413,63 @@ app.get('/api/vapi-context', async (req, res) => {
         const clients = (t && t.rows) || [];
         if (!clients.length) { clientData = '고객명단에 등록된 고객이 아직 없어요.'; }
         else {
-          const show = clients.slice(0, 30);
-          clientData = `[고객명단 · 총 ${clients.length}명]\n` + header.join(' | ') + '\n'
-            + show.map((c) => header.map((h) => c[h] || '').join(' | ')).join('\n')
-            + (clients.length > 30 ? `\n(상위 30명 표시 · 전체 ${clients.length}명)` : '');
-          // 📇 만기 임박 30일 하이라이트(음성으로 "만기 임박 누구?" 물으면 바로 답하도록 미리 계산)
+          // ★C 캡(승인): 4528명+ 대비 토큰 초과 방지 — 만기 임박 전원 우선 → 나머지 상위행으로 채워 최대 200행.
+          const CAP = 200;
           const expCol = header.find((h) => /만기/.test(h));
-          if (expCol) {
-            const today = new Date(); const due = new Date(Date.now() + 30 * 864e5);
-            const expiring = clients.filter((c) => { const d = new Date(c[expCol]); return d instanceof Date && !isNaN(d) && d >= today && d <= due; });
-            if (expiring.length) {
-              clientData += `\n\n[⚠️만기 임박 · 30일 이내 ${expiring.length}명]\n`
-                + expiring.map((c) => header.map((h) => c[h] || '').join(' | ')).join('\n');
-            }
-          }
-          clientData += '\n\n★위 실제 시트 데이터만 근거로 답하고, 없는 값은 지어내지 마라.';
+          const _t0 = new Date(); const _due = new Date(Date.now() + 30 * 864e5);
+          const isExp = (c) => { if (!expCol) return false; const d = new Date(c[expCol]); return d instanceof Date && !isNaN(d) && d >= _t0 && d <= _due; };
+          const expiring = clients.filter(isExp);
+          const rest = clients.filter((c) => !isExp(c));
+          const picked = expiring.concat(rest).slice(0, CAP);
+          const line = (c) => header.map((h) => c[h] || '').join(' | ');
+          clientData = `[고객명단 · 총 ${clients.length}명 · 아래 ${picked.length}명 표시(만기 임박 우선)]\n` + header.join(' | ') + '\n' + picked.map(line).join('\n');
+          if (expiring.length) clientData += `\n\n[⚠️만기 임박 · 30일 이내 ${expiring.length}명]\n` + expiring.slice(0, CAP).map(line).join('\n');
+          clientData += `\n\n★위 실제 시트 데이터만 근거로 답하라. 명단에 없는 고객은 "명단에서 못 찾았어요"라고 답하고 값을 지어내지 마라. 총 ${clients.length}명 중 ${picked.length}명만 표시됐다.`;
         }
       }
     } catch (e) { console.log('[📇vapi clientData 조회 실패] ' + e.message); }
-    console.log('[📇vapi-context] uid=' + (uid || '(게스트)') + ' · clientData=' + clientData.length + 'chars');
+    // ★C: 날짜·컨텍스트 주입(매 통화 생성, Asia/Seoul). 각 try-catch·실패 시 정직 폴백("없음"/0). Vapi 대시보드 {{today}} 등이 받음.
+    const KST = new Date(Date.now() + 9 * 3600e3);
+    const _dow = ['일', '월', '화', '수', '목', '금', '토'][KST.getUTCDay()];
+    const _y = KST.getUTCFullYear(), _mo = KST.getUTCMonth() + 1, _d = KST.getUTCDate();
+    const today = `${_y}년 ${_mo}월 ${_d}일 ${_dow}요일`;
+    const now = `${String(KST.getUTCHours()).padStart(2, '0')}시 ${String(KST.getUTCMinutes()).padStart(2, '0')}분`;
+    const _monOff = (KST.getUTCDay() === 0 ? -6 : 1 - KST.getUTCDay());
+    const _mon = new Date(KST.getTime() + _monOff * 864e5), _sun = new Date(_mon.getTime() + 6 * 864e5);
+    const _fmt = (x) => `${x.getUTCMonth() + 1}월 ${x.getUTCDate()}일`;
+    const thisWeek = `${_fmt(_mon)} ~ ${_fmt(_sun)}`;
+    // ma 복원(캘린더·결재대기용): 세션 토큰 없으면 genya_rt.rt → durable에서 refresh_token
+    let ma = memberAuth(req), scope = String(grantedScope(req) || '');
+    if (uid && (!ma || !scope)) {
+      let rt = '';
+      try { const m = /(?:^|;\s*)genya_rt=([^;]+)/.exec(req.headers.cookie || ''); if (m) { const p = JSON.parse(_dec(decodeURIComponent(m[1])) || '{}'); rt = p.rt || ''; if (p.scope && !scope) scope = p.scope; } } catch (e) {}
+      if (!rt || !scope) { try { const dur = await loadMemberToken(uid); if (dur) { rt = rt || dur.refresh_token || ''; if (dur.scope && !scope) scope = dur.scope; } } catch (e) {} }
+      if (!ma && rt) { try { const c = oaClient(); c.setCredentials({ refresh_token: rt }); ma = c; } catch (e) {} }
+    }
+    if (ma) ma._email = uid;
+    // 오늘 일정(캘린더 읽기 재사용). 없거나 실패 시 "없음"
+    let todaySchedule = '없음';
+    try {
+      if (ma) {
+        const _s = new Date(Date.UTC(_y, _mo - 1, _d) - 9 * 3600e3), _e = new Date(_s.getTime() + 864e5);
+        const ev = await google.calendar({ version: 'v3', auth: ma }).events.list({ calendarId: 'primary', timeMin: _s.toISOString(), timeMax: _e.toISOString(), singleEvents: true, orderBy: 'startTime', maxResults: 10, timeZone: 'Asia/Seoul' });
+        const its = (ev.data.items || []);
+        if (its.length) todaySchedule = its.map((x) => { const t = (x.start && (x.start.dateTime || x.start.date)) || ''; return (t.includes('T') ? t.slice(11, 16) : '종일') + ' ' + (x.summary || '(제목없음)'); }).join(' / ');
+      }
+    } catch (e) {}
+    // 승인 대기 건수
+    let pendingCount = 0;
+    try { if (ma) { const lst = await approval.list(ma, { status: '대기' }); pendingCount = (lst && lst.count) || 0; } } catch (e) {}
+    // 커넥터 상태(스코프 기반·추가 API 호출 없음) + 솔라피 등록 여부(1 조회)
+    let solReg = false; try { if (uid) solReg = !!(await loadSolapiKeys(uid)); } catch (e) {}
+    const _calR = /calendar/.test(scope), _calW = /auth\/calendar(\.events)?(\s|$)/.test(scope);
+    const _drvR = /\/drive/.test(scope), _gmlR = /gmail/.test(scope) || /mail\.google/.test(scope), _gmlW = /gmail\.send/.test(scope) || /mail\.google/.test(scope);
+    const connectorStatus = ['시트: 연결됨', '캘린더: ' + (_calR ? (_calW ? '연결됨' : '읽기전용(일정등록 불가)') : '미연결'), '드라이브: ' + (_drvR ? '연결됨' : '미연결'), '메일: ' + (_gmlR ? (_gmlW ? '연결됨(발송 가능)' : '읽기만') : '미연결'), '문자: ' + (solReg ? '등록됨' : '미등록')].join(' / ');
+    // 상호(문자 서명·인사용)
+    let bizName = ''; try { if (uid) { const pf = await loadMemberPrefs(uid); bizName = pf.bizName || ''; } } catch (e) {}
+    console.log('[📇vapi-context] uid=' + (uid || '(게스트)') + ' · clientData=' + clientData.length + 'chars · pending=' + pendingCount + ' · today=' + today);
     if (uid && personalMem.configured()) personalMem.recordEventAsync({ ownerId: uid, type: 'voice_call', source: 'event', summary: '음성 통화 시작' }); // 🛡️수문장
-    res.json({ user_id: uid || 'guest', user_name: who, session_id: String(req.query.sid || ''), recall: recall || '', clientData: clientData });
+    res.json({ user_id: uid || 'guest', user_name: who, session_id: String(req.query.sid || ''), recall: recall || '', clientData: clientData, today: today, now: now, thisWeek: thisWeek, todaySchedule: todaySchedule, pendingCount: pendingCount, connectorStatus: connectorStatus, bizName: bizName });
   } catch (e) { res.json({ user_id: 'guest', user_name: '대표님', session_id: '', recall: '', clientData: '' }); }
 });
 // ★카톡 발송기(watcher) 배포 zip — 교육생이 각자 PC에 설치. 공개 정적(개인정보·키·명단 미포함 zip만 배치). zip은 별도 생성.
