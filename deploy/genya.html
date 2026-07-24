@@ -2376,7 +2376,7 @@ function addToolAsk(){ window._ACTIVE_SKILL='add_tool'; pushMsg('gen','어떤 �
             if(_cm && _cm[1] && typeof openCustomerCard==='function'){ try{ openCustomerCard(_cm[1]); }catch(e){} }
           }
           // ★음성 결재/발송 실행(FC 불필요): "○○ 결재함에 올려/안내문 발송" 등 액션 발화 → 그 문장을 /api/order로 전달 → 서버 approval이 실제 결재함 등록(명단 주입 포함). Vapi는 말만 하므로 실제 등록은 여기서.
-          if(r!=='assistant'&&r!=='bot'&&r!=='ai' && !/(카드|스캔)/.test(t) && ((/(결재|발송|알림톡|승인)/.test(t) && /(올려|올릴|올려줘|보내|발송|해줘|등록|잡아)/.test(t)) || (/(안내문|문자|메일|이메일|카톡)/.test(t) && /(보내|발송|올려|올릴)/.test(t)))){
+          if(r!=='assistant'&&r!=='bot'&&r!=='ai' && !/(카드|스캔)/.test(t) && ((/(결재|결제|발송|알림톡|승인)/.test(t) && /(올려|올릴|올려줘|보내|발송|해줘|등록|잡아)/.test(t)) || (/(안내문|문자|메일|이메일|카톡)/.test(t) && /(보내|발송|올려|올릴)/.test(t)))){
             try{ _voiceExec(t); }catch(e){}
           }
         }
@@ -3078,7 +3078,7 @@ window.sendMsg=function(){
      // ★pending 구분: sheetCRUD 쓰기(action+sig)=승인·반영 UI(완료 표현 금지) / 결재함=모달 알림
      if(d && d.pending){
        if(d.pending.action && d.pending.sig){ renderSheetWriteApprove(d.pending); }
-       else { toast('결재함에 올렸어요 — 무기고 결재함비서에서 확인·승인하세요'); try{ if(document.getElementById('apList')) apRender(); }catch(e){} }
+       else { pushMsg('gen','<span style="color:#0f766e;font-weight:700">✅ 결재함에 올렸어요.</span> 아래에서 내용 확인 후 승인하시면 나갑니다.'+_apOpenBtnHtml()); try{ if(document.getElementById('apList')) apRender(); }catch(e){} }
      }
    }).catch(function(){ w.remove(); pushMsg('gen','<span style="color:#c0392b">오류(잠시 후 다시)</span>'); });
 };
@@ -3115,30 +3115,61 @@ function sheetWriteCommit(){
       } else { pushMsg('gen', renderMd('반영하지 못했어요: '+((d&&d.message)||'원인 불명')+'. 다시 시도할까요?')); }
     }).catch(function(){ pushMsg('gen','반영 중 오류가 났어요. 다시 시도할까요?'); });
 }
+// ★결재함 열기 버튼(대화창에 남는 확인 UI): 서버가 실제로 pending을 만든 경우에만 붙여 "올렸다"는 눈으로 확인 + 한 번에 결재함으로.
+function _apOpenBtnHtml(){ return '<div style="margin-top:7px"><button onclick="openApproval()" style="background:var(--teal);color:#fff;border:none;border-radius:9px;padding:8px 15px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit">🗂️ 결재함 열기 · 확인·승인 →</button></div>'; }
 // ★음성 액션 실행: 통화 중 결재/발송 발화를 텍스트처럼 /api/order로 보내 서버가 실제 처리. ★실제 등록 결과(서버 d.text)만 표시 → 등록 안 됐으면 "올렸다"고 안 함(환각 방지). Vapi FC 미사용.
 function _voiceExec(q){
   fetch('/api/order',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({q:q, history:(typeof _histForSend==='function'?_histForSend():[])})})
     .then(function(r){return r.json();}).then(function(d){
       if(!d) return;
       if(d.text) pushMsg('gen', renderMd(d.text)); // 서버가 실제로 올렸을 때만 "결재함에 올렸어요"라고 답함(approval.create 결과)
-      if(d.pending){ try{ if(document.getElementById('apList')) apRender(); }catch(e){} } // 실제 등록됨 → 열려있는 결재함 즉시 갱신
+      if(d.pending){ try{ pushMsg('gen', _apOpenBtnHtml()); }catch(e){} try{ if(document.getElementById('apList')) apRender(); }catch(e){} } // 실제 등록됨(서버 pending) → 열기 버튼 + 열려있는 결재함 즉시 갱신
       if(d.action==='open_card'&&d.customer){ try{ openCustomerCard(d.customer); }catch(e){} }
     }).catch(function(){ try{ pushMsg('gen','결재 처리 중 오류가 났어요. 잠시 후 다시 말씀해 주세요.'); }catch(e){} });
 }
-// ★명령으로 고객카드 띄우기(자비스): 명단·연결 드로어 열고(genyaHub) → 로스터(_GH_ROWMAP) 로드 대기 → 이름 매칭 → ghRowDetail로 세로 카드. 기존 ghRowDetail 재사용(무접촉).
+// ★명령으로 고객카드 띄우기(자비스): 드로어와 '분리된 독립 플로팅 카드'로 표시. 전체화면 백드롭이 없으므로 대화창을 눌러도 카드가 안 닫힘 → 통화·타이핑을 이어가도 카드가 계속 떠 있음. (기존 드로어 행탭 ghRowDetail은 무접촉 유지)
+function _jarvisEsc(s){ return String(s==null?'':s).replace(/[&<>]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c];}); }
+function _jarvisHost(){
+  var el=document.getElementById('jarvisCard');
+  if(!el){
+    el=document.createElement('div'); el.id='jarvisCard';
+    el.style.cssText='position:fixed;top:60px;right:14px;width:min(340px,calc(100vw - 28px));max-height:64vh;overflow-y:auto;overflow-x:hidden;z-index:9200;background:#fff;border:1px solid #D4A574;border-radius:14px;box-shadow:0 10px 34px rgba(13,27,42,.24);-webkit-overflow-scrolling:touch;font-family:inherit;display:none';
+    document.body.appendChild(el);
+  }
+  return el;
+}
+window.jarvisCardClose=function(){ var el=document.getElementById('jarvisCard'); if(el){ el.style.display='none'; el.innerHTML=''; } };
+function _jarvisShow(r){
+  var host=_jarvisHost();
+  var keys=Object.keys(r).filter(function(k){ return k!=='_rowNum'&&k!=='소스파일'&&k!=='업로드일'&&r[k]!=null&&String(r[k])!==''; });
+  var name=r['고객명']||r['이름']||r['성명']||(keys.length?r[keys[0]]:'')||'고객';
+  var det=keys.map(function(k){ return '<div style="display:flex;gap:10px;padding:7px 0;border-bottom:1px solid #f0f3f6"><div style="flex:0 0 90px;font-size:12px;color:#8a93a3;font-weight:700">'+_jarvisEsc(k)+'</div><div style="flex:1;font-size:13px;color:#0d1b2a;word-break:break-word">'+_jarvisEsc(String(r[k]))+'</div></div>'; }).join('');
+  host.innerHTML='<div style="position:sticky;top:0;display:flex;justify-content:space-between;align-items:center;gap:8px;padding:12px 14px 9px;background:#fff;border-bottom:1px solid #f2e6d4"><b style="font-size:15px;color:#0d1b2a">📇 '+_jarvisEsc(String(name))+'</b><span onclick="jarvisCardClose()" style="cursor:pointer;color:#b0b8c2;font-size:22px;line-height:1;padding:2px 6px">×</span></div><div style="padding:6px 14px 14px">'+det+'</div>';
+  host.style.display='block';
+}
 function openCustomerCard(name){
   if(!name) return;
-  if(typeof genyaHub==='function'){ try{ genyaHub(); }catch(e){} }
   var norm=function(s){return String(s||'').replace(/\s/g,'').toLowerCase();};
-  var target=norm(name); var tries=0;
-  (function findRow(){
-    var map=window._GH_ROWMAP||{}; var ks=Object.keys(map); var hit=null;
-    ks.forEach(function(k){ if(hit)return; var r=map[k]; ['고객명','이름','성명','성함'].forEach(function(c){ if(!hit && r[c]!=null && norm(r[c])===target) hit=k; }); });
-    if(!hit){ ks.forEach(function(k){ if(hit)return; var r=map[k]; Object.keys(r).forEach(function(c){ if(hit||c==='_rowNum')return; var v=norm(r[c]); if(v && v.length<=8 && v.indexOf(target)>=0) hit=k; }); }); }
-    if(hit){ if(typeof ghRowDetail==='function') ghRowDetail(hit); return; }
-    if(tries++<24){ setTimeout(findRow,150); return; }
+  var target=norm(name);
+  var find=function(map){
+    var ks=Object.keys(map||{}); var hit=null;
+    ks.forEach(function(k){ if(hit)return; var r=map[k]; ['고객명','이름','성명','성함'].forEach(function(c){ if(!hit && r[c]!=null && norm(r[c])===target) hit=r; }); });
+    if(!hit){ ks.forEach(function(k){ if(hit)return; var r=map[k]; Object.keys(r).forEach(function(c){ if(hit||c==='_rowNum')return; var v=norm(r[c]); if(v && v.length<=8 && v.indexOf(target)>=0) hit=r; }); }); }
+    return hit;
+  };
+  // 1) 이미 로드된 명단(_GH_ROWMAP)에서 먼저 찾기 → 드로어 안 열고 즉시 카드
+  var hit=find(window._GH_ROWMAP);
+  if(hit){ _jarvisShow(hit); return; }
+  // 2) 없으면 명단만 조용히 불러와(드로어 안 열림) 찾아 카드
+  fetch('/api/roster/list',{credentials:'same-origin'}).then(function(r){return r.ok?r.json():null;}).then(function(rl){
+    if(rl&&rl.ok&&Array.isArray(rl.rows)&&rl.rows.length){
+      var map={}; rl.rows.forEach(function(r){ if(r&&r._rowNum!=null) map[r._rowNum]=r; });
+      if(!window._GH_ROWMAP||!Object.keys(window._GH_ROWMAP).length) window._GH_ROWMAP=map;
+      var h=find(map);
+      if(h){ _jarvisShow(h); return; }
+    }
     try{ pushMsg('gen','명단에서 "'+name+'" 고객을 못 찾았어요.'); }catch(e){}
-  })();
+  }).catch(function(){ try{ pushMsg('gen','명단을 불러오지 못했어요.'); }catch(e){} });
 }
 // ★배선A: 증권분석 결과(코치 HTML) 렌더 + PDF(인쇄)/엑셀(CSV) 다운로드 + _HIST 요약
 function _policySummary(d){
