@@ -257,15 +257,43 @@ function systemPrompt() {
 4. 실측 안전모드에서는 실제로 회장님 본인에게만 발송된다(실고객 보호). 이 점을 정직히 안내한다.
 5. 말투: 따뜻하고 쉽게. '클로드'·'AI' 같은 말은 쓰지 않는다.`;
 }
+// ═══ 명단 주입(큰불 수정) ═══ 질의 속 고객을 실제 시트에서 찾아 컨텍스트로 주입.
+//   loadTable(null)=서비스계정 읽기(회원 OAuth·데이터스코프 없어도 동작). 실패해도 '' 반환(대화 안 끊김).
+async function _rosterContext(userText) {
+  try {
+    const table = await crud.loadTable(null); // 🔑 SA 읽기(회원 로그인 무관)
+    if (!table || !Array.isArray(table.rows) || !table.rows.length) return '';
+    const header = table.header || [];
+    // 질의에서 한글 이름 후보 추출(2~4자, '님' 허용)
+    const names = []; const re = /([가-힣]{2,4})\s*님?/g; let m;
+    while ((m = re.exec(String(userText || ''))) !== null) { if (!names.includes(m[1])) names.push(m[1]); }
+    if (!names.length) return '';
+    const seen = new Set(); const blocks = [];
+    for (const nm of names) {
+      const rows = crud.findByName(table, nm); if (!rows.length) continue; // 전체 컬럼 검색
+      for (const row of rows.slice(0, 3)) {
+        if (seen.has(row._rowNum)) continue; seen.add(row._rowNum);
+        const kv = header.filter((h) => h && String(row[h] || '').trim()).map((h) => `${h}: ${row[h]}`).join(', ');
+        if (kv) blocks.push('· ' + kv);
+      }
+    }
+    if (!blocks.length) return '\n[명단 조회] 질의에 언급된 고객(' + names.join(', ') + ')을 시트에서 못 찾았어요. 값을 지어내지 말고 "명단에서 그 고객을 못 찾았어요"라고 안내한다.';
+    return '\n[명단 조회 결과 — 실제 시트 데이터(서비스계정)] 아래는 회원 고객명단 시트에서 찾은 해당 고객의 실제 값이다. 안내문·문자·메일을 쓸 때 이 실제 값(만기일·상품·보험사·연락처 등)을 그대로 반영하고 없는 값은 지어내지 마라. create_approval의 criteria는 이 고객을 정확히 지정하고(예: {"고객명":"홍길동"}), template엔 실제 만기일·상품을 담아 구체적으로 쓴다.\n' + blocks.join('\n');
+  } catch (e) { return ''; }
+}
 // 지니야 대화 루프(자체 도구호출 · 하이브리드 라우터 무접촉). create=저장(발송X), approve_and_send만 실제 발송(하드가드).
 async function runChat(ma, messages) {
   if (!_anthropic) return { ok: false, reply: '엔진이 초기화되지 않았어요.' };
   const conv = (messages || []).map((m) => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: String(m.content || m.text || '') })).filter((m) => m.content);
   if (!conv.length) return { ok: true, reply: '무엇을 보내드릴까요?' };
+  // ★큰불수정: Claude 호출 전에 명단(SA)에서 질의 속 고객의 실제 데이터를 읽어 시스템 프롬프트에 주입.
+  //   → 안내문에 실제 만기일·상품 반영. 연락처는 승인 발송 시 criteria 재조회로 자동 사용(_dispatch·PII 미저장).
+  let sysBase = systemPrompt();
+  try { const last = (messages || []).slice().reverse().find((x) => (x.role || 'user') !== 'assistant'); const rctx = await _rosterContext((last && (last.content || last.text)) || ''); if (rctx) sysBase += rctx; } catch (e) {}
   const trace = []; let pending = null;
   for (let hop = 0; hop < 5; hop++) {
     let r;
-    try { r = await _anthropic.messages.create({ model: _MODEL, max_tokens: 1200, system: systemPrompt(), tools: TOOLS, messages: conv }); }
+    try { r = await _anthropic.messages.create({ model: _MODEL, max_tokens: 1200, system: sysBase, tools: TOOLS, messages: conv }); }
     catch (e) { return { ok: false, reply: '지금 잠깐 응답이 어려워요. 잠시 후 다시 말씀해 주세요.', error: e.message }; }
     const toolUses = (r.content || []).filter((b) => b.type === 'tool_use');
     const textOut = (r.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
