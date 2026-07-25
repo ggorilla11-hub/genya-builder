@@ -817,7 +817,7 @@
 
           <div class="sect-t mt">스킬 <span style="color:var(--gray);font-weight:600;font-size:9px;">분석·생성</span></div>
           <div class="tool" onclick="scrollToUpload()"><div class="ti-ic"><svg viewBox="0 0 24 24" fill="none"><path d="M4 8V5h3M20 8V5h-3M4 16v3h3M20 16v3h-3M6 12h12" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></div><div class="tt"><b>증권·계약서 OCR</b><span>사진→자동 분석</span><div class="stack-tags"><span class="stk">Claude Vision</span><span class="stk">약관 RAG</span></div></div><span class="badge on">ON</span></div>
-          <div class="tool" onclick="skillGen('pdf')" style="cursor:pointer"><div class="ti-ic"><svg viewBox="0 0 24 24" fill="none"><path d="M6 3h9l4 4v14H6z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg></div><div class="tt"><b>제안서 PDF</b><span>눌러서 생성</span><div class="stack-tags"><span class="stk">스킬창고</span><span class="stk">금융집짓기</span></div></div><span class="badge on">ON</span></div>
+          <div class="tool" onclick="genyaProposal()" style="cursor:pointer"><div class="ti-ic"><svg viewBox="0 0 24 24" fill="none"><path d="M6 3h9l4 4v14H6z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg></div><div class="tt"><b>맞춤 제안서 PDF</b><span>자료 넣으면 분석→제안서</span><div class="stack-tags"><span class="stk">Claude Vision</span><span class="stk">스킬창고</span></div></div><span class="badge on">ON</span></div>
           <div class="tool" onclick="skillGen('excel')" style="cursor:pointer"><div class="ti-ic"><svg viewBox="0 0 24 24" fill="none"><rect x="4" y="4" width="16" height="16" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M4 9h16M9 4v16" stroke="currentColor" stroke-width="1.7"/></svg></div><div class="tt"><b>비교표 엑셀</b><span>눌러서 생성</span><div class="stack-tags"><span class="stk">SheetJS</span></div></div><span class="badge on">ON</span></div>
           <div class="tool" onclick="skillGen('ppt')" style="cursor:pointer"><div class="ti-ic"><svg viewBox="0 0 24 24" fill="none"><rect x="3" y="5" width="18" height="12" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M12 17v3M9 20h6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></div><div class="tt"><b>세미나 자료 PPT</b><span>눌러서 생성</span><div class="stack-tags"><span class="stk">스킬창고</span></div></div><span class="badge on">ON</span></div>
           <div class="tool" onclick="skillGen('doc')" style="cursor:pointer"><div class="ti-ic"><svg viewBox="0 0 24 24" fill="none"><path d="M6 3h12v18H6z" stroke="currentColor" stroke-width="1.7"/><path d="M9 8h6M9 12h6M9 16h4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></div><div class="tt"><b>상담 보고서</b><span>눌러서 생성</span><div class="stack-tags"><span class="stk">스킬창고</span></div></div><span class="badge on">ON</span></div>
@@ -1902,6 +1902,68 @@ function resendAllFails(){
 }
 
 // ===== 토스트 =====
+// ═══ 📑 맞춤 제안서 — 자료를 읽어 "팔기 위한 제안서"로 만든다(고정 템플릿과 다름) ═══
+//   진입① +첨부로 이미 분석한 자료가 있으면 그걸 재사용("제안서로 만들어줘")
+//   진입② 자료가 없으면 "어떤 자료로?" 되묻고 파일을 받는다 — 지어내지 않는다.
+//   ★개인정보: 서버는 PDF를 만들어 base64로 내려준 즉시 삭제한다. 저장은 대표님 PC(다운로드)에만.
+function genyaProposal(){
+  var last = window._LAST_ANALYSIS;
+  if(last && last.text){
+    if(typeof pushMsg==='function') pushMsg('gen','올려주신 <b>'+_sEsc(last.name||'자료')+'</b>로 제안서를 만들게요. 잠시만요…');
+    _proposalBuild(last.text, last.name||'');
+    return;
+  }
+  // 자료가 없다 → 되묻고 파일 선택
+  if(typeof pushMsg==='function') pushMsg('gen','어떤 자료로 제안서를 만들까요? <b>증권·연금·세금 자료나 상담 메모</b>를 올려주시면 그 내용으로 만들어 드려요.');
+  var inp=document.createElement('input'); inp.type='file';
+  inp.accept='image/*,.pdf,.xlsx,.xls,.csv,.txt,.doc,.docx';
+  inp.onchange=function(){
+    var f=inp.files&&inp.files[0]; if(!f) return;
+    if(typeof pushMsg==='function') pushMsg('me','['+f.name+' 올림]');
+    if(typeof toast==='function') toast('자료를 읽는 중…');
+    var rd=new FileReader();
+    rd.onload=function(){
+      // 분석은 기존 경로 재사용(형식별 파싱이 이미 검증돼 있다)
+      fetch('/api/coverage/analyze',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({dataUrl:rd.result, mime:f.type||'', name:f.name})})
+       .then(function(r){return r.json();}).then(function(d){
+         var t=(d&&d.analysis)||'';
+         if(!t){ if(typeof pushMsg==='function') pushMsg('gen','<span style="color:#c0392b">자료를 읽지 못했어요. 다른 파일로 다시 올려주시겠어요?</span>'); return; }
+         window._LAST_ANALYSIS={text:t, name:f.name};
+         _proposalBuild(t, f.name);
+       }).catch(function(){ if(typeof pushMsg==='function') pushMsg('gen','<span style="color:#c0392b">자료 분석 중 오류가 났어요.</span>'); });
+    };
+    rd.readAsDataURL(f);
+  };
+  inp.click();
+}
+function _proposalBuild(analysis, name){
+  fetch('/api/proposal/build',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({analysis:analysis, name:name||''})})
+   .then(function(r){ return r.json().then(function(j){ return {s:r.status,j:j}; }); })
+   .then(function(x){
+     var j=x.j;
+     if(x.s===401){ if(typeof toast==='function') toast('로그인이 필요해요'); return; }
+     if(j&&j.needsMaterial){ if(typeof pushMsg==='function') pushMsg('gen', _sEsc(j.message)); return; }
+     // ★실제 PDF가 나왔을 때만 완료라고 말한다
+     if(!j||!j.ok||!j.fileBase64){ if(typeof pushMsg==='function') pushMsg('gen','<b>제안서를 만들지 못했어요</b><div style="font-size:12px;color:#c0392b;margin-top:4px">'+_sEsc((j&&(j.error||j.message))||'다시 시도해 주세요')+'</div>'); return; }
+     var url=_b64ToBlobUrl(j.fileBase64,'application/pdf');
+     var fname=(String(j.title||'맞춤제안서').replace(/[\\/:*?"<>|]/g,'')||'맞춤제안서')+'.pdf';
+     if(typeof pushMsg==='function') pushMsg('gen',
+       '<b>📑 '+_sEsc(String(j.title||'맞춤 제안서'))+'를 만들었어요 ('+_sEsc(String(j.sizeKB||''))+'KB)</b>'
+       +'<div style="font-size:11.5px;color:#8a93a3;margin-top:4px">자료 성격: <b>'+_sEsc(String(j.kind||'일반'))+'</b> · 서버에 남기지 않고 바로 내려드려요.</div>'
+       +'<div style="font-size:11.5px;color:#8a6d1a;margin-top:4px">제출·발송 전 내용을 꼭 확인해 주세요.</div>'
+       +'<div style="margin-top:8px"><a href="'+url+'" download="'+_sEsc(fname)+'" style="display:inline-block;padding:8px 15px;border-radius:9px;background:var(--teal);color:#fff;font-weight:700;text-decoration:none;font-size:12.5px">⬇ 제안서 내려받기</a></div>');
+     try{ nfAdd({ type:'info', title:'맞춤 제안서 생성 완료', body:String(j.kind||'')+' · '+String(j.sizeKB||'')+'KB' }); }catch(e){}
+   })
+   .catch(function(){ if(typeof pushMsg==='function') pushMsg('gen','<span style="color:#c0392b">제안서 생성 중 오류가 났어요. 잠시 후 다시 시도해 주세요.</span>'); });
+}
+// base64 → 브라우저 안에서만 쓰는 다운로드 링크(서버에 파일이 남지 않는다)
+function _b64ToBlobUrl(b64, mime){
+  var bin=atob(b64), n=bin.length, arr=new Uint8Array(n);
+  for(var i=0;i<n;i++) arr[i]=bin.charCodeAt(i);
+  return URL.createObjectURL(new Blob([arr],{type:mime||'application/octet-stream'}));
+}
 // ═══ 📣 홍보 · ⏰ 리마인더 — 말로도 부르기(버튼과 같은 스킬 재사용) ═══
 //   ★새 발송·새 스킬을 만들지 않는다. 기존 패널을 열고 입력을 채운 뒤 기존 함수(runPromo/rmParse)를 그대로 돌린다.
 //     결과는 그 패널에 실제로 나온다 — 서버 응답 전에는 아무것도 "됐다"고 하지 않는다(거짓 완료 금지).
@@ -2788,6 +2850,10 @@ function _uploadAnalyze(f){
         if(d&&d.needsConvert){ pushMsg('gen', _sEsc(d.message||'이 형식은 아직 지원 안 돼요. 이미지·PDF·엑셀·텍스트로 올려주세요.')); return; }
         var t=(d&&d.analysis)||(d&&d.error)||'올려주신 파일 내용을 아직 못 읽었어요. 다시 한 번 올려주시겠어요?';
         pushMsg('gen', renderMd(t));
+        // 📑 제안서 진입① — 방금 읽은 자료를 기억해 뒀다가 "제안서로 만들어줘"에서 재사용(다시 안 올려도 되게)
+        if(d&&d.analysis){ try{ window._LAST_ANALYSIS={text:d.analysis, name:f.name}; }catch(e){}
+          pushMsg('gen','이 자료로 <b>제안서</b>를 만들까요? "제안서로 만들어줘"라고 하시거나 아래 버튼을 눌러주세요.'
+            +'<div style="margin-top:7px"><button onclick="genyaProposal()" style="padding:7px 14px;border:none;border-radius:999px;background:var(--teal);color:#fff;font-weight:700;cursor:pointer;font-size:12.5px">📑 제안서로 만들기</button></div>'); }
         try{ _HIST.push({role:'assistant', content:'[실제 업로드 파일 "'+f.name+'" 분석 결과]\n'+String(t).slice(0,4000)}); _persistHist(); }catch(e){}
       }).catch(function(){ try{ wrap.remove(); }catch(e){} pushMsg('gen','파일 분석 중 오류가 났어요 · 잠시 후 다시 올려주세요'); });
   };
@@ -3435,6 +3501,7 @@ window.sendMsg=function(){
      if(d && d.action==='create_event' && d.eventName){ try{ _eventCreated(d.eventName, d.eventCount); }catch(e){} }
      // 📄 말로 문서 만들기 — 버튼과 똑같은 skillGen을 탄다(실제 생성 성공해야만 완료 표시)
      if(d && d.action==='skill_gen'){ try{ skillGen(d.docType||'pdf'); }catch(e){} }
+     if(d && d.action==='proposal'){ try{ genyaProposal(); }catch(e){} }   // 📑 자료 기반 맞춤 제안서
      // 📣⏰ 좌측 비서를 말로 부르기 — 기존 패널·스킬을 그대로 연다
      if(d && d.action==='open_promo'){ try{ genyaPromo(d.topic||''); }catch(e){} }
      if(d && d.action==='open_reminder'){ try{ genyaReminder(d.body||''); }catch(e){} }
@@ -3504,6 +3571,7 @@ function _voiceExec(q){
       if(d.action==='open_card'&&d.customer){ try{ openCustomerCard(d.customer); }catch(e){} }
       if(d.action==='create_event'&&d.eventName){ try{ _eventCreated(d.eventName, d.eventCount); }catch(e){} }  // ⭐ 음성으로 만든 이벤트도 화면에 즉시
       if(d.action==='skill_gen'){ try{ skillGen(d.docType||'pdf'); }catch(e){} }                                 // 📄 음성으로도 문서 생성
+      if(d.action==='proposal'){ try{ genyaProposal(); }catch(e){} }                                             // 📑 음성으로 맞춤 제안서
       if(d.action==='open_promo'){ try{ genyaPromo(d.topic||''); }catch(e){} }                                   // 📣 음성으로 홍보 원고
       if(d.action==='open_reminder'){ try{ genyaReminder(d.body||''); }catch(e){} }                              // ⏰ 음성으로 리마인더
     }).catch(function(){ try{ pushMsg('gen','결재 처리 중 오류가 났어요. 잠시 후 다시 말씀해 주세요.'); }catch(e){} });

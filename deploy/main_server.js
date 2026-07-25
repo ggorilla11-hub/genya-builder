@@ -1353,12 +1353,18 @@ async function orderHandler(req, res) {
       const _body = q.replace(/리마인더|리마인드|다시\s*알려|잊지\s*않게|잊지|알림|걸어줘|걸어|설정해줘|설정|등록해줘|등록|해줘|맞춰줘|맞춰|넣어줘|넣어|알려줘|알려|좀/g, ' ').replace(/\s+/g, ' ').trim();
       out = { kind: '⏰ 리마인더', action: 'open_reminder', body: _body, text: '리마인더로 정리할게요. 잠시만요.' };
     } else if (_isDocCmd) {
-      // 화면이 실제로 /api/skills/gen을 호출해 성공했을 때만 "만들었어요"라고 말한다(거짓 완료 금지).
-      const _dt = /비교표|엑셀|excel/i.test(q) ? 'excel'
-        : (/세미나|발표|피피티|ppt/i.test(q) ? 'ppt'
-        : (/상담\s*보고서|보고서|워드|doc/i.test(q) ? 'doc' : 'pdf'));
-      const _dn = { pdf: '제안서(PDF)', excel: '비교표(엑셀)', ppt: '세미나 자료(PPT)', doc: '상담 보고서(워드)' }[_dt];
-      out = { kind: '📄 문서', action: 'skill_gen', docType: _dt, text: `${_dn}를 만들게요. 잠시만요.` };
+      // ★제안서는 "자료를 읽어 만드는 맞춤 결과물"이라 고정 템플릿(skill_gen)과 경로가 다르다.
+      //   나머지(비교표·세미나·보고서)는 공용 고정 템플릿 그대로.
+      if (/제안서/.test(q)) {
+        out = { kind: '📑 제안서', action: 'proposal', text: '올려주신 자료로 맞춤 제안서를 만들게요. 잠시만요.' };
+      } else {
+        // 화면이 실제로 /api/skills/gen을 호출해 성공했을 때만 "만들었어요"라고 말한다(거짓 완료 금지).
+        const _dt = /비교표|엑셀|excel/i.test(q) ? 'excel'
+          : (/세미나|발표|피피티|ppt/i.test(q) ? 'ppt'
+          : (/상담\s*보고서|보고서|워드|doc/i.test(q) ? 'doc' : 'pdf'));
+        const _dn = { pdf: '안내문(PDF)', excel: '비교표(엑셀)', ppt: '세미나 자료(PPT)', doc: '상담 보고서(워드)' }[_dt];
+        out = { kind: '📄 문서', action: 'skill_gen', docType: _dt, text: `${_dn}를 만들게요. 잠시만요.` };
+      }
     } else if (_isSchedAsk) {
       const _rg = /지난\s*주|저번\s*주/.test(q) ? 'lastweek' : (/내일|명일/.test(q) ? 'tomorrow'
         : (/이번\s*달|이달|한\s*달/.test(q) ? 'month' : (/다음\s*주/.test(q) ? 'nextweek'
@@ -1849,6 +1855,77 @@ app.post('/api/onboard/chat', async (req, res) => {
 // ── 📄 ★문제4: 증권 이미지 OCR → 보장분석(gpt-4o 비전). 구글 불필요. ★서버 저장 0: 메모리에서 OpenAI로만 전달, 디스크 미기록 ──
 // ★만능 처리기: 어떤 파일이 와도(이미지·PDF·엑셀·텍스트) 판별→변환→분석. "이미지로 올려주세요 멈춤" 제거.
 //   서버 저장 0(메모리에서만 처리). 변환 불가 형식만 정직하게 안내. 새 의존성 없음(xlsx·pdf_skill 기존 사용).
+// ── 📑 맞춤 제안서 생성: 자료 분석문 → "팔기 위한 제안서" 구조 → PDF ──
+//   ★기획 의도: OCR/첨부분석은 "자료를 읽는 것", 제안서는 "그 분석으로 만든 결과물"(한 단계 위).
+//   ★분석은 /api/coverage/analyze를 그대로 재사용한다(이미 증권·연금·세금·명단을 형식별로 읽는다).
+//     여기서 파싱을 또 만들면 규칙이 둘로 갈라진다.
+//   ★★개인정보: 자료엔 고객 정보가 들어온다. PDF를 서버 디스크에 남기지 않는다 —
+//     임시 생성 → base64로 응답 → 즉시 삭제(fs.unlink). 응답·로그에 본문을 남기지 않는다.
+app.post('/api/proposal/build', async (req, res) => {
+  let tmpPath = '';
+  try {
+    if (!sessionOf(req)) return res.status(401).json({ ok: false, error: '로그인 필요' });
+    const b = req.body || {};
+    const material = String(b.analysis || '').trim();
+    const srcName = String(b.name || '').slice(0, 80);
+    // 자료가 없으면 지어내지 않고 되묻는다
+    if (!material) return res.json({ ok: false, needsMaterial: true, message: '어떤 자료로 제안서를 만들까요? 증권·연금·세금 자료나 상담 메모를 올려주시면 그 내용으로 만들어 드려요.' });
+    const sys = `너는 보험·재무 설계사를 돕는 제안서 작성 비서 "지니야"다.
+주어진 [자료 분석]을 바탕으로 고객에게 보여줄 제안서를 만든다.
+
+먼저 자료 성격을 판단한다: 보험증권 → 보장분석 제안 / 연금·퇴직연금 → 노후설계 제안 /
+세금·소득 → 절세 제안 / 상담메모·녹취 → 상담 내용 맞춤 제안 / 그 외 → 일반 제안.
+
+[반드시 지킬 것]
+1. 자료에 실제로 있는 수치·담보·금액만 쓴다. 없는 숫자는 절대 지어내지 않는다.
+   확인이 필요하면 "자료에서 확인 필요"라고 적는다.
+2. 특정 상품 가입을 권유하지 않는다. 현황·공백·보완 방향까지만 쓴다.
+3. 비전문가도 알아듣게 쉬운 말로. 전문용어는 풀어서.
+4. 아래 JSON만 출력한다. 설명·코드블록 금지.
+
+{
+ "kind": "보장분석|노후설계|절세|상담맞춤|일반",
+ "title": "제안서 제목(15자 내외)",
+ "subtitle": "한 줄 요약",
+ "sections": [
+   {"heading":"현재 상황","lines":["자료에서 확인된 사실만 3~5줄"]},
+   {"heading":"확인된 공백·아쉬운 점","lines":["3~5줄"]},
+   {"heading":"보완 방향","lines":["3~5줄"]},
+   {"heading":"다음 단계","lines":["2~3줄"]}
+ ],
+ "footer": "본 제안서는 제출·발송 전 담당 설계사 검토가 필요합니다."
+}`;
+    const ar = await _anthropic.messages.create({
+      model: MODEL_DEEP, max_tokens: 2000, system: sys,
+      messages: [{ role: 'user', content: `[자료 분석]\n${material.slice(0, 12000)}` }],
+    });
+    const txt = (ar.content || []).filter((x) => x.type === 'text').map((x) => x.text).join('');
+    const m = txt.match(/\{[\s\S]*\}/);
+    if (!m) return res.json({ ok: false, error: '제안서 내용을 만들지 못했어요. 자료를 다시 올려주시겠어요?' });
+    let spec; try { spec = JSON.parse(m[0]); } catch (e) { return res.json({ ok: false, error: '제안서 내용을 정리하지 못했어요. 다시 시도해 주세요.' }); }
+    const sections = Array.isArray(spec.sections) ? spec.sections.filter((s) => s && s.heading) : [];
+    if (!sections.length) return res.json({ ok: false, error: '제안서 내용이 비어 있어요. 자료를 다시 확인해 주세요.' });
+    ensureSkillOut();
+    // 임시 파일명: 고객 이름 등 개인정보를 파일명에 넣지 않는다(랜덤)
+    tmpPath = path.join(SKILL_OUT, 'tmp_' + crypto.randomBytes(8).toString('hex') + '.pdf');
+    await skills.pdf.makePdf({
+      title: String(spec.title || '맞춤 제안서').slice(0, 60),
+      subtitle: String(spec.subtitle || '').slice(0, 120),
+      sections: sections.slice(0, 8).map((s) => ({ heading: String(s.heading).slice(0, 60), lines: (Array.isArray(s.lines) ? s.lines : [String(s.lines || '')]).slice(0, 12).map((l) => String(l).slice(0, 300)) })),
+      footer: String(spec.footer || '본 제안서는 제출·발송 전 담당 설계사 검토가 필요합니다.').slice(0, 200),
+    }, tmpPath);
+    const buf = fs.readFileSync(tmpPath);
+    const kb = Math.round(buf.length / 1024);
+    try { fs.unlinkSync(tmpPath); tmpPath = ''; } catch (e) {}   // ★즉시 삭제 — 서버에 고객 자료 0
+    console.log(`[📑제안서] 종류=${String(spec.kind || '일반')} · ${kb}KB · 서버보관=삭제됨`); // 본문·이름은 안 남긴다
+    res.json({ ok: true, kind: String(spec.kind || '일반'), title: String(spec.title || '맞춤 제안서'),
+      sizeKB: kb, source: srcName, fileBase64: buf.toString('base64') });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  } finally {
+    if (tmpPath) { try { fs.unlinkSync(tmpPath); } catch (e) {} }   // 실패해도 반드시 지운다
+  }
+});
 app.post('/api/coverage/analyze', async (req, res) => {
   try {
     const dataUrl = String((req.body && req.body.dataUrl) || '');
