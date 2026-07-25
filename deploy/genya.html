@@ -2478,13 +2478,17 @@ function addToolAsk(){ window._ACTIVE_SKILL='add_tool'; pushMsg('gen','어떤 �
             window._vBuf=(window._vBuf?window._vBuf+' ':'')+t; window._vBufAt=_now;
             var B=window._vBuf;
             var _cool=(_now-(window._vFireAt||0))<4000;  // 방금 발동했으면 잠시 무시(중복 결재 차단)
+            // (3) ⭐ 이벤트 만들기: "○○ 이벤트 만들어줘" — 카드·결재 낱말을 배제해 셋이 서로 안 물리게. 먼저 검사한다.
+            if(!_cool && /이벤트/.test(B) && /(만들|추가|생성|등록)/.test(B) && !/(카드|스캔)/.test(B) && !/(결재|결제|발송|알림톡|승인)/.test(B)){
+              try{ _voiceExec(B); }catch(e){} window._vBuf=''; window._vFireAt=_now;
+            }
             // (1) 카드 띄우기: "○○ 카드 띄워/스캔/보여줘"
-            if(/(카드|스캔)/.test(B) && /(띄워|띄우|보여|열어|뜨|스캔|해줘|해|줘)/.test(B)){
+            else if(/(카드|스캔)/.test(B) && /(띄워|띄우|보여|열어|뜨|스캔|해줘|해|줘)/.test(B)){
               var _cm=B.replace(/지니야|고객님|고객|카드|스캔해줘|스캔해|스캔|띄워줘|띄워|띄우|보여줘|보여|열어줘|열어|해줘|줘|증권|서류|자료|파일|명단|이거|저거|화면|을|를|의|좀|씨|님/g,' ').trim().match(/([가-힣]{2,4})/);
               if(_cm && _cm[1] && typeof openCustomerCard==='function'){ try{ openCustomerCard(_cm[1]); }catch(e){} window._vBuf=''; window._vFireAt=_now; }
             }
             // (2) 결재/발송 실행(FC 불필요): "○○ 결재함에 올려/안내문 발송" → 누적 문장 전체를 /api/order로 전달 → 서버 approval이 실제 결재함 등록. Vapi는 말만 하므로 실제 등록은 여기서.
-            else if(!_cool && !/(카드|스캔)/.test(B) && ((/(결재|결제|발송|알림톡|승인)/.test(B) && /(올려|올릴|올려줘|보내|발송|해줘|등록|잡아)/.test(B)) || (/(안내문|문자|메일|이메일|카톡)/.test(B) && /(보내|발송|올려|올릴)/.test(B)))){
+            else if(!_cool && !/(카드|스캔)/.test(B) && !/이벤트/.test(B) && ((/(결재|결제|발송|알림톡|승인)/.test(B) && /(올려|올릴|올려줘|보내|발송|해줘|등록|잡아)/.test(B)) || (/(안내문|문자|메일|이메일|카톡)/.test(B) && /(보내|발송|올려|올릴)/.test(B)))){
               try{ _voiceExec(B); }catch(e){} window._vBuf=''; window._vFireAt=_now;
             }
           }
@@ -3179,6 +3183,8 @@ window.sendMsg=function(){
      if(cards && cards.length && window.renderHoloCards){ window.renderHoloCards(cards); }
      // ★고객카드 띄우기 명령 신호(자비스): 명단·연결 드로어 열고 해당 고객 카드(ghRowDetail) 자동 표시
      if(d && d.action==='open_card' && d.customer){ try{ openCustomerCard(d.customer); }catch(e){} }
+     // ⭐ 말로 이벤트 만들기: 서버가 실제로 만든 경우에만 이 신호가 온다 → 대시보드를 열어 새 타일을 "짠" 하고 보여준다.
+     if(d && d.action==='create_event' && d.eventName){ try{ _eventCreated(d.eventName); }catch(e){} }
      // ★pending 구분: sheetCRUD 쓰기(action+sig)=승인·반영 UI(완료 표현 금지) / 결재함=모달 알림
      if(d && d.pending){
        if(d.pending.action && d.pending.sig){ renderSheetWriteApprove(d.pending); }
@@ -3241,7 +3247,14 @@ function _voiceExec(q){
       if(d.text) pushMsg('gen', renderMd(d.text)); // 서버가 실제로 올렸을 때만 "결재함에 올렸어요"라고 답함(approval.create 결과)
       if(d.pending){ try{ pushMsg('gen', _apOpenBtnHtml()); }catch(e){} try{ if(document.getElementById('apList')) apRender(); }catch(e){} } // 실제 등록됨(서버 pending) → 열기 버튼 + 열려있는 결재함 즉시 갱신
       if(d.action==='open_card'&&d.customer){ try{ openCustomerCard(d.customer); }catch(e){} }
+      if(d.action==='create_event'&&d.eventName){ try{ _eventCreated(d.eventName); }catch(e){} }  // ⭐ 음성으로 만든 이벤트도 화면에 즉시
     }).catch(function(){ try{ pushMsg('gen','결재 처리 중 오류가 났어요. 잠시 후 다시 말씀해 주세요.'); }catch(e){} });
+}
+// ⭐ 이벤트 생성 성공 신호 → 대시보드 열고 새 타일 강조·대상자 자동 펼침(텍스트·음성 공통 진입점)
+function _eventCreated(name){
+  window._DASH_NEW=name;
+  if(typeof managementDashboard==='function') managementDashboard();
+  if(typeof refreshTopKPIs==='function') refreshTopKPIs();
 }
 // ★명령으로 고객카드 띄우기(자비스): 드로어와 '분리된 독립 플로팅 카드'로 표시. 전체화면 백드롭이 없으므로 대화창을 눌러도 카드가 안 닫힘 → 통화·타이핑을 이어가도 카드가 계속 떠 있음. (기존 드로어 행탭 ghRowDetail은 무접촉 유지)
 function _jarvisEsc(s){ return String(s==null?'':s).replace(/[&<>]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c];}); }

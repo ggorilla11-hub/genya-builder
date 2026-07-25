@@ -1203,7 +1203,57 @@ async function orderHandler(req, res) {
     const _isCardCmd = /(카드|스캔)/.test(q) && /(띄워|띄우|띄|보여|열어|열|뜨|스캔|해줘|해|줘)/.test(q);
     let _cardName = '';
     if (_isCardCmd) { const _c = q.replace(/고객님|고객|카드|스캔해줘|스캔해|스캔|띄워줘|띄워|띄우|보여줘|보여|열어줘|열어|해줘|줘|증권|서류|자료|파일|명단|이거|저거|화면|을|를|의|좀|씨|님/g, ' ').trim(); const _m = _c.match(/([가-힣]{2,4})/); _cardName = _m ? _m[1] : ''; }
-    if (_isCardCmd && _cardName) {
+    // ⭐ 이벤트 만들기 명령: "결혼기념일 이벤트 만들어줘" → 대시보드 [＋ 이벤트 추가]와 똑같이 실행. Vapi FC 미사용(텍스트 신호만).
+    //   ★트리거 3개 배타 구분: 카드(카드/스캔) · 결재(결재/발송/알림톡/승인) · 이벤트(이벤트+만들/추가/생성).
+    //     '이벤트'라는 낱말은 나머지 둘에 안 쓰이고, 여기서 카드·결재 낱말을 명시적으로 배제해 서로 안 물린다.
+    const _isEventCmd = /이벤트/.test(q) && /(만들|추가|생성|등록)/.test(q) && !/(카드|스캔)/.test(q) && !/(결재|결제|발송|알림톡|승인)/.test(q);
+    let _evName = '';
+    if (_isEventCmd) {
+      // 이벤트 이름 = '이벤트' 바로 앞의 낱말(앞 낱말이 군더더기면 그 앞까지). 호칭·지시어는 먼저 걷어낸다.
+      const _q2 = q.replace(/지니야|제니야|대시보드에?|화면에?/g, ' ').replace(/\s+/g, ' ').trim();
+      let _m2 = _q2.match(/((?:[가-힣A-Za-z0-9]+\s+)?[가-힣A-Za-z0-9]{2,20})\s*(?:라는|이라는|이란|란)?\s*이벤트/);
+      if (!_m2) _m2 = _q2.match(/이벤트\s*(?:로|를|을|는)?\s*([가-힣A-Za-z0-9]{2,20})/); // "이벤트 만들어줘 결혼기념일" 같은 뒤치기 대비
+      if (_m2) _evName = String(_m2[1] || '').replace(/^(새|새로운|하나|이|그|저|좀|다시|또|어떤)\s+/, '').trim();
+      // 이름 자리에 명령어만 덜렁 잡힌 경우에만 무효화. ★접두 검사로 하면 '등록기념일'까지 날아간다(테스트로 발견).
+      if (/^(만들|추가|생성|등록)(어|어줘|해|해줘|하|줘)?$/.test(_evName)) _evName = '';
+    }
+    if (_isEventCmd && _evName) {
+      if (!canData) {
+        out = { kind: '⭐ 이벤트', text: '내 명단을 보려면 구글 데이터 연결이 필요해요. 우측 상단 [명단·연결]에서 연결해 주세요.' };
+      } else {
+        let _r = null;
+        try { _r = await customEvents.add(ma, _evName); } catch (e) { _r = { ok: false, error: e.message }; }
+        if (!_r || !_r.ok) {
+          // ★실패는 실패라고 그대로 말한다(이미 있는 이벤트 등). "만들었다"는 거짓 완료 금지.
+          out = { kind: '⭐ 이벤트', text: (_r && (_r.error || _r.message)) || '이벤트를 만들지 못했어요.' };
+        } else {
+          // ★여기부터는 실제 생성에 성공한 뒤. 이어서 대상자를 실측해 숫자까지 정직하게 알린다.
+          const _ev = _r.event, _nm = _ev.이벤트명;
+          const _pp = {}; new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' })
+            .formatToParts(new Date()).forEach((x) => { _pp[x.type] = x.value; });
+          const _todayKst = `${_pp.year}-${_pp.month}-${_pp.day}`;
+          let _mt = null;
+          try {
+            const _sheet = skills.manage.rosterToSheet(await readRoster(ma));
+            _mt = customEvents.buildMetrics({ headers: _sheet.headers, rows: _sheet.rows, events: [_ev], today: _todayKst })[0];
+          } catch (e) { console.log('[⭐이벤트] 대상자 계산 실패: ' + e.message); }
+          if (!_mt) {
+            out = { kind: '⭐ 이벤트', action: 'create_event', eventName: _nm, text: `'${_nm}' 이벤트를 만들었어요. 대상자는 대시보드에서 확인해 주세요.` };
+          } else if (_mt.locked) {
+            // 컬럼이 없으면 숨기지 않고 정직하게 → 바로 컬럼 추가 흐름으로 이어준다.
+            out = { kind: '⭐ 이벤트', action: 'create_event', eventName: _nm,
+              text: `'${_nm}' 이벤트를 만들었어요.\n다만 명단에 '${_nm}' 항목이 아직 없어서 대상자를 못 찾아요.\n"${_nm} 컬럼 추가해줘"라고 말씀하시면 항목부터 만들어 드릴게요.` };
+          } else {
+            const _today = _mt.오늘수 ? ` (오늘 ${_mt.오늘수}명)` : '';
+            const _who = (_mt.cards || []).slice(0, 3).map((c) => c.이름 + '님').join(', ');
+            out = { kind: '⭐ 이벤트', action: 'create_event', eventName: _nm,
+              text: `'${_nm}' 이벤트를 만들었어요. 이번달 대상자 ${_mt.count}명이에요${_today}.` + (_who ? `\n${_who}${_mt.count > 3 ? ' 외' : ''}` : '') };
+          }
+        }
+      }
+    } else if (_isEventCmd) {
+      out = { kind: '⭐ 이벤트', text: '어떤 이벤트를 만들까요? "결혼기념일 이벤트 만들어줘"처럼 이름을 함께 말씀해 주세요.' };
+    } else if (_isCardCmd && _cardName) {
       let _found = false;
       try { const t = await sheetsCrud.loadTable(null); if (t && t.rows) _found = sheetsCrud.findByName(t, _cardName).length > 0; } catch (e) {}
       out = _found
