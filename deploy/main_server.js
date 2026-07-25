@@ -394,9 +394,9 @@ app.get(['/health', '/api/version'], (req, res) => res.json({ ok: true, build: B
 app.get('/api/diag/auth-test', async (req, res) => {
   try {
     const t = await sheetsCrud.loadTable(null);
-    // cols = 컬럼 개수(컬럼 '이름'은 안 내보냄). 27 이상이면 loadTable의 A1:Z 읽기 범위를 넘어 잘린다는 경고.
+    // cols = 컬럼 개수(컬럼 '이름'은 안 내보냄). 읽기 범위 A1:CZ(104컬럼) 한계에 닿았는지 경고.
     const cols = (t.header || []).length;
-    res.json({ ok: !!t.id, method: 'service_account', found: !!t.id, rows: (t.rows || []).length, cols, colsTruncatedRisk: cols >= 26 });
+    res.json({ ok: !!t.id, method: 'service_account', found: !!t.id, rows: (t.rows || []).length, cols, colsTruncatedRisk: cols >= 104 });
   } catch (e) { res.json({ ok: false, method: 'service_account', error: e.message }); }
 });
 // ★🛡️ 수문장 진단(회장님 직접 확인용): 로그인 상태로 이 URL을 열면 — 내 세션 uid·Pinecone연결·최근이벤트를 그대로 보여준다.

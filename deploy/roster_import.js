@@ -30,8 +30,11 @@ function init(opts) {
 
 function _stripB64(dataUrl) { const s = String(dataUrl || ''); const i = s.indexOf('base64,'); return i >= 0 ? s.slice(i + 7) : s; }
 
-// 엑셀(xlsx/xls)·CSV 모두 XLSX로 파싱. 첫 비어있지 않은 행 = 헤더.
+// 엑셀(xlsx/xls)·CSV 모두 XLSX로 파싱.
 //   ★인코딩: 엑셀=바이너리(PK/OLE 시그니처), CSV=UTF-8 텍스트로 읽어야 한글 안 깨짐(BOM 제거).
+//   ★2줄 헤더 자동 감지(2026-07-25): 실무 양식은 1행이 병합된 "그룹 제목"(기본 정보·가족/재무·보험 상품…),
+//     2행이 진짜 컬럼명(고객번호·이름·성별…)인 경우가 흔하다. 예전엔 1행을 헤더로 삼아
+//     ①컬럼명이 빈칸 투성이가 되어 화면 렌더링 실패 ②2행(진짜 헤더)이 데이터 1건으로 잘못 세어짐("5명인데 6명").
 function parse(dataUrl) {
   const buf = Buffer.from(_stripB64(dataUrl), 'base64');
   const isXlsx = buf.length >= 2 && buf[0] === 0x50 && buf[1] === 0x4B;          // 'PK' = xlsx(zip)
@@ -44,16 +47,40 @@ function parse(dataUrl) {
   const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false });
   const nonEmpty = aoa.filter((r) => r && r.some((c) => String(c == null ? '' : c).trim()));
   if (!nonEmpty.length) return { header: [], rows: [] };
-  const header = nonEmpty[0].map((h) => String(h == null ? '' : h).trim());
-  const width = header.length;
-  const rows = nonEmpty.slice(1).map((r) => { const out = []; for (let i = 0; i < width; i++) out.push(String(r[i] == null ? '' : r[i]).trim()); return out; });
-  return { header, rows };
+  // 헤더 폭: 병합된 1행은 짧게 잡힐 수 있어 앞 3줄 중 가장 넓은 폭을 기준으로 삼는다.
+  const width = Math.max.apply(null, nonEmpty.slice(0, 3).map((r) => (r || []).length));
+  const fill = (r) => { let n = 0; for (let i = 0; i < width; i++) if (String((r || [])[i] == null ? '' : r[i]).trim()) n++; return n; };
+  // ★판정(보수적, 3중 조건 모두 충족해야만 2행을 헤더로 승격):
+  //   ①1행이 절반 이하로 듬성듬성 = 병합된 그룹 제목의 특징
+  //   ②2행은 80% 이상 꽉 참
+  //   ③★결정타 — 1행엔 이름 컬럼(고객명·이름·성명·성함·name)이 없고 2행엔 있다.
+  //     빈칸 비율만 보면 "헤더 뒷부분이 비어 있는 평범한 파일"의 첫 데이터 행을 헤더로 잡아먹는다(실측 확인).
+  //     이름 컬럼은 헤더에만 있고 데이터 행엔 없으므로 이 조건이 진짜 헤더를 정확히 가려낸다.
+  const hasNameCol = (r) => {
+    const norm = (x) => String(x == null ? '' : x).trim().toLowerCase().replace(/\s+/g, '');
+    const pref = ['고객명', '이름', '성명', '성함', 'name'];
+    for (let i = 0; i < width; i++) if (pref.indexOf(norm((r || [])[i])) >= 0) return true;
+    return false;
+  };
+  let hIdx = 0;
+  if (nonEmpty.length >= 3 && width > 0) {
+    const f0 = fill(nonEmpty[0]), f1 = fill(nonEmpty[1]);
+    if (f0 <= width * 0.5 && f1 >= width * 0.8 && f1 > f0 && !hasNameCol(nonEmpty[0]) && hasNameCol(nonEmpty[1])) hIdx = 1;
+  }
+  // 빈 컬럼명은 '컬럼N'으로 채운다 — 빈 이름끼리 키가 겹쳐 값이 서로 덮어써지는(데이터 유실) 것을 막는다.
+  const header = [];
+  for (let i = 0; i < width; i++) {
+    const h = String(nonEmpty[hIdx][i] == null ? '' : nonEmpty[hIdx][i]).trim();
+    header.push(h || ('컬럼' + (i + 1)));
+  }
+  const rows = nonEmpty.slice(hIdx + 1).map((r) => { const out = []; for (let i = 0; i < width; i++) out.push(String(r[i] == null ? '' : r[i]).trim()); return out; });
+  return { header, rows, headerRow: hIdx + 1, groupTitleRow: hIdx === 1 };
 }
 
 // 업로드→저장. confirm 전엔 미리보기만. mode: 'replace'(교체) | 'append'(추가).
 async function importRoster(ma, input) {
   input = input || {};
-  const { header, rows } = parse(input.dataUrl);
+  const { header, rows, headerRow, groupTitleRow } = parse(input.dataUrl);
   if (!header.length || !rows.length) return { ok: false, message: '파일에서 명단을 못 읽었어요. 엑셀·CSV 첫 줄이 컬럼 이름(고객명·연락처 등)인지 확인해 주세요.' };
 
   // 1) 미리보기(저장 안 함) — 신규/중복 검사로 대표가 안전하게 교체·추가 판단
@@ -69,7 +96,9 @@ async function importRoster(ma, input) {
         rows.forEach((r) => { const nm = String(r[upIdx] || '').trim(); if (nm && existSet.has(nm)) { 중복++; if (중복명단.length < 5) 중복명단.push(nm); } else 신규++; });
       }
     } catch (e) { /* 기존 명단 없음 = 전부 신규 */ }
-    return { ok: true, needsConfirm: true, header, count: rows.length, 신규, 중복, 중복명단, preview: rows.slice(0, 5), message: `${rows.length}명을 읽었어요 (신규 ${신규}명, 이미 있음 ${중복}명). 새로 교체할까요, 기존에 추가할까요?` };
+    // 2줄 헤더를 감지했으면 미리보기에서 정직하게 알린다(대표가 컬럼명이 맞는지 눈으로 확인 가능).
+    const _hMsg = groupTitleRow ? `1행은 그룹 제목이라 넘기고 ${headerRow}행을 컬럼 이름으로 읽었어요. ` : '';
+    return { ok: true, needsConfirm: true, header, headerRow, groupTitleRow, count: rows.length, 신규, 중복, 중복명단, preview: rows.slice(0, 5), message: `${_hMsg}${rows.length}명을 읽었어요 (신규 ${신규}명, 이미 있음 ${중복}명). 새로 교체할까요, 기존에 추가할까요?` };
   }
 
   // 2) 저장 — 🔑 SA로 전환: 회원 OAuth 대신 서비스 계정으로 시트 찾기+쓰기(loadTable이 SA 사용, {id, sheets(SA클라)} 반환). ma 없어도 동작.
@@ -118,7 +147,8 @@ async function importRoster(ma, input) {
   // replace: 기존 내용 비우고 새로 씀 (소스파일·업로드일 태깅)
   const _rHeader = _withMeta(header);
   const _rRows = rows.map((r) => { const o = _rowObj(r); return _rHeader.map((h) => (o[h] != null ? o[h] : '')); });
-  try { await sheets.spreadsheets.values.clear({ spreadsheetId: id, range: `${_TAB}!A1:Z10000` }); } catch (e) {}
+  // ★A1:Z10000 → A1:CZ100000: 26컬럼·1만행 상한에서 뒷컬럼·뒷행이 안 지워져 옛 데이터가 남던 문제 해소.
+  try { await sheets.spreadsheets.values.clear({ spreadsheetId: id, range: `${_TAB}!A1:CZ100000` }); } catch (e) {}
   await sheets.spreadsheets.values.update({ spreadsheetId: id, range: `${_TAB}!A1`, valueInputOption: 'RAW', requestBody: { values: [_rHeader].concat(_rRows) } });
   return { ok: true, mode, imported: rows.length, header: _rHeader, message: `명단을 새로 저장했어요(${rows.length}명).` };
 }

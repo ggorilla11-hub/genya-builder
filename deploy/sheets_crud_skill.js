@@ -116,7 +116,10 @@ async function loadTable(ma) {
   const meta = await sheets.spreadsheets.get({ spreadsheetId: id, fields: 'sheets.properties(title,sheetId)' });
   const tab = (meta.data.sheets || []).find((s) => s.properties.title === _SHEET_TAB);
   const gid = tab ? tab.properties.sheetId : 0;
-  const got = await sheets.spreadsheets.values.get({ spreadsheetId: id, range: `${_SHEET_TAB}!A1:Z` }); // 행 제한 해제: A1:Z200(=199행)에서 어피티 뒷부분이 잘리던 버그. 전체 행 읽기.
+  // 행 제한 해제: A1:Z200(=199행)에서 어피티 뒷부분이 잘리던 버그 → 전체 행 읽기.
+  // ★컬럼 제한도 해제(2026-07-25): A1:Z는 26컬럼이 한계라 실무 양식(기본정보·가족/재무·보험상품·상담관리 = 26컬럼 초과)의
+  //   27번째 컬럼부터가 통째로 안 읽혔다. 안 읽히면 화면에도 안 뜨고 재작성 때 지워진다. CZ(104컬럼)로 확장.
+  const got = await sheets.spreadsheets.values.get({ spreadsheetId: id, range: `${_SHEET_TAB}!A1:CZ` });
   const values = got.data.values || [];
   const header = values[0] || [];
   const nameCol = detectNameCol(header);
