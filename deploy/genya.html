@@ -241,6 +241,29 @@
   .comp-btn.send{background:var(--teal);color:#fff;} .comp-btn.send:hover{background:var(--teal-d);}
   .comp-hint{font-size:10px;color:var(--gray-l);text-align:center;margin-top:7px;}
 
+  /* ── 📅⭐ 일정관리 비서 · 이벤트 대시보드 시원한 레이아웃 (2026-07-26 · CSS만, 기능 무접촉) ──
+     예전엔 520px 고정 폭 + 2열 고정이라 라벨이 줄바꿈되고 초안·버튼이 눌려 답답했다. */
+  .wide-pane{width:min(760px,94vw);max-width:100%;}                       /* ①데스크톱 시원 · 모바일 꽉 참 */
+  .tile-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;}  /* ③넓으면 3~4열 */
+  .dash-tile .tl{font-size:12.5px;font-weight:700;color:#0d1b2a;margin-top:5px;line-height:1.35;word-break:keep-all;} /* 라벨 줄바꿈 해소 */
+  /* ④이벤트 카드 2단: 넓으면 왼쪽 고객정보 / 오른쪽 문구+버튼, 좁으면 세로 */
+  .ev-card{display:grid;grid-template-columns:200px 1fr;gap:14px;border:1px solid #dbe2ea;border-radius:12px;padding:13px 15px;margin-bottom:10px;background:#fff;}
+  .ev-card.today{border-color:#f3b0b2;background:#fff8f8;}
+  .ev-card .who b{font-size:14.5px;}                                       /* ⑤글자 키우기 */
+  .ev-card .draft{font-size:13px;color:#4a5766;background:#f5f7fa;border-radius:9px;padding:11px 12px;white-space:pre-wrap;line-height:1.7;}
+  .ev-acts{display:flex;gap:7px;margin-top:9px;flex-wrap:wrap;}
+  /* ②일정 = 날짜별 묶음 */
+  .sch-day{display:flex;align-items:center;gap:8px;margin:14px 0 7px;font-size:12.5px;font-weight:800;color:#4a6076;}
+  .sch-day.today{color:#0f766e;}
+  .sch-day .bar{flex:1;height:1px;background:#e5e9ee;}
+  .sch-row{display:flex;gap:12px;padding:11px 13px;border:1px solid #e5e9ee;border-radius:11px;margin-bottom:7px;background:#fff;}
+  .sch-row.today{border-color:#bfe3dc;background:#f4fbf9;}
+  .sch-row .tm{min-width:52px;font-size:13px;font-weight:800;color:#0f766e;}
+  .sch-row .tt{font-size:13.5px;color:#0d1b2a;font-weight:600;line-height:1.45;}
+  @media(max-width:640px){
+    .ev-card{grid-template-columns:1fr;gap:9px;}
+    .tile-grid{grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:8px;}
+  }
   /* ⭐ 새로 만든 이벤트 타일이 "짠" 하고 등장 — 대표가 방금 정의한 게 바로 눈에 들어오게 */
   .dash-tile{transition:box-shadow .15s,transform .15s;}
   .dash-tile:hover{box-shadow:0 3px 10px rgba(13,27,42,.10);}
@@ -1445,18 +1468,18 @@ function _dashHTML(d){
     var 오늘뱃지 = (!m.locked && m.오늘수) ? '<span style="margin-left:5px;font-size:10px;font-weight:800;color:#fff;background:#e5484d;border-radius:999px;padding:1px 6px;vertical-align:2px">오늘 '+m.오늘수+'</span>' : '';
     return '<div class="dash-tile'+(isNew?' dash-pop':'')+'" onclick="'+(m.locked?'':('dashOpen('+i+')'))+'" style="position:relative;border:1px solid '+(m.locked?'#e5e9ee':(isNew?'#2a9d8f':'#dbe2ea'))+';border-radius:12px;padding:12px;cursor:'+(m.locked?'default':'pointer')+';background:'+(m.locked?'#f3f5f7':'#fff')+';opacity:'+(m.locked?'0.65':'1')+'">'
       +del
-      +'<div style="font-size:20px">'+m.color+'</div>'
-      +'<div style="font-size:12px;font-weight:700;color:#0d1b2a;margin-top:4px">'+_escOb(m.label)+'</div>'
-      +'<div style="font-size:'+(m.locked?'10.5px':'20px')+';font-weight:700;color:'+(m.locked?'#8a93a3':'#0f766e')+';margin-top:2px">'+(m.locked?('🔒 '+_escOb(m.need)+'이 없어요'):(m.count+'명'+오늘뱃지))+'</div>'
+      +'<div style="font-size:22px">'+m.color+'</div>'
+      +'<div class="tl">'+_escOb(m.label)+'</div>'
+      +'<div style="font-size:'+(m.locked?'10.5px':'22px')+';font-weight:800;color:'+(m.locked?'#8a93a3':'#0f766e')+';margin-top:3px">'+(m.locked?('🔒 '+_escOb(m.need)+'이 없어요'):(m.count+'명'+오늘뱃지))+'</div>'
       +'</div>';
   }).join('');
   // ＋ 타일 — 점선 테두리로 기본 타일과 구분
-  tiles += '<div onclick="dashAddEvent()" style="border:1.5px dashed #b7c4d2;border-radius:12px;padding:12px;cursor:pointer;background:#fbfcfd;display:flex;flex-direction:column;justify-content:center;align-items:center;min-height:86px">'
-    +'<div style="font-size:22px;color:#2a9d8f;line-height:1">＋</div>'
-    +'<div style="font-size:12px;font-weight:700;color:#4a6076;margin-top:5px">이벤트 추가</div>'
-    +'<div style="font-size:10px;color:#8fa0b1;margin-top:2px">내가 챙길 걸 직접</div>'
+  tiles += '<div onclick="dashAddEvent()" style="border:1.5px dashed #b7c4d2;border-radius:12px;padding:12px;cursor:pointer;background:#fbfcfd;display:flex;flex-direction:column;justify-content:center;align-items:center;min-height:96px">'
+    +'<div style="font-size:24px;color:#2a9d8f;line-height:1">＋</div>'
+    +'<div style="font-size:12.5px;font-weight:700;color:#4a6076;margin-top:6px">이벤트 추가</div>'
+    +'<div style="font-size:10.5px;color:#8fa0b1;margin-top:2px">내가 챙길 걸 직접</div>'
     +'</div>';
-  return '<div style="max-width:560px"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px"><b style="font-size:16px;color:#0d1b2a">📊 오늘 이벤트 대시보드</b><span onclick="closeModal()" style="cursor:pointer;color:#8a93a3;font-size:20px">×</span></div><div style="font-size:11px;color:#8a93a3;margin-bottom:12px">'+_escOb(d.today||'')+' · 명단 '+(d.rowCount||0)+'명 · 우선순위: '+((d.우선순위||[]).join(' → '))+'</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+tiles+'</div><div id="dashCards" style="margin-top:12px"></div></div>';
+  return '<div class="wide-pane"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px"><b style="font-size:17px;color:#0d1b2a">📊 오늘 이벤트 대시보드</b><span onclick="closeModal()" style="cursor:pointer;color:#8a93a3;font-size:22px">×</span></div><div style="font-size:11.5px;color:#8a93a3;margin-bottom:14px">'+_escOb(d.today||'')+' · 명단 '+(d.rowCount||0)+'명 · 우선순위: '+((d.우선순위||[]).join(' → '))+'</div><div class="tile-grid">'+tiles+'</div><div id="dashCards" style="margin-top:16px"></div></div>';
 }
 // ===== ⭐ 대표가 직접 정의하는 이벤트 =====
 //   업종마다 챙기는 게 다르다(학원=등록기념일, 설계사=만기). 이름만 넣으면 명단에서 컬럼을 찾아 대상자·문구까지.
@@ -1507,20 +1530,25 @@ function dashOpen(i){
     +m.cards.map(function(c,j){
       // ★오늘 해당자는 맨 앞(서버 정렬) + 🔴 강조로 눈에 띄게
       var 오늘 = !!c.오늘;
-      return '<div style="border:1px solid '+(오늘?'#f3b0b2':'#dbe2ea')+';border-radius:10px;padding:10px;margin-bottom:8px;background:'+(오늘?'#fff8f8':'#fff')+'">'
-      +'<div>'+(오늘?'<span style="color:#e5484d;font-weight:800;font-size:11px;margin-right:5px">🔴 오늘</span>':'')+'<b>'+_escOb(c.이름)+'</b> <span style="color:#8a93a3;font-size:12px">· '+_escOb(c.왜)+' · '+_escOb(c.언제)+(c.만기일?(' · 만기 '+_escOb(c.만기일)):(c.날짜?(' · '+_escOb(c.날짜)):''))+'</span></div>'
-      +'<div style="font-size:11px;color:#8a93a3;margin-top:7px">📎 메일+문자 · 대상 1명</div>'
-      +'<div id="dashDraft'+i+'_'+j+'" style="font-size:12px;color:#556;background:#f5f7fa;border-radius:8px;padding:8px;margin-top:4px;white-space:pre-wrap">'+_escOb(c.초안)+'</div>'
+      // ★2단 레이아웃(넓으면 왼쪽 고객정보 / 오른쪽 문구+버튼, 좁으면 세로). 기능·버튼·게이트는 그대로.
+      return '<div class="ev-card'+(오늘?' today':'')+'">'
+      +'<div class="who">'
+        +(오늘?'<div style="color:#e5484d;font-weight:800;font-size:11.5px;margin-bottom:3px">🔴 오늘</div>':'')
+        +'<b>'+_escOb(c.이름)+'</b>'
+        +'<div style="color:#8a93a3;font-size:12px;margin-top:4px;line-height:1.6">'+_escOb(c.왜)+'<br>'+_escOb(c.언제)+(c.만기일?('<br>만기 '+_escOb(c.만기일)):(c.날짜?('<br>'+_escOb(c.날짜)):''))+'</div>'
+        +'<div style="font-size:11.5px;color:#0f766e;font-weight:700;margin-top:8px">📎 메일+문자</div>'
+        +'<div style="font-size:11px;color:#8a93a3">수신: 대상 1명</div>'
+        +'<div style="font-size:10.5px;color:#8a6d1a;margin-top:6px;line-height:1.55">안전모드에선 실고객이 아니라 회장님 본인에게만 test 발송돼요.</div>'
+      +'</div>'
       // ★대시보드는 이미 사람이 문구를 보고 있는 화면 = 휴먼인더루프. 여기서 바로 승인한다(결재함 화면 경유 없음).
       //   단 게이트는 그대로 — [승인] 버튼만 X-Human-Approval 헤더 + humanApproval:true를 보낸다.
-      +'<div style="font-size:11px;color:#0f766e;font-weight:600;margin-top:7px">발송: 메일+문자 · 수신: 대상 1명</div>'
-      +'<div style="font-size:10.5px;color:#8a6d1a;margin-top:3px">승인 시 안전모드에선 실고객이 아니라 회장님 본인에게만 test 발송돼요.</div>'
-      +'<div id="dashAct'+i+'_'+j+'" style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">'
-        +'<button onclick="dashApprove('+i+','+j+')" style="padding:7px 14px;border:none;background:var(--teal);color:#fff;border-radius:999px;font-weight:700;cursor:pointer;font-size:12px">✅ 승인</button>'
-        +'<button onclick="dashEditDraft('+i+','+j+')" style="padding:7px 12px;border:1px solid #dbe2ea;background:#fff;color:#4a6076;border-radius:999px;font-weight:600;cursor:pointer;font-size:12px">✏️ 수정요청</button>'
-        +'<button onclick="dashReject('+i+','+j+')" style="padding:7px 12px;border:1px solid #dbe2ea;background:#fff;color:#8a93a3;border-radius:999px;font-weight:600;cursor:pointer;font-size:12px">↩ 반려</button>'
-        +'<button onclick="dashCopy('+i+','+j+')" style="padding:7px 12px;border:1px solid #2a9d8f;background:#e8f4f2;color:#0f766e;border-radius:999px;font-weight:600;cursor:pointer;font-size:12px">📋 복사</button>'
-      +'</div></div>'; }).join('');
+      +'<div><div id="dashDraft'+i+'_'+j+'" class="draft">'+_escOb(c.초안)+'</div>'
+      +'<div id="dashAct'+i+'_'+j+'" class="ev-acts">'
+        +'<button onclick="dashApprove('+i+','+j+')" style="padding:9px 18px;border:none;background:var(--teal);color:#fff;border-radius:999px;font-weight:700;cursor:pointer;font-size:12.5px">✅ 승인</button>'
+        +'<button onclick="dashEditDraft('+i+','+j+')" style="padding:9px 14px;border:1px solid #dbe2ea;background:#fff;color:#4a6076;border-radius:999px;font-weight:600;cursor:pointer;font-size:12.5px">✏️ 수정요청</button>'
+        +'<button onclick="dashReject('+i+','+j+')" style="padding:9px 14px;border:1px solid #dbe2ea;background:#fff;color:#8a93a3;border-radius:999px;font-weight:600;cursor:pointer;font-size:12.5px">↩ 반려</button>'
+        +'<button onclick="dashCopy('+i+','+j+')" style="padding:9px 14px;border:1px solid #2a9d8f;background:#e8f4f2;color:#0f766e;border-radius:999px;font-weight:600;cursor:pointer;font-size:12.5px">📋 복사</button>'
+      +'</div></div></div>'; }).join('');
 }
 // 문구 틀 수정 — {이름}·{날짜}·{디데이} 자리표시자는 실제 값으로 바뀐다.
 function dashEditTemplate(i){
@@ -3305,8 +3333,8 @@ function _schHTML(d,rg){
     var on=(t[0]===rg);
     return '<button onclick="openSchedule(\''+t[0]+'\')" style="padding:7px 14px;border:1px solid '+(on?'var(--teal)':'#dbe2ea')+';background:'+(on?'var(--teal)':'#fff')+';color:'+(on?'#fff':'#4a6076')+';border-radius:999px;font-weight:700;cursor:pointer;font-size:12px;font-family:inherit">'+t[1]+'</button>';
   }).join(' ');
-  var head='<div style="max-width:520px"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><b style="font-size:16px;color:#0d1b2a">📅 일정관리 비서</b><span onclick="closeModal()" style="cursor:pointer;color:#8a93a3;font-size:20px">×</span></div>'
-    +'<div style="display:flex;gap:6px;margin-bottom:10px">'+tabs+'</div>';
+  var head='<div class="wide-pane"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:9px"><b style="font-size:17px;color:#0d1b2a">📅 일정관리 비서</b><span onclick="closeModal()" style="cursor:pointer;color:#8a93a3;font-size:22px">×</span></div>'
+    +'<div style="display:flex;gap:7px;margin-bottom:12px">'+tabs+'</div>';
   if(d&&(d.needsGoogle||d.needsConnect)){
     return head+'<div style="text-align:center;padding:26px 10px"><div style="font-size:32px">🔗</div><div style="font-size:13.5px;font-weight:700;color:#0d1b2a;margin-top:8px">구글 캘린더 연결이 필요해요</div>'
       +'<div style="font-size:12px;color:#556;margin-top:8px;line-height:1.6">'+_escOb(String(d.message||'연결하면 일정을 바로 보여드려요.'))+'</div>'
@@ -3324,14 +3352,30 @@ function _schHTML(d,rg){
       +'<div style="font-size:12px;color:#556;margin-top:8px;line-height:1.7"><b>'+_escOb(String(d.account||'로그인 계정'))+'</b>의 캘린더 '+(d.calendarCount||0)+'개'+(cs?('('+_escOb(cs)+')'):'')+'를 확인했어요.</div>'
       +'<div style="font-size:12px;color:#8a6d1a;margin-top:10px;line-height:1.7">혹시 <b>다른 구글 계정</b>에 일정이 있다면,<br>그 계정으로 로그인해 주세요.</div></div></div>';
   }
-  var multi=(d.from!==d.to);
-  var rows=(d.events||[]).map(function(e){
-    return '<div style="display:flex;gap:10px;padding:9px 10px;border:1px solid #e5e9ee;border-radius:10px;margin-bottom:6px;background:#fff">'
-      +'<div style="min-width:'+(multi?'78px':'46px')+';font-size:12px;font-weight:800;color:#0f766e">'+(multi?(_escOb(String(e.day||'').slice(5))+' '):'')+_escOb(String(e.time||''))+'</div>'
-      +'<div style="flex:1;min-width:0"><div style="font-size:13px;color:#0d1b2a;font-weight:600">'+_escOb(String(e.title||''))+'</div>'
-      +((e.prep&&e.prep.length)?('<div style="font-size:11px;color:#8a6d1a;margin-top:3px">'+_escOb(e.prep.join(' · '))+'</div>'):'')+'</div></div>';
+  // ★날짜별로 묶어 보여준다(이번주·이번달이면 하루씩 헤더 아래로) — 세로로 길게 쌓이던 답답함 해소
+  var _today=String(d.date||'');
+  var _dow=['일','월','화','수','목','금','토'];
+  var groups=[], gmap={};
+  (d.events||[]).forEach(function(e){
+    var k=String(e.day||_today);
+    if(!gmap[k]){ gmap[k]=[]; groups.push(k); }
+    gmap[k].push(e);
+  });
+  var body=groups.map(function(k){
+    var isToday=(k===_today);
+    var dt=new Date(k+'T00:00:00+09:00');
+    var lab=isNaN(dt)?k:(k.slice(5).replace('-','/')+' ('+_dow[dt.getDay()]+')');
+    var hd='<div class="sch-day'+(isToday?' today':'')+'"><span>'+_escOb(lab)+(isToday?' · 오늘':'')+'</span><span class="bar"></span><span style="font-weight:700;color:#8a93a3">'+gmap[k].length+'건</span></div>';
+    return hd+gmap[k].map(function(e){
+      return '<div class="sch-row'+(isToday?' today':'')+'">'
+        +'<div class="tm">'+_escOb(String(e.time||''))+'</div>'
+        +'<div style="flex:1;min-width:0"><div class="tt">'+_escOb(String(e.title||''))+'</div>'
+        +((e.prep&&e.prep.length)?('<div style="font-size:11.5px;color:#8a6d1a;margin-top:4px;line-height:1.6">'+_escOb(e.prep.join(' · '))+'</div>'):'')
+        +(e.calendar?('<div style="font-size:10.5px;color:#a8b2bd;margin-top:3px">'+_escOb(String(e.calendar))+'</div>'):'')
+        +'</div></div>';
+    }).join('');
   }).join('');
-  return head+sub+'<div style="font-size:12.5px;font-weight:700;color:#0d1b2a;margin-bottom:7px">'+_escOb(String(d.rangeLabel||''))+' 일정 '+d.count+'건</div>'+rows+'</div>';
+  return head+sub+'<div style="font-size:13px;font-weight:800;color:#0d1b2a">'+_escOb(String(d.rangeLabel||''))+' 일정 '+d.count+'건</div>'+body+'</div>';
 }
 // ⭐ 이벤트 생성 성공 신호 → 대시보드 열고 새 타일 강조·대상자 자동 펼침(텍스트·음성 공통 진입점)
 function _eventCreated(name){
