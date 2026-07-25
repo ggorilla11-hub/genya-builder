@@ -733,6 +733,11 @@
   <div class="view" data-v="5">
     <div class="topbar">
       <div class="brand"><div class="mk"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3l7 4v6c0 4-3 6.5-7 8-4-1.5-7-4-7-8V7l7-4z" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/><circle cx="12" cy="11" r="2.4" fill="#fff"/></svg></div><div class="nm"><b>지니야</b><span><span class="nick-slot"></span>님의 AI 비서실장</span></div></div>
+      <!-- 🔔 알림 벨 — 지니야가 일한 걸 놓치지 않게. 결재 대기가 있으면 뱃지가 빨갛게. -->
+      <div id="nfBell" onclick="nfOpen()" title="알림" style="position:relative;cursor:pointer;width:36px;height:36px;border-radius:10px;background:var(--navy-2);border:1px solid #21456b;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-left:auto">
+        <svg viewBox="0 0 24 24" fill="none" style="width:18px;height:18px;color:#8fb2d4"><path d="M18 16v-5a6 6 0 10-12 0v5l-1.5 2h15L18 16z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M10 21h4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+        <span id="nfCount" style="display:none;position:absolute;top:-4px;right:-4px;min-width:17px;height:17px;padding:0 4px;border-radius:999px;background:#8a93a3;color:#fff;font-size:10px;font-weight:800;align-items:center;justify-content:center;line-height:1">0</span>
+      </div>
       <div class="top-dash">
         <div class="kpi f" onclick="openPop('find')"><div class="ic"><svg viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8"/><path d="M20 20l-3.5-3.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></div><div class="tx"><b id="kpiFind">발굴 전</b><span>어젯밤 발굴</span></div></div>
         <div class="kpi s" onclick="openPop('sched')"><div class="ic"><svg viewBox="0 0 24 24" fill="none"><rect x="4" y="5" width="16" height="16" rx="2.5" stroke="currentColor" stroke-width="1.8"/><path d="M8 3v4M16 3v4M4 10h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></div><div class="tx"><b id="kpiSched">0건</b><span>오늘 약속</span></div></div>
@@ -1608,6 +1613,8 @@ function dashApprove(i,j,confirmed){
      if(!j2||!j2.ok){ dashOpen(i); toast((j2&&(j2.error||j2.message))||'발송하지 못했어요'); return; }
      // ★서버가 실제 발송 결과를 준 경우에만 완료로 표시(환각 금지)
      if(box) box.innerHTML='<span style="font-size:12px;color:#0f766e;font-weight:700">✅ '+_escOb(String(j2.message||'발송 완료'))+'</span>';
+     // 🔔 서버가 실제 발송 결과를 준 뒤에만 기록한다(알림은 기록일 뿐 발송을 부르지 않는다)
+     try{ nfAdd({ type:'sent', go:'event', title:nm+'님에게 발송 완료', body:String(j2.message||'메일+문자') }); nfSyncPending(); }catch(e){}
      try{ if(document.getElementById('apList')) apRender(); }catch(e){}
    })
    .catch(function(){ dashOpen(i); toast('발송 중 오류 — 잠시 후 다시 시도해주세요'); });
@@ -1893,6 +1900,93 @@ function resendAllFails(){
 }
 
 // ===== 토스트 =====
+// ═══ 🔔 지니야 알림 — 지니야가 일한 걸 대표님이 놓치지 않게 ═══
+//   ★알림은 오직 "이미 일어난 일의 기록"이다. 여기서 발송을 부르는 코드는 단 한 줄도 없다.
+//     알림을 눌러도 해당 화면을 열어줄 뿐, 발송은 절대 일어나지 않는다(검사로 자동 차단).
+//   ★저장 = 브라우저 localStorage. 서버 저장 0(제로 인그레스). 진짜 기록은 결재함·시트에 이미 남는다.
+var NF_KEY='genya_notif', NF_MAX=100;
+function nfLoad(){ try{ return JSON.parse(localStorage.getItem(NF_KEY)||'[]'); }catch(e){ return []; } }
+function nfSave(a){ try{ localStorage.setItem(NF_KEY, JSON.stringify(a.slice(0,NF_MAX))); }catch(e){} }
+function nfUnread(){ return nfLoad().filter(function(n){ return !n.read; }).length; }
+// 알림 추가 — 반드시 "결과를 받은 뒤"에만 부른다(아직 안 된 일을 알리면 그게 환각이다)
+function nfAdd(n){
+  n=n||{}; var a=nfLoad();
+  var item={ id:(Date.now().toString(36)+Math.random().toString(36).slice(2,6)),
+    type:String(n.type||'info'), title:String(n.title||''), body:String(n.body||''),
+    go:String(n.go||''), important:!!n.important, at:new Date().toISOString(), read:false };
+  a.unshift(item); nfSave(a);
+  try{ nfBadge(); }catch(e){}
+  try{ if(typeof toast==='function') toast((item.important?'🔴 ':'🔔 ')+item.title+(item.body?(' — '+item.body):'')); }catch(e){}
+  return item;
+}
+// 뱃지 = 안 읽은 알림 + 결재 대기(승인 놓치면 안 되는 것) 합산
+function nfBadge(){
+  var el=document.getElementById('nfCount'), bell=document.getElementById('nfBell'); if(!el||!bell) return;
+  var un=nfUnread(), pend=Number(window._NF_PENDING||0), tot=un+pend;
+  el.textContent = tot>99?'99+':String(tot);
+  el.style.display = tot?'flex':'none';
+  el.style.background = pend?'#e5484d':'#8a93a3';   // 결재 대기가 있으면 빨강(중요)
+  bell.title = pend?('결재 대기 '+pend+'건 · 승인이 필요해요'):(un?('새 알림 '+un+'건'):'새 알림 없음');
+}
+// 결재 대기 건수 — 서버가 이미 세고 있는 값을 그대로 쓴다(읽기 전용·발송과 무관)
+function nfSyncPending(){
+  fetch('/api/approval/list?status=대기',{credentials:'include'})
+    .then(function(r){return r.json();}).then(function(j){
+      window._NF_PENDING = (j&&j.ok&&typeof j.count==='number')?j.count:0; nfBadge();
+    }).catch(function(){});
+}
+function nfReadAll(){ var a=nfLoad(); a.forEach(function(n){ n.read=true; }); nfSave(a); nfBadge(); nfOpen(); }
+function nfClear(){ if(!confirm('알림을 모두 지울까요?\n(결재함·시트 기록은 그대로예요.)')) return; nfSave([]); nfBadge(); nfOpen(); }
+function _nfAgo(iso){
+  var t=new Date(iso); if(isNaN(t)) return '';
+  var s=Math.floor((Date.now()-t.getTime())/1000);
+  if(s<60) return '방금'; if(s<3600) return Math.floor(s/60)+'분 전';
+  if(s<86400) return Math.floor(s/3600)+'시간 전';
+  return Math.floor(s/86400)+'일 전';
+}
+var NF_ICON={approval:'🗂️',sent:'📨',event:'⭐',schedule:'📅',info:'🔔'};
+function nfOpen(){
+  var a=nfLoad(), pend=Number(window._NF_PENDING||0);
+  var head='<div class="wide-pane" style="width:min(560px,94vw)"><div class="pane-hd"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">'
+    +'<b style="font-size:17px;color:#0d1b2a">🔔 알림</b>'
+    +'<span><button onclick="nfReadAll()" style="margin-right:6px;padding:5px 11px;border:1px solid #dbe2ea;background:#fff;color:#4a6076;border-radius:999px;font-size:11.5px;font-weight:600;cursor:pointer;font-family:inherit">모두 읽음</button>'
+    +'<button onclick="nfClear()" style="margin-right:8px;padding:5px 11px;border:1px solid #dbe2ea;background:#fff;color:#8a93a3;border-radius:999px;font-size:11.5px;cursor:pointer;font-family:inherit">비우기</button>'
+    +'<span onclick="closeModal()" style="cursor:pointer;color:#8a93a3;font-size:22px;vertical-align:middle">×</span></span></div>'
+    +(pend?('<div onclick="nfGo(\'approval\')" style="cursor:pointer;background:#fff1f1;border:1px solid #f3b0b2;border-radius:10px;padding:10px 12px;font-size:12.5px;color:#b3272c;font-weight:700;margin-bottom:10px">🔴 결재 대기 '+pend+'건 · 승인이 필요해요 →</div>'):'')
+    +'</div>';
+  if(!a.length) return showModal(head+'<div class="pane-bd"><div style="text-align:center;padding:26px 10px;color:#8a93a3"><div style="font-size:30px">🔔</div><div style="font-size:13px;margin-top:8px">아직 알림이 없어요</div><div style="font-size:11.5px;margin-top:6px;line-height:1.6">지니야가 결재를 올리거나 발송을 마치면<br>여기에 쌓여요.</div></div></div></div>');
+  var rows=a.map(function(n){
+    return '<div onclick="nfGo(\''+n.go+'\',\''+n.id+'\')" style="cursor:pointer;display:flex;gap:10px;padding:11px 12px;border:1px solid '+(n.read?'#eef1f4':(n.important?'#f3b0b2':'#dbe2ea'))+';border-radius:11px;margin-bottom:7px;background:'+(n.read?'#fbfcfd':(n.important?'#fff8f8':'#fff'))+'">'
+      +'<div style="font-size:17px;line-height:1.3">'+(NF_ICON[n.type]||'🔔')+'</div>'
+      +'<div style="flex:1;min-width:0">'
+        +'<div style="font-size:13px;font-weight:'+(n.read?'600':'800')+';color:#0d1b2a">'+_escOb(n.title)+(n.read?'':' <span style="color:#e5484d;font-size:9px;vertical-align:2px">●</span>')+'</div>'
+        +(n.body?('<div style="font-size:12px;color:#6b7a8d;margin-top:3px;line-height:1.6">'+_escOb(n.body)+'</div>'):'')
+        +'<div style="font-size:10.5px;color:#a8b2bd;margin-top:4px">'+_nfAgo(n.at)+'</div>'
+      +'</div></div>';
+  }).join('');
+  showModal(head+'<div class="pane-bd">'+rows+'</div></div>');
+}
+// ★알림 클릭 = 화면 열기만. 발송·승인은 여기서 절대 일어나지 않는다.
+function nfGo(go,id){
+  if(id){ var a=nfLoad(); a.forEach(function(n){ if(n.id===id) n.read=true; }); nfSave(a); nfBadge(); }
+  closeModal();
+  if(go==='approval'){ if(typeof openApproval==='function') openApproval(); return; }
+  if(go==='event'){ if(typeof managementDashboard==='function') managementDashboard(); return; }
+  if(go==='schedule'){ if(typeof openSchedule==='function') openSchedule('today'); return; }
+}
+// 로그인 직후 오늘 일정 브리핑 — 하루 한 번만(같은 날 중복 알림 방지). 조회만 하고 아무것도 안 보낸다.
+function nfMorning(){
+  try{
+    var k='genya_notif_morning', today=new Date().toLocaleDateString('sv-SE');
+    if(localStorage.getItem(k)===today) return;
+    fetch('/api/calendar?range=today',{credentials:'include'}).then(function(r){return r.json();}).then(function(d){
+      if(!d||d.needsConnect||d.needsGoogle||!d.ok) return;
+      localStorage.setItem(k,today);
+      nfAdd({ type:'schedule', go:'schedule', title:'오늘 일정 '+(d.count||0)+'건',
+        body:(d.count?((d.events||[]).slice(0,3).map(function(e){return e.time+' '+e.title;}).join(' · ')):'오늘은 잡힌 일정이 없어요') });
+    }).catch(function(){});
+  }catch(e){}
+}
 function toast(msg){
   const t=document.getElementById('toast');
   t.innerHTML='<svg viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>'+msg;
@@ -2175,7 +2269,9 @@ function _claimResult(extract){
 function claimToApproval(){
   var form=(_claimForm&&_claimForm.name)||'(양식 미첨부)';
   _approvalPush({출처:'보상', 제목:'보상청구서류 — '+form, 미리보기:'증빙 '+_claimProofs.length+'건 정리 완료 · 승인하면 보험사 발송(발송 준비중). '+String(window._claimExtract||'').replace(/\s+/g,' ').slice(0,80)});
-  toast('결재함에 올렸어요 — 결재함비서에서 승인하세요'); closeModal();
+  // 🔔 결재함 등록을 마친 뒤에만 기록(중요 표시). 알림은 기록일 뿐 발송을 부르지 않는다.
+  try{ nfAdd({ type:'approval', go:'approval', important:true, title:'결재함에 1건 올렸어요', body:'보상청구서류 — '+form+' · 승인해 주세요' }); nfSyncPending(); }catch(e){}
+  closeModal();
 }
 
 // ═══ [3] 결재함비서 ═══ 발송·게시·제출·서명 성격 작업이 즉시 실행 안 되고 여기 쌓임 → ★사람(대표)이 승인해야만 외부로(휴먼인루프 구현체). 리마인더·보상·홍보마케팅 출처 통합.
@@ -3092,6 +3188,8 @@ function refreshTopKPIs(dash){
   loadFindKpi();    // ★하드코딩 제거 → 이번 세션 발굴 리드 실개수(자동 실검색 안 함: 유튜브 쿼터·30초 지연 방지)
   // 오늘 발송: 서버(jenya) 폴링 실데이터. 발송할 때마다 자동 갱신(7초 주기).
   _renderSendKpi();   // ★제니야 폴링 제거 — 0 정직 표시(소스 없음)
+  // 🔔 알림: 뱃지 갱신 + 결재 대기 동기화 + 오늘 일정 브리핑(하루 1회). 전부 읽기 전용.
+  try{ nfBadge(); nfSyncPending(); nfMorning(); }catch(e){}
 }
 // 로드 즉시: 로그인 안 됐으면 로그인화면부터 고정
 if(!_AUTHED) _goReal(0);
@@ -3261,11 +3359,13 @@ window.sendMsg=function(){
      // ★고객카드 띄우기 명령 신호(자비스): 명단·연결 드로어 열고 해당 고객 카드(ghRowDetail) 자동 표시
      if(d && d.action==='open_card' && d.customer){ try{ openCustomerCard(d.customer); }catch(e){} }
      // ⭐ 말로 이벤트 만들기: 서버가 실제로 만든 경우에만 이 신호가 온다 → 대시보드를 열어 새 타일을 "짠" 하고 보여준다.
-     if(d && d.action==='create_event' && d.eventName){ try{ _eventCreated(d.eventName); }catch(e){} }
+     if(d && d.action==='create_event' && d.eventName){ try{ _eventCreated(d.eventName, d.eventCount); }catch(e){} }
      // ★pending 구분: sheetCRUD 쓰기(action+sig)=승인·반영 UI(완료 표현 금지) / 결재함=모달 알림
      if(d && d.pending){
        if(d.pending.action && d.pending.sig){ renderSheetWriteApprove(d.pending); }
-       else { pushMsg('gen','<span style="color:#0f766e;font-weight:700">✅ 결재함에 올렸어요.</span> 아래에서 내용 확인 후 승인하시면 나갑니다.'+_apOpenBtnHtml()); try{ if(document.getElementById('apList')) apRender(); }catch(e){} }
+       else { pushMsg('gen','<span style="color:#0f766e;font-weight:700">✅ 결재함에 올렸어요.</span> 아래에서 내용 확인 후 승인하시면 나갑니다.'+_apOpenBtnHtml()); try{ if(document.getElementById('apList')) apRender(); }catch(e){}
+         // 🔔 서버가 실제로 결재함에 등록한 뒤에만(d.pending 있음) 기록. 승인 놓치면 안 되니 중요 표시.
+         try{ nfAdd({ type:'approval', go:'approval', important:true, title:'결재함에 1건 올렸어요', body:'승인해 주세요 — 승인 전에는 나가지 않습니다' }); nfSyncPending(); }catch(e){} }
      }
    }).catch(function(){ w.remove(); pushMsg('gen','<span style="color:#c0392b">오류(잠시 후 다시)</span>'); });
 };
@@ -3324,7 +3424,7 @@ function _voiceExec(q){
       if(d.text) pushMsg('gen', renderMd(d.text)); // 서버가 실제로 올렸을 때만 "결재함에 올렸어요"라고 답함(approval.create 결과)
       if(d.pending){ try{ pushMsg('gen', _apOpenBtnHtml()); }catch(e){} try{ if(document.getElementById('apList')) apRender(); }catch(e){} } // 실제 등록됨(서버 pending) → 열기 버튼 + 열려있는 결재함 즉시 갱신
       if(d.action==='open_card'&&d.customer){ try{ openCustomerCard(d.customer); }catch(e){} }
-      if(d.action==='create_event'&&d.eventName){ try{ _eventCreated(d.eventName); }catch(e){} }  // ⭐ 음성으로 만든 이벤트도 화면에 즉시
+      if(d.action==='create_event'&&d.eventName){ try{ _eventCreated(d.eventName, d.eventCount); }catch(e){} }  // ⭐ 음성으로 만든 이벤트도 화면에 즉시
     }).catch(function(){ try{ pushMsg('gen','결재 처리 중 오류가 났어요. 잠시 후 다시 말씀해 주세요.'); }catch(e){} });
 }
 // ===== 📅 일정관리 비서 — 구글 캘린더 실데이터만(가짜·하드코딩 0). 오늘/이번주/이번달 전환 =====
@@ -3387,8 +3487,10 @@ function _schHTML(d,rg){
   return head+'<div class="pane-bd">'+sub+'<div style="font-size:13px;font-weight:800;color:#0d1b2a">'+_escOb(String(d.rangeLabel||''))+' 일정 '+d.count+'건</div>'+body+'</div></div>';
 }
 // ⭐ 이벤트 생성 성공 신호 → 대시보드 열고 새 타일 강조·대상자 자동 펼침(텍스트·음성 공통 진입점)
-function _eventCreated(name){
+function _eventCreated(name,count){
   window._DASH_NEW=name;
+  // 🔔 서버가 실제로 만든 뒤에만 오는 신호라 여기서 기록한다
+  try{ nfAdd({ type:'event', go:'event', title:'\''+name+'\' 이벤트를 만들었어요', body:(count!=null?('이번달 대상자 '+count+'명'):'대시보드에서 대상자를 확인하세요') }); }catch(e){}
   if(typeof managementDashboard==='function') managementDashboard();
   if(typeof refreshTopKPIs==='function') refreshTopKPIs();
 }

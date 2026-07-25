@@ -1368,7 +1368,7 @@ async function orderHandler(req, res) {
           } else {
             const _today = _mt.오늘수 ? ` (오늘 ${_mt.오늘수}명)` : '';
             const _who = (_mt.cards || []).slice(0, 3).map((c) => c.이름 + '님').join(', ');
-            out = { kind: '⭐ 이벤트', action: 'create_event', eventName: _nm,
+            out = { kind: '⭐ 이벤트', action: 'create_event', eventName: _nm, eventCount: _mt.count,
               text: `'${_nm}' 이벤트를 만들었어요. 이번달 대상자 ${_mt.count}명이에요${_today}.` + (_who ? `\n${_who}${_mt.count > 3 ? ' 외' : ''}` : '') };
           }
         }
