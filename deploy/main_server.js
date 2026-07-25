@@ -1417,6 +1417,51 @@ app.delete('/api/roster/file', async (req, res) => {
     res.json({ ok: true, removed: target.length, remaining: (t.rows || []).length - target.length });
   } catch (e) { if (scopeGate(e, res, 'sheets')) return; res.status(500).json({ ok: false, error: e.message }); }
 });
+// 🧹 명단 시트 전체 비우기 — ★반드시 "백업 먼저, 성공해야 비우기". 백업 실패 시 원본은 손도 안 댄다.
+//   왜 필요: 예전 삭제가 A1:Z(26컬럼)만 지워 27~40컬럼에 개인정보 잔재와 유령 행이 남았다.
+//   ★같은 실수 반복 금지: 여기서는 범위를 '탭 이름'만 준다 = 컬럼 수와 무관하게 그 탭의 모든 셀.
+//   숫자로 범위를 적는 순간 또 잘린다. 절대 A1:Z·A1:AN 같은 표기로 되돌리지 말 것.
+app.delete('/api/roster/all', async (req, res) => {
+  try {
+    const ma = gateGoogle(req, res); if (!ma) return;
+    const t = await sheetsCrud.loadTable(ma);
+    if (!t.id) return res.json({ ok: false, error: '명단 시트를 찾지 못했어요.' });
+    const before = { rows: (t.rows || []).length, cols: (t.header || []).length };
+    // ★1차 호출: 시트 무접촉. 몇 명·몇 컬럼을 비울지만 알려주고 끝(무확인 전체삭제 차단).
+    if (String(req.query.confirm || '') !== '1') {
+      return res.json({ ok: true, needsConfirm: true, before,
+        message: `명단 ${before.rows}명(${before.cols}컬럼) 전체를 비웁니다.\n\n먼저 백업 탭을 자동으로 만들고, 백업이 성공해야만 비웁니다.\n진행할까요?` });
+    }
+    const sheets = t.sheets; // 🔑 쓰기도 서비스계정(업로드·파일삭제와 동일)
+    const meta = await sheets.spreadsheets.get({ spreadsheetId: t.id, fields: 'sheets.properties(title,sheetId,index)' });
+    const tab = (meta.data.sheets || []).find((s) => s.properties.title === SHEET_TAB);
+    if (!tab) return res.json({ ok: false, error: `'${SHEET_TAB}' 탭을 찾지 못했어요. 안전을 위해 중단했어요.` });
+    // ── ① 백업 먼저: 탭 통째로 복제(모든 행·모든 컬럼·서식까지 그대로). 여기서 실패하면 아래로 못 간다.
+    const _p = {}; new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
+      .formatToParts(new Date()).forEach((x) => { _p[x.type] = x.value; }); // 백업 탭 이름용 서울 시각
+    let backupName = `백업_${SHEET_TAB}_${_p.year}${_p.month}${_p.day}_${_p.hour}${_p.minute}`;
+    if ((meta.data.sheets || []).some((s) => s.properties.title === backupName)) backupName += '_' + _p.second;
+    try {
+      await sheets.spreadsheets.batchUpdate({ spreadsheetId: t.id, requestBody: { requests: [
+        { duplicateSheet: { sourceSheetId: tab.properties.sheetId, newSheetName: backupName } },
+      ] } });
+    } catch (e) {
+      return res.json({ ok: false, error: '백업에 실패해서 비우기를 중단했어요(원본은 그대로예요). ' + e.message });
+    }
+    // ── ② 백업 실존 재확인: "만들었다"가 아니라 "실제로 있다"를 눈으로 확인하고서야 지운다.
+    const meta2 = await sheets.spreadsheets.get({ spreadsheetId: t.id, fields: 'sheets.properties(title,sheetId)' });
+    const bk = (meta2.data.sheets || []).find((s) => s.properties.title === backupName);
+    if (!bk) return res.json({ ok: false, error: '백업 탭을 확인하지 못해 비우기를 중단했어요(원본은 그대로예요).' });
+    // ── ③ 비우기: 범위 = 탭 이름만 → 그 탭의 모든 셀(AA열 이후·1만행 너머까지 전부).
+    await sheets.spreadsheets.values.clear({ spreadsheetId: t.id, range: SHEET_TAB });
+    // ── ④ 검증: 다시 읽어 정말 0인지 확인해서 돌려준다(말이 아니라 실측).
+    const after = await sheetsCrud.loadTable(ma);
+    const left = { rows: (after.rows || []).length, cols: (after.header || []).length };
+    console.log(`[🧹명단초기화] 백업="${backupName}" · 비우기 전 ${before.rows}행/${before.cols}컬럼 → 후 ${left.rows}행/${left.cols}컬럼`);
+    res.json({ ok: true, backupTab: backupName, before, after: left, clean: (left.rows === 0 && left.cols === 0),
+      message: `백업 탭 "${backupName}"을 만들고 명단을 비웠어요. 남은 데이터 ${left.rows}행 / ${left.cols}컬럼.` });
+  } catch (e) { if (scopeGate(e, res, 'sheets')) return; res.status(500).json({ ok: false, error: e.message }); }
+});
 app.get('/api/profile', async (req, res) => {
   try { const ma = gateGoogle(req, res); if (!ma) return; const { id, sheets } = await findOrCreateMemberSheet(ma);
     let rows = []; try { const g = await sheets.spreadsheets.values.get({ spreadsheetId: id, range: `${PROFILE_TAB}!A1:B20` }); rows = g.data.values || []; } catch (e) {}

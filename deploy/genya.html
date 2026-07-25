@@ -3380,7 +3380,8 @@ window.addFile=function(){ doOCR(); };
           var _disp=allKeys.filter(function(h){return h!=='소스파일'&&h!=='업로드일';});
           var grp={},order=[];
           rl.rows.forEach(function(r){ var f=(cSrc&&r[cSrc])?String(r[cSrc]):'(초기 업로드)'; if(!grp[f]){grp[f]=[];order.push(f);} grp[f].push(r); });
-          var html='<div style="font-size:12px;font-weight:700;color:#8a6d3b;margin:2px 0 8px">총 '+rl.count+'명 · 파일 '+order.length+'건</div>';
+          var html='<div style="font-size:12px;font-weight:700;color:#8a6d3b;margin:2px 0 8px">총 '+rl.count+'명 · 파일 '+order.length+'건'
+            +'<button onclick="ghResetAll()" style="float:right;background:none;border:1px solid #e0d5c5;border-radius:7px;color:#8a6d3b;font-size:10.5px;padding:3px 7px;cursor:pointer;font-family:inherit">🧹 전체 비우기</button></div>';
           // 동적 테이블: 각 파일의 실제 키로만 그림(컬럼명 하드코딩 금지). 메타 제외 + 그 그룹에 값이 있는 컬럼만. 인라인 색상으로 CSS 충돌 차단.
           function renderGroupTable(rows){
             if(!rows||!rows.length) return '<p style="color:#000;font-size:13px">데이터 없음</p>';
@@ -3454,6 +3455,19 @@ window.addFile=function(){ doOCR(); };
     var j; try{ j=await api('/api/roster/file?name='+encodeURIComponent(f)+'&confirm=1',{method:'DELETE'}); }catch(e){ alert('삭제 실패: '+e.message); return; }
     if(j&&j.ok&&!j.needsConfirm){ alert(j.removed+'명을 삭제했어요. (남은 '+j.remaining+'명)'); ghLoad(); }
     else{ alert((j&&(j.error||j.message))||'삭제 실패'); }
+  };
+  // 🧹 명단 전체 비우기 — 백업이 성공해야만 비운다(서버가 보장). 여기서도 2단계로 되묻는다.
+  window.ghResetAll=async function(){
+    var pre; try{ pre=await api('/api/roster/all',{method:'DELETE'}); }catch(e){ alert('확인 실패: '+e.message); return; }
+    if(pre&&(pre.needsGoogle||pre.needsConnect)){ alert(pre.message||'구글 연결이 필요해요.'); return; }
+    if(!pre||!pre.ok||!pre.needsConfirm){ alert((pre&&(pre.error||pre.message))||'확인 실패'); return; }
+    if(!confirm(pre.message)) return;
+    if(!confirm('마지막 확인이에요.\n\n명단 '+pre.before.rows+'명을 정말 비웁니다.\n(백업 탭은 자동으로 남습니다)')) return;
+    var j; try{ j=await api('/api/roster/all?confirm=1',{method:'DELETE'}); }catch(e){ alert('비우기 실패: '+e.message); return; }
+    if(j&&j.ok&&j.backupTab){
+      alert(j.message+(j.clean?'\n\n✅ 완전히 깨끗합니다(헤더·AA열 이후 잔재 0).':'\n\n⚠️ 아직 남은 게 있어요. 대표님께 알려주세요.'));
+      ghLoad();
+    } else { alert((j&&(j.error||j.message))||'비우기 실패'); }
   };
   window.ghPick=function(inp){
     var f=inp.files&&inp.files[0];if(!f)return;
