@@ -24,7 +24,10 @@ function probe() {
 }
 
 /** 홍보대사 정체성으로 검색어를 만든다 — 내 키워드가 있으면 섞어서 내 색깔의 사람을 찾는다 */
-function _keywords(persona) {
+//   agent.beat(담당 영역)이 있으면 그 AI는 자기 담당만 돈다 — 여러 명이 겹치지 않게.
+function _keywords(persona, agent) {
+  const beat = (agent && Array.isArray(agent.beat)) ? agent.beat : [];
+  if (beat.length) return beat.slice(0, 4);
   const mine = ((persona && persona.키워드) || []).map((k) => String(k).replace(/^#/, '').trim()).filter(Boolean);
   return mine.length ? mine.slice(0, 3).concat(BASE_KEYWORDS.slice(0, 3)) : BASE_KEYWORDS.slice(0, 6);
 }
@@ -39,7 +42,7 @@ async function search(persona, opts) {
   if (!key) return [];
   const out = [];
   const max = opts.max || 30;
-  for (const kw of _keywords(persona)) {
+  for (const kw of _keywords(persona, opts.agent)) {
     let s;
     try { s = await (await fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&order=date&maxResults=3&q=${encodeURIComponent(kw)}&key=${key}`)).json(); }
     catch (e) { continue; }
@@ -105,4 +108,12 @@ function draft(persona, lead) {
   };
 }
 
-module.exports = { key: 'youtube', label: '📺 유튜브', probe, search, enrich, reason, draft };
+// ★한 채널에 AI 여러 명 배치 — 성과 좋은 채널에 인원을 더 넣을 수 있다.
+//   각 AI는 고유 이름 + 담당 키워드를 갖는다. 발굴 보고에 "누가 찾았는지"가 남아 상벌제로 이어진다.
+//   agents가 없으면 편집장이 기본 1명으로 돌린다.
+const agents = [
+  { name: '유진', beat: ['재테크', '목돈 마련', '종잣돈'] },
+  { name: '나래', beat: ['신혼 재테크', '결혼 준비 비용', '신혼부부 자금'] },   // ★대표님 1순위 타겟 전담
+];
+
+module.exports = { key: 'youtube', label: '📺 유튜브', agents, probe, search, enrich, reason, draft };

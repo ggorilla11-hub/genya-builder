@@ -58,6 +58,16 @@ function verifyReason(lead) {
   return { ok: true };
 }
 
+/** "2026년 7월 26일 14시, 나래(📺 유튜브)가 발굴" — 사람이 읽는 발굴 서명(서울 시각) */
+function _foundLabel(aiName, iso) {
+  const p = {};
+  try {
+    new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', hour12: false })
+      .formatToParts(new Date(iso)).forEach((x) => { p[x.type] = x.value; });
+  } catch (e) { return `${aiName}가 발굴`; }
+  return `${p.year}년 ${p.month}월 ${p.day}일 ${p.hour}시, ${aiName}가 발굴`;
+}
+
 // ── 2·3·5) 순회 → 판별 → 근거검증 → 채점 ──
 /**
  * @param persona {키워드:[], 차별점, 말투, weights}
@@ -70,12 +80,16 @@ async function collect(persona, opts) {
   const stats = {};   // 기자별 숫자 — ★개인정보 없음
   const leads = [];
   for (const h of hunters()) {
-    const st = stats[h.key] = { 기자: h.label, 수집: 0, 홍보자제외: 0, 근거반려: 0, 채택: 0, 확인필요: 0, 에러: '' };
+    // ★한 채널에 AI 여러 명. 없으면 기본 1명(자동 이름).
+    const agents = (Array.isArray(h.agents) && h.agents.length) ? h.agents : [{ name: C.autoName(h.key) }];
+    for (const agent of agents) {
+    const aiName = `${agent.name}(${h.label})`;
+    const st = stats[h.key + '::' + agent.name] = { AI: aiName, 채널: h.label, 담당: (agent.beat || []).join(','), 수집: 0, 홍보자제외: 0, 근거반려: 0, 채택: 0, 확인필요: 0, 에러: '' };
     let raw = [];
     try {
       const p = h.probe();
       if (!p || !p.ok) { st.에러 = p && p.reason ? p.reason : '사용 불가'; continue; }
-      raw = await h.search(persona, { max: opts.max || 30 });
+      raw = await h.search(persona, { max: opts.max || 30, agent });
     } catch (e) { st.에러 = e.message; continue; }
     st.수집 = raw.length;
     for (const item of raw) {
@@ -90,9 +104,15 @@ async function collect(persona, opts) {
       const sc = S.score(lead.text, { postedAt: lead.postedAt, hasUrl: !!lead.sourceUrl, persona, weights });
       lead.score = sc.total; lead.grade = sc.grade; lead.breakdown = sc.breakdown;
       lead.verdict = scr.verdict; lead.tier = leadFilter.tier(lead.text);
+      // ★모든 발굴에 "누가·언제" 새긴다 — 상벌제의 근거가 된다
+      //   예: "2026년 7월 26일 14시, 나래(📺 유튜브)가 발굴"
+      lead.foundBy = aiName;
+      lead.foundAt = new Date().toISOString();
+      lead.foundLabel = _foundLabel(aiName, lead.foundAt);
       if (scr.verdict === '애매') st.확인필요++;
       st.채택++;
       leads.push(lead);
+    }
     }
   }
   // 고객 먼저, 그다음 점수 높은 순

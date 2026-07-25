@@ -62,6 +62,22 @@ function makeId(hunterKey, raw) {
   return String(hunterKey || 'X').toUpperCase().slice(0, 3) + '_' + h;
 }
 
+// ★AI 명명 — 기자에게 이름을 준다.
+//   왜: 상벌제는 "누가 잘했나"를 사람이 말할 수 있어야 굴러간다.
+//   'youtube'라는 키보다 '유진'이 성적표·회의록에서 훨씬 잘 읽힌다(사람 직원처럼).
+//   이름은 각 기자 파일이 name으로 선언하고, 없으면 채널 키에서 자동 생성한다.
+const NAME_POOL = ['유진', '나래', '가온', '다온', '이든', '하람', '시온', 'れ온'];
+function autoName(key) {
+  let h = 0; const s = String(key || '');
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return NAME_POOL[h % NAME_POOL.length];
+}
+/** 기자 표시용 이름 — "유진(📺 유튜브)" */
+function displayName(mod) {
+  const nm = (mod && mod.name) || autoName(mod && mod.key);
+  return `${nm}(${(mod && mod.label) || mod.key})`;
+}
+
 /** 기자 파일이 규약을 지켰는지 확인(편집장이 등록 시 1회 검사) */
 function validateHunter(mod) {
   const miss = ['key', 'label', 'probe', 'search', 'draft'].filter((k) => !mod || mod[k] == null);
@@ -72,4 +88,4 @@ function validateHunter(mod) {
   return { ok: true };
 }
 
-module.exports = { FORBIDDEN, makeLead, makeReason, makeId, validateHunter };
+module.exports = { FORBIDDEN, makeLead, makeReason, makeId, validateHunter, autoName, displayName };
