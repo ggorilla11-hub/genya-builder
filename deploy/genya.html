@@ -1285,9 +1285,20 @@ function applyOnboardToConfirm(){
 function _isRep(){ try{ return String((window._ME&&window._ME.email)||'').toLowerCase()==='ggorilla11@gmail.com'; }catch(e){ return false; } }
 // ★진단페이지 배포: 2개 페이지(인간 재무상담 / AI 재무진단). 링크복사 시 ?agent=현재설계사이름 자동첨부.
 var GENYA_API='https://jenya.onrender.com';   // 유입리드=서비스계정 시트읽기(server 기존방식). main_server 무접촉 → 크로스오리진 GET.
+// ★2026-07-26: ohwant-class 진단·랜딩 11개 전부 연결(각 주소 200 응답 확인함).
+//   발굴한 리드에게 줄 "미끼"를 상황에 맞게 골라 쓰라고 전부 노출한다.
 var _PROSPECT_PAGES=[
-  {key:'human', name:'인간 재무상담', desc:'사람 상담사와 1:1 재무설계 상담 신청', url:'https://ohwant-class.netlify.app/개인상담진단페이지.html'},
-  {key:'ai',    name:'AI 재무진단',   desc:'AI가 1분 만에 금융집 9개 영역 무료 진단', url:'https://ohwant-class.netlify.app/AI금융집짓기상담사_진단.html'}
+  {key:'health',   grp:'진단(미끼)', name:'재무건강 진단',      desc:'내 재무건강, 100점 만점에 몇 점?',        url:'https://ohwant-class.netlify.app/개인상담진단페이지.html'},
+  {key:'ai',       grp:'진단(미끼)', name:'AI 금융집짓기 진단',  desc:'AI가 1분 만에 금융집 9개 영역 무료 진단', url:'https://ohwant-class.netlify.app/AI금융집짓기상담사_진단.html'},
+  {key:'pension',  grp:'진단(미끼)', name:'연금진단 시뮬레이터', desc:'내 노후, 몇 살에 바닥날까?',              url:'https://ohwant-class.netlify.app/연금진단_시뮬레이터_v4.html'},
+  {key:'tenuk',    grp:'진단(미끼)', name:'10억 목돈마련',       desc:'현재 속도로 10억, 몇 년 걸릴까?',         url:'https://ohwant-class.netlify.app/재테크아카데미_진단.html'},
+  {key:'desire',   grp:'진단(미끼)', name:'DESIRE 재무 로드맵',  desc:'단계별 재무 로드맵 진단',                 url:'https://ohwant-class.netlify.app/desire'},
+  {key:'consult',  grp:'상담 신청',  name:'1:1 재무설계 상담',   desc:'사람 상담사와 1:1 상담 신청',             url:'https://ohwant-class.netlify.app/consult'},
+  {key:'aicons',   grp:'상담 신청',  name:'AI 금융집짓기 상담사', desc:'AI 상담사와 대화형 상담',                url:'https://ohwant-class.netlify.app/ai-consult'},
+  {key:'law10',    grp:'교육 과정',  name:'10억 절대법칙',       desc:'10억 목돈마련 절대법칙 안내',             url:'https://ohwant-class.netlify.app/10eok'},
+  {key:'bootcamp', grp:'교육 과정',  name:'지니야 부트캠프 진단', desc:'내 일의 몇 %를 AI 비서가 대신할까?',      url:'https://ohwant-class.netlify.app/부트캠프_진단.html'},
+  {key:'proq',     grp:'교육 과정',  name:'전문가과정 진단',     desc:'보험을 파시나요, 금융의 집을 설계하시나요?', url:'https://ohwant-class.netlify.app/전문가과정_진단.html'},
+  {key:'pro',      grp:'교육 과정',  name:'금융집짓기 전문가과정', desc:'상담전문가 과정 안내',                   url:'https://ohwant-class.netlify.app/pro'}
 ];
 function _agentName(){ return String(CUR_NICK||'').replace(/님$/,'').trim(); }               // ★현재 로그인 설계사 이름
 function _prospectLink(url){ var a=_agentName(); return url+(a?('?agent='+encodeURIComponent(a)):''); }  // ★자기 이름 자동 첨부
@@ -1305,13 +1316,23 @@ function _prospectHTML(){
 function _deployBody(){
   var a=_agentName();
   var head='<div style="font-size:12px;color:#556;line-height:1.6;margin-bottom:12px">진단페이지 링크를 복사해 <b>카톡·유튜브·카페</b>에 붙여 뿌리세요. 신청자는 '+(a?('<b style="color:var(--teal-d)">'+_escOb(a)+'</b> 설계사'):'설계사')+'의 리드로 자동 분류됩니다.</div>';
-  var cards=_PROSPECT_PAGES.map(function(p,i){
-    return '<div style="border:1px solid #dbe2ea;border-radius:12px;padding:14px;background:#fff">'
-      +'<div style="font-size:15px;font-weight:800;color:#0d1b2a">'+_escOb(p.name)+'</div>'
-      +'<div style="font-size:12px;color:#8a93a3;margin:5px 0 11px;line-height:1.5">'+_escOb(p.desc)+'</div>'
-      +'<button onclick="prospectCopy('+i+')" style="width:100%;padding:10px;border:1px solid var(--teal);background:var(--teal-l);color:var(--teal-d);border-radius:10px;font-weight:700;cursor:pointer;font-size:13px;font-family:inherit">🔗 링크 복사</button></div>';
+  // 그룹(진단/상담/교육)별로 묶어 보여준다 — 11개가 한 덩어리면 고르기 어렵다
+  var grps=[]; _PROSPECT_PAGES.forEach(function(p){ if(grps.indexOf(p.grp||'기타')<0) grps.push(p.grp||'기타'); });
+  var cards=grps.map(function(g){
+    var inner=_PROSPECT_PAGES.map(function(p,i){ return {p:p,i:i}; }).filter(function(x){ return (x.p.grp||'기타')===g; }).map(function(x){
+      return '<div style="border:1px solid #dbe2ea;border-radius:12px;padding:14px;background:#fff">'
+        +'<div style="font-size:15px;font-weight:800;color:#0d1b2a">'+_escOb(x.p.name)+'</div>'
+        +'<div style="font-size:12px;color:#8a93a3;margin:5px 0 8px;line-height:1.5">'+_escOb(x.p.desc)+'</div>'
+        +'<div style="font-size:10.5px;color:#8a93a3;word-break:break-all;margin-bottom:9px">'+_escOb(decodeURIComponent(x.p.url.replace('https://ohwant-class.netlify.app/','…/')))+'</div>'
+        +'<div style="display:flex;gap:6px">'
+          +'<button onclick="prospectCopy('+x.i+')" style="flex:1;padding:10px;border:1px solid var(--teal);background:var(--teal-l);color:var(--teal-d);border-radius:10px;font-weight:700;cursor:pointer;font-size:13px;font-family:inherit">🔗 복사</button>'
+          +'<a href="'+_escOb(x.p.url)+'" target="_blank" rel="noopener" style="flex:1;text-align:center;padding:10px;border:1px solid #dbe2ea;background:#fff;color:#556;border-radius:10px;font-weight:700;font-size:13px;text-decoration:none;box-sizing:border-box">↗ 열기</a>'
+        +'</div></div>';
+    }).join('');
+    return '<div style="font-size:12px;font-weight:800;color:#0d1b2a;margin:12px 0 8px">'+_escOb(g)+'</div>'
+      +'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px">'+inner+'</div>';
   }).join('');
-  return head+'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px">'+cards+'</div>'
+  return head+cards
    +(a?'':'<div style="font-size:11px;color:#c0392b;margin-top:10px;line-height:1.5">※ 설계사 이름이 없어 링크에 유입경로가 안 붙어요. 온보딩에서 이름을 설정하세요.</div>');
 }
 function prospectCopy(i){ var p=_PROSPECT_PAGES[i]; if(!p)return; var link=_prospectLink(p.url);
@@ -1388,6 +1409,41 @@ function _findSection(title,list,offset){
   var body=list.length ? hot.concat(warm).map(function(x){ return _findCard(x.gi, x.l); }).join('') : '<div style="font-size:12px;color:#8a93a3;padding:4px 0 10px">아직 없어요.</div>';
   return '<div style="font-size:12px;font-weight:800;color:#0d1b2a;margin:12px 0 8px">'+title+' ('+list.length+')</div>'+body;
 }
+// ── 채널별 묶음: 좋은 것(핫·웜) 먼저 · 보류는 접어둔다(숨기지 않고 접기 — 몇 건인지는 보인다) ──
+function _findChSection(title, items){
+  var good=items.filter(function(x){ return /핫|웜|🔥|🌤/.test(String(x.l.tier||'')); });
+  var rest=items.filter(function(x){ return !/핫|웜|🔥|🌤/.test(String(x.l.tier||'')); });
+  var hot=good.filter(function(x){ return /핫|🔥/.test(String(x.l.tier||'')); });
+  var warm=good.filter(function(x){ return !/핫|🔥/.test(String(x.l.tier||'')); });
+  var body=hot.concat(warm).map(function(x){ return _findCard(x.gi, x.l); }).join('');
+  if(!good.length) body='<div style="font-size:12px;color:#8a93a3;padding:4px 0 10px">좋은 리드는 아직 없어요.</div>';
+  var id='rest-'+title.replace(/[^A-Za-z0-9가-힣]/g,'');
+  var more=rest.length?('<div onclick="_findToggle(\''+id+'\')" style="font-size:11.5px;color:#8a93a3;cursor:pointer;padding:6px 0;text-align:center;border:1px dashed #dbe2ea;border-radius:8px;margin-bottom:8px">▾ 점수 낮은 '+rest.length+'건 더 보기</div>'
+    +'<div id="'+id+'" style="display:none">'+rest.map(function(x){ return _findCard(x.gi, x.l); }).join('')+'</div>'):'';
+  return '<div style="font-size:12px;font-weight:800;color:#0d1b2a;margin:12px 0 8px">'+_escOb(title)+' <span style="color:#0f766e">'+good.length+'</span><span style="color:#8a93a3;font-weight:600"> / '+items.length+'</span></div>'+body+more;
+}
+function _findToggle(id){ var e=document.getElementById(id); if(e) e.style.display=(e.style.display==='none'?'block':'none'); }
+// ── 채널 가동 현황: 꺼진 채널은 왜 꺼졌는지 정직하게(가짜 0건으로 감추지 않는다) ──
+function _findRoster(d){
+  var r=(d&&d.desk&&d.desk.roster)||[]; if(!r.length) return '';
+  var off=r.filter(function(x){ return !x.on; });
+  var on=r.filter(function(x){ return x.on; }).map(function(x){ return x.label; });
+  var s='<div style="font-size:11.5px;color:#556;background:#fafbfc;border:1px solid #e5e9ee;border-radius:8px;padding:7px 10px;margin-bottom:10px;line-height:1.6">';
+  s+='🛰️ 가동 중 <b>'+(on.length+((d&&d.youtube)?1:0))+'개 채널</b>'+(on.length?(' — '+_escOb(on.join(' · '))):'');
+  if(off.length) s+='<div style="color:#8a6d1a;margin-top:4px">🔑 꺼짐: '+off.map(function(x){ return _escOb(x.label); }).join(' · ')+' <span style="color:#8a93a3">(키를 넣으면 바로 켜집니다)</span></div>';
+  return s+'</div>';
+}
+// ── AI 성적표 — ★숫자만(개인정보 없음). 어느 AI가 일을 했는지 대표님이 눈으로 본다 ──
+function _findStats(d){
+  var st=(d&&d.desk&&d.desk.stats)||{}; var ks=Object.keys(st); if(!ks.length) return '';
+  var rows=ks.map(function(k){ var s=st[k];
+    return '<div style="display:flex;justify-content:space-between;gap:8px;padding:4px 0;border-bottom:1px solid #f0f3f6">'
+      +'<div style="font-size:11.5px;color:#0d1b2a;font-weight:600">'+_escOb(s.AI||k)+'</div>'
+      +'<div style="font-size:11px;color:#556;white-space:nowrap">수집 '+(s.수집||0)+' · 채택 <b style="color:#0f766e">'+(s.채택||0)+'</b> · 홍보자제외 '+(s.홍보자제외||0)+' · 근거반려 '+(s.근거반려||0)+(s.에러?(' · <span style="color:#8a6d1a">'+_escOb(String(s.에러).slice(0,40))+'</span>'):'')+'</div></div>';
+  }).join('');
+  return '<div style="margin-top:14px;border:1px solid #e5e9ee;border-radius:10px;padding:10px 12px;background:#fafbfc">'
+    +'<div style="font-size:12px;font-weight:800;color:#0d1b2a;margin-bottom:6px">📋 AI 성적표 <span style="font-size:10.5px;color:#8a93a3;font-weight:600">(숫자만 · 개인정보 없음)</span></div>'+rows+'</div>';
+}
 function prospectLoadFind(){
   var box=document.getElementById('findList'); if(!box)return;
   box.innerHTML=_leadsSkeleton();                                   // ① 로딩
@@ -1395,20 +1451,26 @@ function prospectLoadFind(){
   //   자기 서버 /api/find/leads = 오상열 제외한 남의 유튜브 검색(교육생 공용·격리).
   fetch('/api/find/leads').then(function(r){ if(!r.ok) throw 0; return r.json(); })
    .then(function(d){
-     if(d&&d.needsKey){ box.innerHTML='<div style="text-align:center;padding:26px 16px"><div style="font-size:30px">🔑</div><div style="font-size:13px;font-weight:700;color:#556;margin-top:8px">발굴 준비 중</div><div style="font-size:11.5px;color:#8a93a3;margin-top:6px">곧 켜집니다.</div></div>'; _setKpi('kpiFind','연결 필요'); return; }
-     var yt=(d.youtube||[]).map(function(l){ return {icon:'📺', name:l.author, sub:l.videoTitle, text:l.text, link:l.link, tier:l.tier, source:'유튜브', verdict:l.verdict, why:l.why}; });
-     // 뼈대 기자(네이버 지식iN 등) — 점수·발굴 서명을 함께 보여준다
-     var nv=(d.naver||[]).map(function(l){ return {icon:'🟢', name:(l.author||l.foundBy||'질문글'), sub:(l.foundLabel||l.source), text:l.text, link:l.link, tier:(l.grade||l.tier), source:(l.source||'네이버'), verdict:l.verdict, why:l.why, score:l.score}; });
+     // ★키가 없으면 "곧 켜집니다" 같은 얼버무림 대신 뭘 발급해야 하는지 그대로 보여준다
+     if(d&&d.needsKey){ box.innerHTML='<div style="padding:22px 14px"><div style="font-size:30px;text-align:center">🔑</div><div style="font-size:13px;font-weight:700;color:#556;margin-top:8px;text-align:center">채널이 모두 꺼져 있어요</div>'
+       +'<div style="font-size:11.5px;color:#8a6d1a;background:#fffdf5;border:1px solid #ecdca8;border-radius:8px;padding:8px 10px;margin-top:10px;line-height:1.7">'+_escOb(d.message||'API 키 미설정').split(' · ').map(_escOb).join('<br>')+'</div></div>'; _setKpi('kpiFind','키 필요'); return; }
+     var yt=(d.youtube||[]).map(function(l){ return {icon:'📺', name:l.author, sub:l.videoTitle, text:l.text, link:l.link, tier:l.tier, source:'유튜브', ch:'📺 유튜브', verdict:l.verdict, why:l.why}; });
+     // 뼈대 기자(네이버 지식iN·카페·블로그·뉴스·구글) — 점수·발굴 서명을 함께 보여준다
+     var nv=(d.naver||[]).map(function(l){ var c=(l.channel||l.source||'네이버'); return {icon:(c.match(/^\S+/)||['🟢'])[0], name:(l.author||l.foundBy||'질문글'), sub:(l.foundLabel||l.source), text:l.text, link:l.link, tier:(l.grade||l.tier), source:(l.source||'네이버'), ch:c, verdict:l.verdict, why:l.why, score:l.score}; });
      if(!yt.length && !nv.length){ window._FIND=[]; _saveFindLast(0); box.innerHTML=_findEmpty(); _setKpi('kpiFind','0명'); return; }   // ② 빈(발굴은 실행함 → '0명', 기억)
      window._FIND=yt.concat(nv);                                    // ★전역 인덱스(답글초안 대상)
      _saveFindLast(window._FIND.length);                            // ★[B] 마지막 발굴결과 기억(재방문 시 '발굴 전' 대신 실개수)
      _setKpi('kpiFind', window._FIND.length+'명');                  // ★발굴 즉시 상단 KPI 실개수 반영
      // ★걸러낸 홍보자 수를 정직하게 보여준다 — "왜 몇 건뿐이지?"를 대표님이 바로 알 수 있게
      var _f=(d&&d.filtered)||{};
-     var h=(_f.홍보자제외?('<div style="font-size:11.5px;color:#0f766e;background:#f2f9f7;border:1px solid #cfe8e1;border-radius:8px;padding:7px 10px;margin-bottom:10px">🛡️ 홍보·경쟁자 댓글 <b>'+_f.홍보자제외+'건</b>을 걸러냈어요'+(_f.확인필요?(' · 확인 필요 <b>'+_f.확인필요+'건</b>'):'')+'</div>'):'');
-     h+=_findSection('📺 유튜브', yt, 0);
-     h+=_findSection('🟢 네이버 카페·지식인', nv, yt.length);
-     h+='<div style="font-size:12px;font-weight:800;color:#0d1b2a;margin:12px 0 8px">🟡 크몽</div><div style="border:1px dashed #dbe2ea;border-radius:10px;padding:14px;text-align:center;color:#8a93a3;font-size:12px">준비 중 — 곧 연결됩니다</div>';
+     var h=(_f.홍보자제외?('<div style="font-size:11.5px;color:#0f766e;background:#f2f9f7;border:1px solid #cfe8e1;border-radius:8px;padding:7px 10px;margin-bottom:10px">🛡️ 홍보·경쟁자 글 <b>'+_f.홍보자제외+'건</b>을 걸러냈어요'+(_f.확인필요?(' · 확인 필요 <b>'+_f.확인필요+'건</b>'):'')+'</div>'):'');
+     h+=_findRoster(d);                                              // ★어느 채널이 켜졌나(꺼진 건 이유까지 정직하게)
+     // ★채널별로 묶어 표시 — 6개 AI가 각자 물어온 걸 한눈에
+     var order=[], byCh={};
+     yt.concat(nv).forEach(function(l,i){ var c=l.ch||'기타'; if(!byCh[c]){ byCh[c]=[]; order.push(c); } byCh[c].push({l:l, gi:i}); });
+     if(!order.length) h+='<div style="font-size:12px;color:#8a93a3;padding:4px 0 10px">아직 없어요.</div>';
+     order.forEach(function(c){ h+=_findChSection(c, byCh[c]); });
+     h+=_findStats(d);                                               // ★AI 성적표(숫자만·개인정보 없음)
      box.innerHTML=h;                                                // ④ 정상
    })
    .catch(function(){ box.innerHTML=_findError(); });                // ③ 에러
@@ -1418,9 +1480,28 @@ function prospectLoadFind(){
 //     이 링크로 온 사람이 누구(교육생) 고객인지 가린다 — 없으면 법률 문제(제니야 from 배관과 동일).
 function _findDiagBase(){ return 'https://ohwant-class.netlify.app/연금진단_시뮬레이터_v4.html'; }
 function _tagId(){ return String(_agentName()||'').replace(/[^A-Za-z0-9가-힣]/g,'').slice(0,16) || 'edu'; }
+// ★리드 성격에 맞는 진단을 고른다 — 노후 고민에 "10억 몇 년" 링크를 주면 안 맞는다.
+//   위에서부터 먼저 걸리는 것 하나. 아무것도 안 걸리면 재무건강 진단(가장 넓게 통함).
+var _DIAG_MATCH=[
+  {re:/노후|은퇴|연금|퇴직|국민연금|노후자금/,        key:'pension',  why:'노후·연금 고민'},
+  {re:/보험|보장|실비|실손|암보험|리모델링|증권/,      key:'ai',       why:'보험·보장 고민'},
+  {re:/목돈|종잣돈|시드|１０억|10억|모으|재테크|투자/,  key:'tenuk',    why:'목돈·재테크 고민'},
+  {re:/설계사|영업|고객관리|AI ?비서|업무|자동화/,      key:'bootcamp', why:'일·업무 고민'},
+  {re:/신혼|결혼|혼수|신혼집|맞벌이/,                 key:'health',   why:'신혼·결혼 준비'}
+];
+function _findDiagFor(l){
+  var t=String((l&&l.text)||'');
+  for(var i=0;i<_DIAG_MATCH.length;i++){ if(_DIAG_MATCH[i].re.test(t)){
+    var p=_PROSPECT_PAGES.filter(function(x){return x.key===_DIAG_MATCH[i].key;})[0];
+    if(p) return {page:p, why:_DIAG_MATCH[i].why};
+  } }
+  var d=_PROSPECT_PAGES.filter(function(x){return x.key==='health';})[0]||_PROSPECT_PAGES[0];
+  return {page:d, why:'기본(가장 넓게 통하는 진단)'};
+}
 function _findDraftLink(i){
   var no=String((i==null?0:i)+1).padStart(3,'0');
-  var url=_findDiagBase();
+  var l=(window._FIND||[])[i];
+  var url=(l?_findDiagFor(l).page.url:_findDiagBase());     // ★리드 성격에 맞춘 진단 링크
   return url+(url.indexOf('?')>=0?'&':'?')+'from='+encodeURIComponent(_tagId()+'_'+no);
 }
 function findDraft(i){
@@ -1431,8 +1512,12 @@ function findDraft(i){
    .then(function(r){return r.json();}).then(function(d){
      if(!d||!d.ok||!d.draft){ box.innerHTML='<div style="margin-top:8px;font-size:12px;color:#c0392b">초안 생성 실패 — <span onclick="findDraft('+i+')" style="text-decoration:underline;cursor:pointer">다시</span></div>'; return; }
      var txt=String(d.draft).replace('[링크]', _findDraftLink(i));
+     var pick=_findDiagFor(l);                                    // ★어떤 진단을 미끼로 골랐는지 보여준다
      box.innerHTML='<div style="margin-top:8px;background:#f5f9f8;border:1px solid var(--teal-bd);border-radius:8px;padding:9px 10px">'
        +'<div style="font-size:11px;color:var(--teal-d);font-weight:700;margin-bottom:5px">✍️ 지니야 답글 초안 (수정 가능 · 게시는 직접)</div>'
+       +'<div style="font-size:10.5px;color:#0f766e;background:#eef7f4;border:1px solid #cfe8e1;border-radius:6px;padding:5px 8px;margin-bottom:6px">🎣 미끼 <span style="color:#8a93a3">('+_escOb(pick.why)+')</span> '
+         +'<select id="diagSel-'+i+'" onchange="_findDiagSwap('+i+')" style="font-family:inherit;font-size:10.5px;border:1px solid #cfe8e1;border-radius:5px;padding:2px 4px;max-width:200px">'
+         +_PROSPECT_PAGES.map(function(p){ return '<option value="'+_escOb(p.key)+'"'+(p.key===pick.page.key?' selected':'')+'>'+_escOb(p.name)+'</option>'; }).join('')+'</select></div>'
        +'<textarea id="draftTa-'+i+'" style="width:100%;min-height:80px;font-size:12.5px;font-family:inherit;line-height:1.6;color:#0d1b2a;background:#fff;border:1px solid #dbe2ea;border-radius:6px;padding:8px;box-sizing:border-box;resize:vertical">'+_escOb(txt)+'</textarea>'
        +'<div style="display:flex;gap:6px;margin-top:6px"><button onclick="findDraftCopy('+i+')" style="padding:6px 12px;border:none;background:var(--teal);color:#fff;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">📋 답글 복사</button>'
        +(l.link?('<a href="'+_escOb(l.link)+'" target="_blank" rel="noopener" style="padding:6px 12px;border:1px solid #dbe2ea;background:#fff;color:#556;border-radius:8px;font-size:12px;text-decoration:none">↗ 바로가기</a>'):'')+'</div>'
@@ -1441,6 +1526,17 @@ function findDraft(i){
    .catch(function(){ box.innerHTML='<div style="margin-top:8px;font-size:12px;color:#c0392b">초안 생성 실패 — <span onclick="findDraft('+i+')" style="text-decoration:underline;cursor:pointer">다시</span></div>'; });
 }
 function findDraftCopy(i){ var el=document.getElementById('draftTa-'+i); var t=el?el.value:''; try{ navigator.clipboard.writeText(t).then(function(){ toast('답글 초안 복사됨 — 바로가기 후 직접 붙여넣어 게시하세요'); },function(){ toast('복사 실패'); }); }catch(e){ toast('복사 실패'); } }
+// 미끼(진단페이지)를 바꾸면 초안 안의 링크만 갈아 끼운다 — 대표가 쓴 문장은 건드리지 않는다
+function _findDiagSwap(i){
+  var sel=document.getElementById('diagSel-'+i), ta=document.getElementById('draftTa-'+i); if(!sel||!ta)return;
+  var p=_PROSPECT_PAGES.filter(function(x){return x.key===sel.value;})[0]; if(!p)return;
+  var no=String((i==null?0:i)+1).padStart(3,'0');
+  var neu=p.url+(p.url.indexOf('?')>=0?'&':'?')+'from='+encodeURIComponent(_tagId()+'_'+no);
+  var old=_PROSPECT_PAGES.map(function(x){return x.url;}).filter(function(u){ return ta.value.indexOf(u)>=0; })[0];
+  if(old){ ta.value=ta.value.replace(new RegExp(old.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\S*'), neu); }
+  else { ta.value=ta.value+'\n'+neu; }
+  toast('미끼를 '+p.name+'(으)로 바꿨어요');
+}
 function prospectRunFind(){
   // ★2026-07-16: 제니야(대표님 채널 /ytleads/collect + 대표님 시트 /leads/collect)를 부르던 것 제거.
   //   자기 서버 /api/find/leads가 호출 시점에 실시간 검색(오상열 제외)하므로 별도 collect 불필요.

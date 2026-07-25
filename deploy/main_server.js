@@ -1015,10 +1015,13 @@ app.get('/api/find/leads', async (req, res) => {
     let desk = { leads: [], stats: {}, roster: [] };
     try { desk = await hunterDesk.collect({ 키워드: [] }, { max: 30, exclude: ['youtube'] }); }
     catch (e) { console.log('[🔍발굴] 뼈대 기자 오류: ' + e.message); }
+    const _lbl = {};
+    (desk.roster || []).forEach((r) => { _lbl[r.key] = r.label; });
     const nv = desk.leads.map((l) => ({
       source: l.source, author: l.author, text: l.text, link: l.sourceUrl,
       tier: l.tier, verdict: l.verdict, why: (l.reason && l.reason.why) || '',
       score: l.score, grade: l.grade, foundLabel: l.foundLabel, foundBy: l.foundBy,
+      hunter: l.hunter, channel: _lbl[l.hunter] || l.source,   // 화면에서 채널별로 묶을 이름(이모지 포함)
     }));
     // 채널이 하나도 안 켜졌으면 정직하게 안내(가짜 0건으로 감추지 않는다)
     const anyOn = !!key || (desk.roster || []).some((r) => r.on);
