@@ -643,8 +643,10 @@ async function _readCalendar(ma, req, rangeOverride) {
     else if (RANGE === 'lastweek') { _s = _monOff - 7; _e = _monOff - 1; _label = '지난주'; }
     else if (RANGE === 'nextweek') { _s = _monOff + 7; _e = _monOff + 13; _label = '다음주'; }
     else if (RANGE === 'month') { _s = 1 - d; _e = new Date(Date.UTC(y, m + 1, 0)).getUTCDate() - d; _label = '이번달'; }
-    const timeMin = new Date(Date.UTC(y, m, d + _s, 0, 0, 0) - 9 * 3600e3).toISOString();    // KST 시작일 00:00
-    const timeMax = new Date(Date.UTC(y, m, d + _e, 23, 59, 59) - 9 * 3600e3).toISOString(); // KST 종료일 23:59
+    const timeMin = new Date(Date.UTC(y, m, d + _s, 0, 0, 0) - 9 * 3600e3).toISOString();        // KST 시작일 00:00
+    // ★종료 경계: 구글 timeMax는 '미만(exclusive)'이라 23:59:59로 두면 그 사이(23:59:59.x~24:00) 일정이 샌다.
+    //   다음날 00:00으로 두면 종료일 하루가 빈틈없이 덮인다(종일 일정 포함).
+    const timeMax = new Date(Date.UTC(y, m, d + _e + 1, 0, 0, 0) - 9 * 3600e3).toISOString();    // KST 종료일 다음날 00:00(미만)
     // ★원인 4: primary만 보면 업무 캘린더 등 다른 캘린더가 빠진다 → 내 모든 캘린더를 돈다.
     //   원인 2(종일=start.date)·3(singleEvents=반복 펼침)·5(KST 범위)도 여기서 함께 반영.
     // ★?debug=1 이면 화면이 받는 바로 이 응답에 요청·응답 원문을 실어 보낸다(추측 금지).
@@ -655,7 +657,11 @@ async function _readCalendar(ma, req, rangeOverride) {
       const cl = await cal.calendarList.list(); calList = cl.data.items || [];
       // ★대표님 11 계정 = 캘린더 3개. primary만 보면 나머지 2개의 약속이 안 뜬다.
       //   selected!==false(화면에 켜둔 것만) + 공휴일·생일(#holiday/#contacts) 제외.
-      cals = calList.filter((c) => c.selected !== false && !/#holiday@|#contacts@/.test(c.id)).map((c) => c.id);
+      // ★2026-07-26 누락 수정: 예전엔 selected!==false(구글 화면에 체크된 것)만 봤다.
+      //   구글 캘린더에서 체크를 꺼둔 캘린더의 약속이 통째로 안 잡혔다 = "3개 넣었는데 2개" 원인.
+      //   체크 여부는 '보기 설정'일 뿐 일정이 없는 게 아니므로, 이제 내 캘린더를 전부 읽는다.
+      //   공휴일·생일(#holiday/#contacts)만 계속 제외(업무 일정이 아니라 목록을 덮어버린다).
+      cals = calList.filter((c) => !/#holiday@|#contacts@/.test(c.id)).map((c) => c.id);
       if (!cals.length) cals = ['primary'];
     } catch (e) { dbg.calendarList_에러 = e.message; }
     dbg.내캘린더수 = cals.length;
@@ -663,7 +669,8 @@ async function _readCalendar(ma, req, rangeOverride) {
     for (const cid of cals) {
       try {
         const ev = await cal.events.list({ calendarId: cid, timeMin, timeMax, singleEvents: true, orderBy: 'startTime', timeZone: 'Asia/Seoul' });
-        const got = ev.data.items || [];
+        const _cname = (calList.find((c) => c.id === cid) || {}).summary || (cid === 'primary' ? '기본' : cid);
+        const got = (ev.data.items || []).filter((x) => x.status !== 'cancelled').map((x) => Object.assign({ _cal: _cname }, x));
         items = items.concat(got);
         // ★각 캘린더의 에러를 더 이상 삼키지 않는다 — 조용한 0건의 진짜 원인이 여기 있었다.
         if (DBG) dbg.캘린더별.push({ 캘린더: (calList.find((c) => c.id === cid) || {}).summary || cid, 건수: got.length, 첫item: got[0] || null });
@@ -671,14 +678,20 @@ async function _readCalendar(ma, req, rangeOverride) {
         if (DBG) dbg.캘린더별.push({ 캘린더: cid, 에러: e.message });
       }
     }
-    const events = items.map((e) => {
+    // ★모든 캘린더를 읽으면 같은 약속이 두 캘린더에 겹쳐 보일 수 있다(초대받은 일정 등).
+    //   같은 일정(iCalUID)의 같은 시작시각만 한 번으로 합친다 — 서로 다른 일정은 절대 지우지 않는다.
+    const _seen = {};
+    const events = items.filter((e) => {
+      const k = String(e.iCalUID || e.id || '') + '|' + String((e.start || {}).dateTime || (e.start || {}).date || '');
+      if (_seen[k]) return false; _seen[k] = 1; return true;
+    }).map((e) => {
       const start = (e.start || {}).dateTime || (e.start || {}).date || '';   // ★종일=date / 시간=dateTime 둘 다
       const time = start.length >= 16 ? new Date(start).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Seoul' }) : '종일';
       const title = e.summary || '(제목없음)';
       const name = Object.keys(byName).find((n) => title.includes(n));
       // 기간 조회에선 며칠 건인지 보여야 한다(오늘만 볼 땐 날짜가 필요 없었다)
       const day = String(start).slice(0, 10);
-      return { time, title, start, day, prep: prepFor(byName[name]) };
+      return { time, title, start, day, calendar: e._cal || '', prep: prepFor(byName[name]) };
     }).sort((a, b) => String(a.start).localeCompare(String(b.start)));
     // ★"연결했는데 0" 신뢰 문제 대응: 0건일 때 "어느 계정의 어떤 캘린더를 봤는지"를 반드시 함께 준다.
     //   계정 불일치가 흔해서, 이게 없으면 고장으로 오해한다. 일정 자체는 절대 지어내지 않는다.
