@@ -252,7 +252,66 @@ function verifyAction(action, sig) {
   if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return { ok: false, reason: '승인 토큰이 올바르지 않아요.' };
   return { ok: true };
 }
-// 쓰기 작업 → 미리보기 + 서명(실행 안 함). op: update|create|delete
+// ═══════════════════════════════════════════════════════════════
+// 4-B. 🆕 컬럼 추가(구조 변경) 보조 — 2026-07-26
+//   왜: 명단에 없는 항목(결혼기념일 등)은 값 수정이 아예 막혀 있었다("컬럼에서 못 찾았어요").
+//   ★안전 3원칙: ①격자 자동 확장 ②반영 전후 실측 ③유사어 중복 차단.
+//   ★맨 끝에만 추가한다. 기존 컬럼·순서·데이터는 절대 건드리지 않는다.
+// ═══════════════════════════════════════════════════════════════
+// 컬럼 비교용 정규화 — 공백·중점·하이픈·괄호까지 제거해 '결혼기념일'과 '결혼 기념일'을 같게 본다.
+function _normCol(x) { return String(x == null ? '' : x).toLowerCase().replace(/[\s·\-_()/.]/g, ''); }
+// 이미 있는 비슷한 컬럼 찾기(하드코딩 금지 · 동의어 + 정규화 + 부분포함 양방향)
+//   → 결혼기념일 / 결혼 기념일 / 결혼기념 이 따로 생겨 명단이 누더기가 되는 걸 막는다.
+function findSimilarColumn(name, header) {
+  // ★길이 가드가 맨 앞에 있어야 한다. 뒤에 두면 resolveColumn이 먼저 '일'→'생년월일' 같은 오탐을 낸다(실측 확인).
+  const n = _normCol(name);
+  if (n.length < 2) return null;
+  const direct = resolveColumn(name, header);
+  if (direct) return direct;
+  for (const h of header) if (_normCol(h) === n) return h;
+  for (const h of header) { const nh = _normCol(h); if (nh.length >= 2 && (nh.indexOf(n) >= 0 || n.indexOf(nh) >= 0)) return h; }
+  return null;
+}
+// 서울 기준 올해 — "7월 27일"처럼 연도를 안 말했을 때 채운다(서버가 UTC라 연말에 1년 밀리는 것 방지)
+function _seoulYear() {
+  try { return +new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul', year: 'numeric' }).format(new Date()); }
+  catch (e) { return new Date().getFullYear(); }
+}
+const _pad2 = (n) => String(n).padStart(2, '0');
+// 값 정규화: 날짜처럼 보이면 YYYY-MM-DD로. 날짜가 아니면 원문 그대로(자유 텍스트도 허용).
+function _normValue(v) {
+  const s = String(v == null ? '' : v).trim(); if (!s) return s;
+  let m;
+  if ((m = s.match(/^(\d{4})\D+(\d{1,2})\D+(\d{1,2})\D*$/))) return `${m[1]}-${_pad2(+m[2])}-${_pad2(+m[3])}`;
+  if ((m = s.match(/^(\d{1,2})\s*[월/.\-]\s*(\d{1,2})\s*일?$/))) return `${_seoulYear()}-${_pad2(+m[1])}-${_pad2(+m[2])}`;
+  return s;
+}
+// 컬럼 추가 계획 공통 검사
+function _planColumn(table, columnName) {
+  const name = String(columnName || '').trim().replace(/\s+/g, ' ');
+  if (!name) return { error: '추가할 항목 이름을 알려주세요.' };
+  if (_normCol(name).length < 2) return { error: '항목 이름은 두 글자 이상으로 해주세요.' }; // 한 글자는 중복 검사가 무의미해 막는다
+  if (name.length > 20) return { error: '항목 이름은 20자 이내로 해주세요.' };
+  const dup = findSimilarColumn(name, table.header);
+  if (dup) return { error: `이미 '${dup}' 항목이 명단에 있어요. 새로 만들지 않고 거기에 기록할까요?`, existing: dup };
+  return { name };
+}
+// ★①격자 한계 자동 확장: 구글 시트는 격자(columnCount)를 넘겨 쓰면 "exceeds grid limits"로 실패한다.
+//   새 시트 기본이 26컬럼이라 22 → 27번째부터 터진다. 필요하면 미리 넓힌다(여유 4칸).
+async function _ensureGridWidth(sheets, id, need) {
+  const meta = await sheets.spreadsheets.get({ spreadsheetId: id, fields: 'sheets.properties(sheetId,title,gridProperties.columnCount)' });
+  const tab = (meta.data.sheets || []).find((s) => s.properties.title === _SHEET_TAB);
+  if (!tab) return { ok: false, message: `'${_SHEET_TAB}' 탭을 찾지 못했어요.` };
+  const cur = (tab.properties.gridProperties || {}).columnCount || 0;
+  if (cur >= need) return { ok: true, expanded: 0, columnCount: cur };
+  const add = (need - cur) + 4;
+  await sheets.spreadsheets.batchUpdate({ spreadsheetId: id, requestBody: { requests: [
+    { appendDimension: { sheetId: tab.properties.sheetId, dimension: 'COLUMNS', length: add } },
+  ] } });
+  return { ok: true, expanded: add, columnCount: cur + add };
+}
+
+// 쓰기 작업 → 미리보기 + 서명(실행 안 함). op: update|create|delete|add_column|add_column_set
 async function planWrite(ma, op, raw) {
   const table = await loadTable(ma);
   if (!table.id) return { ok: false, message: `'${_DEMO_TITLE}' 시트를 찾지 못했어요.` };
@@ -286,6 +345,27 @@ async function planWrite(ma, op, raw) {
     doubleConfirm = true; // ★삭제는 무조건 이중 확인
     warning = '삭제는 되돌릴 수 없어요. 한 번 더 확인해 주세요.';
     preview = slim(target, table.header);
+  } else if (op === 'add_column' || op === 'add_column_set') {
+    // 🆕 구조 변경: 맨 끝에 새 항목(컬럼) 추가. add_column_set은 값 기록까지 승인 1회로 묶는다.
+    const c = _planColumn(table, raw.column);
+    if (c.error) return { ok: false, message: c.error, existing: c.existing };
+    action.column = c.name;
+    action.colIndex = table.header.length;      // 맨 끝(0-based)
+    action.beforeCols = table.header.length;    // 실측 대조용
+    action.beforeRows = table.rows.length;
+    preview = { 작업: '항목(컬럼) 추가', 새항목: c.name, 위치: '명단 맨 끝', 항목수: `${table.header.length}개 → ${table.header.length + 1}개` };
+    if (op === 'add_column_set') {
+      const hits = findByName(table, raw.name);
+      if (hits.length === 0) { const nf = notFoundMsg(table, raw.name); return { ok: false, suggestions: nf.suggestions, message: nf.message }; }
+      if (hits.length > 1) return { ok: false, candidates: hits.map((r) => r[table.nameCol]), message: `'${raw.name}' 후보가 여럿이에요: ${hits.map((r) => r[table.nameCol]).join(', ')}. 누구인지 정확히 말씀해 주세요.` };
+      const target = hits[0];
+      action.rowNum = target._rowNum;
+      action.name = target[table.nameCol];
+      action.value = _normValue(raw.value);     // "7월 27일" → "2026-07-27" (미리보기에 그대로 보여 눈으로 확인)
+      preview.대상 = action.name;
+      preview.기록할값 = action.value;
+    }
+    warning = '항목 추가는 구조 변경이라 되돌리기 어려워요. 기존 항목과 데이터는 건드리지 않고 맨 끝에만 추가합니다.';
   } else {
     return { ok: false, message: '알 수 없는 작업이에요.' };
   }
@@ -321,6 +401,36 @@ async function commit(ma, action, sig, opts) {
   } else if (action.op === 'delete') {
     await sheets.spreadsheets.batchUpdate({ spreadsheetId: id, requestBody: { requests: [{ deleteDimension: { range: { sheetId: table.gid, dimension: 'ROWS', startIndex: action.rowNum - 1, endIndex: action.rowNum } } }] } });
     result = { op: 'delete', name: action.name };
+  } else if (action.op === 'add_column' || action.op === 'add_column_set') {
+    // ★③유사어 중복 재확인: 승인을 기다리는 사이 같은 항목이 생겼을 수 있다(누더기 방지).
+    const dup = findSimilarColumn(action.column, table.header);
+    if (dup) return { ok: false, message: `이미 '${dup}' 항목이 있어서 추가하지 않았어요. 그 항목에 기록할까요?` };
+    const beforeCols = table.header.length, beforeRows = table.rows.length;
+    const colIdx = beforeCols;                    // ★언제나 맨 끝. 기존 컬럼 위치는 절대 안 건드린다.
+    // ★①격자 자동 확장 — 26컬럼 벽에서 터지지 않게 먼저 넓힌다.
+    const g = await _ensureGridWidth(sheets, id, colIdx + 1);
+    if (!g.ok) return { ok: false, message: g.message };
+    await sheets.spreadsheets.values.update({ spreadsheetId: id, range: `${_SHEET_TAB}!${colLetter(colIdx)}1`, valueInputOption: 'RAW', requestBody: { values: [[action.column]] } });
+    let 기록 = null;
+    if (action.op === 'add_column_set') {
+      await sheets.spreadsheets.values.update({ spreadsheetId: id, range: `${_SHEET_TAB}!${colLetter(colIdx)}${action.rowNum}`, valueInputOption: 'RAW', requestBody: { values: [[action.value]] } });
+      기록 = { 대상: action.name, 값: action.value, 행: action.rowNum };
+    }
+    // ★②반영 전후 실측 — "했다"고 말하기 전에 시트를 다시 읽어 진짜 그렇게 됐는지 확인한다.
+    //   어제 "성공했다는데 실제론 반쪽"이었던 사고를 여기서 끊는다. 하나라도 어긋나면 완료 보고 금지.
+    const after = await loadTable(ma);
+    const 기존유지 = table.header.every((h, i) => after.header[i] === h);   // 기존 컬럼 순서·이름 그대로인가
+    if (!기존유지) return { ok: false, message: '기존 항목 순서가 달라졌어요. 반영을 완료로 보고하지 않습니다 — 시트를 확인해 주세요.' };
+    if (after.header.indexOf(action.column) !== colIdx) return { ok: false, message: `'${action.column}' 항목이 시트에서 확인되지 않았어요. 완료로 보고하지 않습니다 — 시트를 확인해 주세요.` };
+    if (after.rows.length !== beforeRows) return { ok: false, message: `고객 수가 달라졌어요(${beforeRows}명 → ${after.rows.length}명). 완료로 보고하지 않습니다 — 시트를 확인해 주세요.` };
+    if (기록) {
+      const row = (after.rows || []).filter((r) => r._rowNum === action.rowNum)[0];
+      if (!row || String(row[action.column] || '') !== String(action.value)) {
+        return { ok: false, message: `'${action.column}' 항목은 만들었는데 ${action.name}님 값이 기록되지 않았어요. 시트를 확인해 주세요.` };
+      }
+    }
+    console.log(`[🆕항목추가] "${action.column}" · 항목 ${beforeCols}→${after.header.length} · 고객 ${beforeRows}→${after.rows.length} · 격자확장 ${g.expanded}칸` + (기록 ? ` · ${기록.대상}=${기록.값}` : ''));
+    result = { op: action.op, 새항목: action.column, 위치: '맨 끝', 항목수: `${beforeCols} → ${after.header.length}`, 고객수: after.rows.length, 기존유지: true, 기록: 기록 };
   } else {
     return { ok: false, message: '알 수 없는 작업이에요.' };
   }
@@ -347,9 +457,13 @@ const TOOLS = [
     input_schema: { type: 'object', properties: { name: { type: 'string' }, field: { type: 'string', description: '수정할 항목(예: 주소, 자녀수)' }, value: { type: 'string', description: '새 값' } }, required: ['name', 'field', 'value'] } },
   { name: 'sheet_delete', description: '한 고객을 명단에서 삭제한다. 되돌릴 수 없어 이중 확인 필요(여기서는 미리보기만).',
     input_schema: { type: 'object', properties: { name: { type: 'string' } }, required: ['name'] } },
+  { name: 'sheet_add_column', description: '고객명단에 없는 새 항목(컬럼)을 맨 끝에 추가한다. 예) "결혼기념일 항목 추가해줘", "등록기념일 컬럼 만들어줘". 명단에 없는 항목은 값을 기록할 수 없으므로 먼저 이 도구로 항목을 만든다. 기존 항목·데이터는 건드리지 않는다. 대표 승인 후 실제 반영(여기서는 미리보기만).',
+    input_schema: { type: 'object', properties: { column: { type: 'string', description: '새로 만들 항목 이름(예: 결혼기념일)' } }, required: ['column'] } },
+  { name: 'sheet_add_column_and_set', description: '명단에 없는 새 항목(컬럼)을 맨 끝에 만들고 특정 고객의 값까지 한 번에 기록한다. 예) "결혼기념일 추가하고 김철수 7월 27일 기록해줘". 승인 1회로 항목 생성과 값 기록을 함께 처리한다. ★이미 있는 항목이면 이 도구가 아니라 sheet_update를 쓴다. 대표 승인 후 실제 반영(여기서는 미리보기만).',
+    input_schema: { type: 'object', properties: { column: { type: 'string', description: '새로 만들 항목 이름' }, name: { type: 'string', description: '고객 이름' }, value: { type: 'string', description: '기록할 값(예: 7월 27일). 연도를 안 말했으면 그대로 넘기면 시스템이 올해로 채운다' } }, required: ['column', 'name', 'value'] } },
 ];
 const READ_TOOLS = new Set(['sheet_list', 'sheet_search', 'sheet_read']);
-const WRITE_OP = { sheet_create: 'create', sheet_update: 'update', sheet_delete: 'delete' };
+const WRITE_OP = { sheet_create: 'create', sheet_update: 'update', sheet_delete: 'delete', sheet_add_column: 'add_column', sheet_add_column_and_set: 'add_column_set' };
 
 function systemPrompt() {
   return `당신은 "지니야" — 대표님의 고객명단(구글 시트)을 돌보는 비서입니다.
@@ -363,6 +477,7 @@ function systemPrompt() {
 5. 말투: 70대 어르신도 알아듣게 따뜻하고 쉽게. '클로드'·'AI' 같은 말은 쓰지 않는다. ★이모지·이모티콘(😊 📋 ⭐ 등)은 절대 쓰지 않는다(장식 기호 금지).
 6. 항목 이름은 대표가 말한 대로 도구에 넘긴다(주소·연락처 등). 시스템이 실제 컬럼에 맞춰준다.
 7. 선택지가 여럿이면 가장 알맞은 하나를 추천으로 명시하고("추천: ○○"), "회장님, 이걸로 진행할까요?"처럼 확인을 받는다. 없는 정보는 지어내지 않는다.
+9. ★명단에 없는 항목도 만들 수 있다: 대표가 명단에 없는 항목(예: 결혼기념일·등록기념일)을 기록해 달라고 하면 "그런 항목이 없다"고 끝내지 말고 sheet_add_column(항목만) 또는 sheet_add_column_and_set(항목+값 한 번에)을 부른다. 항목은 명단 맨 끝에 추가되고 기존 항목·데이터는 그대로다. 비슷한 항목이 이미 있으면 시스템이 알려주니 그때는 기존 항목에 sheet_update로 기록하자고 제안한다.
 8. ★★균형(거짓 완료·거짓 무능 둘 다 금지): 너는 시트 수정·추가·삭제를 실제로 할 수 있다 — "기능이 없다/연동 안 됐다/직접 하세요"라고 절대 말하지 마라. 수정 요청은 반드시 도구(update_row/create_row/delete_row)를 불러 미리보기를 만들고, 답은 "이렇게 바꿀까요? 승인하시면 반영합니다"로 물어라(아직 완료 아님 — 완료형 금지). 실제 반영은 대표 승인 후 시스템이 처리하며 그때 실값(전→후·시트 행)으로 보고한다. 대표가 "응/바꿔줘/승인"이라고 하면 승인으로 처리된다.`;
 }
 
@@ -428,5 +543,7 @@ module.exports = {
   doSearch, doRead, doListSheets, planWrite,
   loadTable, resolveColumn, detectNameCol, signAction, verifyAction,
   findByName, suggestNames, nameSimilarity, toJamo, TOOLS,
-  TOOLS,
+  // 🆕 컬럼 추가 보조(내보내기만 추가 · 동작 변경 없음). 단위테스트와 재사용용.
+  findSimilarColumn, colLetter,
+  _internals: { normValue: _normValue, planColumn: _planColumn, ensureGridWidth: _ensureGridWidth, normCol: _normCol },
 };

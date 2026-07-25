@@ -3193,6 +3193,12 @@ function renderSheetWriteApprove(p){
   var pv=p.preview||{}; var op=(p.action&&p.action.op)||'update'; var body;
   if(op==='update'){ body='<b>수정 미리보기</b><br>대상: '+_sEsc(String(pv.대상||''))+'<br>'+_sEsc(String(pv.항목||''))+': <span style="color:#c0392b">'+_sEsc(String(pv.기존값||'(빈칸)'))+'</span> → <span style="color:#0f766e;font-weight:700">'+_sEsc(String(pv.새값||''))+'</span>'; }
   else if(op==='create'){ body='<b>추가 미리보기</b><br>'+Object.keys(pv).map(function(k){return _sEsc(k)+': '+_sEsc(String(pv[k]));}).join('<br>'); }
+  // 🆕 항목(컬럼) 추가 = 구조 변경 → 무엇이 새로 생기는지 한 줄로 또렷하게
+  else if(op==='add_column'||op==='add_column_set'){
+    body='<b>항목(컬럼) 추가 미리보기</b><br>명단 <b>맨 끝</b>에 <span style="color:#0f766e;font-weight:700">\''+_sEsc(String(pv.새항목||''))+'\'</span> 항목을 새로 만듭니다.<br>항목 수: '+_sEsc(String(pv.항목수||''))
+      +(pv.대상?('<br>그리고 <b>'+_sEsc(String(pv.대상))+'</b>님의 '+_sEsc(String(pv.새항목||''))+'에 <span style="color:#0f766e;font-weight:700">'+_sEsc(String(pv.기록할값||''))+'</span>을(를) 기록합니다.'):'')
+      +'<br><span style="color:#8a93a3;font-size:11px">기존 항목과 데이터는 건드리지 않습니다.</span>';
+  }
   else { body='<b>삭제 미리보기</b> (되돌릴 수 없어요)<br>'+Object.keys(pv).map(function(k){return _sEsc(k)+': '+_sEsc(String(pv[k]));}).join('<br>'); }
   var warn=p.warning?('<div style="color:#c0392b;font-size:11px;margin-top:6px">'+_sEsc(String(p.warning))+'</div>'):'';
   var s=document.getElementById('chatScroll'); var w=document.createElement('div'); w.className='msg gen';
@@ -3214,6 +3220,12 @@ function sheetWriteCommit(){
         if(rr.op==='update') msg='✅ 반영 완료 — '+_sEsc(String(rr.항목||''))+': '+_sEsc(String(rr.기존값||'(빈칸)'))+' → '+_sEsc(String(rr.새값||''))+' (시트 '+_sEsc(String(rr.행||''))+'행)';
         else if(rr.op==='create') msg='✅ 명단에 추가 완료';
         else if(rr.op==='delete') msg='✅ 삭제 완료 — '+_sEsc(String(rr.name||''));
+        // 🆕 실측을 통과한 경우에만 서버가 ok를 준다 → 여기 오면 진짜 반영된 것. 실측값(항목수·고객수)을 같이 보고.
+        else if(rr.op==='add_column'||rr.op==='add_column_set'){
+          msg='✅ 반영 완료 — 명단 맨 끝에 <b>'+_sEsc(String(rr.새항목||''))+'</b> 항목을 만들었어요 (항목 '+_sEsc(String(rr.항목수||''))+' · 고객 '+_sEsc(String(rr.고객수||''))+'명 그대로)';
+          if(rr.기록) msg+='<br>'+_sEsc(String(rr.기록.대상||''))+'님 '+_sEsc(String(rr.새항목||''))+': <b>'+_sEsc(String(rr.기록.값||''))+'</b> (시트 '+_sEsc(String(rr.기록.행||''))+'행)';
+          msg+='<br><span style="color:#8a6d1a;font-size:11.5px">이제 대시보드에서 <b>＋ '+_sEsc(String(rr.새항목||''))+'</b> 이벤트를 추가하면 챙길 수 있어요.</span>';
+        }
         else msg='✅ 반영 완료';
         pushMsg('gen', msg); window._SHEET_PENDING=null;
       } else { pushMsg('gen', renderMd('반영하지 못했어요: '+((d&&d.message)||'원인 불명')+'. 다시 시도할까요?')); }
