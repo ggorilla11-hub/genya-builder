@@ -2790,6 +2790,44 @@ function loadPromoCampaigns(){
     })
     .catch(function(){ box.innerHTML='<div style="color:#c0392b;font-size:12px">캠페인을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.</div>'; });
 }
+// ── 홍보 2단계: 원고 → 채널별 세부원고 ──
+//   ★여기까지가 "글"이다. 그림 그리기·목소리 입히기·영상·자동업로드는 아직 없다(있다고 말하지 않는다).
+var _PROMO_KINDS=[
+  {k:'short', n:'🎬 쇼츠 대본'},
+  {k:'blog',  n:'📝 블로그 글'},
+  {k:'card',  n:'🖼️ 카드뉴스'},
+  {k:'image', n:'🎨 그림 지시문'},
+  {k:'audio', n:'🎙️ 오디오 대본'}
+];
+function _promoKindBar(){
+  return '<div style="margin-top:10px"><div style="font-size:12px;font-weight:800;color:#0d1b2a;margin-bottom:6px">이 원고로 만들 것 고르기</div>'
+    +'<div style="display:flex;gap:6px;flex-wrap:wrap">'
+    +_PROMO_KINDS.map(function(x){ return '<button onclick="promoExpand(\''+x.k+'\')" id="pk-'+x.k+'" style="padding:7px 11px;border:1px solid var(--teal);background:var(--teal-l);color:var(--teal-d);border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">'+x.n+'</button>'; }).join('')
+    +'</div>'
+    +'<div style="font-size:10.5px;color:#98a4b2;margin-top:6px">※ 여기까지는 <b>글</b>이에요. 그림 그리기·목소리 입히기·영상·자동 업로드는 아직 안 됩니다.</div></div>';
+}
+function promoExpand(kind){
+  var p=window._PROMO; if(!p||!p.script){ toast('먼저 원고를 만들어 주세요'); return; }
+  var out=document.getElementById('promoExp'); if(!out)return;
+  var b=document.getElementById('pk-'+kind); if(b){ b.disabled=true; b.textContent='만드는 중…'; }
+  var nm=(_PROMO_KINDS.filter(function(x){return x.k===kind;})[0]||{}).n||'';
+  out.innerHTML='<div style="color:#8a93a3;font-size:13px;text-align:center;padding:12px">지니야가 '+_sEsc(nm)+'을(를) 쓰고 있어요…</div>';
+  fetch('/api/promo/expand',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({script:p.script,copy:p.copy,kind:kind})})
+   .then(function(r){return r.json();})
+   .then(function(d){
+     if(b){ b.disabled=false; b.textContent=nm; }
+     if(!d||!d.ok){ out.innerHTML='<div style="color:#c0392b;font-size:13px">'+(d&&d.error?_sEsc(d.error):'못 만들었어요')+'</div>'; return; }
+     window._PROMO_EXP=String(d.text||'');
+     out.innerHTML='<div style="margin-top:10px;background:#fff;border:1px solid #dbe2ea;border-radius:10px;padding:12px">'
+       +'<div style="font-size:12px;font-weight:800;color:#0d1b2a;margin-bottom:7px">'+_sEsc(d.label||nm)+'</div>'
+       +'<textarea id="promoExpTa" style="width:100%;min-height:170px;font-size:13px;font-family:inherit;line-height:1.7;color:#0d1b2a;background:#fff;border:1px solid #e5e9ee;border-radius:8px;padding:9px;box-sizing:border-box;resize:vertical">'+_sEsc(String(d.text||''))+'</textarea>'
+       +'<div style="display:flex;gap:6px;margin-top:7px"><button onclick="promoExpCopy()" style="padding:7px 13px;border:none;background:var(--teal);color:#fff;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">📋 복사</button></div>'
+       +'<div style="font-size:10.5px;color:#c0392b;margin-top:7px">복사해서 직접 올리세요. 지니야는 <b>자동 게시하지 않습니다</b>.</div></div>';
+     if(typeof nfAdd==='function') nfAdd({level:'보통',icon:'📣',title:(d.label||nm)+' 초안 완성',body:String(d.text||'').slice(0,60)});
+   })
+   .catch(function(){ if(b){ b.disabled=false; b.textContent=nm; } out.innerHTML='<div style="color:#c0392b;font-size:13px">연결 오류 — 다시 시도해 주세요</div>'; });
+}
+function promoExpCopy(){ var el=document.getElementById('promoExpTa'); var t=el?el.value:''; try{ navigator.clipboard.writeText(t).then(function(){ toast('복사됐어요 — 직접 올려주세요'); },function(){ toast('복사 실패'); }); }catch(e){ toast('복사 실패'); } }
 function runPromo(){
   var copy=(document.getElementById('promoIn').value||'').trim();
   if(!copy){ toast('한 줄을 입력해 주세요'); return; }
@@ -2801,7 +2839,10 @@ function runPromo(){
       btn.disabled=false; btn.textContent='다시 만들기';
       if(!d||!d.ok){ document.getElementById('promoOut').innerHTML='<div style="color:#c0392b;font-size:13px">'+(d&&d.error?_sEsc(d.error):'원고를 못 만들었어요')+'</div>'; return; }
       var html=String(d.script||'').split('\n').map(function(l){ return _sEsc(l); }).join('<br>');
+      window._PROMO={copy:copy, script:String(d.script||'')};        // ★2단계(세부원고)가 쓸 원고 — 화면 메모리에만
       document.getElementById('promoOut').innerHTML='<div style="background:#f5f8f4;border:1px solid #dfe9d9;border-radius:10px;padding:13px;font-size:13.5px;line-height:1.75;color:#2a3b22">'+html+'</div>'
+        +_promoKindBar()
+        +'<div id="promoExp"></div>'
         +'<div style="font-size:11px;color:#98a4b2;margin-top:8px">🔒 원고는 화면에만 표시 · 오원트 서버 저장 0</div>';
     })
     .catch(function(){ btn.disabled=false; btn.textContent='다시 만들기'; document.getElementById('promoOut').innerHTML='<div style="color:#c0392b;font-size:13px">연결 오류 — 다시 시도해 주세요</div>'; });

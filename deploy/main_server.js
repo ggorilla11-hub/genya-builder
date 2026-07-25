@@ -884,6 +884,54 @@ app.post('/api/promo/draft', async (req, res) => {
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
+// ═══ 📣 홍보비서 2단계 — 쇼츠 원고 → 채널별 세부원고 (블로그·카드뉴스·이미지·오디오) ═══
+//   ★여기까지가 "글"이다. 실제 제작(이미지 그리기·목소리 입히기·영상)은 아직 없다.
+//   그래서 이미지는 그림이 아니라 ★그림 지시문(프롬프트)을 준다 — 대표님이 미드저니 등에 붙여 쓰신다.
+//   서버 저장 0 — 만들어서 화면으로 보내고 끝.
+const _PROMO_KINDS = {
+  blog:  { label: '📝 블로그 글', hint: '900~1200자. 제목 + 소제목 3개 + 마무리 행동유도. 사례·숫자 하나씩. 광고체 금지, 정보체.' },
+  card:  { label: '🖼️ 카드뉴스', hint: '8장. "1장: 제목(12자 이내)" 형식으로 장마다 한 줄. 1장 후킹, 8장 행동유도.' },
+  image: { label: '🎨 그림 지시문', hint: '카드뉴스·썸네일용 이미지 프롬프트 3개. 한국어 설명 + 영어 프롬프트를 함께. 사람 얼굴·특정인 묘사 금지.' },
+  audio: { label: '🎙️ 오디오 대본', hint: '2분 낭독용. 문장 짧게, 숫자는 읽는 대로(1,100,000원→백십만원). 지문·효과음 표시 금지.' },
+  short: { label: '🎬 쇼츠 대본(자막용)', hint: '5씬. 씬마다 자막 한 줄(16자 이내) + 화면 지시 한 줄.' },
+};
+app.post('/api/promo/expand', async (req, res) => {
+  try {
+    if (!sessionOf(req)) return res.status(401).json({ ok: false, error: '로그인이 필요해요' });
+    const b = req.body || {};
+    const script = String(b.script || '').trim();
+    const copy = String(b.copy || '').trim();
+    const kind = String(b.kind || '').trim();
+    if (!script) return res.status(400).json({ ok: false, error: '원고가 없어요 — 먼저 원고를 만들어 주세요' });
+    const k = _PROMO_KINDS[kind];
+    if (!k) return res.status(400).json({ ok: false, error: '종류를 골라 주세요' });
+    const sys = [
+      '너는 1인 사업자(재무설계 전문가)의 콘텐츠 작가다. 아래 쇼츠 원고를 같은 메시지로 다른 형식에 맞게 다시 쓴다.',
+      `만들 것: ${k.label}. 규칙: ${k.hint}`,
+      '공통 규칙: ① 과장·허위·확정수익 표현 금지(금융 콘텐츠다) ② 원고에 없는 사실을 지어내지 않는다',
+      '③ 쉬운 말. 70대도 알아듣게 ④ 결과물만 출력한다. "네, 만들어 드릴게요" 같은 인사말 금지.',
+    ].join('\n');
+    const r = await _anthropic.messages.create({
+      model: WS_CHAT_MODEL, max_tokens: 2000, system: sys,
+      messages: [{ role: 'user', content: (copy ? ('한줄카피: ' + copy + '\n\n') : '') + '쇼츠 원고:\n' + script }],
+    });
+    const out = (r.content || []).filter((x) => x.type === 'text').map((x) => x.text).join('').trim();
+    res.json({ ok: true, kind, label: k.label, text: out });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// 🩺 진단 — 지금 켜진 발굴 채널이 무엇인가. ★키 값은 절대 안 찍는다(있다/없다와 변수 이름만).
+//   대표님이 로그인 없이도 "네이버가 켜졌나"를 눈으로 확인하시라고 공개로 둔다.
+app.get('/api/diag/channels', (req, res) => {
+  let roster = [];
+  try { roster = hunterDesk.roster(); } catch (e) { roster = []; }
+  res.json({
+    ok: true,
+    유튜브: process.env.YOUTUBE_API_KEY ? '✅ 켜짐' : '❌ YOUTUBE_API_KEY 없음',
+    채널: roster.map((r) => ({ 이름: r.label, 상태: r.on ? '✅ 켜짐' : '❌ 꺼짐', 사유: r.on ? '' : r.reason })),
+  });
+});
+
 // 🩺 진단 — 4개 커넥터 각각 실제 API를 호출해 200/에러 원문을 찍는다. ★토큰값 0노출.
 //   "스코프는 있는데 연결 필요가 뜬다"의 진짜 원인(문자열 vs 실제 부여)을 대표님 세션에서 확인.
 app.get('/api/diag/conn', async (req, res) => {
