@@ -920,6 +920,81 @@ app.post('/api/promo/expand', async (req, res) => {
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
+// ═══ 📥 진단 유입 — 진단·상담 신청자를 표로 (이름·연락처·과정·금액·신청일 + 합계) ═══
+//   ★기존 공개 주소(jenya /api/prospect/leads)에 금액·연락처를 실으면 인터넷에 그대로 노출된다.
+//     그래서 로그인 게이트가 있는 여기에 새로 만든다.
+//   ★제로 인그레스: 시트를 읽어 그 자리에서 응답으로 보내고 끝. 서버에 저장하지 않는다.
+//   ★남의 신청자 차단: 회장님(VIP)은 전체, 그 외 회원은 '유입설계사'가 본인인 행만.
+const { getServiceAuth } = require('./service_auth');   // 시트 읽기는 서비스 계정(로그인 OAuth는 사용자 인증 전용)
+const PROSPECT_SHEET_ID = process.env.PROSPECT_SHEET_ID || '1sQZG3WSSAw7RZLIyvCCtxvr3biPuhdhvJsokXacEF_w';
+const PROSPECT_SHEET_TAB = process.env.PROSPECT_SHEET_TAB || '연금진단리드';
+function _pickCol(head, names) { for (const n of names) { const i = head.indexOf(n); if (i >= 0) return i; } return -1; }
+function _wonNum(v) { const n = Number(String(v == null ? '' : v).replace(/[^0-9.-]/g, '')); return isFinite(n) ? n : 0; }
+app.get('/api/prospect/inflow', async (req, res) => {
+  const s = sessionOf(req);
+  if (!s) return res.status(401).json({ ok: false, error: '로그인이 필요해요' });
+  try {
+    const auth = await getServiceAuth();
+    const sheets = google.sheets({ version: 'v4', auth });
+    let tab = PROSPECT_SHEET_TAB;
+    let got;
+    try { got = await sheets.spreadsheets.values.get({ spreadsheetId: PROSPECT_SHEET_ID, range: `'${tab}'!A1:Z` }); }
+    catch (e) {
+      // 탭 이름이 다를 수 있다 — 첫 탭으로 한 번 더
+      const meta = await sheets.spreadsheets.get({ spreadsheetId: PROSPECT_SHEET_ID, fields: 'sheets.properties.title' });
+      tab = (((meta.data.sheets || [])[0] || {}).properties || {}).title || 'Sheet1';
+      got = await sheets.spreadsheets.values.get({ spreadsheetId: PROSPECT_SHEET_ID, range: `'${tab}'!A1:Z` });
+    }
+    const rows = got.data.values || [];
+    if (rows.length < 2) return res.json({ ok: true, configured: true, tab, rows: [], missing: [], sum: { 건수: 0, 금액: 0, 객단가: 0 } });
+    const head = rows[0].map((h) => String(h || '').trim());
+    const iName = _pickCol(head, ['이름', '성명', '신청자']);
+    const iPhone = _pickCol(head, ['연락처', '휴대폰', '전화', '전화번호']);
+    const iCourse = _pickCol(head, ['상품명', '과정', '과정명', '강의명', '구분']);
+    const iAmt = _pickCol(head, ['금액', '결제금액', '신청금액']);
+    const iDate = _pickCol(head, ['신청일시', '신청일', '접수시각', '신청시각', 'timestamp']);
+    const iAgent = _pickCol(head, ['유입설계사', 'agent', '설계사']);
+    const iPaid = _pickCol(head, ['결제여부', '상태']);
+    const iFree = _pickCol(head, ['유무료']);
+    const iSrc = _pickCol(head, ['유입경로', 'source']);
+    const missing = [];
+    if (iName < 0) missing.push('이름'); if (iPhone < 0) missing.push('연락처');
+    if (iCourse < 0) missing.push('상품명(과정)'); if (iAmt < 0) missing.push('금액'); if (iDate < 0) missing.push('신청일시');
+
+    const isVip = String(s.email || '').toLowerCase() === VIP_EMAIL;
+    const myName = String((s.nick || s.name || '')).replace(/님$/, '').trim();
+    const out = [];
+    for (let r = 1; r < rows.length; r++) {
+      const row = rows[r]; const g = (i) => (i >= 0 ? String(row[i] == null ? '' : row[i]).trim() : '');
+      if (!g(iName) && !g(iPhone) && !g(iCourse)) continue;              // 빈 행
+      if (!isVip) { if (!myName || g(iAgent) !== myName) continue; }     // ★남의 신청자는 안 보인다
+      out.push({ 이름: g(iName), 연락처: g(iPhone), 과정: g(iCourse), 금액: _wonNum(g(iAmt)),
+        신청일: g(iDate), 유무료: g(iFree), 결제: g(iPaid), 유입경로: g(iSrc) });
+    }
+    out.reverse();                                                       // 최신순(append 시트 = 아래가 최신)
+    // 합계 — 결제된 건만 매출로 잡는다(결제여부 컬럼이 있을 때). 없으면 금액 그대로.
+    const paidOf = (x) => (iPaid < 0 ? true : /^(y|예|완료|결제완료|o)$/i.test(String(x.결제 || '').trim()));
+    const paid = out.filter(paidOf);
+    const total = paid.reduce((a, x) => a + x.금액, 0);
+    const kst = (d) => new Date(d.getTime() + 9 * 3600 * 1000).toISOString().slice(0, 10);
+    const today = kst(new Date()), month = today.slice(0, 7);
+    const dayOf = (x) => String(x.신청일 || '').replace(/[./]/g, '-').slice(0, 10);
+    const tRows = paid.filter((x) => dayOf(x) === today), mRows = paid.filter((x) => dayOf(x).slice(0, 7) === month);
+    const sum1 = (a) => a.reduce((s2, x) => s2 + x.금액, 0);
+    res.json({ ok: true, configured: true, tab, 권한: isVip ? '전체' : ('내 리드(' + (myName || '이름없음') + ')'),
+      rows: out, missing,
+      sum: { 건수: paid.length, 금액: total, 객단가: paid.length ? Math.round(total / paid.length) : 0,
+             오늘: { 건수: tRows.length, 금액: sum1(tRows) },
+             이번달: { 건수: mRows.length, 금액: sum1(mRows) } } });
+  } catch (e) {
+    // 시트가 서비스계정에 공유 안 됐을 때가 가장 흔하다 — 무엇을 해야 하는지 그대로 알린다
+    const msg = /permission|not found|404|403/i.test(e.message || '')
+      ? '시트를 못 읽었어요 — 신청자 시트를 서비스계정 이메일에 "뷰어"로 공유해 주세요'
+      : e.message;
+    res.status(502).json({ ok: false, error: msg });
+  }
+});
+
 // 🩺 진단 — 지금 켜진 발굴 채널이 무엇인가. ★키 값은 절대 안 찍는다(있다/없다와 변수 이름만).
 //   대표님이 로그인 없이도 "네이버가 켜졌나"를 눈으로 확인하시라고 공개로 둔다.
 app.get('/api/diag/channels', (req, res) => {

@@ -1303,7 +1303,7 @@ var _PROSPECT_PAGES=[
 function _agentName(){ return String(CUR_NICK||'').replace(/님$/,'').trim(); }               // ★현재 로그인 설계사 이름
 function _prospectLink(url){ var a=_agentName(); return url+(a?('?agent='+encodeURIComponent(a)):''); }  // ★자기 이름 자동 첨부
 function discoveryPanel(){ window._ACTIVE_SKILL='client_discovery'; window._PTAB='deploy'; showModal(_prospectHTML()); }
-function prospectTab(which){ window._PTAB=which; document.getElementById('modalBox').innerHTML=_prospectHTML(); if(which==='leads') prospectLoadLeads(); if(which==='find') prospectLoadFind(); }
+function prospectTab(which){ window._PTAB=which; document.getElementById('modalBox').innerHTML=_prospectHTML(); if(which==='leads'){ prospectLoadInflow(); prospectLoadLeads(); } if(which==='find') prospectLoadFind(); }
 function _prospectHTML(){
   var tab=window._PTAB||'deploy';
   var tb=function(id,label){ var on=(tab===id); return '<button onclick="prospectTab(\''+id+'\')" style="flex:1;padding:9px 8px;border:none;background:none;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;color:'+(on?'var(--teal-d)':'#8a93a3')+';border-bottom:2px solid '+(on?'var(--teal)':'transparent')+'">'+label+'</button>'; };
@@ -1343,7 +1343,50 @@ function _leadsBody(){
   return '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">'
      +'<div style="font-size:12px;color:#556;line-height:1.5">내 진단 링크로 신청한 고객만 표시 · <span style="color:#c0392b">연락은 직접(자동발송 없음)</span></div>'
      +'<button onclick="prospectLoadLeads()" style="padding:6px 10px;border:1px solid #dbe2ea;background:#fff;border-radius:8px;font-size:12px;cursor:pointer;color:#556;font-family:inherit;white-space:nowrap">↻ 새로고침</button></div>'
+   +'<div id="inflowBox">'+_leadsSkeleton()+'</div>'    // ★신청자 표(이름·연락처·과정·금액·신청일 + 합계)
    +'<div id="leadsList">'+_leadsSkeleton()+'</div>';   // 로딩상태(스켈레톤) 먼저
+}
+// ── 신청자 표 — 실제 구글시트만 읽는다. 시트가 비면 "0건"이라고 하지 가짜 줄을 만들지 않는다 ──
+function _won(n){ return (Number(n)||0).toLocaleString('ko-KR')+'원'; }
+function prospectLoadInflow(){
+  var box=document.getElementById('inflowBox'); if(!box)return;
+  box.innerHTML=_leadsSkeleton();
+  fetch('/api/prospect/inflow',{credentials:'include'})
+   .then(function(r){ return r.json().then(function(j){ return {s:r.status,j:j}; }); })
+   .then(function(x){
+     var d=x.j;
+     if(x.s===401){ box.innerHTML=''; return; }                       // 로그인 안 됨 — 아래 기존 안내가 뜬다
+     if(!d||!d.ok){ box.innerHTML='<div style="font-size:11.5px;color:#8a6d1a;background:#fffdf5;border:1px solid #ecdca8;border-radius:8px;padding:8px 10px;margin-bottom:10px">📥 신청자 표를 못 불러왔어요 — '+_escOb((d&&d.error)||'오류')+'</div>'; return; }
+     var rows=d.rows||[], sm=d.sum||{};
+     var head='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">'
+       +_kpiChip('오늘', (sm.오늘&&sm.오늘.건수)||0, (sm.오늘&&sm.오늘.금액)||0)
+       +_kpiChip('이번달', (sm.이번달&&sm.이번달.건수)||0, (sm.이번달&&sm.이번달.금액)||0)
+       +'<div style="flex:1;min-width:130px;border:1px solid var(--teal-bd);background:var(--teal-l);border-radius:9px;padding:7px 10px">'
+         +'<div style="font-size:10.5px;color:#0f766e;font-weight:700">전체 · 객단가</div>'
+         +'<div style="font-size:13px;font-weight:800;color:#0d1b2a">'+(sm.건수||0)+'명 · '+_won(sm.객단가)+'</div></div>'
+       +'</div>';
+     if(d.missing&&d.missing.length) head+='<div style="font-size:11px;color:#8a6d1a;background:#fffdf5;border:1px solid #ecdca8;border-radius:8px;padding:6px 9px;margin-bottom:8px">⚠️ 시트에 없는 항목: <b>'+d.missing.map(_escOb).join(', ')+'</b> — 그 칸은 비어서 나옵니다</div>';
+     if(!rows.length){ box.innerHTML=head+'<div style="font-size:12px;color:#8a93a3;padding:6px 0 12px">아직 신청자가 없어요. (시트 '+_escOb(d.tab||'')+' · '+_escOb(d.권한||'')+')</div>'; return; }
+     var tb='<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid #e5e9ee;border-radius:10px"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:460px">'
+       +'<thead><tr style="background:#fafbfc">'+['이름','연락처','과정','금액','신청일'].map(function(h){ return '<th style="text-align:left;padding:8px 9px;font-size:11px;color:#556;border-bottom:1px solid #e5e9ee;white-space:nowrap">'+h+'</th>'; }).join('')+'</tr></thead><tbody>'
+       +rows.slice(0,200).map(function(r){
+          var paid=/^(y|예|완료|결제완료|o)$/i.test(String(r.결제||''));
+          return '<tr style="border-bottom:1px solid #f2f5f8">'
+            +'<td style="padding:7px 9px;font-weight:700;color:#0d1b2a;white-space:nowrap">'+_escOb(r.이름||'-')+'</td>'
+            +'<td style="padding:7px 9px;color:#556;white-space:nowrap">'+_escOb(r.연락처||'-')+'</td>'
+            +'<td style="padding:7px 9px;color:#556">'+_escOb(r.과정||'-')+'</td>'
+            +'<td style="padding:7px 9px;color:'+(paid?'#0f766e':'#8a93a3')+';font-weight:'+(paid?'800':'600')+';white-space:nowrap">'+(r.금액?_won(r.금액):'-')+(paid?'':'<span style="font-size:10px"> 미결제</span>')+'</td>'
+            +'<td style="padding:7px 9px;color:#8a93a3;white-space:nowrap">'+_escOb(String(r.신청일||'').slice(0,16))+'</td></tr>';
+        }).join('')+'</tbody></table></div>'
+       +'<div style="font-size:10.5px;color:#98a4b2;margin:6px 0 12px">🔒 실제 구글시트('+_escOb(d.tab||'')+')를 그때그때 읽어 화면에만 표시 · 서버 저장 0 · 범위: '+_escOb(d.권한||'')+(rows.length>200?(' · 최근 200건만 표시(전체 '+rows.length+'건)'):'')+'</div>';
+     box.innerHTML=head+tb;
+   })
+   .catch(function(){ box.innerHTML=''; });
+}
+function _kpiChip(label,cnt,amt){
+  return '<div style="flex:1;min-width:130px;border:1px solid #e5e9ee;background:#fff;border-radius:9px;padding:7px 10px">'
+    +'<div style="font-size:10.5px;color:#8a93a3;font-weight:700">'+label+'</div>'
+    +'<div style="font-size:13px;font-weight:800;color:#0d1b2a">'+cnt+'명 · '+_won(amt)+'</div></div>';
 }
 function _leadsSkeleton(){ var row='<div style="height:70px;border:1px solid #eef1f4;border-radius:10px;margin-bottom:8px;background:linear-gradient(90deg,#f4f6f8,#eceff2,#f4f6f8);opacity:.7"></div>'; return row+row+row; }
 function prospectLoadLeads(){
