@@ -678,28 +678,54 @@ async function _readCalendar(ma, req, rangeOverride) {
       이름: c.summary || '(이름없음)', 기본: !!c.primary, 숨김: !!c.hidden, 화면체크: c.selected !== false,
       권한: c.accessRole || '', 읽는중: cals.indexOf(c.id) >= 0,
     }));
-    let items = [];
+    let items = [], _rawTotal = 0, _cancelDropped = 0;
     for (const cid of cals) {
       try {
-        const ev = await cal.events.list({ calendarId: cid, timeMin, timeMax, singleEvents: true, orderBy: 'startTime', timeZone: 'Asia/Seoul' });
+        // ★페이지네이션: maxResults 기본값에 걸려 뒤가 조용히 잘리는 일이 없게 끝까지 넘긴다.
+        const ev = { data: { items: [] } };
+        let _ept = null;
+        do {
+          const _p = await cal.events.list({ calendarId: cid, timeMin, timeMax, singleEvents: true, orderBy: 'startTime', timeZone: 'Asia/Seoul', maxResults: 2500, pageToken: _ept || undefined });
+          ev.data.items = ev.data.items.concat(_p.data.items || []);
+          _ept = _p.data.nextPageToken || null;
+        } while (_ept);
         const _cname = (calList.find((c) => c.id === cid) || {}).summary || (cid === 'primary' ? '기본' : cid);
-        const got = (ev.data.items || []).filter((x) => x.status !== 'cancelled').map((x) => Object.assign({ _cal: _cname }, x));
+        const _raw = ev.data.items || [];
+        const got = _raw.filter((x) => x.status !== 'cancelled').map((x) => Object.assign({ _cal: _cname }, x));
+        _rawTotal += _raw.length; _cancelDropped += (_raw.length - got.length);
         items = items.concat(got);
         // ★각 캘린더의 에러를 더 이상 삼키지 않는다 — 조용한 0건의 진짜 원인이 여기 있었다.
-        dbg.캘린더별.push({ 캘린더: _cname, 건수: got.length, ...(DBG ? { 첫item: got[0] || null } : {}) });
+        // ★구글이 준 원본 건수와 우리가 남긴 건수를 나란히 — 누락이 구글 쪽인지 우리 코드인지 바로 갈린다.
+        dbg.캘린더별.push({ 캘린더: _cname, 구글원본: _raw.length, 남김: got.length,
+          ...(DBG ? { 제목들: got.map((x) => (x.summary || '(제목없음)') + '@' + String((x.start || {}).dateTime || (x.start || {}).date || '').slice(0, 16)) } : {}) });
       } catch (e) {
         dbg.캘린더별.push({ 캘린더: cid, 에러: e.message });   // 캘린더별 에러를 삼키지 않는다(조용한 0건 방지)
       }
     }
     // ★조회 결과를 서버 로그에도 남긴다 — 일정 제목·개인정보는 남기지 않고 캘린더 이름과 건수만.
-    console.log('[📅캘린더]', RANGE, `구글목록 ${calList.length}개 → 읽음 ${cals.length}개 ·`, dbg.캘린더별.map((x) => `${x.캘린더}=${x.에러 ? '에러' : x.건수}`).join(' · '));
-    // ★모든 캘린더를 읽으면 같은 약속이 두 캘린더에 겹쳐 보일 수 있다(초대받은 일정 등).
-    //   같은 일정(iCalUID)의 같은 시작시각만 한 번으로 합친다 — 서로 다른 일정은 절대 지우지 않는다.
-    const _seen = {};
-    const events = items.filter((e) => {
-      const k = String(e.iCalUID || e.id || '') + '|' + String((e.start || {}).dateTime || (e.start || {}).date || '');
-      if (_seen[k]) return false; _seen[k] = 1; return true;
-    }).map((e) => {
+    console.log('[📅캘린더]', RANGE, `구글목록 ${calList.length}개 → 읽음 ${cals.length}개 ·`, dbg.캘린더별.map((x) => `${x.캘린더}=${x.에러 ? '에러' : (x.구글원본 + '→' + x.남김)}`).join(' · '));
+    // ★중복 합치기(2026-07-26 안전 재작성): 일정 누락은 계약을 놓치는 문제라 "지우는 쪽"을 최대한 좁힌다.
+    //   ①같은 캘린더 안에서는 절대 안 지운다 — 한 캘린더가 같은 일정을 두 번 줄 일은 없고,
+    //     혹시 준다면 그건 보여줘야 할 신호지 숨길 일이 아니다.
+    //   ②서로 다른 캘린더에 같은 iCalUID+같은 시작시각으로 나타날 때만 한 번으로 합친다(초대받은 일정).
+    //   ③iCalUID가 없으면 아예 합치지 않는다(키 충돌로 남의 일정을 지우는 사고 차단).
+    const _byKey = {};
+    items.forEach((e) => {
+      const uid = String(e.iCalUID || '');
+      if (!uid) return;                                  // ③UID 없으면 대상 아님
+      const k = uid + '|' + String((e.start || {}).dateTime || (e.start || {}).date || '');
+      (_byKey[k] = _byKey[k] || []).push(e);
+    });
+    const _drop = new Set();
+    Object.keys(_byKey).forEach((k) => {
+      const g = _byKey[k];
+      if (g.length < 2) return;
+      const cals2 = new Set(g.map((x) => x._cal));
+      if (cals2.size < 2) return;                        // ①같은 캘린더 안이면 그대로 둔다
+      g.slice(1).forEach((x) => _drop.add(x));           // ②다른 캘린더에 겹친 것만 하나로
+    });
+    const _dupDropped = _drop.size;
+    const events = items.filter((e) => !_drop.has(e)).map((e) => {
       const start = (e.start || {}).dateTime || (e.start || {}).date || '';   // ★종일=date / 시간=dateTime 둘 다
       const time = start.length >= 16 ? new Date(start).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Seoul' }) : '종일';
       const title = e.summary || '(제목없음)';
@@ -713,10 +739,15 @@ async function _readCalendar(ma, req, rangeOverride) {
     const _acct = (sessionOf(req) || {}).email || '';
     const _calNames = cals.map((cid) => ((calList.find((c) => c.id === cid) || {}).summary || (cid === 'primary' ? '기본' : cid)));
     const _fmt = (off) => { const t = new Date(Date.UTC(y, m, d + off)); return `${t.getUTCFullYear()}-${String(t.getUTCMonth() + 1).padStart(2, '0')}-${String(t.getUTCDate()).padStart(2, '0')}`; };
+    // ★어디서 몇 개가 사라지는지 단계별로 — 일정 누락은 계약을 놓치는 문제라 항상 켜 둔다(개수만·개인정보 없음).
+    const 개수추적 = { 구글원본: _rawTotal, 취소제외: _cancelDropped, 중복합침: _dupDropped, 최종: events.length };
+    if (_rawTotal !== events.length) {
+      console.log('[📅캘린더·개수차이]', JSON.stringify(개수추적), '— 구글원본과 최종이 다르면 위 두 항목이 원인');
+    }
     return { ok: true,
       date: _fmt(0), range: RANGE, rangeLabel: _label, from: _fmt(_s), to: _fmt(_e),
       account: _acct, calendars: _calNames, calendarCount: _calNames.length,
-      count: events.length, events,
+      count: events.length, events, 개수추적, 캘린더별: dbg.캘린더별,
       ...(DBG ? { debug: dbg } : {}) };
   }
 }
