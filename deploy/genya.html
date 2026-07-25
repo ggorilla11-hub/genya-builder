@@ -241,6 +241,12 @@
   .comp-btn.send{background:var(--teal);color:#fff;} .comp-btn.send:hover{background:var(--teal-d);}
   .comp-hint{font-size:10px;color:var(--gray-l);text-align:center;margin-top:7px;}
 
+  /* ⭐ 새로 만든 이벤트 타일이 "짠" 하고 등장 — 대표가 방금 정의한 게 바로 눈에 들어오게 */
+  .dash-tile{transition:box-shadow .15s,transform .15s;}
+  .dash-tile:hover{box-shadow:0 3px 10px rgba(13,27,42,.10);}
+  @keyframes dashPop{0%{opacity:0;transform:scale(.86) translateY(6px);}60%{opacity:1;transform:scale(1.05) translateY(0);}100%{opacity:1;transform:scale(1);}}
+  .dash-pop{animation:dashPop .5s cubic-bezier(.34,1.56,.64,1) both;box-shadow:0 0 0 3px rgba(42,157,143,.18);}
+  @media (prefers-reduced-motion:reduce){ .dash-pop{animation:none;} }
   /* KPI 팝업 + 직업선택 팝업 + 시나리오 팝업 공통 */
   .pop-back{position:absolute;inset:0;background:rgba(11,31,58,.5);display:none;align-items:flex-start;justify-content:center;z-index:50;padding:60px 16px;backdrop-filter:blur(2px);overflow-y:auto;}
   .pop-back.on{display:flex;animation:fade .2s;}
@@ -1407,6 +1413,13 @@ function managementDashboard(){
      if(!d||!d.ok){ showModal('<div style="padding:20px">대시보드를 만들지 못했어요. 다시 시도해주세요.</div>'); return; }
      if(d.empty||!(d.metrics||[]).length){ showModal(_dashEmptyHTML('아직 명단이 없어요', (d.message||'[명단·연결]에서 먼저 고객명단을 올려주세요.'))); return; }
      window._DASH=d; refreshTopKPIs(d); showModal(_dashHTML(d));
+     // ★"짠": 방금 만든 이벤트는 타일이 튀어나온 뒤 대상자·문구까지 자동으로 펼쳐 보여준다.
+     if(window._DASH_NEW){
+       var _n=window._DASH_NEW, _i=-1, _ms=d.metrics||[];
+       for(var k=0;k<_ms.length;k++){ if(_ms[k].label===_n){ _i=k; break; } }
+       window._DASH_NEW=null;
+       if(_i>=0) setTimeout(function(){ dashOpen(_i); },320);
+     }
    })
    .catch(function(){ showModal('<div style="padding:20px;color:#c0392b">오류 — 잠시 후 다시 시도해주세요.</div>'); });
 }
@@ -1420,13 +1433,100 @@ function _dashEmptyHTML(title, msg){
     +'</div>';
 }
 function _dashHTML(d){
-  var tiles=(d.metrics||[]).map(function(m,i){ return '<div onclick="'+(m.locked?'':('dashOpen('+i+')'))+'" style="border:1px solid '+(m.locked?'#e5e9ee':'#dbe2ea')+';border-radius:12px;padding:12px;cursor:'+(m.locked?'default':'pointer')+';background:'+(m.locked?'#f3f5f7':'#fff')+';opacity:'+(m.locked?'0.65':'1')+'"><div style="font-size:20px">'+m.color+'</div><div style="font-size:12px;font-weight:700;color:#0d1b2a;margin-top:4px">'+_escOb(m.label)+'</div><div style="font-size:'+(m.locked?'10.5px':'20px')+';font-weight:700;color:'+(m.locked?'#8a93a3':'#0f766e')+';margin-top:2px">'+(m.locked?('🔒 '+_escOb(m.need)+' 채우면 켜져요'):(m.count+'명'))+'</div></div>'; }).join('');
+  // ★커스텀 이벤트(m.custom)도 기본 6개와 "똑같은 타일 디자인". 다른 건 우측 상단 × 삭제 버튼뿐.
+  var tiles=(d.metrics||[]).map(function(m,i){
+    var isNew = window._DASH_NEW && m.label===window._DASH_NEW;   // 방금 추가한 이벤트 → "짠" 등장 애니메이션
+    var del = m.custom ? '<span onclick="event.stopPropagation();dashDelEvent(\''+_escOb(m.label).replace(/'/g,"\\'")+'\')" title="이 이벤트 지우기" style="position:absolute;top:6px;right:8px;color:#c3ccd6;font-size:15px;line-height:1;cursor:pointer">×</span>' : '';
+    var 오늘뱃지 = (!m.locked && m.오늘수) ? '<span style="margin-left:5px;font-size:10px;font-weight:800;color:#fff;background:#e5484d;border-radius:999px;padding:1px 6px;vertical-align:2px">오늘 '+m.오늘수+'</span>' : '';
+    return '<div class="dash-tile'+(isNew?' dash-pop':'')+'" onclick="'+(m.locked?'':('dashOpen('+i+')'))+'" style="position:relative;border:1px solid '+(m.locked?'#e5e9ee':(isNew?'#2a9d8f':'#dbe2ea'))+';border-radius:12px;padding:12px;cursor:'+(m.locked?'default':'pointer')+';background:'+(m.locked?'#f3f5f7':'#fff')+';opacity:'+(m.locked?'0.65':'1')+'">'
+      +del
+      +'<div style="font-size:20px">'+m.color+'</div>'
+      +'<div style="font-size:12px;font-weight:700;color:#0d1b2a;margin-top:4px">'+_escOb(m.label)+'</div>'
+      +'<div style="font-size:'+(m.locked?'10.5px':'20px')+';font-weight:700;color:'+(m.locked?'#8a93a3':'#0f766e')+';margin-top:2px">'+(m.locked?('🔒 '+_escOb(m.need)+'이 없어요'):(m.count+'명'+오늘뱃지))+'</div>'
+      +'</div>';
+  }).join('');
+  // ＋ 타일 — 점선 테두리로 기본 타일과 구분
+  tiles += '<div onclick="dashAddEvent()" style="border:1.5px dashed #b7c4d2;border-radius:12px;padding:12px;cursor:pointer;background:#fbfcfd;display:flex;flex-direction:column;justify-content:center;align-items:center;min-height:86px">'
+    +'<div style="font-size:22px;color:#2a9d8f;line-height:1">＋</div>'
+    +'<div style="font-size:12px;font-weight:700;color:#4a6076;margin-top:5px">이벤트 추가</div>'
+    +'<div style="font-size:10px;color:#8fa0b1;margin-top:2px">내가 챙길 걸 직접</div>'
+    +'</div>';
   return '<div style="max-width:560px"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px"><b style="font-size:16px;color:#0d1b2a">📊 오늘 이벤트 대시보드</b><span onclick="closeModal()" style="cursor:pointer;color:#8a93a3;font-size:20px">×</span></div><div style="font-size:11px;color:#8a93a3;margin-bottom:12px">'+_escOb(d.today||'')+' · 명단 '+(d.rowCount||0)+'명 · 우선순위: '+((d.우선순위||[]).join(' → '))+'</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+tiles+'</div><div id="dashCards" style="margin-top:12px"></div></div>';
+}
+// ===== ⭐ 대표가 직접 정의하는 이벤트 =====
+//   업종마다 챙기는 게 다르다(학원=등록기념일, 설계사=만기). 이름만 넣으면 명단에서 컬럼을 찾아 대상자·문구까지.
+function dashAddEvent(){
+  var ex=['결혼기념일','등록기념일','계약갱신일','자녀 생일','건강검진일'];
+  showModal('<div style="max-width:440px">'
+    +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px"><b style="font-size:16px;color:#0d1b2a">⭐ 이벤트 추가</b><span onclick="closeModal()" style="cursor:pointer;color:#8a93a3;font-size:20px">×</span></div>'
+    +'<div style="font-size:12px;color:#8a93a3;line-height:1.6;margin-bottom:12px">내가 챙기고 싶은 걸 적어주세요. 명단에서 그 날짜 컬럼을 찾아 대상자와 문구까지 만들어 드려요.</div>'
+    +'<input id="evName" type="text" maxlength="20" placeholder="예: 결혼기념일" style="width:100%;box-sizing:border-box;padding:11px 12px;border:1px solid #dbe2ea;border-radius:10px;font-size:14px;font-family:inherit;color:#0d1b2a">'
+    +'<div style="margin-top:9px;display:flex;flex-wrap:wrap;gap:6px">'+ex.map(function(e){ return '<span onclick="document.getElementById(\'evName\').value=\''+e+'\'" style="cursor:pointer;font-size:11.5px;color:#4a6076;background:#eef3f8;border-radius:999px;padding:5px 10px">'+e+'</span>'; }).join('')+'</div>'
+    +'<div id="evMsg" style="font-size:11.5px;color:#c0392b;margin-top:9px;min-height:15px"></div>'
+    +'<div style="display:flex;gap:8px;margin-top:6px"><button id="evSave" onclick="dashSaveEvent()" style="flex:1;padding:11px;border:none;border-radius:10px;background:var(--teal);color:#fff;font-weight:700;cursor:pointer;font-size:13px">만들기</button>'
+    +'<button onclick="closeModal()" style="padding:11px 16px;border:1px solid #dbe2ea;border-radius:10px;background:#fff;color:#556;cursor:pointer">취소</button></div>'
+    +'</div>');
+  setTimeout(function(){ var i=document.getElementById('evName'); if(i){ i.focus(); i.addEventListener('keydown',function(e){ if(e.key==='Enter') dashSaveEvent(); }); } },60);
+}
+function dashSaveEvent(){
+  var el=document.getElementById('evName'); var name=el?String(el.value||'').trim():'';
+  var msg=document.getElementById('evMsg'); var btn=document.getElementById('evSave');
+  if(!name){ if(msg)msg.textContent='이벤트 이름을 적어주세요.'; return; }
+  if(btn){ btn.disabled=true; btn.textContent='만드는 중…'; }
+  if(msg){ msg.style.color='#8a93a3'; msg.textContent='명단에서 컬럼을 찾고 문구를 만들고 있어요…'; }
+  fetch('/api/events',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({name:name})})
+   .then(function(r){return r.json();}).then(function(j){
+     if(j&&(j.needsGoogle||j.needsConnect)){ if(msg){msg.style.color='#c0392b';msg.textContent=j.message||'구글 연결이 필요해요.';} if(btn){btn.disabled=false;btn.textContent='만들기';} return; }
+     if(!j||!j.ok){ if(msg){msg.style.color='#c0392b';msg.textContent=(j&&(j.error||j.message))||'만들지 못했어요.';} if(btn){btn.disabled=false;btn.textContent='만들기';} return; }
+     window._DASH_NEW=name;                 // ★"짠" — 새 타일 강조 + 자동 열기
+     managementDashboard();                 // 즉시 갱신(저장 직후 반영)
+     if(typeof refreshTopKPIs==='function') refreshTopKPIs();
+   })
+   .catch(function(){ if(msg){msg.style.color='#c0392b';msg.textContent='오류 — 잠시 후 다시 시도해주세요.';} if(btn){btn.disabled=false;btn.textContent='만들기';} });
+}
+function dashDelEvent(name){
+  if(!confirm('"'+name+'" 이벤트를 지울까요?\n(명단 데이터는 그대로예요. 기본 이벤트는 지워지지 않아요.)')) return;
+  fetch('/api/events?name='+encodeURIComponent(name),{method:'DELETE',credentials:'include'})
+   .then(function(r){return r.json();}).then(function(j){
+     if(!j||!j.ok){ toast((j&&(j.error||j.message))||'삭제 실패'); return; }
+     window._DASH_NEW=null; toast('"'+name+'" 이벤트를 지웠어요');
+     managementDashboard(); if(typeof refreshTopKPIs==='function') refreshTopKPIs();
+   }).catch(function(){ toast('삭제 실패'); });
 }
 function dashOpen(i){
   var m=((window._DASH||{}).metrics||[])[i]; var box=document.getElementById('dashCards'); if(!box)return;
-  if(!m||!m.cards||!m.cards.length){ box.innerHTML='<div style="color:#8a93a3;font-size:12px;padding:10px">대상 고객이 없어요.</div>'; return; }
-  box.innerHTML='<div style="font-weight:700;color:#0d1b2a;margin:8px 0">'+m.color+' '+_escOb(m.label)+' — '+m.count+'명</div>'+m.cards.map(function(c,j){ return '<div style="border:1px solid #dbe2ea;border-radius:10px;padding:10px;margin-bottom:8px"><div><b>'+_escOb(c.이름)+'</b> <span style="color:#8a93a3;font-size:12px">· '+_escOb(c.왜)+' · '+_escOb(c.언제)+(c.만기일?(' · 만기 '+_escOb(c.만기일)):'')+'</span></div><div style="font-size:12px;color:#556;background:#f5f7fa;border-radius:8px;padding:8px;margin-top:6px;white-space:pre-wrap">'+_escOb(c.초안)+'</div><button onclick="dashCopy('+i+','+j+')" style="margin-top:6px;padding:6px 12px;border:1px solid #2a9d8f;background:#e8f4f2;color:#0f766e;border-radius:999px;font-weight:600;cursor:pointer;font-size:12px">📋 초안 복사</button> <button onclick="dashSend('+i+','+j+')" style="margin-top:6px;padding:6px 12px;border:none;background:#fee500;color:#3c1e1e;border-radius:999px;font-weight:700;cursor:pointer;font-size:12px">📨 카톡 발송</button></div>'; }).join('');
+  // 커스텀 이벤트는 문구 틀을 대표가 직접 다듬을 수 있게(하이브리드: 틀을 고치면 이후 전원에게 적용)
+  var edit = (m&&m.custom) ? ' <button onclick="dashEditTemplate('+i+')" style="margin-left:6px;padding:4px 10px;border:1px solid #dbe2ea;background:#fff;color:#4a6076;border-radius:999px;font-weight:600;cursor:pointer;font-size:11px">✏️ 문구 틀 수정</button>' : '';
+  if(!m||!m.cards||!m.cards.length){ box.innerHTML='<div style="color:#8a93a3;font-size:12px;padding:10px">이번달 대상 고객이 없어요.'+edit+'</div>'; return; }
+  box.innerHTML='<div style="font-weight:700;color:#0d1b2a;margin:8px 0">'+m.color+' '+_escOb(m.label)+' — '+m.count+'명'+edit+'</div>'
+    +m.cards.map(function(c,j){
+      // ★오늘 해당자는 맨 앞(서버 정렬) + 🔴 강조로 눈에 띄게
+      var 오늘 = !!c.오늘;
+      return '<div style="border:1px solid '+(오늘?'#f3b0b2':'#dbe2ea')+';border-radius:10px;padding:10px;margin-bottom:8px;background:'+(오늘?'#fff8f8':'#fff')+'">'
+      +'<div>'+(오늘?'<span style="color:#e5484d;font-weight:800;font-size:11px;margin-right:5px">🔴 오늘</span>':'')+'<b>'+_escOb(c.이름)+'</b> <span style="color:#8a93a3;font-size:12px">· '+_escOb(c.왜)+' · '+_escOb(c.언제)+(c.만기일?(' · 만기 '+_escOb(c.만기일)):(c.날짜?(' · '+_escOb(c.날짜)):''))+'</span></div>'
+      +'<div style="font-size:12px;color:#556;background:#f5f7fa;border-radius:8px;padding:8px;margin-top:6px;white-space:pre-wrap">'+_escOb(c.초안)+'</div>'
+      +'<button onclick="dashCopy('+i+','+j+')" style="margin-top:6px;padding:6px 12px;border:1px solid #2a9d8f;background:#e8f4f2;color:#0f766e;border-radius:999px;font-weight:600;cursor:pointer;font-size:12px">📋 초안 복사</button> <button onclick="dashSend('+i+','+j+')" style="margin-top:6px;padding:6px 12px;border:none;background:#fee500;color:#3c1e1e;border-radius:999px;font-weight:700;cursor:pointer;font-size:12px">📨 카톡 발송</button></div>'; }).join('');
+}
+// 문구 틀 수정 — {이름}·{날짜}·{디데이} 자리표시자는 실제 값으로 바뀐다.
+function dashEditTemplate(i){
+  var m=((window._DASH||{}).metrics||[])[i]; if(!m||!m.custom){ toast('기본 이벤트의 문구는 수정할 수 없어요'); return; }
+  showModal('<div style="max-width:460px">'
+    +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px"><b style="font-size:16px;color:#0d1b2a">✏️ '+_escOb(m.label)+' 문구 틀</b><span onclick="closeModal()" style="cursor:pointer;color:#8a93a3;font-size:20px">×</span></div>'
+    +'<div style="font-size:11.5px;color:#8a93a3;line-height:1.6;margin-bottom:9px">고치면 이 이벤트 대상 전원에게 같은 틀이 적용돼요. <b>{이름}</b> · <b>{날짜}</b> · <b>{디데이}</b>는 고객마다 실제 값으로 바뀝니다.</div>'
+    +'<textarea id="evTpl" style="width:100%;height:130px;box-sizing:border-box;font-size:13px;font-family:inherit;line-height:1.6;color:#0d1b2a;background:#f5f7fa;border:1px solid #dbe2ea;border-radius:10px;padding:10px;resize:vertical">'+_escOb(m.문구틀||'')+'</textarea>'
+    +'<div id="evTplMsg" style="font-size:11.5px;color:#c0392b;margin-top:8px;min-height:15px"></div>'
+    +'<div style="display:flex;gap:8px"><button onclick="dashSaveTemplate(\''+_escOb(m.label).replace(/'/g,"\\'")+'\')" style="flex:1;padding:11px;border:none;border-radius:10px;background:var(--teal);color:#fff;font-weight:700;cursor:pointer;font-size:13px">저장</button>'
+    +'<button onclick="closeModal()" style="padding:11px 16px;border:1px solid #dbe2ea;border-radius:10px;background:#fff;color:#556;cursor:pointer">취소</button></div></div>');
+}
+function dashSaveTemplate(name){
+  var el=document.getElementById('evTpl'); var msg=document.getElementById('evTplMsg');
+  var tpl=el?String(el.value||'').trim():'';
+  if(tpl.indexOf('{이름}')<0){ if(msg)msg.textContent='문구에 {이름}을 넣어주세요 — 고객 이름이 들어갈 자리예요.'; return; }
+  fetch('/api/events',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({name:name,template:tpl})})
+   .then(function(r){return r.json();}).then(function(j){
+     if(!j||!j.ok){ if(msg)msg.textContent=(j&&(j.error||j.message))||'저장 실패'; return; }
+     toast('문구를 저장했어요'); window._DASH_NEW=name; managementDashboard();
+   }).catch(function(){ if(msg)msg.textContent='오류 — 잠시 후 다시 시도해주세요.'; });
 }
 function dashCopy(i,j){ try{ var c=window._DASH.metrics[i].cards[j]; navigator.clipboard.writeText(c.초안).then(function(){ toast('초안 복사됨 — 카톡에 붙여 승인 후 발송'); },function(){ toast('복사 실패'); }); }catch(e){ toast('복사 실패'); } }
 // ===== A: 관리 대시보드 → 카톡 발송(반자동, 휴먼인루프 승인) =====

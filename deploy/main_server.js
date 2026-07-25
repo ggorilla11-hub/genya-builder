@@ -26,6 +26,7 @@ const personalMem = require('./personal_memory');             // 🧠 개인화 
 const sheetsCrud = require('./sheets_crud_skill');            // 🗂️ Step 2-B · 시트 자연어 CRUD(독립 모듈 · 하이브리드 라우터 무접촉)
 const approval = require('./approval_skill');                 // 🗂️ Step 2-C · 결재함 백엔드(독립 모듈 · 라우터 무접촉)
 const rosterImport = require('./roster_import');              // 📇 Step 2-F · 명단 업로드→회원 시트 저장(독립 모듈)
+const customEvents = require('./custom_events');              // ⭐ 대표가 직접 정의하는 이벤트(독립 모듈·기본 6개 무접촉)
 const _openai = new (require('openai'))({ apiKey: process.env.OPENAI_API_KEY });
 // ★워크스페이스 대화 = Anthropic Claude Sonnet 5(대표 지시). 온보딩·OCR·약관·문자초안은 OpenAI 유지.
 //   대표가 준 'claude-sonnet-4-6-20250514'는 존재하지 않는 ID → 최신 Sonnet인 claude-sonnet-5로. 날짜접미사 금지.
@@ -1039,6 +1040,29 @@ app.post('/api/manage/dashboard', async (req, res) => {
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
+// ── ⭐ 대표가 직접 정의하는 이벤트 (custom_events 독립 모듈) ──
+//   정의는 회원 본인 시트 '지니야_이벤트' 탭에만 저장(서버 저장 0) → 회원별 분리 자동 보장.
+//   기본 6개 이벤트·발송 로직 무접촉. metrics 뒤에 "이어붙이기"만 한다.
+customEvents.init({ crud: sheetsCrud, mgmt: skills.manage, anthropic: _anthropic, model: MODEL_DEEP, ensureTab });
+app.get('/api/events', async (req, res) => {
+  try { const ma = gateGoogle(req, res); if (!ma) return;
+    res.json({ ok: true, events: await customEvents.list(ma) });
+  } catch (e) { if (scopeGate(e, res, 'sheets')) return; res.status(500).json({ ok: false, error: e.message }); }
+});
+app.post('/api/events', async (req, res) => {
+  try { const ma = gateGoogle(req, res); if (!ma) return;
+    const b = req.body || {};
+    // template이 함께 오면 "문구 틀 수정", 이름만 오면 "새 이벤트 추가"
+    const r = b.template ? await customEvents.setTemplate(ma, b.name, b.template) : await customEvents.add(ma, b.name);
+    if (r && r.ok) console.log(`[⭐이벤트] ${b.template ? '문구수정' : '추가'} "${String(b.name || '').slice(0, 30)}"`);
+    res.json(r);
+  } catch (e) { if (scopeGate(e, res, 'sheets')) return; res.status(500).json({ ok: false, error: e.message }); }
+});
+app.delete('/api/events', async (req, res) => {
+  try { const ma = gateGoogle(req, res); if (!ma) return;
+    res.json(await customEvents.remove(ma, req.query.name));
+  } catch (e) { if (scopeGate(e, res, 'sheets')) return; res.status(500).json({ ok: false, error: e.message }); }
+});
 // ── 📊 만기 대시보드 — ★유일 소스: [명단·연결]에 저장된 명단. 대시보드는 읽기 전용(파일 안 받음) ──
 //   readRoster(=loadTable · SA · A1:CZ 전체) → rosterToSheet → buildDashboard.
 //   상단 KPI와 대시보드 모달이 모두 이 하나만 본다(2026-07-26 단일화).
@@ -1056,7 +1080,12 @@ app.get('/api/manage/roster-dashboard', async (req, res) => {
     if (!roster.length) return res.json({ ok: true, empty: true, metrics: [], message: '아직 명단이 없어요. [명단·연결]에서 먼저 고객명단을 올려주세요.' });
     const sheet = skills.manage.rosterToSheet(roster);
     const r = skills.manage.buildDashboard({ sheet: sheet, today: req.query.today });
-    res.json({ ok: true, source: 'sheet', ...r });
+    // ⭐ 대표가 정의한 이벤트를 기본 6개 뒤에 이어붙인다(기본 배열은 그대로 둔다).
+    //   이벤트 조회가 실패해도 기본 대시보드는 반드시 나오게(대표가 막히지 않게) try로 감싼다.
+    let customs = [];
+    try { customs = customEvents.buildMetrics({ headers: sheet.headers, rows: sheet.rows, events: await customEvents.list(ma), today: r.today }); }
+    catch (e) { console.log('[⭐이벤트] 조회 실패(기본 대시보드는 정상): ' + e.message); }
+    res.json({ ok: true, source: 'sheet', ...r, metrics: (r.metrics || []).concat(customs) });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 

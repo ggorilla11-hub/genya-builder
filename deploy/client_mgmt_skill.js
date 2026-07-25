@@ -161,7 +161,12 @@ function buildDashboard(input) {
   return { ok: true, today: todayStr, rowCount: sheet.rows.length, metrics, 우선순위: ['신상품·제도', '만기·갱신', '생일', '소개', '전체공지'] };
 }
 
-module.exports = { analyzeManagement, buildDashboard, rosterToSheet, readHeaders, readSheet, STD };
+// ★2026-07-26 내보내기 추가(삭제·변경 없음): 커스텀 이벤트(custom_events.js)가 컬럼 감지·날짜 계산을
+//   똑같은 엔진으로 쓰게 하기 위함. 여기서 새로 만들면 감지 규칙이 둘로 갈라진다(하드코딩 금지 원칙).
+module.exports = {
+  analyzeManagement, buildDashboard, rosterToSheet, readHeaders, readSheet, STD,
+  norm, mapFields, parseYMD, parseToday, nowYMD, daysUntil, daysUntilAnnual,
+};
 
 if (require.main === module) {
   const demo = analyzeManagement({ headers: ['이름', '휴대폰', '생일', '만기일'], rowCount: 3 });
