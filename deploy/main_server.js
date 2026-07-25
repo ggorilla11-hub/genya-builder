@@ -1327,7 +1327,23 @@ async function orderHandler(req, res) {
     const _reBook = /(잡아|잡을|예약|비워)/, _reNotSched = /(명단|고객\s*(목록|전체)|만기|생일|리드|발굴)/;
     const _isSchedAsk = !/(카드|스캔)/.test(q) && !/이벤트/.test(q) && !/(결재|결제|발송|알림톡|승인)/.test(q)
       && !_reBook.test(q) && !_reNotSched.test(q) && (_reSched.test(q) || _reWhen.test(q)) && _reAskW.test(q);
-    if (_isDocCmd) {
+    // 📣 홍보 글 / ⏰ 리마인더 — 좌측 비서를 말로도 부르게(배선 빈 칸 채우기). 스킬은 이미 있고 호출 경로만 없었다.
+    //   ★배타(단위테스트 22/22 고정): '알림톡'은 결재라 알림 뒤에 톡을 배제하고,
+    //     문서 낱말이 있으면 문서에 양보한다("홍보용 제안서 만들어줘" → 문서).
+    const _rePromo = /(홍보|마케팅|인스타|블로그|포스팅|릴스|숏츠|콘텐츠)/, _reWrite = /(써|쓰|만들|생성|작성|뽑아|올려줘)/;
+    const _reRemind = /(리마인더|리마인드|다시\s*알려|잊지|알림(?!톡))/, _reSet = /(걸어|설정|등록|해줘|맞춰|넣어|알려|잡아)/;
+    const _noBase = !/(카드|스캔)/.test(q) && !/(결재|결제|발송|알림톡|승인)/.test(q) && !/이벤트/.test(q) && !_reDoc.test(q);
+    const _isPromoCmd = _noBase && !/(잡아|잡을|예약|비워)/.test(q) && !_reRemind.test(q) && _rePromo.test(q) && _reWrite.test(q);
+    const _isRemindCmd = _noBase && _reRemind.test(q) && _reSet.test(q);
+    if (_isPromoCmd) {
+      // 화면이 홍보 패널을 열고 실제 /api/promo/draft를 돌린다. 결과가 나온 뒤에만 원고가 표시된다(거짓 완료 금지).
+      const _topic = q.replace(_rePromo, ' ').replace(/글|문구|원고|콘텐츠|써줘|써|쓰|만들어줘|만들|생성해줘|생성|작성해줘|작성|뽑아줘|뽑아|해줘|좀|용|로|를|을|의/g, ' ').replace(/\s+/g, ' ').trim();
+      out = { kind: '📣 홍보', action: 'open_promo', topic: _topic, text: '홍보 원고를 만들게요. 잠시만요.' };
+    } else if (_isRemindCmd) {
+      // 리마인더는 쪼갠 뒤 회장님이 [네, 등록]을 눌러야 확정된다(휴먼인더루프 유지).
+      const _body = q.replace(/리마인더|리마인드|다시\s*알려|잊지\s*않게|잊지|알림|걸어줘|걸어|설정해줘|설정|등록해줘|등록|해줘|맞춰줘|맞춰|넣어줘|넣어|알려줘|알려|좀/g, ' ').replace(/\s+/g, ' ').trim();
+      out = { kind: '⏰ 리마인더', action: 'open_reminder', body: _body, text: '리마인더로 정리할게요. 잠시만요.' };
+    } else if (_isDocCmd) {
       // 화면이 실제로 /api/skills/gen을 호출해 성공했을 때만 "만들었어요"라고 말한다(거짓 완료 금지).
       const _dt = /비교표|엑셀|excel/i.test(q) ? 'excel'
         : (/세미나|발표|피피티|ppt/i.test(q) ? 'ppt'
