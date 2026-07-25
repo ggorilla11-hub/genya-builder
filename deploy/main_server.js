@@ -959,14 +959,17 @@ app.get('/api/diag/calendar', async (req, res) => {
 //   ★자동 발송 0 — 답글 초안까지만. 교육생이 [복사→직접 게시]. 진단링크에 교육생 꼬리표.
 const FIND_EXCLUDE_CH = process.env.FIND_EXCLUDE_CHANNEL || 'UCQxyqyUyMpNzHZvK0V_mOGQ'; // 오상열 @OhSangRyul 제외
 const FIND_KEYWORDS = ['재테크', '노후준비', '연금저축', '목돈 마련', '퇴직연금', '보험 리모델링', '종잣돈', '재무설계', '10억 모으기', '투자 초보'];
-const FIND_INTENT = /(어떻게|어떡|추천|모으|막막|시작|초보|고민|할까요|방법|좋을까|궁금|문의|해야|도와|알려|얼마|불안|걱정)/;
-const FIND_HOT = /(상담|신청|연락|문의|디엠|dm|카톡|어떻게\s*신청|알려주세요)/i;
-const FIND_WARM = /(노후|연금|재테크|종잣돈|목돈|불안|막막|초보|시작|얼마|투자|고민)/;
-function findTier(t) { if (FIND_HOT.test(t)) return '🔥핫'; if (FIND_WARM.test(t)) return '🌤웜'; return '🌱콜드'; }
+// ★2026-07-26 사각지대 수정: 예전 규칙은 '상담·문의·카톡·연락'을 🔥핫으로 쳤다.
+//   그건 고객이 원하는 신호가 아니라 "홍보하는 사람이 뿌리는 신호"였다
+//   → "상담 문의는 카톡 주세요"라고 광고하는 경쟁자가 1순위로 올라왔다.
+//   남의 홍보 댓글에 답글을 달면 대표님 평판이 상한다. 판별을 lead_filter로 옮겼다.
+const leadFilter = require('./lead_filter');
+function findTier(t) { return leadFilter.tier(t); }
 const _tierOrd = { '🔥핫': 0, '🌤웜': 1, '🌱콜드': 2 };
 
+let _findSkip = 0, _findMaybe = 0;   // 걸러낸 홍보자·확인필요 건수(보고용·개인정보 없음)
 async function findYouTubeLeads(key, max) {
-  const out = [];
+  const out = []; _findSkip = 0; _findMaybe = 0;
   for (const kw of FIND_KEYWORDS.slice(0, 6)) {   // 할당량 보호: 회당 6키워드
     let s; try { s = await (await fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&order=date&maxResults=3&q=${encodeURIComponent(kw)}&key=${key}`)).json(); } catch (e) { continue; }
     if (s.error) throw new Error((s.error.message || 'youtube search 실패'));
@@ -974,10 +977,18 @@ async function findYouTubeLeads(key, max) {
       const vid = it.id && it.id.videoId; if (!vid) continue;
       if ((it.snippet && it.snippet.channelId) === FIND_EXCLUDE_CH) continue;   // ★오상열 제외
       let cs; try { cs = await (await fetch(`https://www.googleapis.com/youtube/v3/commentThreads?part=snippet&maxResults=10&order=relevance&videoId=${vid}&key=${key}`)).json(); } catch (e) { continue; }
+      const _videoCh = (it.snippet && it.snippet.channelId) || '';
       (cs.items || []).forEach((ci) => {
         const sn = ci.snippet && ci.snippet.topLevelComment && ci.snippet.topLevelComment.snippet; if (!sn) return;
-        const text = String(sn.textOriginal || ''); if (!FIND_INTENT.test(text)) return;
-        out.push({ source: '유튜브', author: sn.authorDisplayName || '', text: text.slice(0, 180), link: `https://www.youtube.com/watch?v=${vid}&lc=${ci.id}`, videoTitle: (it.snippet && it.snippet.title) || '', keyword: kw, tier: findTier(text) });
+        const text = String(sn.textOriginal || '');
+        // ★고객 vs 공급자(홍보자·경쟁자) 판별 — 채널 주인 자기 홍보도 여기서 걸린다
+        const scr = leadFilter.preScreen(text, {
+          authorChannelId: (sn.authorChannelId && sn.authorChannelId.value) || '',
+          videoChannelId: _videoCh,
+        });
+        if (scr.verdict === '공급자') { _findSkip++; return; }   // 홍보자는 발굴하지 않는다
+        if (scr.verdict === '애매') { _findMaybe++; }             // 버리지 않고 '확인 필요'로 넘긴다
+        out.push({ source: '유튜브', author: sn.authorDisplayName || '', text: text.slice(0, 180), link: `https://www.youtube.com/watch?v=${vid}&lc=${ci.id}`, videoTitle: (it.snippet && it.snippet.title) || '', keyword: kw, tier: findTier(text), verdict: scr.verdict, why: (scr.reasons || [])[0] || '' });
       });
       if (out.length >= (max || 30)) return out;
     }
@@ -991,8 +1002,12 @@ app.get('/api/find/leads', async (req, res) => {
   if (!key) return res.json({ ok: true, needsKey: true, youtube: [], naver: [], message: 'YOUTUBE_API_KEY 미설정 — 대표님이 Render에 넣으면 발굴이 켜집니다.' });
   try {
     const yt = await findYouTubeLeads(key, 30);
-    yt.sort((a, b) => (_tierOrd[a.tier] != null ? _tierOrd[a.tier] : 9) - (_tierOrd[b.tier] != null ? _tierOrd[b.tier] : 9));
-    res.json({ ok: true, youtube: yt, naver: [] });   // 네이버 카페·지식인은 다음 단계(일요일 범위=유튜브만)
+    // 고객 먼저, 그다음 확인필요. 같은 등급이면 온도순.
+    const _vOrd = { '고객': 0, '애매': 1 };
+    yt.sort((a, b) => ((_vOrd[a.verdict] != null ? _vOrd[a.verdict] : 9) - (_vOrd[b.verdict] != null ? _vOrd[b.verdict] : 9))
+      || ((_tierOrd[a.tier] != null ? _tierOrd[a.tier] : 9) - (_tierOrd[b.tier] != null ? _tierOrd[b.tier] : 9)));
+    console.log(`[🔍발굴] 유튜브 ${yt.length}건 노출 · 홍보자 제외 ${_findSkip}건 · 확인필요 ${_findMaybe}건`);
+    res.json({ ok: true, youtube: yt, naver: [], filtered: { 홍보자제외: _findSkip, 확인필요: _findMaybe } });   // 네이버는 다음 단계
   } catch (e) { res.status(502).json({ ok: false, error: e.message }); }
 });
 

@@ -1370,6 +1370,8 @@ function _findTier(t){ var s=String(t||''); if(/핫|hot|🔥/i.test(s)) return '
 function _findCard(i, l){
   return '<div style="border:1px solid #e5e9ee;border-radius:10px;padding:10px 12px;margin-bottom:8px;background:#fff">'
     +'<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><div style="font-size:13px;font-weight:700;color:#0d1b2a">'+l.icon+' '+_escOb(l.name||'(출처)')+'</div>'+_findTier(l.tier)+'</div>'
+    // ★고객인지 확실치 않으면 답글 전에 사람이 보라고 표시(홍보자에게 잘못 답글 다는 사고 방지)
+    +(l.verdict==='애매'?('<div style="font-size:10.5px;color:#8a6d1a;background:#fffdf5;border:1px solid #ecdca8;border-radius:7px;padding:5px 8px;margin-top:5px">⚠️ 고객인지 확인 필요 — 내용을 직접 보고 판단해 주세요'+(l.why?(' ('+_escOb(l.why)+')'):'')+'</div>'):'')
     +(l.sub?('<div style="font-size:11px;color:#8a93a3;margin-top:2px">'+_escOb(l.sub)+'</div>'):'')
     +'<div style="font-size:12px;color:#556;margin:5px 0 8px;line-height:1.5">'+_escOb(String(l.text||'').slice(0,140))+'</div>'
     +'<div style="display:flex;gap:6px;flex-wrap:wrap">'
@@ -1392,13 +1394,16 @@ function prospectLoadFind(){
   fetch('/api/find/leads').then(function(r){ if(!r.ok) throw 0; return r.json(); })
    .then(function(d){
      if(d&&d.needsKey){ box.innerHTML='<div style="text-align:center;padding:26px 16px"><div style="font-size:30px">🔑</div><div style="font-size:13px;font-weight:700;color:#556;margin-top:8px">발굴 준비 중</div><div style="font-size:11.5px;color:#8a93a3;margin-top:6px">곧 켜집니다.</div></div>'; _setKpi('kpiFind','연결 필요'); return; }
-     var yt=(d.youtube||[]).map(function(l){ return {icon:'📺', name:l.author, sub:l.videoTitle, text:l.text, link:l.link, tier:l.tier, source:'유튜브'}; });
-     var nv=(d.naver||[]).map(function(l){ return {icon:'🟢', name:(l.author||l.keyword), sub:l.source, text:l.text, link:l.link, tier:l.tier, source:(l.source||'네이버')}; });
+     var yt=(d.youtube||[]).map(function(l){ return {icon:'📺', name:l.author, sub:l.videoTitle, text:l.text, link:l.link, tier:l.tier, source:'유튜브', verdict:l.verdict, why:l.why}; });
+     var nv=(d.naver||[]).map(function(l){ return {icon:'🟢', name:(l.author||l.keyword), sub:l.source, text:l.text, link:l.link, tier:l.tier, source:(l.source||'네이버'), verdict:l.verdict, why:l.why}; });
      if(!yt.length && !nv.length){ window._FIND=[]; _saveFindLast(0); box.innerHTML=_findEmpty(); _setKpi('kpiFind','0명'); return; }   // ② 빈(발굴은 실행함 → '0명', 기억)
      window._FIND=yt.concat(nv);                                    // ★전역 인덱스(답글초안 대상)
      _saveFindLast(window._FIND.length);                            // ★[B] 마지막 발굴결과 기억(재방문 시 '발굴 전' 대신 실개수)
      _setKpi('kpiFind', window._FIND.length+'명');                  // ★발굴 즉시 상단 KPI 실개수 반영
-     var h=_findSection('📺 유튜브', yt, 0);
+     // ★걸러낸 홍보자 수를 정직하게 보여준다 — "왜 몇 건뿐이지?"를 대표님이 바로 알 수 있게
+     var _f=(d&&d.filtered)||{};
+     var h=(_f.홍보자제외?('<div style="font-size:11.5px;color:#0f766e;background:#f2f9f7;border:1px solid #cfe8e1;border-radius:8px;padding:7px 10px;margin-bottom:10px">🛡️ 홍보·경쟁자 댓글 <b>'+_f.홍보자제외+'건</b>을 걸러냈어요'+(_f.확인필요?(' · 확인 필요 <b>'+_f.확인필요+'건</b>'):'')+'</div>'):'');
+     h+=_findSection('📺 유튜브', yt, 0);
      h+=_findSection('🟢 네이버 카페·지식인', nv, yt.length);
      h+='<div style="font-size:12px;font-weight:800;color:#0d1b2a;margin:12px 0 8px">🟡 크몽</div><div style="border:1px dashed #dbe2ea;border-radius:10px;padding:14px;text-align:center;color:#8a93a3;font-size:12px">준비 중 — 곧 연결됩니다</div>';
      box.innerHTML=h;                                                // ④ 정상
