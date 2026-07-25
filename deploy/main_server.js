@@ -590,22 +590,17 @@ function googleAuth(scopes) {
 }
 
 // ── 회원 명단 시트 읽기(원칙1: 읽어서 반환, 서버 저장 0). ma=회원토큰/없으면 SA ──
+// ★2026-07-26 · 소스 통일: 여기서 직접 시트를 읽지 않고 명단(재료창고)과 똑같은 loadTable을 쓴다.
+//   왜: 예전엔 '고객명단!A1:T50'만 읽었다 = 20컬럼·49명이 한계.
+//   어제 26컬럼 유령 행 문제와 완전히 같은 패턴 — 창문이 좁아 뒷컬럼·뒷사람이 통째로 안 보였다.
+//   (실제로 현재 시트가 22컬럼이라 21·22번째 컬럼이 대시보드 눈에 안 보이고 있었다)
+//   loadTable = 서비스계정(SA) + A1:CZ(104컬럼·전체 행) → 명단·연결 화면과 100% 같은 데이터.
+//   ★범위를 숫자로 좁혀 적지 말 것. 좁히는 순간 같은 사고가 반복된다.
+//   영향 범위(인지함): 대시보드뿐 아니라 /api/calendar·만기질의도 같이 넓어진다(의도된 개선).
 async function readRoster(ma) {
-  const auth = ma || googleAuth([
-    'https://www.googleapis.com/auth/spreadsheets.readonly',
-    'https://www.googleapis.com/auth/drive.readonly',
-  ]);
-  const drive = google.drive({ version: 'v3', auth });
-  const sheets = google.sheets({ version: 'v4', auth });
-  const f = await drive.files.list({
-    q: `mimeType='application/vnd.google-apps.spreadsheet' and name='${DEMO_TITLE}' and trashed=false`,
-    fields: 'files(id)',
-  });
-  const id = (f.data.files || [])[0] && f.data.files[0].id;
-  if (!id) return [];
-  const got = await sheets.spreadsheets.values.get({ spreadsheetId: id, range: `${SHEET_TAB}!A1:T50` });
-  const [H, ...body] = got.data.values || [[]];
-  return body.filter((r) => r && r.length).map((r) => { const o = {}; H.forEach((h, i) => o[h] = r[i] || ''); return o; });
+  const t = await sheetsCrud.loadTable(ma);
+  // _rowNum은 시트 내부용 행번호라 이벤트 계산에 섞이지 않게 뺀다(컬럼으로 오인 방지).
+  return (t.rows || []).map((r) => { const o = {}; Object.keys(r).forEach((k) => { if (k !== '_rowNum') o[k] = r[k]; }); return o; });
 }
 
 function prepFor(c) {
@@ -1044,8 +1039,9 @@ app.post('/api/manage/dashboard', async (req, res) => {
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
-// ── 📊 [A] 만기 대시보드(시트 자동연동) — 파일 업로드 없이 회원 구글시트 명단으로 이번달 만기·생일 계산 ──
-//   readRoster(회원 토큰) → rosterToSheet → buildDashboard. 상단 KPI(kpiDue)가 파일 없이도 실데이터로 채워지게.
+// ── 📊 만기 대시보드 — ★유일 소스: [명단·연결]에 저장된 명단. 대시보드는 읽기 전용(파일 안 받음) ──
+//   readRoster(=loadTable · SA · A1:CZ 전체) → rosterToSheet → buildDashboard.
+//   상단 KPI와 대시보드 모달이 모두 이 하나만 본다(2026-07-26 단일화).
 app.get('/api/manage/roster-dashboard', async (req, res) => {
   try {
     const ma = gateGoogle(req, res); if (!ma) return; // 회원 본인 구글 토큰(SA 폴백 아님)
@@ -1056,7 +1052,8 @@ app.get('/api/manage/roster-dashboard', async (req, res) => {
       if (isScopeError(e)) return res.json({ ok: true, needsConnect: true, message: '고객명단 시트를 보려면 구글 시트·드라이브 연결이 필요해요' });
       throw e;
     }
-    if (!roster.length) return res.json({ ok: true, empty: true, metrics: [], message: '연결된 시트에서 고객 명단을 찾지 못했어요' });
+    // ★입구는 하나: 여기서 "올려주세요"라고 하지 않고 명단·연결로 안내한다(대시보드는 읽기 전용).
+    if (!roster.length) return res.json({ ok: true, empty: true, metrics: [], message: '아직 명단이 없어요. [명단·연결]에서 먼저 고객명단을 올려주세요.' });
     const sheet = skills.manage.rosterToSheet(roster);
     const r = skills.manage.buildDashboard({ sheet: sheet, today: req.query.today });
     res.json({ ok: true, source: 'sheet', ...r });

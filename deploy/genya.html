@@ -713,9 +713,9 @@
       </div>
     </div>
 
-    <!-- ★[1-3] 고객명단 없을 때: 빈 화면 대신 다음 행동 유도(명단 올리면 만기관리 시작). window._MGMTFILE 있으면 자동 숨김 -->
-    <div id="rosterHint" style="display:none;margin:0 18px 12px;padding:11px 14px;border-radius:11px;background:linear-gradient(135deg,#fff7e6,#fffdf7);border:1px solid #f0e0b8;font-size:12.5px;color:#8a6d1a;line-height:1.55;cursor:pointer" onclick="openPop('due')">
-      📋 <b>고객명단을 올리면 만기 관리가 시작됩니다.</b> 엑셀·CSV를 올리면 이번달 만기·생일 고객을 지니야가 자동으로 찾아 챙겨드려요. <span style="text-decoration:underline;white-space:nowrap">지금 올리기 →</span>
+    <!-- ★[1-3] 명단 없을 때만 표시(빈 화면 대신 다음 행동 유도). ★입구는 하나 — 파일 선택창이 아니라 [명단·연결]을 연다. -->
+    <div id="rosterHint" style="display:none;margin:0 18px 12px;padding:11px 14px;border-radius:11px;background:linear-gradient(135deg,#fff7e6,#fffdf7);border:1px solid #f0e0b8;font-size:12.5px;color:#8a6d1a;line-height:1.55;cursor:pointer" onclick="if(typeof genyaHub==='function')genyaHub();">
+      📋 <b>고객명단을 올리면 만기 관리가 시작됩니다.</b> [명단·연결]에 엑셀·CSV를 올리면 이번달 만기·생일 고객을 지니야가 자동으로 찾아 챙겨드려요. <span style="text-decoration:underline;white-space:nowrap">명단 · 연결 열기 →</span>
     </div>
 
     <div class="cols">
@@ -1120,10 +1120,8 @@ function onbUploadFile(inp){
      .then(function(r){return r.json();}).then(function(d){
        var txt=(d&&d.analysis)||''; var msg=(d&&d.message)||(d&&d.error)||'';
        window.ONBOARD.uploadText = txt || '';
-       // ★[3-2] 온보딩에서 올린 게 명단(엑셀/CSV)이면 고객관리비서(_MGMTFILE)에도 연결 → 메인에서 재업로드 없이 만기·초안 바로. (다운로드함=결과물 전용이라 제외)
-       try{ var _nm=String(f.name||'').toLowerCase();
-         if(/\.(xlsx|xls|csv)$/.test(_nm)){ var _b64=String(rd.result||'').split(',')[1]||''; if(_b64){ window._MGMTFILE={file:_b64, mime:(f.type||'')}; } }
-       }catch(e){}
+       // ★[3-2] 삭제됨(2026-07-26): 온보딩 엑셀을 _MGMTFILE(대시보드 재료)로 넘기던 줄 — 대시보드로 가는 파일 경로라 끊었다.
+       //   이제 대시보드는 [명단·연결]에 저장된 명단만 읽는다. 온보딩 업로드 자체(다운로드함 연결)는 그대로 유지.
        if(txt) _obStructure(txt); // ★"다음" 누르기 전에 미리 구조화 → 즉시 반영
        if(st){ st.innerHTML = txt
          ? '✅ 분석 완료 — [다음]을 누르면 확인 화면에 반영돼요.<div style="margin-top:6px;color:#556;">'+_escOb(txt.slice(0,200))+'…</div>'
@@ -1398,13 +1396,28 @@ function prospectRunFind(){
 function _findEmpty(){ return '<div style="text-align:center;padding:28px 16px"><div style="font-size:32px">🔍</div><div style="font-size:13px;font-weight:700;color:#556;margin-top:8px">아직 발굴된 리드가 없어요</div><div style="font-size:11.5px;color:#8a93a3;margin-top:6px;line-height:1.6">[🔍 지금 발굴]을 눌러 유튜브·네이버에서<br>잠재고객을 찾아보세요.</div></div>'; }
 function _findError(){ return '<div style="text-align:center;padding:26px 16px"><div style="font-size:30px">⚠️</div><div style="font-size:13px;font-weight:700;color:#c0392b;margin-top:8px">발굴 결과를 불러오지 못했어요</div><button onclick="prospectLoadFind()" style="margin-top:12px;padding:9px 18px;border:1px solid var(--teal);background:var(--teal-l);color:var(--teal-d);border-radius:10px;font-weight:700;cursor:pointer;font-size:13px;font-family:inherit">↻ 다시 시도</button></div>'; }
 // ===== 📊 관리-2: 오늘 이벤트 대시보드 (있는 데이터 기반·결정적·초안 승인용) =====
+// ★입구는 명단 하나(2026-07-26): 대시보드는 파일을 받지 않는다. 명단(재료창고)을 읽어 이벤트만 발행하는 읽기 전용 화면.
+//   예전엔 여기서 _MGMTFILE(브라우저에 올린 엑셀)을 요구해서, 시트에 명단이 있어도 파일을 또 올려야 했다(이원화).
 function managementDashboard(){
-  var mf=window._MGMTFILE; if(!mf||!mf.file){ toast('먼저 고객 명단 엑셀을 올려주세요'); return; }
   var t=new Date(); var ts=t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0');
-  showModal('<div style="text-align:center;padding:34px;color:#98a4b2">오늘 이벤트를 계산하는 중…</div>');
-  fetch('/api/manage/dashboard',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({file:mf.file, today:ts})})
-   .then(function(r){return r.json();}).then(function(d){ if(!d||!d.ok){ showModal('<div style="padding:20px">대시보드를 만들지 못했어요. 다시 시도해주세요.</div>'); return; } window._DASH=d; refreshTopKPIs(d); showModal(_dashHTML(d)); })
+  showModal('<div style="text-align:center;padding:34px;color:#98a4b2">명단에서 오늘 이벤트를 계산하는 중…</div>');
+  fetch('/api/manage/roster-dashboard?today='+ts)
+   .then(function(r){return r.json();}).then(function(d){
+     if(d&&(d.needsGoogle||d.needsConnect)){ showModal(_dashEmptyHTML('구글 연결이 필요해요', (d.message||'내 시트를 보려면 구글 데이터 연결이 필요해요.'))); return; }
+     if(!d||!d.ok){ showModal('<div style="padding:20px">대시보드를 만들지 못했어요. 다시 시도해주세요.</div>'); return; }
+     if(d.empty||!(d.metrics||[]).length){ showModal(_dashEmptyHTML('아직 명단이 없어요', (d.message||'[명단·연결]에서 먼저 고객명단을 올려주세요.'))); return; }
+     window._DASH=d; refreshTopKPIs(d); showModal(_dashHTML(d));
+   })
    .catch(function(){ showModal('<div style="padding:20px;color:#c0392b">오류 — 잠시 후 다시 시도해주세요.</div>'); });
+}
+// 명단이 비었을 때 — ★여기서 파일을 올리라고 하지 않는다. 유일한 입구인 [명단·연결]로만 보낸다.
+function _dashEmptyHTML(title, msg){
+  return '<div style="max-width:420px;text-align:center;padding:14px 6px">'
+    +'<div style="font-size:34px">📋</div>'
+    +'<div style="font-size:15px;font-weight:800;color:#0d1b2a;margin-top:8px">'+_escOb(title)+'</div>'
+    +'<div style="font-size:12.5px;color:#556;margin-top:8px;line-height:1.6">'+_escOb(msg)+'</div>'
+    +'<button onclick="closeModal(); if(typeof genyaHub===\'function\')genyaHub();" style="margin-top:14px;padding:10px 18px;border:none;border-radius:999px;background:var(--teal);color:#fff;font-weight:700;cursor:pointer;font-size:13px">📇 명단 · 연결 열기 →</button>'
+    +'</div>';
 }
 function _dashHTML(d){
   var tiles=(d.metrics||[]).map(function(m,i){ return '<div onclick="'+(m.locked?'':('dashOpen('+i+')'))+'" style="border:1px solid '+(m.locked?'#e5e9ee':'#dbe2ea')+';border-radius:12px;padding:12px;cursor:'+(m.locked?'default':'pointer')+';background:'+(m.locked?'#f3f5f7':'#fff')+';opacity:'+(m.locked?'0.65':'1')+'"><div style="font-size:20px">'+m.color+'</div><div style="font-size:12px;font-weight:700;color:#0d1b2a;margin-top:4px">'+_escOb(m.label)+'</div><div style="font-size:'+(m.locked?'10.5px':'20px')+';font-weight:700;color:'+(m.locked?'#8a93a3':'#0f766e')+';margin-top:2px">'+(m.locked?('🔒 '+_escOb(m.need)+' 채우면 켜져요'):(m.count+'명'))+'</div></div>'; }).join('');
@@ -1527,16 +1540,17 @@ function startFromCard(jobKey, idx){
 // ===== KPI 팝업 =====
 const popData = {
   // ★가짜 예시 금지: find는 findPop()(실제 발굴 리드/빈 안내), sched는 schedPop()(캘린더 실데이터/미연결 안내)로 분기. 예시 하드코딩 제거.
-  due:{ cls:'u', icon:'<path d="M12 8v5l3 2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="12" r="8.5" stroke="currentColor" stroke-width="1.8"/>', title:'이번달 만기·갱신', sub:'고객 명단을 올리면 실제 만기 고객이 떠요',
-    items:[ {b:'고객 명단(엑셀·CSV)을 올려주세요',s:'만기일 열을 자동으로 읽어 이번달 만기 고객을 실제로 계산해요',tag:'안내'} ],
-    foot:'＋ 버튼으로 명단 올리기', src:'구글 시트 · 만기일 열 자동 감지' }
+  // ★due는 openPop 위쪽에서 곧바로 managementDashboard()로 빠지므로 이 데이터는 실제로 안 쓰인다(안전용 잔여).
+  //   문구도 "올려주세요"가 아니라 명단·연결 안내로 통일 — 대시보드에서 파일을 받지 않는다.
+  due:{ cls:'u', icon:'<path d="M12 8v5l3 2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="12" r="8.5" stroke="currentColor" stroke-width="1.8"/>', title:'이번달 만기·갱신', sub:'명단에서 이번달 만기 고객을 자동으로 찾아드려요',
+    items:[ {b:'[명단·연결]에 고객명단이 있어야 해요',s:'만기일 열을 자동으로 읽어 이번달 만기 고객을 실제로 계산해요',tag:'안내'} ],
+    foot:'명단 · 연결에서 관리', src:'구글 시트 · 만기일 열 자동 감지' }
 };
 function openPop(key){
   if(key==='send'){ closePop(); sendDashboard(); return; }   // ★오늘 발송: 서버(jenya) 폴링 실데이터 + 재발송(genyasend:)
   if(key==='sched'){ schedPop(); return; }                   // ★오늘 약속: 구글캘린더 실데이터(읽기전용·4상태)
   if(key==='find'){ findPop(); return; }                     // ★발굴: 실제 발굴 리드(window._FIND)만·가짜 예시 금지
-  if(key==='due' && window._MGMTFILE && window._MGMTFILE.file){ closePop(); managementDashboard(); return; }  // ★만기: 명단 있으면 실제 대시보드(실데이터)
-  if(key==='due'){ closePop(); openRosterUpload(); return; }  // ★만기: 명단 없으면 실제 파일 선택창 오픈(토스트만 금지)
+  if(key==='due'){ closePop(); managementDashboard(); return; }  // ★만기: 항상 명단(재료창고) 기준 대시보드. 파일 선택창으로 새지 않는다(입구는 명단 하나).
   const d = popData[key];
   const items = d.items.map(it=>'<div class="pop-item"><span class="di pi-'+d.cls+'"></span><div class="it"><b>'+it.b+'</b><span>'+it.s+'</span></div><span class="tag'+(it.hot?' hot':'')+'">'+it.tag+'</span></div>').join('');
   document.getElementById('popBox').innerHTML =
@@ -1549,25 +1563,9 @@ function openPop(key){
   document.getElementById('popBack').classList.add('on');
 }
 function closePop(){ document.getElementById('popBack').classList.remove('on'); }
-// ★만기 [지금 올리기] — 실제 고객명단 파일 선택창을 연다(토스트만 띄우던 버그 수정). 엑셀/CSV → _MGMTFILE → 만기 대시보드.
-function openRosterUpload(){
-  var inp=document.getElementById('rosterFileInput');
-  if(!inp){ inp=document.createElement('input'); inp.type='file'; inp.id='rosterFileInput'; inp.accept='.xlsx,.xls,.csv'; inp.style.display='none'; document.body.appendChild(inp);
-    inp.addEventListener('change', function(){ rosterFileChosen(this); }); }
-  inp.value=''; inp.click();
-}
-function rosterFileChosen(inp){
-  var f=inp.files&&inp.files[0]; if(!f) return;
-  toast('명단 분석 중…');
-  var rd=new FileReader();
-  rd.onload=function(){ var b64=String(rd.result||'').split(',')[1]||''; if(!b64){ toast('파일을 못 읽었어요'); return; }
-    window._MGMTFILE={file:b64, mime:(f.type||'')};   // ★고객관리비서와 동일 소스 → 만기 계산에 그대로 연결
-    if(typeof managementDashboard==='function') managementDashboard();   // /api/manage/dashboard → 대시보드 모달 + refreshTopKPIs(kpiDue) + rosterHint 숨김
-    else if(typeof refreshTopKPIs==='function') refreshTopKPIs();
-  };
-  rd.onerror=function(){ toast('파일을 못 읽었어요'); };
-  rd.readAsDataURL(f);
-}
+// ★삭제됨(2026-07-26): openRosterUpload() / rosterFileChosen() — 대시보드 전용 파일 선택창이었다.
+//   명단 업로드 입구를 [명단·연결] 하나로 단일화하면서 제거했다. 여기서 파일을 다시 받으면 이원화가 되살아난다.
+//   ※ [명단·연결]의 업로드는 유일한 입구이므로 그대로 유지된다 — 절대 건드리지 말 것.
 // ★발굴 카드 팝업 — 가짜 예시(김민수 등) 금지. 실제 발굴 리드(window._FIND) 있으면 표시, 없으면 빈 안내+[지금 발굴].
 function findPop(){
   var leads=(window._FIND||[]);
@@ -2891,27 +2889,22 @@ function renderOnboarding(force){
 }
 // ★상단 KPI 실데이터 계산 (하드코딩 제거·가짜 숫자 금지). 만기=업로드 명단 실값, 약속·발굴=소스 없으면 0 정직표시.
 function _setKpi(id,txt){ var el=document.getElementById(id); if(el) el.textContent=txt; }
+// ★단일 소스(2026-07-26): 상단 KPI도 명단(재료창고)만 본다. 올린 파일(_MGMTFILE) 분기 제거 — 이원화 원천 차단.
 function refreshTopKPIs(dash){
-  // ★[1-3] 고객명단 유무로 안내 배너 토글: 명단 없으면 "올리면 만기관리 시작" 안내(빈 화면 대신 다음 행동 유도).
-  var _hasRoster = !!(window._MGMTFILE && window._MGMTFILE.file) || !!dash;
-  var _rh=document.getElementById('rosterHint'); if(_rh) _rh.style.display = _hasRoster ? 'none' : 'block';
   function applyDue(d){ var due=0; try{ var m=((d&&d.metrics)||[]).filter(function(x){return x.key==='maturity';})[0]; if(m&&!m.locked) due=m.count||0; }catch(e){} _setKpi('kpiDue', due+'건'); }
-  if(dash){ window._DASH=dash; applyDue(dash); }
-  else if(window._MGMTFILE&&window._MGMTFILE.file){
-    var t=new Date(); var ts=t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0');
-    fetch('/api/manage/dashboard',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({file:window._MGMTFILE.file,today:ts})})
-      .then(function(r){return r.json();}).then(function(d){ if(d&&d.ok){ window._DASH=d; applyDue(d); } else { _setKpi('kpiDue','0건'); } }).catch(function(){ _setKpi('kpiDue','0건'); });
-  } else {
-    // ★[A] 파일 안 올려도: 연결된 회원 구글시트 명단으로 이번달 만기 자동 계산(readRoster→roster-dashboard). 시트 미연결이면 '연결 필요' 정직표시.
+  // 명단이 비었을 때만 안내 배너 표시(빈 화면 대신 다음 행동 유도). 배너는 [명단·연결]로 보낸다.
+  function hint(show){ var _rh=document.getElementById('rosterHint'); if(_rh) _rh.style.display = show ? 'block' : 'none'; }
+  if(dash){ window._DASH=dash; applyDue(dash); hint(!((dash.metrics||[]).length)); }
+  else {
     var t2=new Date(); var ts2=t2.getFullYear()+'-'+String(t2.getMonth()+1).padStart(2,'0')+'-'+String(t2.getDate()).padStart(2,'0');
     fetch('/api/manage/roster-dashboard?today='+ts2)
       .then(function(r){return r.json();})
       .then(function(d){
-        if(d&&d.needsConnect){ _setKpi('kpiDue','연결 필요'); return; }
-        if(d&&d.ok&&Array.isArray(d.metrics)&&d.metrics.length){ window._DASH=d; applyDue(d); var _rh2=document.getElementById('rosterHint'); if(_rh2)_rh2.style.display='none'; }
-        else { _setKpi('kpiDue','0건'); }
+        if(d&&(d.needsGoogle||d.needsConnect)){ _setKpi('kpiDue','연결 필요'); hint(true); return; }
+        if(d&&d.ok&&Array.isArray(d.metrics)&&d.metrics.length){ window._DASH=d; applyDue(d); hint(false); }
+        else { _setKpi('kpiDue','0건'); hint(true); }
       })
-      .catch(function(){ _setKpi('kpiDue','0건'); });
+      .catch(function(){ _setKpi('kpiDue','0건'); hint(true); });
   }
   // 오늘 약속 = 구글캘린더 실데이터(server.js /calendar/today). 어젯밤 발굴은 아직 0 정직표시.
   loadSchedKpi();   // ★하드코딩 제거 → 실제 오늘 일정 개수로 갱신
@@ -3236,8 +3229,9 @@ window.runOCR=function(mode){
          .then(function(r){return r.json();}).then(function(d){ w.remove();
            var txt=(d&&(d.리딩||d.note||d.report))||(d&&d.error)||'명단을 읽지 못했어요.';
            if(typeof _HIST!=='undefined'){ _HIST.push({role:'user',content:'[고객 명단 업로드: '+names+']'}); _HIST.push({role:'assistant',content:'[관리 리딩] '+String(txt).replace(/\s+/g,' ').slice(0,500)}); if(typeof _persistHist==='function')_persistHist(); }
-           window._MGMTFILE={file:imgs[0].data, mime:imgs[0].mime};  // ★관리-2 대시보드용(메모리, 서버 저장0)
-           refreshTopKPIs();  // ★업로드 순간 상단 KPI(이번달 만기) 실데이터 갱신
+           // ★삭제됨(2026-07-26): 여기서 올린 파일을 _MGMTFILE(대시보드 재료)로 넘기던 줄 — 대시보드로 가는 파일 경로라 끊었다.
+           //   헤더 진단(analyze)은 그대로 유지. 대시보드 이벤트는 [명단·연결]에 저장된 명단에서만 나온다.
+           refreshTopKPIs();  // 상단 KPI는 명단(재료창고) 기준으로 갱신
            var startBtn=(d&&d.canStart!==false)?'<div style="margin-top:10px"><button onclick="managementDashboard()" style="padding:9px 16px;border:none;border-radius:999px;background:var(--teal);color:#fff;font-weight:700;cursor:pointer;font-size:13px">📊 있는 항목으로 관리 시작 →</button></div>':'';
            pushMsg('gen', renderMd(txt) + startBtn);
          }).catch(function(){ w.remove(); pushMsg('gen','<span style="color:#c0392b">명단 분석 오류(잠시 후 다시)</span>'); });
@@ -3487,7 +3481,10 @@ window.addFile=function(){ doOCR(); };
     if(mode==='replace'&&!confirm('기존 명단을 덮어쓰고 새로 저장할까요? 되돌릴 수 없어요.'))return;
     document.getElementById('ghPv').innerHTML='<div class="gh-warn">저장 중…</div>';
     var j;try{j=await api('/api/roster/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dataUrl:_pending,mode:mode,confirm:true,name:_pendingName})});}catch(e){document.getElementById('ghPv').innerHTML='<div class="gh-warn">오류: '+esc(e.message)+'</div>';return;}
-    if(j.ok){document.getElementById('ghPv').innerHTML='<div class="gh-pv" style="color:#2e7d32">✅ '+esc(j.message)+'</div>';_pending=null;ghLoad();if(window._MGMTFILE!==undefined){try{window._MGMTFILE=null;}catch(e){}}}
+    if(j.ok){document.getElementById('ghPv').innerHTML='<div class="gh-pv" style="color:#2e7d32">✅ '+esc(j.message)+'</div>';_pending=null;ghLoad();
+      // ★(d) 명단 올리는 순간 → 대시보드 이벤트 자동 갱신. 예전엔 새로고침해야 숫자가 바뀌었다.
+      try{ if(typeof refreshTopKPIs==='function') refreshTopKPIs(); }catch(e){}
+    }
     else{document.getElementById('ghPv').innerHTML='<div class="gh-warn">'+esc(j.message||j.error||'실패')+'</div>';}
   };
 })();
