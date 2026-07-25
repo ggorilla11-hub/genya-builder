@@ -737,6 +737,11 @@
           <div class="prof-row"><span>직업</span><b id="pfJob">보험설계사(GA)</b></div>
           <div class="prof-row"><span>핵심 고민</span><b>발굴·제안·관리</b></div>
           <div class="prof-row"><span>철칙</span><b>발송 전 승인</b></div>
+          <!-- 📅 일정관리 비서 — 구글 캘린더 실데이터만. 오늘/이번주/이번달 전환. 가짜 일정 표시 없음. -->
+          <div class="sect-t mt">일정관리 비서</div>
+          <div class="genya-card" style="cursor:pointer" onclick="openSchedule()">
+            <div class="who"><div class="av" style="background:#1f6feb"><svg viewBox="0 0 24 24" fill="none"><rect x="4" y="5" width="16" height="16" rx="2.5" stroke="#fff" stroke-width="1.8"/><path d="M8 3v4M16 3v4M4 10h16" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/></svg></div><div><b>일정관리 비서</b><span id="schAgentSub">오늘 일정 확인하기 →</span></div></div>
+          </div>
           <div class="sect-t mt">내 고민 (클릭하면 해결법)</div>
           <div id="probList"></div>
           <div class="add-tool" onclick="addAgentAsk()" style="margin-top:8px;"><svg viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>+ 비서 추가하기</div>
@@ -2515,8 +2520,16 @@ function addToolAsk(){ window._ACTIVE_SKILL='add_tool'; pushMsg('gen','어떤 �
             window._vBuf=(window._vBuf?window._vBuf+' ':'')+t; window._vBufAt=_now;
             var B=window._vBuf;
             var _cool=(_now-(window._vFireAt||0))<4000;  // 방금 발동했으면 잠시 무시(중복 결재 차단)
-            // (3) ⭐ 이벤트 만들기: "○○ 이벤트 만들어줘" — 카드·결재 낱말을 배제해 셋이 서로 안 물리게. 먼저 검사한다.
-            if(!_cool && /이벤트/.test(B) && /(만들|추가|생성|등록)/.test(B) && !/(카드|스캔)/.test(B) && !/(결재|결제|발송|알림톡|승인)/.test(B)){
+            // (4) 📅 일정 질문: "오늘 일정 뭐야?" "이번주 누구 만나?" — 서버와 같은 배타 규칙(단위테스트 23/23 고정)
+            //     '잡아/예약'(등록)이면 조회가 아니고, 명단 질문(만기·생일·고객목록)은 시트 분기에 양보한다.
+            if(!_cool && !/(카드|스캔)/.test(B) && !/이벤트/.test(B) && !/(결재|결제|발송|알림톡|승인)/.test(B)
+               && !/(잡아|잡을|예약|비워)/.test(B) && !/(명단|고객\s*(목록|전체)|만기|생일|리드|발굴)/.test(B)
+               && (/(일정|스케줄|약속|미팅|상담)/.test(B) || /(오늘|내일|모레|어제|이번\s*주|지난\s*주|저번\s*주|다음\s*주|이번\s*달|금주|주말)/.test(B))
+               && /(뭐|무엇|뭣|누구|알려|보여|있어|있나|확인|어때|어떻게\s*되|정리)/.test(B)){
+              try{ _voiceExec(B); }catch(e){} window._vBuf=''; window._vFireAt=_now;
+            }
+            // (3) ⭐ 이벤트 만들기: "○○ 이벤트 만들어줘" — 카드·결재 낱말을 배제해 셋이 서로 안 물리게.
+            else if(!_cool && /이벤트/.test(B) && /(만들|추가|생성|등록)/.test(B) && !/(카드|스캔)/.test(B) && !/(결재|결제|발송|알림톡|승인)/.test(B)){
               try{ _voiceExec(B); }catch(e){} window._vBuf=''; window._vFireAt=_now;
             }
             // (1) 카드 띄우기: "○○ 카드 띄워/스캔/보여줘"
@@ -3277,6 +3290,48 @@ function _voiceExec(q){
       if(d.action==='open_card'&&d.customer){ try{ openCustomerCard(d.customer); }catch(e){} }
       if(d.action==='create_event'&&d.eventName){ try{ _eventCreated(d.eventName); }catch(e){} }  // ⭐ 음성으로 만든 이벤트도 화면에 즉시
     }).catch(function(){ try{ pushMsg('gen','결재 처리 중 오류가 났어요. 잠시 후 다시 말씀해 주세요.'); }catch(e){} });
+}
+// ===== 📅 일정관리 비서 — 구글 캘린더 실데이터만(가짜·하드코딩 0). 오늘/이번주/이번달 전환 =====
+//   0건이면 "어느 계정의 어떤 캘린더를 봤는지" 밝혀 계정 불일치를 스스로 알아채게 한다.
+function openSchedule(range){
+  var rg=range||'today';
+  showModal('<div style="text-align:center;padding:30px;color:#98a4b2">일정을 불러오는 중…</div>');
+  fetch('/api/calendar?range='+encodeURIComponent(rg),{credentials:'include'})
+   .then(function(r){return r.json();}).then(function(d){ showModal(_schHTML(d,rg)); })
+   .catch(function(){ showModal('<div style="padding:20px;color:#c0392b">일정을 불러오지 못했어요. 잠시 후 다시 시도해주세요.</div>'); });
+}
+function _schHTML(d,rg){
+  var tabs=[['today','오늘'],['week','이번주'],['month','이번달']].map(function(t){
+    var on=(t[0]===rg);
+    return '<button onclick="openSchedule(\''+t[0]+'\')" style="padding:7px 14px;border:1px solid '+(on?'var(--teal)':'#dbe2ea')+';background:'+(on?'var(--teal)':'#fff')+';color:'+(on?'#fff':'#4a6076')+';border-radius:999px;font-weight:700;cursor:pointer;font-size:12px;font-family:inherit">'+t[1]+'</button>';
+  }).join(' ');
+  var head='<div style="max-width:520px"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><b style="font-size:16px;color:#0d1b2a">📅 일정관리 비서</b><span onclick="closeModal()" style="cursor:pointer;color:#8a93a3;font-size:20px">×</span></div>'
+    +'<div style="display:flex;gap:6px;margin-bottom:10px">'+tabs+'</div>';
+  if(d&&(d.needsGoogle||d.needsConnect)){
+    return head+'<div style="text-align:center;padding:26px 10px"><div style="font-size:32px">🔗</div><div style="font-size:13.5px;font-weight:700;color:#0d1b2a;margin-top:8px">구글 캘린더 연결이 필요해요</div>'
+      +'<div style="font-size:12px;color:#556;margin-top:8px;line-height:1.6">'+_escOb(String(d.message||'연결하면 일정을 바로 보여드려요.'))+'</div>'
+      +'<a href="'+(d.connectUrl||'/auth/google/connect')+'" style="display:inline-block;margin-top:12px;padding:10px 18px;border-radius:999px;background:var(--teal);color:#fff;font-weight:700;text-decoration:none;font-size:13px">지금 연결하기 →</a></div></div>';
+  }
+  if(!d||!d.ok) return head+'<div style="padding:18px;color:#c0392b">일정을 불러오지 못했어요.</div></div>';
+  var period=_escOb(String(d.rangeLabel||''))+' · '+_escOb(String(d.from||''))+(d.from!==d.to?(' ~ '+_escOb(String(d.to||''))):'');
+  var sub='<div style="font-size:11px;color:#8a93a3;margin-bottom:10px">'+period+' · '+_escOb(String(d.account||''))+' · 캘린더 '+(d.calendarCount||0)+'개</div>';
+  if(!d.count){
+    // ★지어내지 않는다. 계정·캘린더를 밝혀 "고장이 아니라 이 계정엔 없다"를 바로 알게 한다.
+    var cs=(d.calendars||[]).join('·');
+    return head+sub+'<div style="text-align:center;padding:22px 10px;background:#f7f9fb;border:1px dashed #d5dde6;border-radius:12px">'
+      +'<div style="font-size:30px">🗓️</div>'
+      +'<div style="font-size:13.5px;font-weight:700;color:#0d1b2a;margin-top:8px">'+_escOb(String(d.rangeLabel||''))+' 일정이 없어요</div>'
+      +'<div style="font-size:12px;color:#556;margin-top:8px;line-height:1.7"><b>'+_escOb(String(d.account||'로그인 계정'))+'</b>의 캘린더 '+(d.calendarCount||0)+'개'+(cs?('('+_escOb(cs)+')'):'')+'를 확인했어요.</div>'
+      +'<div style="font-size:12px;color:#8a6d1a;margin-top:10px;line-height:1.7">혹시 <b>다른 구글 계정</b>에 일정이 있다면,<br>그 계정으로 로그인해 주세요.</div></div></div>';
+  }
+  var multi=(d.from!==d.to);
+  var rows=(d.events||[]).map(function(e){
+    return '<div style="display:flex;gap:10px;padding:9px 10px;border:1px solid #e5e9ee;border-radius:10px;margin-bottom:6px;background:#fff">'
+      +'<div style="min-width:'+(multi?'78px':'46px')+';font-size:12px;font-weight:800;color:#0f766e">'+(multi?(_escOb(String(e.day||'').slice(5))+' '):'')+_escOb(String(e.time||''))+'</div>'
+      +'<div style="flex:1;min-width:0"><div style="font-size:13px;color:#0d1b2a;font-weight:600">'+_escOb(String(e.title||''))+'</div>'
+      +((e.prep&&e.prep.length)?('<div style="font-size:11px;color:#8a6d1a;margin-top:3px">'+_escOb(e.prep.join(' · '))+'</div>'):'')+'</div></div>';
+  }).join('');
+  return head+sub+'<div style="font-size:12.5px;font-weight:700;color:#0d1b2a;margin-bottom:7px">'+_escOb(String(d.rangeLabel||''))+' 일정 '+d.count+'건</div>'+rows+'</div>';
 }
 // ⭐ 이벤트 생성 성공 신호 → 대시보드 열고 새 타일 강조·대상자 자동 펼침(텍스트·음성 공통 진입점)
 function _eventCreated(name){

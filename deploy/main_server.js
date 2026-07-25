@@ -613,10 +613,11 @@ function prepFor(c) {
   return notes;
 }
 
-// ── 📅 캘린더 브리핑: 회원 캘린더 오늘 일정 + 명단 자동 연결 ──
-app.get('/api/calendar', async (req, res) => {
-  try {
-    const ma = gateGoogle(req, res); if (!ma) return; // ★회원 구글 토큰으로만(SA 폴백 제거)
+// ── 📅 캘린더 읽기(공용) — 엔드포인트와 채팅·음성이 이 함수 하나만 쓴다 ──
+//   ★두 군데에 같은 조회 로직을 두면 반드시 갈라진다(한쪽만 고쳐지는 사고). 여기 하나로 모은다.
+//   rangeOverride: 채팅에서 해석한 기간('today'|'tomorrow'|'week'|'lastweek'|'nextweek'|'month'|'yesterday')
+async function _readCalendar(ma, req, rangeOverride) {
+  {
     // ★캘린더만 연결한 회원도 일정이 떠야 한다.
     //   명단(드라이브+시트)은 '있으면 좋은 것'이지 캘린더의 전제가 아니다.
     //   전에는 여기서 스코프 없어 터지면 500 → 화면엔 그냥 0건으로 보였다.
@@ -629,12 +630,25 @@ app.get('/api/calendar', async (req, res) => {
     //   ★종일 일정도 빠지지 않게 timeMin/Max를 넉넉히(KST 자정~자정).
     const kst = new Date(Date.now() + 9 * 3600e3);
     const y = kst.getUTCFullYear(), m = kst.getUTCMonth(), d = kst.getUTCDate();
-    const timeMin = new Date(Date.UTC(y, m, d, 0, 0, 0) - 9 * 3600e3).toISOString();   // KST 오늘 00:00
-    const timeMax = new Date(Date.UTC(y, m, d, 23, 59, 59) - 9 * 3600e3).toISOString(); // KST 오늘 23:59
+    // ★2026-07-26 기간 확장: range로 오늘 말고 내일·이번주·지난주·이번달도 본다.
+    //   ★기본값은 예전 그대로 'today' → 화면 KPI·팝업 등 기존 호출은 동작이 하나도 안 바뀐다.
+    //   주 시작은 월요일(한국 업무 관행). 모든 계산은 KST 기준.
+    const RANGE = String(rangeOverride || (req.query && req.query.range) || 'today');
+    const _dow = new Date(Date.UTC(y, m, d)).getUTCDay();      // 0=일
+    const _monOff = (_dow === 0 ? -6 : 1 - _dow);              // 이번주 월요일까지의 일수
+    let _s = 0, _e = 0, _label = '오늘';                        // 오늘 기준 시작·끝 오프셋(일)
+    if (RANGE === 'tomorrow') { _s = 1; _e = 1; _label = '내일'; }
+    else if (RANGE === 'yesterday') { _s = -1; _e = -1; _label = '어제'; }
+    else if (RANGE === 'week') { _s = _monOff; _e = _monOff + 6; _label = '이번주'; }
+    else if (RANGE === 'lastweek') { _s = _monOff - 7; _e = _monOff - 1; _label = '지난주'; }
+    else if (RANGE === 'nextweek') { _s = _monOff + 7; _e = _monOff + 13; _label = '다음주'; }
+    else if (RANGE === 'month') { _s = 1 - d; _e = new Date(Date.UTC(y, m + 1, 0)).getUTCDate() - d; _label = '이번달'; }
+    const timeMin = new Date(Date.UTC(y, m, d + _s, 0, 0, 0) - 9 * 3600e3).toISOString();    // KST 시작일 00:00
+    const timeMax = new Date(Date.UTC(y, m, d + _e, 23, 59, 59) - 9 * 3600e3).toISOString(); // KST 종료일 23:59
     // ★원인 4: primary만 보면 업무 캘린더 등 다른 캘린더가 빠진다 → 내 모든 캘린더를 돈다.
     //   원인 2(종일=start.date)·3(singleEvents=반복 펼침)·5(KST 범위)도 여기서 함께 반영.
     // ★?debug=1 이면 화면이 받는 바로 이 응답에 요청·응답 원문을 실어 보낸다(추측 금지).
-    const DBG = String(req.query.debug || '') === '1';
+    const DBG = String((req.query && req.query.debug) || '') === '1';
     const dbg = { 요청: { timeMin, timeMax, singleEvents: true, orderBy: 'startTime', timeZone: 'Asia/Seoul' }, 지금KST: new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 16), 캘린더별: [] };
     let cals = ['primary'], calList = [];
     try {
@@ -662,9 +676,27 @@ app.get('/api/calendar', async (req, res) => {
       const time = start.length >= 16 ? new Date(start).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Seoul' }) : '종일';
       const title = e.summary || '(제목없음)';
       const name = Object.keys(byName).find((n) => title.includes(n));
-      return { time, title, start, prep: prepFor(byName[name]) };
+      // 기간 조회에선 며칠 건인지 보여야 한다(오늘만 볼 땐 날짜가 필요 없었다)
+      const day = String(start).slice(0, 10);
+      return { time, title, start, day, prep: prepFor(byName[name]) };
     }).sort((a, b) => String(a.start).localeCompare(String(b.start)));
-    res.json({ ok: true, date: `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`, count: events.length, events, ...(DBG ? { debug: dbg } : {}) });
+    // ★"연결했는데 0" 신뢰 문제 대응: 0건일 때 "어느 계정의 어떤 캘린더를 봤는지"를 반드시 함께 준다.
+    //   계정 불일치가 흔해서, 이게 없으면 고장으로 오해한다. 일정 자체는 절대 지어내지 않는다.
+    const _acct = (sessionOf(req) || {}).email || '';
+    const _calNames = cals.map((cid) => ((calList.find((c) => c.id === cid) || {}).summary || (cid === 'primary' ? '기본' : cid)));
+    const _fmt = (off) => { const t = new Date(Date.UTC(y, m, d + off)); return `${t.getUTCFullYear()}-${String(t.getUTCMonth() + 1).padStart(2, '0')}-${String(t.getUTCDate()).padStart(2, '0')}`; };
+    return { ok: true,
+      date: _fmt(0), range: RANGE, rangeLabel: _label, from: _fmt(_s), to: _fmt(_e),
+      account: _acct, calendars: _calNames, calendarCount: _calNames.length,
+      count: events.length, events,
+      ...(DBG ? { debug: dbg } : {}) };
+  }
+}
+// ── 📅 캘린더 브리핑: 회원 캘린더 일정 + 명단 자동 연결. ?range= 로 기간 지정(기본 today) ──
+app.get('/api/calendar', async (req, res) => {
+  try {
+    const ma = gateGoogle(req, res); if (!ma) return; // ★회원 구글 토큰으로만(SA 폴백 제거)
+    res.json(await _readCalendar(ma, req));
   } catch (e) {
     // ★시트만 연결한 회원은 gateGoogle을 통과하지만 캘린더 스코프가 없어 여기서 터진다.
     //   500을 던지면 화면엔 그냥 '0건'으로 보인다 = 조용히 잘못된 것. '연결 필요'로 정직하게.
@@ -1217,7 +1249,38 @@ async function orderHandler(req, res) {
       // 이름 자리에 명령어만 덜렁 잡힌 경우에만 무효화. ★접두 검사로 하면 '등록기념일'까지 날아간다(테스트로 발견).
       if (/^(만들|추가|생성|등록)(어|어줘|해|해줘|하|줘)?$/.test(_evName)) _evName = '';
     }
-    if (_isEventCmd && _evName) {
+    // 📅 일정 질문 감지 — "오늘 일정 뭐야?" "이번주 누구 만나?" "지난주 뭐 했어?" (Vapi FC 미사용·발화 감지)
+    //   ★트리거 배타 구분(단위테스트 23/23로 고정): 카드·결재·이벤트 낱말이면 양보하고,
+    //     '잡아/예약'(등록 의도)이면 조회가 아니며, 명단 질문(만기·생일·고객목록)은 시트 분기에 양보한다.
+    //   ★'일정'이란 낱말 없이 "내일 뭐 있어?"처럼 시간만 말하는 게 오히려 흔해서 시간 표현도 트리거로 넣는다.
+    const _reSched = /(일정|스케줄|약속|미팅|상담)/, _reWhen = /(오늘|내일|모레|어제|이번\s*주|지난\s*주|저번\s*주|다음\s*주|이번\s*달|금주|주말)/;
+    const _reAskW = /(뭐|무엇|뭣|누구|알려|보여|있어|있나|확인|어때|어떻게\s*되|정리)/;
+    const _reBook = /(잡아|잡을|예약|비워)/, _reNotSched = /(명단|고객\s*(목록|전체)|만기|생일|리드|발굴)/;
+    const _isSchedAsk = !/(카드|스캔)/.test(q) && !/이벤트/.test(q) && !/(결재|결제|발송|알림톡|승인)/.test(q)
+      && !_reBook.test(q) && !_reNotSched.test(q) && (_reSched.test(q) || _reWhen.test(q)) && _reAskW.test(q);
+    if (_isSchedAsk) {
+      const _rg = /지난\s*주|저번\s*주/.test(q) ? 'lastweek' : (/내일|명일/.test(q) ? 'tomorrow'
+        : (/이번\s*달|이달|한\s*달/.test(q) ? 'month' : (/다음\s*주/.test(q) ? 'nextweek'
+        : (/이번\s*주|금주|주간/.test(q) ? 'week' : (/어제/.test(q) ? 'yesterday' : 'today')))));
+      if (!canData) {
+        out = { kind: '📅 일정', text: '일정을 보려면 구글 캘린더 연결이 필요해요. 우측 상단 [명단·연결]에서 연결해 주세요.' };
+      } else {
+        let _cal = null, _needConn = false;
+        // 스코프가 없으면 조용한 0건이 아니라 '연결 필요'로 정직하게(엔드포인트와 같은 처리)
+        try { _cal = await _readCalendar(ma, req, _rg); } catch (e) { if (isScopeError(e)) _needConn = true; _cal = null; }
+        if (_needConn) out = { kind: '📅 일정', text: '캘린더를 보려면 구글 캘린더 연결이 필요해요. 우측 상단 [명단·연결]에서 캘린더를 연결해 주세요.' };
+        else if (!_cal) out = { kind: '📅 일정', text: '지금 캘린더를 읽지 못했어요. 잠시 후 다시 말씀해 주세요.' };
+        else if (!_cal.count) {
+          // ★0건이면 지어내지 않는다. 대신 "어느 계정의 어떤 캘린더를 봤는지" 밝혀 계정 불일치를 스스로 알아채게 한다.
+          const _cs = (_cal.calendars || []).join('·');
+          out = { kind: '📅 일정', text: `${_cal.rangeLabel} 일정이 없어요.\n(${_cal.account || '로그인 계정'}의 캘린더 ${_cal.calendarCount}개${_cs ? '(' + _cs + ')' : ''}를 확인했어요)\n\n혹시 다른 구글 계정에 일정이 있다면, 그 계정으로 로그인해 주세요.` };
+        } else {
+          const _multi = _cal.from !== _cal.to;   // 여러 날이면 날짜도 같이 보여준다
+          const _lines = _cal.events.slice(0, 20).map((e) => '· ' + (_multi ? (String(e.day || '').slice(5) + ' ') : '') + e.time + ' ' + e.title).join('\n');
+          out = { kind: '📅 일정', text: `${_cal.rangeLabel} 일정 ${_cal.count}건이에요.\n${_lines}` + (_cal.count > 20 ? `\n… 외 ${_cal.count - 20}건` : '') };
+        }
+      }
+    } else if (_isEventCmd && _evName) {
       if (!canData) {
         out = { kind: '⭐ 이벤트', text: '내 명단을 보려면 구글 데이터 연결이 필요해요. 우측 상단 [명단·연결]에서 연결해 주세요.' };
       } else {
