@@ -996,18 +996,41 @@ async function findYouTubeLeads(key, max) {
   return out;
 }
 
+// 📰 hunters 뼈대 — 네이버 지식iN 등 새 채널은 여기로 붙는다(유튜브 옛 경로는 그대로 두어 회귀 위험 0)
+const hunterDesk = require('./hunters');
 app.get('/api/find/leads', async (req, res) => {
   if (!sessionOf(req)) return res.status(401).json({ ok: false, error: '로그인이 필요해요' });
   const key = process.env.YOUTUBE_API_KEY;
-  if (!key) return res.json({ ok: true, needsKey: true, youtube: [], naver: [], message: 'YOUTUBE_API_KEY 미설정 — 대표님이 Render에 넣으면 발굴이 켜집니다.' });
   try {
-    const yt = await findYouTubeLeads(key, 30);
-    // 고객 먼저, 그다음 확인필요. 같은 등급이면 온도순.
-    const _vOrd = { '고객': 0, '애매': 1 };
-    yt.sort((a, b) => ((_vOrd[a.verdict] != null ? _vOrd[a.verdict] : 9) - (_vOrd[b.verdict] != null ? _vOrd[b.verdict] : 9))
-      || ((_tierOrd[a.tier] != null ? _tierOrd[a.tier] : 9) - (_tierOrd[b.tier] != null ? _tierOrd[b.tier] : 9)));
-    console.log(`[🔍발굴] 유튜브 ${yt.length}건 노출 · 홍보자 제외 ${_findSkip}건 · 확인필요 ${_findMaybe}건`);
-    res.json({ ok: true, youtube: yt, naver: [], filtered: { 홍보자제외: _findSkip, 확인필요: _findMaybe } });   // 네이버는 다음 단계
+    // ── ① 유튜브: 기존 경로 그대로(키 없으면 건너뛴다) ──
+    let yt = [];
+    if (key) {
+      yt = await findYouTubeLeads(key, 30);
+      const _vOrd = { '고객': 0, '애매': 1 };
+      yt.sort((a, b) => ((_vOrd[a.verdict] != null ? _vOrd[a.verdict] : 9) - (_vOrd[b.verdict] != null ? _vOrd[b.verdict] : 9))
+        || ((_tierOrd[a.tier] != null ? _tierOrd[a.tier] : 9) - (_tierOrd[b.tier] != null ? _tierOrd[b.tier] : 9)));
+    }
+    // ── ② 뼈대 기자들(네이버 지식iN 등) — 유튜브는 위에서 이미 처리하므로 제외 ──
+    //    ★홍보대사 정체성: 회원 프로필의 키워드로 검색·초안을 만든다(대표님/교육생 각자).
+    let desk = { leads: [], stats: {}, roster: [] };
+    try { desk = await hunterDesk.collect({ 키워드: [] }, { max: 30, exclude: ['youtube'] }); }
+    catch (e) { console.log('[🔍발굴] 뼈대 기자 오류: ' + e.message); }
+    const nv = desk.leads.map((l) => ({
+      source: l.source, author: l.author, text: l.text, link: l.sourceUrl,
+      tier: l.tier, verdict: l.verdict, why: (l.reason && l.reason.why) || '',
+      score: l.score, grade: l.grade, foundLabel: l.foundLabel, foundBy: l.foundBy,
+    }));
+    // 채널이 하나도 안 켜졌으면 정직하게 안내(가짜 0건으로 감추지 않는다)
+    const anyOn = !!key || (desk.roster || []).some((r) => r.on);
+    if (!anyOn) {
+      const off = (desk.roster || []).filter((r) => !r.on).map((r) => `${r.label}: ${r.reason}`);
+      return res.json({ ok: true, needsKey: true, youtube: [], naver: [],
+        message: 'YOUTUBE_API_KEY 미설정' + (off.length ? ' · ' + off.join(' · ') : '') });
+    }
+    console.log(`[🔍발굴] 유튜브 ${yt.length}건 · 뼈대기자 ${nv.length}건 · 홍보자 제외 ${_findSkip}건 · 확인필요 ${_findMaybe}건`);
+    res.json({ ok: true, youtube: yt, naver: nv,
+      filtered: { 홍보자제외: _findSkip, 확인필요: _findMaybe },
+      desk: { roster: desk.roster, stats: desk.stats } });   // ★통계는 숫자만(개인정보 없음)
   } catch (e) { res.status(502).json({ ok: false, error: e.message }); }
 });
 

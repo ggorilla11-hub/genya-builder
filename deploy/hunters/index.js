@@ -79,7 +79,9 @@ async function collect(persona, opts) {
   const weights = S.normalizeWeights(persona.weights);
   const stats = {};   // 기자별 숫자 — ★개인정보 없음
   const leads = [];
+  const skip = new Set(opts.exclude || []);   // 이미 다른 경로로 처리한 채널은 건너뛴다(중복 방지)
   for (const h of hunters()) {
+    if (skip.has(h.key)) continue;
     // ★한 채널에 AI 여러 명. 없으면 기본 1명(자동 이름).
     const agents = (Array.isArray(h.agents) && h.agents.length) ? h.agents : [{ name: C.autoName(h.key) }];
     for (const agent of agents) {
