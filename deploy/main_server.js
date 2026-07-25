@@ -1977,10 +1977,24 @@ app.post('/api/coverage/analyze', async (req, res) => {
       } catch (e) { analysis = ''; }
     } else if (isTxt) {
       try { analysis = await claudeText('아래 텍스트 자료를 분석해줘:\n\n' + Buffer.from(b64, 'base64').toString('utf8').slice(0, 12000)); } catch (e) { analysis = ''; }
-    } else if (isDoc || isHwp) {
-      return res.json({ ok: true, needsConvert: true, message: (isHwp ? '한글(hwp)' : '워드(docx)') + '는 곧 지원돼요. 지금은 PDF로 저장하거나 내용을 복사해서 올려주시면 바로 분석할게요.' });
+    } else if (isDoc) {
+      // ★워드(.docx)도 읽는다: .docx는 ZIP이라 이미 있는 jszip으로 본문 XML을 풀어 글자를 뽑는다.
+      //   (예전엔 여기서 "곧 지원돼요"로 막혀 증권·진단서를 워드로 주고받는 경우가 통째로 안 됐다)
+      try {
+        const { readDocx } = require('./docx_read');
+        const dtxt = await readDocx(Buffer.from(b64, 'base64'));
+        if (!String(dtxt || '').trim()) {
+          return res.json({ ok: true, needsConvert: true, message: '워드 파일은 열었는데 글자가 없어요. 표나 이미지로만 되어 있으면 PDF로 저장해 올려주시면 그림까지 읽어드려요.' });
+        }
+        analysis = await claudeText('아래는 워드 문서(.docx)에서 뽑은 내용이야. 무엇인지 파악하고 분석해줘:\n\n' + String(dtxt).slice(0, 12000));
+      } catch (e) {
+        // ★조용한 실패 금지: 왜 안 됐는지 밝힌다
+        return res.json({ ok: true, needsConvert: true, message: '워드 파일을 읽지 못했어요(' + String(e.message || '형식 오류').slice(0, 60) + '). 옛 워드(.doc)라면 .docx로 저장하거나 PDF로 올려주세요.' });
+      }
+    } else if (isHwp) {
+      return res.json({ ok: true, needsConvert: true, message: '한글(hwp)은 아직 못 읽어요. PDF로 저장해서 올려주시면 표까지 그대로 읽어드려요.' });
     } else {
-      return res.json({ ok: true, needsConvert: true, message: '이 형식은 아직 지원 안 돼요(' + (ext || mime || '알 수 없음') + '). 이미지·PDF·엑셀·텍스트로 올려주세요.' });
+      return res.json({ ok: true, needsConvert: true, message: '이 형식은 아직 지원 안 돼요(' + (ext || mime || '알 수 없음') + '). 지원: 이미지(jpg·png)·PDF·워드(docx)·엑셀(xlsx·csv)·텍스트(txt).' });
     }
     if (!analysis) return res.json({ ok: false, error: '분석에 실패했어요. 이미지·PDF로 올려주시면 바로 될 거예요.' });
     // ★A-6: 업로드 문서 분석도 개인화 벡터 메모리에 저장(source=upload) → "올린 증권/자료" 회상 대비. 키/로그인 없으면 no-op.
