@@ -229,6 +229,14 @@ async function askClaude(systemPrompt, messages, maxTokens, opts) {
 // ★askClaude가 고른 모델을 화면 라벨용으로도 그대로 계산(정직: 실제 쓴 모델 표기)
 function pickedModel(text, opts) { return classifyIntent(text, opts) === 'DEEP' ? MODEL_DEEP : MODEL_SIMPLE; }
 const SKILL_OUT = require('path').join(__dirname, 'out');
+// ★ENOENT 수정(2026-07-26): 빈 폴더는 git이 추적하지 않아 Render에 out/ 이 아예 안 생겼다.
+//   → 파일 생성 시 "no such file or directory"로 죽었다(버튼은 ON인데 실패).
+//   부팅 때 한 번 만들어 두고, 생성 직전에도 한 번 더 확인한다(재배포·디스크 초기화 대비).
+function ensureSkillOut() {
+  try { require('fs').mkdirSync(SKILL_OUT, { recursive: true }); return true; }
+  catch (e) { console.log('[스킬출력] 폴더 생성 실패: ' + e.message); return false; }
+}
+ensureSkillOut();
 
 const KEY_FILE = process.env.GOOGLE_SA_JSON || '{}';
 
@@ -1057,6 +1065,7 @@ app.get('/api/skills', (req, res) => res.json({ ok: true, list: skills.list }));
 app.get('/api/skills/gen', async (req, res) => {
   try {
     if (!sessionOf(req)) return res.status(401).json({ ok: false, error: '로그인 필요' });
+    ensureSkillOut();   // ★생성 직전 폴더 보장 — 없으면 ENOENT로 죽는다
     const type = String(req.query.type || 'pdf');
     let file;
     if (type === 'pdf') { file = 'S1_고객안내문.pdf'; await skills.pdf.makePdf({ title: '자동차보험 만기 안내', subtitle: '지니야 자동 생성 (검토 후 발송)', sections: [{ heading: '안내', lines: ['만기가 다가와 안내드립니다.', '보장 점검 후 보완안을 준비했습니다.'] }], footer: '발송 전 담당 설계사 검토 필수.' }, path.join(SKILL_OUT, file)); }
