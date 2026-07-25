@@ -654,7 +654,15 @@ async function _readCalendar(ma, req, rangeOverride) {
     const dbg = { 요청: { timeMin, timeMax, singleEvents: true, orderBy: 'startTime', timeZone: 'Asia/Seoul' }, 지금KST: new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 16), 캘린더별: [] };
     let cals = ['primary'], calList = [];
     try {
-      const cl = await cal.calendarList.list(); calList = cl.data.items || [];
+      // ★2026-07-26 누락 원인: calendarList.list()는 기본적으로 "숨긴 캘린더(hidden)"를 빼고 준다.
+      //   구글 캘린더 화면에서 목록에 안 보이게 해둔 캘린더가 통째로 조회 대상에서 빠졌다.
+      //   showHidden:true 로 전부 가져오고, 캘린더가 많을 때를 대비해 페이지도 끝까지 넘긴다.
+      let _pt = null;
+      do {
+        const cl = await cal.calendarList.list({ showHidden: true, maxResults: 250, pageToken: _pt || undefined });
+        calList = calList.concat(cl.data.items || []);
+        _pt = cl.data.nextPageToken || null;
+      } while (_pt);
       // ★대표님 11 계정 = 캘린더 3개. primary만 보면 나머지 2개의 약속이 안 뜬다.
       //   selected!==false(화면에 켜둔 것만) + 공휴일·생일(#holiday/#contacts) 제외.
       // ★2026-07-26 누락 수정: 예전엔 selected!==false(구글 화면에 체크된 것)만 봤다.
@@ -665,6 +673,11 @@ async function _readCalendar(ma, req, rangeOverride) {
       if (!cals.length) cals = ['primary'];
     } catch (e) { dbg.calendarList_에러 = e.message; }
     dbg.내캘린더수 = cals.length;
+    // ★어느 캘린더가 통째로 빠지는지 눈으로 보게: 구글이 준 전체 목록 + 읽기 대상 여부를 그대로 보여준다.
+    dbg.전체캘린더 = calList.map((c) => ({
+      이름: c.summary || '(이름없음)', 기본: !!c.primary, 숨김: !!c.hidden, 화면체크: c.selected !== false,
+      권한: c.accessRole || '', 읽는중: cals.indexOf(c.id) >= 0,
+    }));
     let items = [];
     for (const cid of cals) {
       try {
@@ -673,11 +686,13 @@ async function _readCalendar(ma, req, rangeOverride) {
         const got = (ev.data.items || []).filter((x) => x.status !== 'cancelled').map((x) => Object.assign({ _cal: _cname }, x));
         items = items.concat(got);
         // ★각 캘린더의 에러를 더 이상 삼키지 않는다 — 조용한 0건의 진짜 원인이 여기 있었다.
-        if (DBG) dbg.캘린더별.push({ 캘린더: (calList.find((c) => c.id === cid) || {}).summary || cid, 건수: got.length, 첫item: got[0] || null });
+        dbg.캘린더별.push({ 캘린더: _cname, 건수: got.length, ...(DBG ? { 첫item: got[0] || null } : {}) });
       } catch (e) {
-        if (DBG) dbg.캘린더별.push({ 캘린더: cid, 에러: e.message });
+        dbg.캘린더별.push({ 캘린더: cid, 에러: e.message });   // 캘린더별 에러를 삼키지 않는다(조용한 0건 방지)
       }
     }
+    // ★조회 결과를 서버 로그에도 남긴다 — 일정 제목·개인정보는 남기지 않고 캘린더 이름과 건수만.
+    console.log('[📅캘린더]', RANGE, `구글목록 ${calList.length}개 → 읽음 ${cals.length}개 ·`, dbg.캘린더별.map((x) => `${x.캘린더}=${x.에러 ? '에러' : x.건수}`).join(' · '));
     // ★모든 캘린더를 읽으면 같은 약속이 두 캘린더에 겹쳐 보일 수 있다(초대받은 일정 등).
     //   같은 일정(iCalUID)의 같은 시작시각만 한 번으로 합친다 — 서로 다른 일정은 절대 지우지 않는다.
     const _seen = {};
