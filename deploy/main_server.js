@@ -1308,6 +1308,16 @@ async function orderHandler(req, res) {
       // 이름 자리에 명령어만 덜렁 잡힌 경우에만 무효화. ★접두 검사로 하면 '등록기념일'까지 날아간다(테스트로 발견).
       if (/^(만들|추가|생성|등록)(어|어줘|해|해줘|하|줘)?$/.test(_evName)) _evName = '';
     }
+    // 📄 문서 생성 감지 — "제안서 만들어줘" "비교표 엑셀 만들어줘" (Vapi FC 미사용·발화 감지)
+    //   ★1단계는 "공용 고정 템플릿"만 만든다. 고객 이름·증권번호 등 개인정보는 넣지 않는다.
+    //     /api/skills/gen은 SKILL_OUT(서버 디스크)에 쓰므로 개인정보가 닿으면 안 된다(제로 인그레스).
+    //     개인화(고객 이름·만기일)는 회원 드라이브 직행 저장 방식으로 2단계에서 별도 설계.
+    //   ★배타(단위테스트 22/22 고정): 문서 이름이 있어야만 발동. 카드·결재·이벤트 낱말이면 양보하고,
+    //     '잡아/예약'(일정 등록)이 있으면 일정이 우선("제안서 들고 상담 잡아줘" → 일정).
+    const _reDoc = /(제안서|비교표|안내문|상담\s*보고서|보고서|세미나\s*자료|발표\s*자료)/;
+    const _reMake = /(만들|생성|뽑아|작성|출력|다운)/;
+    const _isDocCmd = !/(카드|스캔)/.test(q) && !/(결재|결제|발송|알림톡|승인)/.test(q) && !/이벤트/.test(q)
+      && !/(잡아|잡을|예약|비워)/.test(q) && _reDoc.test(q) && _reMake.test(q);
     // 📅 일정 질문 감지 — "오늘 일정 뭐야?" "이번주 누구 만나?" "지난주 뭐 했어?" (Vapi FC 미사용·발화 감지)
     //   ★트리거 배타 구분(단위테스트 23/23로 고정): 카드·결재·이벤트 낱말이면 양보하고,
     //     '잡아/예약'(등록 의도)이면 조회가 아니며, 명단 질문(만기·생일·고객목록)은 시트 분기에 양보한다.
@@ -1317,7 +1327,14 @@ async function orderHandler(req, res) {
     const _reBook = /(잡아|잡을|예약|비워)/, _reNotSched = /(명단|고객\s*(목록|전체)|만기|생일|리드|발굴)/;
     const _isSchedAsk = !/(카드|스캔)/.test(q) && !/이벤트/.test(q) && !/(결재|결제|발송|알림톡|승인)/.test(q)
       && !_reBook.test(q) && !_reNotSched.test(q) && (_reSched.test(q) || _reWhen.test(q)) && _reAskW.test(q);
-    if (_isSchedAsk) {
+    if (_isDocCmd) {
+      // 화면이 실제로 /api/skills/gen을 호출해 성공했을 때만 "만들었어요"라고 말한다(거짓 완료 금지).
+      const _dt = /비교표|엑셀|excel/i.test(q) ? 'excel'
+        : (/세미나|발표|피피티|ppt/i.test(q) ? 'ppt'
+        : (/상담\s*보고서|보고서|워드|doc/i.test(q) ? 'doc' : 'pdf'));
+      const _dn = { pdf: '제안서(PDF)', excel: '비교표(엑셀)', ppt: '세미나 자료(PPT)', doc: '상담 보고서(워드)' }[_dt];
+      out = { kind: '📄 문서', action: 'skill_gen', docType: _dt, text: `${_dn}를 만들게요. 잠시만요.` };
+    } else if (_isSchedAsk) {
       const _rg = /지난\s*주|저번\s*주/.test(q) ? 'lastweek' : (/내일|명일/.test(q) ? 'tomorrow'
         : (/이번\s*달|이달|한\s*달/.test(q) ? 'month' : (/다음\s*주/.test(q) ? 'nextweek'
         : (/이번\s*주|금주|주간/.test(q) ? 'week' : (/어제/.test(q) ? 'yesterday' : 'today')))));
