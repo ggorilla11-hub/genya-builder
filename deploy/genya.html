@@ -1504,8 +1504,18 @@ function dashOpen(i){
       var 오늘 = !!c.오늘;
       return '<div style="border:1px solid '+(오늘?'#f3b0b2':'#dbe2ea')+';border-radius:10px;padding:10px;margin-bottom:8px;background:'+(오늘?'#fff8f8':'#fff')+'">'
       +'<div>'+(오늘?'<span style="color:#e5484d;font-weight:800;font-size:11px;margin-right:5px">🔴 오늘</span>':'')+'<b>'+_escOb(c.이름)+'</b> <span style="color:#8a93a3;font-size:12px">· '+_escOb(c.왜)+' · '+_escOb(c.언제)+(c.만기일?(' · 만기 '+_escOb(c.만기일)):(c.날짜?(' · '+_escOb(c.날짜)):''))+'</span></div>'
-      +'<div style="font-size:12px;color:#556;background:#f5f7fa;border-radius:8px;padding:8px;margin-top:6px;white-space:pre-wrap">'+_escOb(c.초안)+'</div>'
-      +'<button onclick="dashCopy('+i+','+j+')" style="margin-top:6px;padding:6px 12px;border:1px solid #2a9d8f;background:#e8f4f2;color:#0f766e;border-radius:999px;font-weight:600;cursor:pointer;font-size:12px">📋 초안 복사</button> <button onclick="dashSend('+i+','+j+')" style="margin-top:6px;padding:6px 12px;border:none;background:var(--teal);color:#fff;border-radius:999px;font-weight:700;cursor:pointer;font-size:12px">📨 발송 결재</button></div>'; }).join('');
+      +'<div style="font-size:11px;color:#8a93a3;margin-top:7px">📎 메일+문자 · 대상 1명</div>'
+      +'<div id="dashDraft'+i+'_'+j+'" style="font-size:12px;color:#556;background:#f5f7fa;border-radius:8px;padding:8px;margin-top:4px;white-space:pre-wrap">'+_escOb(c.초안)+'</div>'
+      // ★대시보드는 이미 사람이 문구를 보고 있는 화면 = 휴먼인더루프. 여기서 바로 승인한다(결재함 화면 경유 없음).
+      //   단 게이트는 그대로 — [승인] 버튼만 X-Human-Approval 헤더 + humanApproval:true를 보낸다.
+      +'<div style="font-size:11px;color:#0f766e;font-weight:600;margin-top:7px">발송: 메일+문자 · 수신: 대상 1명</div>'
+      +'<div style="font-size:10.5px;color:#8a6d1a;margin-top:3px">승인 시 안전모드에선 실고객이 아니라 회장님 본인에게만 test 발송돼요.</div>'
+      +'<div id="dashAct'+i+'_'+j+'" style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">'
+        +'<button onclick="dashApprove('+i+','+j+')" style="padding:7px 14px;border:none;background:var(--teal);color:#fff;border-radius:999px;font-weight:700;cursor:pointer;font-size:12px">✅ 승인</button>'
+        +'<button onclick="dashEditDraft('+i+','+j+')" style="padding:7px 12px;border:1px solid #dbe2ea;background:#fff;color:#4a6076;border-radius:999px;font-weight:600;cursor:pointer;font-size:12px">✏️ 수정요청</button>'
+        +'<button onclick="dashReject('+i+','+j+')" style="padding:7px 12px;border:1px solid #dbe2ea;background:#fff;color:#8a93a3;border-radius:999px;font-weight:600;cursor:pointer;font-size:12px">↩ 반려</button>'
+        +'<button onclick="dashCopy('+i+','+j+')" style="padding:7px 12px;border:1px solid #2a9d8f;background:#e8f4f2;color:#0f766e;border-radius:999px;font-weight:600;cursor:pointer;font-size:12px">📋 복사</button>'
+      +'</div></div>'; }).join('');
 }
 // 문구 틀 수정 — {이름}·{날짜}·{디데이} 자리표시자는 실제 값으로 바뀐다.
 function dashEditTemplate(i){
@@ -1532,41 +1542,55 @@ function dashCopy(i,j){ try{ var c=window._DASH.metrics[i].cards[j]; navigator.c
 // ===== 이벤트 대시보드 → 발송 결재(결재함 구조 100% 재사용 · 2026-07-26 전면 교체) =====
 //   ★왜 바꿨나: 예전엔 [카톡 발송] → genyasend: 프로토콜 → 로컬 발송기(watcher) → 카톡 GUI 자동화였다.
 //     이 경로는 서버를 아예 거치지 않아 /api/approval/act의 휴먼인루프 하드가드·감사 로그를 하나도 타지 않았다.
-//   ★이제: 카드에서 [발송 결재]로 결재함에 올리기만 한다. 실제 발송은 오직 결재함 [승인] 버튼뿐이다.
-//     승인 → /api/approval/act (humanApproval + X-Human-Approval 헤더) → 솔라피 문자 + Gmail 이메일.
+//   ★이제(2026-07-26 2차): 대시보드는 대표가 문구를 이미 눈으로 보고 있는 화면 = 그 자체가 휴먼인더루프다.
+//     여기서 결재함으로 또 보내 또 승인하면 이중 확인이라, 카드에서 [✅ 승인]으로 바로 발송한다.
+//     ★단 게이트는 하나도 안 뺐다. 뺀 것은 "결재함 화면을 한 번 더 거치는 절차"뿐이다:
+//       · [승인] 버튼만 X-Human-Approval 헤더 + humanApproval:true 를 함께 보낸다(이중 채널·fail-closed)
+//       · 서버가 결재함에 기록을 남긴 뒤 승인 처리 → 감사 추적·안전모드·대량 이중확인 그대로
+//     결재함 경유는 "대시보드 밖 명령"(채팅으로 발송 요청 등 사람이 안 보고 있을 때)에서 계속 쓴다.
 //   ★genyasend(카톡 watcher) 경로는 이벤트 발송에서 완전히 제거됐다. 되살리지 말 것.
-function dashSend(i,j){ var c=(((window._DASH||{}).metrics||[])[i]||{}).cards; c=c&&c[j]; if(!c){ toast('대상을 찾지 못했어요'); return; }
-  var _mm=((window._DASH||{}).metrics||[])[i]||{};
-  window._PENDING_SEND={nm:(c.이름||''), msg:(c.초안||''), why:(_mm.label||c.왜||'고객 안내')};   // ★대상 스냅샷 고정(재조회 드리프트 차단) + 결재 제목용 이벤트명
-  var nm=_escOb(c.이름||'');
-  showModal('<div style="max-width:520px"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px"><b style="font-size:16px;color:#0d1b2a">📨 발송 결재</b><span onclick="closeModal()" style="cursor:pointer;color:#8a93a3;font-size:20px">×</span></div>'
-    +'<div style="font-size:13px;color:#0d1b2a;margin-bottom:6px">고객: <b>'+nm+'</b></div>'
-    +'<div style="font-size:11px;color:#8a93a3;margin-bottom:4px">문구 (직접 수정 가능 — 편집한 내용이 그대로 올라갑니다)</div>'
-    +'<textarea id="sendDraft" style="width:100%;height:120px;font-size:13px;font-family:inherit;line-height:1.6;color:#0d1b2a;background:#f5f7fa;border:1px solid #dbe2ea;border-radius:8px;padding:10px;box-sizing:border-box;margin-bottom:10px;resize:vertical">'+_escOb(c.초안||'')+'</textarea>'
-    +'<div style="font-size:11px;color:#c0392b;line-height:1.6;margin-bottom:12px">⚠️ 발송 전 반드시 검토하세요(사람이 최종 확인).<br>· 지금은 <b>결재함에 올리기만</b> 합니다 — 아직 나가지 않아요.<br>· 결재함에서 <b>[승인]</b>을 누르면 <b>문자와 이메일</b>로 발송됩니다.<br>· 안전모드에선 실고객이 아니라 <b>회장님 본인에게만</b> test로 갑니다.</div>'
-    +'<div style="display:flex;gap:8px"><button id="dashApBtn" onclick="dashSendApprove()" style="flex:1;padding:10px;border:none;border-radius:10px;background:var(--teal);color:#fff;font-weight:700;cursor:pointer">🗂️ 결재함에 올리기</button><button onclick="closeModal()" style="padding:10px 16px;border:1px solid #dbe2ea;border-radius:10px;background:#fff;color:#556;cursor:pointer">취소</button></div></div>'); }
-// ★결재함에 올리기만 한다(발송 아님). 서버 approval.create가 실제로 등록에 성공했을 때만 "올렸어요"라고 말한다(환각 금지).
-//   채널은 항상 both(문자+이메일) — 결재함의 kakao 분기를 아예 타지 않게 하려는 의도적 고정.
-function dashSendApprove(){ var p=window._PENDING_SEND; if(!p||!p.nm){ toast('대상을 찾지 못했어요'); return; }
-  var nm=p.nm;
-  var _el=document.getElementById('sendDraft'); var msg=(_el && String(_el.value).trim()!=='') ? _el.value : p.msg; // 편집한 최종본 우선
-  window._PENDING_SEND.msg=msg;
-  var btn=document.getElementById('dashApBtn'); if(btn){ btn.disabled=true; btn.textContent='결재함에 올리는 중…'; }
-  fetch('/api/approval/create',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({ criteria:{ 이름: nm }, 템플릿: msg, 요청내용: (p.why||'고객 안내')+' — '+nm+'님', 채널:'both' })})
-   .then(function(r){return r.json();}).then(function(j){
-     if(j&&(j.needsGoogle||j.needsConnect)){ if(btn){btn.disabled=false;btn.textContent='🗂️ 결재함에 올리기';} toast(j.message||'구글 연결이 필요해요'); return; }
-     if(!j||!j.ok){ if(btn){btn.disabled=false;btn.textContent='🗂️ 결재함에 올리기';} toast((j&&(j.error||j.message))||'결재함에 올리지 못했어요'); return; }
-     var 대상 = (j.approval && j.approval.대상수) ? j.approval.대상수 : '1';
-     showModal('<div style="max-width:440px;text-align:center;padding:6px">'
-       +'<div style="font-size:34px;margin-bottom:4px">🗂️</div>'
-       +'<b style="font-size:16px;color:#0d1b2a">결재함에 올렸어요</b>'
-       +'<div style="font-size:12.5px;color:#556;margin-top:8px;line-height:1.7"><b>'+_escOb(nm)+'</b>님에게 보낼 문구를 결재함에 등록했어요 (대상 '+_escOb(String(대상))+'명 · 문자+이메일).<br><b>아직 나가지 않았습니다.</b> 결재함에서 [승인]을 누르면 발송됩니다.</div>'
-       +'<div style="display:flex;gap:8px;margin-top:14px;justify-content:center"><button onclick="closeModal(); if(typeof openApproval===\'function\')openApproval();" style="flex:1;padding:11px;border:none;border-radius:10px;background:var(--teal);color:#fff;font-weight:700;cursor:pointer">🗂️ 결재함 열기 · 확인·승인 →</button><button onclick="closeModal()" style="padding:11px 16px;border:1px solid #dbe2ea;border-radius:10px;background:#fff;color:#556;cursor:pointer">나중에</button></div>'
-       +'<div style="font-size:10.5px;color:#b0b8c2;margin-top:8px">발송은 결재함 [승인] 버튼으로만 나갑니다</div></div>');
+function _dashCard(i,j){ var m=((window._DASH||{}).metrics||[])[i]||{}; var c=(m.cards||[])[j]; return c?{m:m,c:c}:null; }
+// ✅ 승인 — 유일한 발송 경로. 버튼 클릭에서만 헤더+플래그가 붙는다.
+function dashApprove(i,j,confirmed){
+  var x=_dashCard(i,j); if(!x){ toast('대상을 찾지 못했어요'); return; }
+  var nm=x.c.이름||'', msg=String(x.c.초안||'').trim(), why=(x.m.label||x.c.왜||'고객 안내');
+  if(!msg){ toast('보낼 문구가 비어 있어요'); return; }
+  if(!confirmed && !confirm(nm+'님에게 메일+문자로 발송할까요?\n(안전모드에선 회장님 본인에게만 test 발송됩니다.)')) return;
+  var box=document.getElementById('dashAct'+i+'_'+j);
+  if(box) box.innerHTML='<span style="font-size:12px;color:#8a93a3">발송 중…</span>';
+  fetch('/api/events/approve-send',{method:'POST',credentials:'include',
+    headers:{'Content-Type':'application/json','X-Human-Approval':'1'},   // ★버튼에서만 붙는 헤더
+    body:JSON.stringify({ humanApproval:true, criteria:{ 이름: nm }, 템플릿: msg, 요청내용: why+' — '+nm+'님', confirmed: !!confirmed })})
+   .then(function(r){return r.json();}).then(function(j2){
+     if(j2&&(j2.needsGoogle||j2.needsConnect)){ dashOpen(i); toast(j2.message||'구글 연결이 필요해요'); return; }
+     if(j2&&j2.needsBulkConfirm){ dashOpen(i); if(confirm(j2.message+'\n\n정말 진행할까요?')) dashApprove(i,j,true); return; }
+     if(!j2||!j2.ok){ dashOpen(i); toast((j2&&(j2.error||j2.message))||'발송하지 못했어요'); return; }
+     // ★서버가 실제 발송 결과를 준 경우에만 완료로 표시(환각 금지)
+     if(box) box.innerHTML='<span style="font-size:12px;color:#0f766e;font-weight:700">✅ '+_escOb(String(j2.message||'발송 완료'))+'</span>';
      try{ if(document.getElementById('apList')) apRender(); }catch(e){}
    })
-   .catch(function(){ if(btn){btn.disabled=false;btn.textContent='🗂️ 결재함에 올리기';} toast('결재함 등록 중 오류 — 잠시 후 다시 시도해주세요'); });
+   .catch(function(){ dashOpen(i); toast('발송 중 오류 — 잠시 후 다시 시도해주세요'); });
+}
+// ✏️ 수정요청 — 문구를 고쳐 두면 그 문구로 승인된다(발송 아님)
+function dashEditDraft(i,j){
+  var x=_dashCard(i,j); if(!x) return;
+  var box=document.getElementById('dashDraft'+i+'_'+j), act=document.getElementById('dashAct'+i+'_'+j); if(!box||!act) return;
+  box.innerHTML='<textarea id="dashTa'+i+'_'+j+'" style="width:100%;height:104px;box-sizing:border-box;font-size:12.5px;font-family:inherit;line-height:1.6;color:#0d1b2a;background:#fff;border:1px solid #dbe2ea;border-radius:8px;padding:8px;resize:vertical">'+_escOb(x.c.초안||'')+'</textarea>';
+  act.innerHTML='<button onclick="dashEditSave('+i+','+j+')" style="padding:7px 14px;border:none;background:var(--teal);color:#fff;border-radius:999px;font-weight:700;cursor:pointer;font-size:12px">저장</button>'
+    +'<button onclick="dashOpen('+i+')" style="padding:7px 12px;border:1px solid #dbe2ea;background:#fff;color:#556;border-radius:999px;font-weight:600;cursor:pointer;font-size:12px">취소</button>';
+}
+function dashEditSave(i,j){
+  var x=_dashCard(i,j); var ta=document.getElementById('dashTa'+i+'_'+j); if(!x||!ta) return;
+  var v=String(ta.value||'').trim(); if(!v){ toast('문구를 입력해 주세요'); return; }
+  x.c.초안=v;             // 화면 스냅샷만 갱신 — 아직 아무것도 안 나갔다
+  dashOpen(i); toast('문구를 고쳤어요. [승인]을 누르면 이 문구로 나갑니다');
+}
+// ↩ 반려 — 이 건은 보내지 않는다(목록에서 내림). 시트·명단은 그대로.
+function dashReject(i,j){
+  var x=_dashCard(i,j); if(!x) return;
+  if(!confirm((x.c.이름||'')+'님 건을 반려할까요?\n(발송하지 않고 목록에서 내립니다. 명단은 그대로예요.)')) return;
+  x.m.cards.splice(j,1); if(typeof x.m.count==='number') x.m.count=x.m.cards.length;
+  dashOpen(i); toast('반려했어요 — 발송하지 않았습니다');
 }
 // ★제1소원: 승인=조용히 저장. 탐색기·저장대화상자·별도버튼 전부 제거.
 //   a.download 으로 즉시 다운로드(크롬 "저장위치 묻기" 꺼짐=기본값이면 대화상자 없음) → watcher가 outbox+다운로드폴더 감시해 발송.
@@ -2640,7 +2664,7 @@ function openShare(){
     '<div class="pop-foot"><div class="pop-src"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3l7 3v6c0 4-3 6.5-7 8-4-1.5-7-4-7-8V6l7-3z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>모든 발송은 반드시 사람 승인 후에만 실행됩니다</div></div>');
 }
 // ★2026-07-26: 카톡 보내기 폼은 비활성화했다(메뉴에서도 뺐다).
-//   예전 폼은 dashSendApprove()를 빌려 썼는데, 그 함수가 이제 "결재함 등록"으로 바뀌었다.
+//   예전 폼은 dashSendApprove()를 빌려 썼는데, 그 함수는 없어지고 카드의 [✅ 승인]으로 대체됐다.
 //   카톡 경로(genyasend→로컬 발송기)는 서버 4중 게이트를 안 타므로 되살리지 않는다. 2막에서 정식 채널로 추가.
 function shareKakao(){
   showModal('<div style="max-width:420px;text-align:center;padding:8px">'

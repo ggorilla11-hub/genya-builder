@@ -1944,6 +1944,37 @@ approval.init({ anthropic: _anthropic, model: MODEL_DEEP, getMemberSheet: findOr
 
 app.post('/api/approval/create', async (req, res) => { try { const ma = gateGoogle(req, res); if (!ma) return; ma._email = (sessionOf(req) || {}).email || ''; await _attachPrefs(ma); res.json(await approval.create(ma, req.body || {})); } catch (e) { res.status(500).json({ ok: false, error: e.message }); } });
 app.get('/api/approval/list', async (req, res) => { try { const ma = gateGoogle(req, res); if (!ma) return; res.json(await approval.list(ma, { status: req.query.status })); } catch (e) { res.status(500).json({ ok: false, error: e.message }); } });
+// ── ⭐ 대시보드 카드에서 바로 승인·발송 (결재함 "화면 단계"만 생략 · 게이트는 그대로) ──
+//   왜: 대시보드는 이미 대표가 문구를 눈으로 보고 있는 화면이다. 거기서 결재함으로 또 보내 또 승인하면 이중 확인이다.
+//   ★그러나 게이트는 하나도 안 뺀다. 뺀 것은 "결재함 화면을 한 번 더 거치는 절차"뿐이다:
+//     ①[승인] 버튼만 X-Human-Approval 헤더 + humanApproval:true 를 동시에 보낸다(이중 채널).
+//       발화·자동·LLM 도구는 이 둘을 만들 수 없다 → fail-closed.
+//     ②결재함 기록은 그대로 남긴다(create → act). 감사 추적이 끊기지 않는다.
+//     ③실제 발송은 approval.act()가 수행 — 안전모드·화이트리스트·대량 이중확인 전부 그대로 탄다.
+//     ④approval_skill.js는 한 줄도 안 고친다(호출만).
+app.post('/api/events/approve-send', async (req, res) => { try {
+  const ma = gateGoogle(req, res); if (!ma) return;
+  ma._email = (sessionOf(req) || {}).email || '';
+  await _attachPrefs(ma);
+  const b = req.body || {};
+  const _hdr = String(req.headers['x-human-approval'] || '') === '1';
+  const _human = _hdr && b.humanApproval === true;   // ★이중 채널 둘 다 있어야 통과
+  if (!_human) {
+    console.log('[🔒감사·발송]', _seoul().today, _seoul().now, '· 요청자=' + (ma._email || '(unknown)'), '· 경로=대시보드카드', '· humanApproval=false', '· 결과=★차단:버튼아님');
+    return res.json({ ok: false, blockedNoHuman: true, message: '발송은 화면의 [승인] 버튼을 직접 눌러야만 됩니다. 발화·명령으로는 발송되지 않아요.' });
+  }
+  const 템플릿 = String(b.템플릿 || '').trim();
+  if (!템플릿) return res.json({ ok: false, message: '보낼 문구가 비어 있어요.' });
+  // ①결재함에 기록으로 남기고(감사 추적) → ②곧바로 승인 처리. 화면만 생략, 기록·게이트는 유지.
+  const c = await approval.create(ma, { criteria: b.criteria || {}, 템플릿: 템플릿, 요청내용: String(b.요청내용 || '고객 안내'), 채널: 'both' });
+  if (!c || !c.ok) return res.json(c || { ok: false, message: '결재 기록을 만들지 못했어요.' });
+  const id = c.approval && c.approval.id;
+  const r = await approval.act(ma, { id: id, action: 'approve', humanApproval: true, confirmed: !!b.confirmed });
+  const _out = (r && r.ok) ? '성공:' + String((r.result && r.result.ok) || '') + '건'
+    : (r && r.needsBulkConfirm ? '대량재확인대기' : '실패:' + String((r && r.message) || '').slice(0, 40));
+  console.log('[🔒감사·발송]', _seoul().today, _seoul().now, '· 요청자=' + (ma._email || '(unknown)'), '· 경로=대시보드카드', '· id=' + String(id || ''), '· humanApproval=true', '· 결과=' + _out);
+  res.json(Object.assign({ approvalId: id }, r || {}));
+} catch (e) { if (scopeGate(e, res, 'sheets')) return; res.status(500).json({ ok: false, error: e.message }); } });
 app.post('/api/approval/act', async (req, res) => { try {
   const ma = gateGoogle(req, res); if (!ma) return;
   ma._email = (sessionOf(req) || {}).email || '';
