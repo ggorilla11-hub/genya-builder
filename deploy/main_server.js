@@ -1125,19 +1125,22 @@ app.get('/api/find/leads', async (req, res) => {
   if (!sessionOf(req)) return res.status(401).json({ ok: false, error: '로그인이 필요해요' });
   const key = process.env.YOUTUBE_API_KEY;
   try {
-    // ── ① 유튜브: 기존 경로 그대로(키 없으면 건너뛴다) ──
+    // ── ① 기자단 순회 — ★유튜브 AI 2명 포함(전에는 exclude로 빠져 실제로 안 돌았다) ──
+    //    ★홍보대사 정체성: 회원 프로필의 키워드로 검색·초안을 만든다(대표님/교육생 각자).
+    let desk = { leads: [], stats: {}, roster: [] };
+    try { desk = await hunterDesk.collect({ 키워드: [] }, { max: 30 }); }
+    catch (e) { console.log('[🔍발굴] 기자단 오류: ' + e.message); }
+    // ── ② 유튜브 옛 경로 = ★기자단이 유튜브에서 한 건도 못 물어왔을 때만 도는 예비 경로 ──
+    //    항상 둘 다 돌리면 유튜브 할당량(하루 10,000)을 두 배로 먹는다 → 예비로만 둔다.
+    const ytFromDesk = desk.leads.filter((l) => l.hunter === 'youtube').length;
     let yt = [];
-    if (key) {
+    if (key && ytFromDesk === 0) {
       yt = await findYouTubeLeads(key, 30);
       const _vOrd = { '고객': 0, '애매': 1 };
       yt.sort((a, b) => ((_vOrd[a.verdict] != null ? _vOrd[a.verdict] : 9) - (_vOrd[b.verdict] != null ? _vOrd[b.verdict] : 9))
         || ((_tierOrd[a.tier] != null ? _tierOrd[a.tier] : 9) - (_tierOrd[b.tier] != null ? _tierOrd[b.tier] : 9)));
+      console.log('[🔍발굴] 기자단 유튜브 0건 → 옛 경로 예비 가동: ' + yt.length + '건');
     }
-    // ── ② 뼈대 기자들(네이버 지식iN 등) — 유튜브는 위에서 이미 처리하므로 제외 ──
-    //    ★홍보대사 정체성: 회원 프로필의 키워드로 검색·초안을 만든다(대표님/교육생 각자).
-    let desk = { leads: [], stats: {}, roster: [] };
-    try { desk = await hunterDesk.collect({ 키워드: [] }, { max: 30, exclude: ['youtube'] }); }
-    catch (e) { console.log('[🔍발굴] 뼈대 기자 오류: ' + e.message); }
     const _lbl = {};
     (desk.roster || []).forEach((r) => { _lbl[r.key] = r.label; });
     const nv = desk.leads.map((l) => ({
@@ -1153,7 +1156,7 @@ app.get('/api/find/leads', async (req, res) => {
       return res.json({ ok: true, needsKey: true, youtube: [], naver: [],
         message: 'YOUTUBE_API_KEY 미설정' + (off.length ? ' · ' + off.join(' · ') : '') });
     }
-    console.log(`[🔍발굴] 유튜브 ${yt.length}건 · 뼈대기자 ${nv.length}건 · 홍보자 제외 ${_findSkip}건 · 확인필요 ${_findMaybe}건`);
+    console.log(`[🔍발굴] 기자단 ${nv.length}건(유튜브 ${ytFromDesk}) · 예비경로 ${yt.length}건 · 홍보자 제외 ${_findSkip}건 · 확인필요 ${_findMaybe}건`);
     res.json({ ok: true, youtube: yt, naver: nv,
       filtered: { 홍보자제외: _findSkip, 확인필요: _findMaybe },
       desk: { roster: desk.roster, stats: desk.stats } });   // ★통계는 숫자만(개인정보 없음)
