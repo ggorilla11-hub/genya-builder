@@ -3395,10 +3395,10 @@ window.addFile=function(){ doOCR(); };
             return h+'</table></div>';
           }
           html+=order.map(function(f){
-            var isOld=(f==='(초기 업로드)');
+            // ★소스파일 태그가 없는 옛 데이터('(초기 업로드)')도 삭제 버튼 제공 — 서버가 "소스파일 빈 행"으로 매칭한다.
             var det=renderGroupTable(grp[f]);
             return '<div class="gh-file"><div class="gh-file-hd" onclick="ghToggle(this)"><span>📄 '+esc(f)+' <b>('+grp[f].length+'명)</b></span><span>'
-              +(isOld?'':'<button class="gh-del" title="이 파일 삭제" onclick="event.stopPropagation();ghDelFile(this.getAttribute(\'data-f\'))" data-f="'+esc(f)+'">🗑</button>')
+              +'<button class="gh-del" title="이 파일 삭제" onclick="event.stopPropagation();ghDelFile(this.getAttribute(\'data-f\'))" data-f="'+esc(f)+'">🗑</button>'
               +'<span class="gh-caret">▾</span></span></div><div class="gh-file-bd" style="display:none">'+det+'</div></div>';
           }).join('');
           el.innerHTML=html;
@@ -3443,7 +3443,18 @@ window.addFile=function(){ doOCR(); };
     try{ host.scrollIntoView({block:'start',behavior:'smooth'}); }catch(e){}
   };
   window.ghToggle=function(hd){ var bd=hd.nextElementSibling; if(!bd)return; var open=bd.style.display!=='none'; bd.style.display=open?'none':'block'; var c=hd.querySelector('.gh-caret'); if(c)c.textContent=open?'▾':'▴'; };
-  window.ghDelFile=async function(f){ if(!confirm('"'+f+'"에서 온 고객 전체를 삭제하시겠습니까? 되돌릴 수 없어요.'))return; var j;try{j=await api('/api/roster/file?name='+encodeURIComponent(f),{method:'DELETE'});}catch(e){alert('삭제 실패: '+e.message);return;} if(j&&j.ok){ghLoad();}else{alert((j&&(j.error||j.message))||'삭제 실패');} };
+  // 🗑 파일 단위 삭제 — ★2단계 확인. 1차 호출은 서버가 시트를 건드리지 않고 "몇 명 지울지"만 돌려준다.
+  //   그 실제 건수로 되물은 뒤에야 confirm=1로 진짜 삭제. (되돌릴 수 없는 작업이라 실수 방지가 우선)
+  window.ghDelFile=async function(f){
+    var pre; try{ pre=await api('/api/roster/file?name='+encodeURIComponent(f),{method:'DELETE'}); }catch(e){ alert('확인 실패: '+e.message); return; }
+    if(pre&&(pre.needsGoogle||pre.needsConnect)){ alert(pre.message||'구글 연결이 필요해요.'); return; } // gateGoogle은 ok:true로 오므로 먼저 걸러낸다
+    if(!pre||!pre.ok){ alert((pre&&(pre.error||pre.message))||'삭제할 대상을 찾지 못했어요.'); return; }
+    if(!pre.needsConfirm){ alert('예상치 못한 응답이에요. 새로고침 후 다시 시도해 주세요.'); return; }
+    if(!confirm(pre.message)) return;
+    var j; try{ j=await api('/api/roster/file?name='+encodeURIComponent(f)+'&confirm=1',{method:'DELETE'}); }catch(e){ alert('삭제 실패: '+e.message); return; }
+    if(j&&j.ok&&!j.needsConfirm){ alert(j.removed+'명을 삭제했어요. (남은 '+j.remaining+'명)'); ghLoad(); }
+    else{ alert((j&&(j.error||j.message))||'삭제 실패'); }
+  };
   window.ghPick=function(inp){
     var f=inp.files&&inp.files[0];if(!f)return;
     var rd=new FileReader();

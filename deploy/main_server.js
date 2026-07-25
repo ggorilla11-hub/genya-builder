@@ -394,7 +394,9 @@ app.get(['/health', '/api/version'], (req, res) => res.json({ ok: true, build: B
 app.get('/api/diag/auth-test', async (req, res) => {
   try {
     const t = await sheetsCrud.loadTable(null);
-    res.json({ ok: !!t.id, method: 'service_account', found: !!t.id, rows: (t.rows || []).length });
+    // cols = 컬럼 개수(컬럼 '이름'은 안 내보냄). 27 이상이면 loadTable의 A1:Z 읽기 범위를 넘어 잘린다는 경고.
+    const cols = (t.header || []).length;
+    res.json({ ok: !!t.id, method: 'service_account', found: !!t.id, rows: (t.rows || []).length, cols, colsTruncatedRisk: cols >= 26 });
   } catch (e) { res.json({ ok: false, method: 'service_account', error: e.message }); }
 });
 // ★🛡️ 수문장 진단(회장님 직접 확인용): 로그인 상태로 이 URL을 열면 — 내 세션 uid·Pinecone연결·최근이벤트를 그대로 보여준다.
@@ -1365,24 +1367,54 @@ app.get('/api/roster/list', async (req, res) => {
     res.json({ ok: true, count: (t.rows || []).length, header: t.header || [], rows: t.rows || [] });
   } catch (e) { if (scopeGate(e, res, 'sheets')) return; res.status(500).json({ ok: false, error: e.message }); }
 });
-// 📇 파일별 삭제: 특정 소스파일에서 온 행만 제거(남길 행만 재작성=물리 안전). 개별 고객 아님·파일 단위.
+// 📇 파일별 삭제: 특정 소스파일에서 온 행만 제거. 개별 고객 아님·파일 단위.
+//   ★안전 원칙 3가지(2026-07-25 사고 예방 개편):
+//   ①쓰기도 서비스계정(SA)으로 — 시트 읽기·업로드가 이미 SA다. 회원 OAuth로 쓰면 권한 불일치로 실패한다.
+//   ②2단계 확인 — confirm=1 없으면 "몇 명 지울지"만 알려주고 절대 손대지 않는다(무확인 전체삭제 차단).
+//   ③행 단위 삭제(deleteDimension) — 예전의 "전체 clear 후 재작성"은 중간 실패 시 명단 전체가 날아가고
+//     Z열(26컬럼) 초과분·서식이 유실됐다. 이제 지울 행만 아래에서 위로 제거 → 나머지 행은 손대지 않음.
+const ROSTER_UNTAGGED = '(초기 업로드)'; // 소스파일 태그가 없는 옛 데이터 묶음 이름(화면 그룹명과 반드시 동일)
 app.delete('/api/roster/file', async (req, res) => {
   try {
-    const ma = gateGoogle(req, res); if (!ma) return;
+    const ma = gateGoogle(req, res); if (!ma) return; // 로그인·데이터연결 확인(신원). 실제 시트 접근은 아래 SA.
     const fname = String(req.query.name || '').trim();
     if (!fname) return res.json({ ok: false, error: '파일명이 없어요.' });
     const t = await sheetsCrud.loadTable(ma);
     if (!t.id) return res.json({ ok: false, error: '명단 시트를 찾지 못했어요.' });
     const srcCol = (t.header || []).find((h) => String(h).replace(/\s/g, '') === '소스파일');
-    if (!srcCol) return res.json({ ok: false, error: '소스파일 정보가 없는 명단이에요(옛 업로드).' });
-    const keep = (t.rows || []).filter((r) => String(r[srcCol] || '') !== fname);
-    const removed = (t.rows || []).length - keep.length;
-    if (!removed) return res.json({ ok: false, error: '해당 파일에서 온 고객을 못 찾았어요.' });
-    const sheets = google.sheets({ version: 'v4', auth: ma });
-    await sheets.spreadsheets.values.clear({ spreadsheetId: t.id, range: `${SHEET_TAB}!A1:Z10000` });
-    const body = [t.header].concat(keep.map((r) => t.header.map((h) => r[h] || '')));
-    await sheets.spreadsheets.values.update({ spreadsheetId: t.id, range: `${SHEET_TAB}!A1`, valueInputOption: 'RAW', requestBody: { values: body } });
-    res.json({ ok: true, removed, remaining: keep.length });
+    const norm = (v) => String(v == null ? '' : v).trim();
+    // 태그 없는 옛 데이터(초기 13명 등)도 지울 수 있게: '(초기 업로드)' = 소스파일 값이 빈 행들
+    const untagged = (fname === ROSTER_UNTAGGED);
+    const target = (t.rows || []).filter((r) => {
+      const v = srcCol ? norm(r[srcCol]) : '';
+      return untagged ? !v : (v === fname);
+    });
+    if (!target.length) return res.json({ ok: false, error: '해당 파일에서 온 고객을 못 찾았어요.' });
+    // ★2단계 확인: confirm=1이 없으면 여기서 끝(시트 무접촉). 화면이 이 건수로 되물은 뒤 다시 부른다.
+    if (String(req.query.confirm || '') !== '1') {
+      return res.json({ ok: true, needsConfirm: true, name: fname, count: target.length,
+        message: `'${fname}' 파일에서 온 고객 ${target.length}명을 삭제할까요? 되돌릴 수 없어요.` });
+    }
+    // 🔑 쓰기도 SA로(업로드와 동일). loadTable이 돌려준 SA 클라이언트를 그대로 쓴다.
+    const sheets = t.sheets;
+    // ★엉뚱한 탭 삭제 방지: gid를 넘겨받지 말고 여기서 '고객명단' 탭의 실제 sheetId를 다시 확인한다.
+    //   (loadTable은 탭을 못 찾으면 gid를 0으로 폴백 → 첫 번째 탭을 지울 위험이 있다)
+    const meta = await sheets.spreadsheets.get({ spreadsheetId: t.id, fields: 'sheets.properties(title,sheetId)' });
+    const tab = (meta.data.sheets || []).find((s) => s.properties.title === SHEET_TAB);
+    if (!tab) return res.json({ ok: false, error: `'${SHEET_TAB}' 탭을 찾지 못했어요. 안전을 위해 삭제를 중단했어요.` });
+    const gid = tab.properties.sheetId;
+    // 행 단위 삭제: 시트 행번호 내림차순(아래→위)이라야 위 행을 지워도 아래 행번호가 안 밀린다.
+    const nums = target.map((r) => r._rowNum).filter((n) => n > 1).sort((a, b) => b - a);
+    if (!nums.length) return res.json({ ok: false, error: '삭제할 행 번호를 찾지 못했어요.' });
+    const requests = [];
+    for (let i = 0; i < nums.length; i++) {
+      const end = nums[i]; let start = end;           // 연속 구간은 한 요청으로 묶어 호출 수 축소
+      while (i + 1 < nums.length && nums[i + 1] === start - 1) { i++; start = nums[i]; }
+      requests.push({ deleteDimension: { range: { sheetId: gid, dimension: 'ROWS', startIndex: start - 1, endIndex: end } } });
+    }
+    await sheets.spreadsheets.batchUpdate({ spreadsheetId: t.id, requestBody: { requests } });
+    console.log(`[📇명단삭제] "${fname}" ${target.length}명 삭제 · 남은 ${(t.rows || []).length - target.length}명 · 방식=deleteDimension(${requests.length}구간)`);
+    res.json({ ok: true, removed: target.length, remaining: (t.rows || []).length - target.length });
   } catch (e) { if (scopeGate(e, res, 'sheets')) return; res.status(500).json({ ok: false, error: e.message }); }
 });
 app.get('/api/profile', async (req, res) => {
