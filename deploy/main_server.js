@@ -1947,11 +1947,22 @@ app.get('/api/find/leads', async (req, res) => {
     const ytFromDesk = desk.leads.filter((l) => l.hunter === 'youtube').length;
     let yt = [];
     if (key && ytFromDesk === 0) {
-      yt = await findYouTubeLeads(key, 30);
-      const _vOrd = { '고객': 0, '애매': 1 };
-      yt.sort((a, b) => ((_vOrd[a.verdict] != null ? _vOrd[a.verdict] : 9) - (_vOrd[b.verdict] != null ? _vOrd[b.verdict] : 9))
-        || ((_tierOrd[a.tier] != null ? _tierOrd[a.tier] : 9) - (_tierOrd[b.tier] != null ? _tierOrd[b.tier] : 9)));
-      console.log('[🔍발굴] 기자단 유튜브 0건 → 옛 경로 예비 가동: ' + yt.length + '건');
+      // ★★2026-07-27 사고: 이 호출이 감싸여 있지 않아, 유튜브 하나가 터지면(할당량 초과·키 문제)
+      //   ★발굴 전체가 502로 죽었다 — 네이버·구글·다음에서 잘 물어온 리드까지 통째로 버려졌다.
+      //   → 한 채널이 막혀도 나머지는 나온다. 대신 왜 빠졌는지는 숨기지 않고 화면에 전한다.
+      try {
+        yt = await findYouTubeLeads(key, 30);
+        const _vOrd = { '고객': 0, '애매': 1 };
+        yt.sort((a, b) => ((_vOrd[a.verdict] != null ? _vOrd[a.verdict] : 9) - (_vOrd[b.verdict] != null ? _vOrd[b.verdict] : 9))
+          || ((_tierOrd[a.tier] != null ? _tierOrd[a.tier] : 9) - (_tierOrd[b.tier] != null ? _tierOrd[b.tier] : 9)));
+        console.log('[🔍발굴] 기자단 유튜브 0건 → 옛 경로 예비 가동: ' + yt.length + '건');
+      } catch (e) {
+        yt = [];
+        const m = /quota|quotaExceeded|dailyLimit/i.test(e.message || '') ? '유튜브 하루 할당량을 다 썼어요(내일 다시 열립니다)'
+          : ('유튜브 예비경로 오류: ' + String(e.message || '').slice(0, 80));
+        desk.오류 = (desk.오류 ? desk.오류 + ' · ' : '') + m;
+        console.log('[🔍발굴] ⚠️ 유튜브 예비경로 실패(나머지 채널은 계속): ' + (e.message || ''));
+      }
     }
     const _lbl = {};
     (desk.roster || []).forEach((r) => { _lbl[r.key] = r.label; });
@@ -1975,7 +1986,28 @@ app.get('/api/find/leads', async (req, res) => {
       filtered: { 홍보자제외: _findSkip, 확인필요: _findMaybe },
       timedOut, error: desk.오류 || '',                       // 왜 비었는지 화면이 설명할 수 있게
       desk: { roster: desk.roster, stats: desk.stats, review: desk.review || {} } });   // ★통계는 숫자만(개인정보 없음)
-  } catch (e) { res.status(502).json({ ok: false, error: e.message }); }
+    _LAST_FIND = { at: new Date().toISOString(), 건수: nv.length + yt.length, 오류: desk.오류 || '', 시간초과: timedOut };
+  } catch (e) {
+    // ★왜 막혔는지 남긴다 — 화면이 "불러오지 못했어요"라고만 하면 대표님이 원인을 못 찾으신다
+    _LAST_FIND = { at: new Date().toISOString(), 건수: 0, 오류: String(e.message || '').slice(0, 160), 시간초과: false };
+    console.log('[🔍발굴] ❌ 502 — ' + (e.message || ''));
+    res.status(502).json({ ok: false, error: e.message });
+  }
+});
+// 🩺 발굴 진단 — "왜 발굴이 안 되나". ★숫자와 오류 문구만(리드 내용·개인정보 0노출).
+//   로그인 없이도 대표님이 바로 보실 수 있게 공개로 둔다.
+let _LAST_FIND = null;
+app.get('/api/diag/find', (req, res) => {
+  const on = [], off = [];
+  try {
+    (typeof hunterDesk.roster === 'function' ? hunterDesk.roster() : []).forEach((r) => (r.on ? on : off).push(r.label + (r.on ? '' : ' — ' + r.reason)));
+  } catch (e) { /* 명단을 못 읽어도 진단은 답한다 */ }
+  res.json({
+    유튜브키: !!process.env.YOUTUBE_API_KEY,
+    켜진채널: on, 꺼진채널: off,
+    마지막발굴: _LAST_FIND || '이번 서버가 켜진 뒤로 아직 발굴한 적 없어요',
+    안내: '리드 내용·이름·연락처는 여기 담기지 않습니다(숫자와 오류 문구만).',
+  });
 });
 
 // 답글 초안(LLM) — ★게시는 교육생 직접(자동 0). [링크]는 화면에서 진단링크+교육생 꼬리표로 치환.

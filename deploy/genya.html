@@ -2225,7 +2225,20 @@ function _findErrWhy(){
       e2.innerHTML='<b style="color:#c0392b">로그인이 풀렸어요.</b><br>서버가 다시 켜지면(배포·재시작) 로그인이 풀립니다.<br>아래 버튼으로 다시 로그인하신 뒤 발굴을 눌러주세요.'
         +'<div style="margin-top:9px"><button onclick="location.reload()" style="padding:8px 16px;border:1px solid #cfd6de;background:#fff;border-radius:9px;font-weight:700;cursor:pointer;font-size:12px;font-family:inherit">🔑 다시 로그인</button></div>';
     } else {
-      e2.innerHTML='로그인은 되어 있어요 — 발굴 서버가 제때 응답하지 않았습니다.<br>잠시 뒤 [↻ 다시 시도]를 눌러주세요.';
+      // ★로그인은 멀쩡한데 발굴만 막힌 경우 — 서버가 남긴 ★실제 이유를 가져와 그대로 보여준다
+      e2.innerHTML='로그인은 되어 있어요 — 발굴이 막힌 이유를 확인하는 중…';
+      fetch('/api/diag/find').then(function(r){ return r.json(); }).then(function(f){
+        var e4=document.getElementById('findErrWhy'); if(!e4) return;
+        var m=(f&&f.마지막발굴&&f.마지막발굴.오류)||'';
+        var 꺼짐=(f&&f.꺼진채널)||[];
+        e4.innerHTML='<b style="color:#c0392b">로그인은 정상입니다 — 발굴 쪽 문제예요.</b>'
+          +(m?('<br><b>이유:</b> '+String(m).replace(/[<>]/g,'')):'<br>서버가 제때 응답하지 않았어요.')
+          +(꺼짐.length?('<br><span style="color:#8a6d1a">꺼진 채널: '+꺼짐.map(function(x){return String(x).replace(/[<>]/g,'');}).join(' · ')+'</span>'):'')
+          +'<br>[↻ 다시 시도]를 눌러보시고, 계속 같으면 이 문구를 저에게 알려주세요.';
+      }).catch(function(){
+        var e5=document.getElementById('findErrWhy');
+        if(e5) e5.innerHTML='로그인은 되어 있어요 — 발굴 서버가 제때 응답하지 않았습니다.<br>잠시 뒤 [↻ 다시 시도]를 눌러주세요.';
+      });
     }
   }).catch(function(){
     var e3=document.getElementById('findErrWhy'); if(e3) e3.textContent='연결 상태를 확인하지 못했어요 — 인터넷을 확인하고 다시 시도해 주세요.';
