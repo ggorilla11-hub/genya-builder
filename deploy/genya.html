@@ -1438,19 +1438,21 @@ function _inflowBarPaint(){ try{ var b=document.getElementById('inflowBar'); if(
 window.inflowConnect=function(){
   var cur=inflowSheets();
   var url=prompt('신청자 구글 시트 주소를 붙여넣으세요.\n\n지금 연결됨: '+(cur.length?cur.map(function(x){return x.title||x.tab;}).join(', '):'없음')
-    +'\n\n★기존 시트는 그대로 두고 ＋추가됩니다 (최대 5개)\n(먼저 그 시트를 서비스계정 이메일에 "뷰어"로 공유해 주세요)');
+    +'\n\n★주소 하나를 넣으면 그 문서의 ★탭을 전부 읽습니다\n   (연금진단·부트캠프·통합리드가 한 문서의 탭이면 주소 하나면 됩니다)'
+    +'\n★다른 문서는 그대로 두고 ＋추가됩니다 (문서 최대 5개)\n(먼저 그 시트를 서비스계정 이메일에 "뷰어"로 공유해 주세요)');
   if(url===null || !String(url).trim()) return;
   fetch('/api/prospect/sheet',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:url})})
    .then(function(r){return r.json();})
    .then(function(d){
      if(!d||!d.ok){ toast((d&&d.error)||'시트를 연결하지 못했어요'); return; }
      var list=inflowSheets();
-     if(list.length>=5){ toast('시트는 최대 5개까지예요 — [관리]에서 하나를 빼주세요'); return; }
-     // ★같은 시트·탭이면 덮어쓰고, 아니면 ★더한다(교체 아님)
-     list=list.filter(function(x){ return !(x.id===d.id && x.tab===d.tab); });
-     list.push({id:d.id, tab:d.tab, title:d.title||d.tab});
+     // ★같은 문서면 덮어쓰고, 다른 문서면 ★더한다(교체 아님). 탭은 어차피 전부 읽으므로 문서 기준이다.
+     var 이미 = list.some(function(x){ return x.id===d.id; });
+     if(!이미 && list.length>=5){ toast('문서는 최대 5개까지예요 — 칩의 ×로 하나를 빼주세요'); return; }
+     list=list.filter(function(x){ return x.id!==d.id; });
+     list.push({id:d.id, tab:'*', title:d.title||'', 탭수:(d.tabs&&d.tabs.length)||d.탭수||0});
      inflowSave(list);
-     toast('＋추가됨 — '+(d.title||'')+' (총 '+list.length+'개)');
+     toast((이미?'새로고침됨 — ':'＋추가됨 — ')+(d.title||'')+' · 탭 '+((d.tabs&&d.tabs.length)||0)+'개를 전부 읽어요 (문서 '+list.length+'개)');
      prospectLoadInflow(); prospectLoadLeads();
    })
    .catch(function(){ toast('연결 실패 — 잠시 뒤 다시 시도해 주세요'); });
@@ -1462,20 +1464,21 @@ function _inflowBar(){
   var chips = ls.length
     ? ls.map(function(x,i){
         return '<span style="display:inline-flex;align-items:center;gap:5px;background:#fff;border:1px solid #cfe8e1;border-radius:999px;padding:3px 6px 3px 10px;font-size:11.5px;color:#0d1b2a;max-width:220px">'
-          +'<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+_escOb(x.title||x.tab||'시트')+'</span>'
+          +'<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+_escOb(x.title||x.tab||'시트')
+            +(x.탭수?('<span style="color:#0f766e"> · 탭 '+x.탭수+'</span>'):'')+'</span>'
           +'<span onclick="inflowRemove('+i+')" title="빼기" style="cursor:pointer;color:#b0b8c2;font-size:14px;width:18px;height:18px;line-height:17px;text-align:center;border-radius:50%;background:#f2f5f8">×</span></span>';
       }).join(' ')
-    : '<span style="font-size:11.5px;color:#8a93a3">아직 연결한 시트가 없어요 — 기본 신청 시트만 보고 있어요</span>';
+    : '<span style="font-size:11.5px;color:#8a93a3">아직 연결한 문서가 없어요 — 기본 신청 시트만 보고 있어요</span>';
   return '<div style="border:1px solid #e5e9ee;border-radius:10px;padding:8px 10px;margin-bottom:8px;background:#fafbfc">'
     +'<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px">'
-      +'<b style="font-size:11.5px;color:#0d1b2a">🔗 연결한 신청 시트 <span style="color:#0f766e">'+ls.length+'개</span></b>'
+      +'<b style="font-size:11.5px;color:#0d1b2a">🔗 연결한 신청 문서 <span style="color:#0f766e">'+ls.length+'개</span> <span style="font-weight:500;color:#8a93a3">(탭은 전부 읽어요)</span></b>'
       +'<button onclick="inflowConnect()" style="padding:4px 10px;border:1px solid var(--teal);background:var(--teal-l);color:var(--teal-d);border-radius:999px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap">＋ 추가</button>'
     +'</div>'
     // ★0개일 때도 반드시 보인다 — 무엇이 없는지 알아야 다음 행동을 하신다
     +'<div style="display:flex;gap:5px;flex-wrap:wrap">'+chips+'</div>'
     +'<div style="font-size:10.5px;color:#8a93a3;margin-top:5px">'
-      +(ls.length?'×를 누르면 빠집니다 · 최대 5개 · 합산과 파일별을 함께 보여드려요'
-                 :'[＋ 추가]에 구글 시트 주소를 붙여넣으면 여기에 쌓입니다 (최대 5개)')
+      +(ls.length?'×를 누르면 빠집니다 · 문서 최대 5개 · ★한 문서의 탭을 전부 읽어 합산과 탭별을 함께 보여드려요'
+                 :'[＋ 추가]에 구글 시트 주소 하나를 붙여넣으면 그 문서의 탭을 전부 읽습니다 (문서 최대 5개)')
     +'</div></div>';
 }
 // 칩의 × — 그 시트만 뺀다
@@ -1485,10 +1488,10 @@ window.inflowRemove=function(i){
   toast('뺐어요 — '+(t.title||t.tab)+' (남은 '+(ls.length-1)+'개)');
   prospectLoadInflow();
 };
-// ★파일별 매출 — 부트캠프·통합리드·연금진단 어디서 돈이 나는지 나눠 본다
+// ★탭별 매출 — 연금진단·부트캠프·통합리드 어느 탭에서 돈이 나는지 나눠 본다
 function _inflowFiles(files){
   files=(files||[]).filter(function(f){ return f && (f.신청||f.금액||f.오류); });
-  if(files.length<2) return '';
+  if(!files.length) return '';
   var rows=files.map(function(f){
     return '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #f0f3f6">'
       +'<div style="font-size:11.5px;font-weight:700;color:#0d1b2a;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+_escOb(f.파일||'')+'</div>'
@@ -1497,7 +1500,7 @@ function _inflowFiles(files){
       +'</div></div>';
   }).join('');
   return '<div style="border:1px solid #e5e9ee;border-radius:10px;padding:8px 11px;margin-bottom:8px;background:#fafbfc">'
-    +'<div style="font-size:11.5px;font-weight:800;color:#0d1b2a;margin-bottom:4px">📂 파일별 매출</div>'+rows+'</div>';
+    +'<div style="font-size:11.5px;font-weight:800;color:#0d1b2a;margin-bottom:4px">📂 탭별 매출 <span style="font-weight:500;color:#8a93a3">('+files.length+'개 탭)</span></div>'+rows+'</div>';
 }
 // 연결한 시트 관리(빼기)
 window.inflowManage=function(){
@@ -1538,9 +1541,11 @@ function prospectLoadInflow(){
        +'</div>'
        // ★신청만 하고 아직 결제 안 한 분 = 다음 매출
        +((sm.미결제)?('<div style="font-size:11.5px;color:#8a6d1a;background:#fffdf5;border:1px solid #ecdca8;border-radius:8px;padding:7px 10px;margin-bottom:8px">💰 신청 '+(sm.신청||0)+'명 중 <b>'+sm.미결제+'명이 아직 결제 전</b>이에요 — 여기가 다음 매출입니다.'
-         +((sm.중복제외)?('<div style="color:#8a93a3;margin-top:3px">여러 시트에 겹친 '+sm.중복제외+'건은 한 번만 셌어요.</div>'):'')+'</div>'):'')
+         +((sm.중복제외)?('<div style="color:#8a93a3;margin-top:3px">여러 탭에 겹친 '+sm.중복제외+'건은 한 번만 셌어요.</div>'):'')+'</div>'):'')
        // ★파일별 — 어디서 매출이 나는지 한눈에 (연결 줄은 위에 항상 따로 있다)
        +_inflowFiles(d.files||sm.파일별||[]);
+     // ★못 읽은 탭이 있으면 숨기지 않고 말한다
+     if(d.note) head+='<div style="font-size:11px;color:#8a6d1a;background:#fffdf5;border:1px solid #ecdca8;border-radius:8px;padding:6px 9px;margin-bottom:8px">⚠️ '+_escOb(d.note)+'</div>';
      if(d.missing&&d.missing.length) head+='<div style="font-size:11px;color:#8a6d1a;background:#fffdf5;border:1px solid #ecdca8;border-radius:8px;padding:6px 9px;margin-bottom:8px">⚠️ 시트에 없는 항목: <b>'+d.missing.map(_escOb).join(', ')+'</b> — 그 칸은 비어서 나옵니다</div>';
      if(!rows.length){ box.innerHTML=head+'<div style="font-size:12px;color:#8a93a3;padding:6px 0 12px">아직 신청자가 없어요. (시트 '+_escOb(d.tab||'')+' · '+_escOb(d.권한||'')+')</div>'; return; }
      var tb='<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid #e5e9ee;border-radius:10px"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:460px">'
