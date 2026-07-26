@@ -1443,18 +1443,36 @@ window.genyaJobSwitch=function(){
      var 지금=d.지금직업||'';
      var 칩=(d.직업목록||[]).map(function(j){
        var on=(j.이름===지금);
+       var 표준=(j.완성도==='표준');
        return '<button onclick="jobPick(\''+_escOb(j.이름).replace(/'/g,"")+'\')" style="padding:8px 11px;border:1px solid '
          +(on?'var(--teal)':'#dbe2ea')+';background:'+(on?'var(--teal-l)':'#fff')+';color:'+(on?'var(--teal-d)':'#556')
          +';border-radius:999px;font-size:12px;font-weight:'+(on?'800':'600')+';cursor:pointer;font-family:inherit;margin:0 5px 6px 0">'
-         +(on?'✓ ':'')+_escOb(j.이름)+'</button>'; }).join('');
+         +(on?'✓ ':'')+_escOb(j.이름)+(표준?' <span style="color:#0f766e">★표준</span>':' <span style="color:#b0b8c2">기본</span>')+'</button>'; }).join('');
      el.innerHTML=_jobShell(
-       '<div style="font-size:11.5px;color:#556;margin-bottom:7px">부트캠프에서 가르치시려면 그 직업 지니야를 먼저 써보셔야 합니다.<br>클릭하면 그 직업 모드로 체험하실 수 있어요.</div>'
+       '<div style="font-size:11.5px;color:#556;margin-bottom:7px">부트캠프에서 가르치시려면 그 직업 지니야를 먼저 써보셔야 합니다.<br>클릭하면 그 직업 설정이 올라옵니다.</div>'
        +'<div style="margin-bottom:4px">'+칩+'</div>'
-       +(지금?('<div style="margin-top:9px"><button onclick="jobPick(\'\')" style="width:100%;padding:9px;border:1px solid #dbe2ea;background:#fff;color:#556;border-radius:9px;font-weight:700;cursor:pointer;font-family:inherit;font-size:12.5px">↩ 재무설계(내 직업)로 돌아가기</button></div>'):'')
+       + _jobSetting(d.설정)
+       +(지금?('<div style="margin-top:9px"><button onclick="jobPick(\'\')" style="width:100%;padding:9px;border:1px solid #dbe2ea;background:#fff;color:#556;border-radius:9px;font-weight:700;cursor:pointer;font-family:inherit;font-size:12.5px">↩ 재무설계·보험(내 직업)로 돌아가기</button></div>'):'')
        +'<div style="font-size:10.5px;color:#8a93a3;margin-top:10px;line-height:1.6">'
-        +'★체험용입니다. 대표님 <b>밤샘 발굴은 재무 그대로</b> 돌고, <b>저장·발송은 하지 않습니다.</b></div>');
+        +'★체험용입니다. 대표님 <b>밤샘 발굴은 재무 그대로</b> 돌고, <b>저장·발송은 하지 않습니다.</b><br>'
+        +'설정 편집·공식 배포는 <b>다음 단계</b>입니다(이번은 구조까지).</div>');
    }).catch(function(){ el.style.display='none'; });
 };
+// 그 직업 설정을 보여준다 — ★없는 건 "아직 기본 세팅"이라고 정직하게
+function _jobSetting(s){
+  if(!s) return '';
+  var 표준=(s.완성도==='표준');
+  var 줄=function(라벨,값){ return '<div style="display:flex;gap:8px;font-size:11.5px;padding:3px 0"><span style="color:#8a93a3;min-width:52px">'+라벨+'</span><span style="color:#0d1b2a;flex:1">'+값+'</span></div>'; };
+  return '<div style="border:1px solid '+(표준?'#cfe8e1':'#e5e9ee')+';background:'+(표준?'#f2f9f7':'#fafbfc')+';border-radius:10px;padding:10px 11px;margin-top:10px">'
+    +'<div style="font-size:12px;font-weight:800;color:#0d1b2a;margin-bottom:6px">'+_escOb(s.이름||s.직업||'')
+      +(표준?' <span style="color:#0f766e;font-size:11px">★표준(완성)</span>':' <span style="color:#8a6d1a;font-size:11px">기본 세팅</span>')+'</div>'
+    +줄('비서', (s.비서||[]).map(_escOb).join(' · ')||'-')
+    +줄('검색어', ((s.검색어||[]).length?((s.검색어||[]).slice(0,4).map(_escOb).join(' · ')+((s.검색어||[]).length>4?(' 외 '+((s.검색어||[]).length-4)+'개'):'')):'<span style="color:#8a6d1a">아직 없어요 — 직접 넣으셔야 합니다</span>'))
+    +줄('채점표', _escOb((s.채점표&&s.채점표.이름)||'-'))
+    +줄('답글', _escOb((s.정체성&&s.정체성.인사)||'-')+(s.정체성&&s.정체성.자격?(' <span style="color:#8a93a3">('+_escOb(s.정체성.자격)+')</span>'):''))
+    +(s.안내?('<div style="font-size:10.5px;color:'+(표준?'#0f766e':'#8a6d1a')+';margin-top:6px;line-height:1.6">'+_escOb(s.안내)+'</div>'):'')
+    +'</div>';
+}
 function _jobShell(안){
   return '<div style="display:flex;justify-content:space-between;align-items:center;padding:11px 13px;border-bottom:1px solid #eef1f5">'
     +'<b style="font-size:13px;color:#0d1b2a">🎭 직업 전환 <span style="font-weight:500;color:#8a93a3">(대표님 전용)</span></b>'

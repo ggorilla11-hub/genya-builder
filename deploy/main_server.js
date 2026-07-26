@@ -1060,7 +1060,17 @@ app.get('/api/diag/autorun', (req, res) => {
     발송하나: false, 판정: f,
     안내: '★이 창구는 판정만 합니다 — 아무것도 실행하지 않습니다. 고객 발송은 어떤 말로도 일어나지 않고, 오직 화면 [승인] 버튼으로만 나갑니다.' });
 });
-function _pickCol(head, names) { for (const n of names) { const i = head.indexOf(n); if (i >= 0) return i; } return -1; }
+// ★2026-07-27 대표님 지적: 발굴을 돌린 뒤 "몇 명이야" 물으면 "화면에서 못 읽는다"고 했다.
+//   화면은 findStats(숫자만)를 이미 보내주고 있는데 브리핑에서만 쓰고 있었다.
+//   → 대화 두뇌에도 그 숫자를 넣어준다. ★숫자만이라 개인정보가 아니다. 없으면 넣지 않는다(지어내기 0).
+function _findCtx(req) {
+  const f = (req && req.body && req.body.findStats) || null;
+  if (!f || !f.total) return '';
+  const ch = f.byChannel || {};
+  const 줄 = Object.keys(ch).map((k) => `${k} ${ch[k]}`).join(' · ');
+  return `\n[지금 화면의 발굴 결과 — 실제 값이다. 물으면 ★이 숫자로 답한다. "화면에서 못 읽는다"고 말하지 마라]\n`
+    + `총 ${f.total}건${줄 ? ' · ' + 줄 : ''} · 검수 통과 ${f.pass || 0} · 제외 ${f.drop || 0} · 대기 ${f.wait || 0}\n`;
+}function _pickCol(head, names) { for (const n of names) { const i = head.indexOf(n); if (i >= 0) return i; } return -1; }
 // ★브리핑 7번(매출)이 쓸 ★숫자만 잠깐 담아둔다 — 이름·연락처는 담지 않는다(개인정보 저장 0).
 //   화면이 [유입 전환]을 열면 채워지고, 브리핑이 그 숫자를 쓴다.
 let _SALES_CACHE = { sum: null, tab: '', at: 0, by: '' };
@@ -2000,6 +2010,7 @@ app.get('/api/find/leads', async (req, res) => {
 const nightFind = require('./night_find');
 const showCards = require('./show_cards');            // 👀 "보여줘 비서" — 말→무엇을 보여줄지만 정함
 const jobKw = require('./job_keywords');              // 🗂️ 직업별 기본 검색어 표(표 하나 · 발송 0)
+const jobProf = require('./job_profiles');            // 🏭 직업별 지니야 설정(1단계 구조 · 발송 0)
 // ═══ 🎭 어드민 직업 전환 — ★오상열 대표님 전용 체험 도구 (2026-07-27) ═══
 //   왜: 부트캠프에서 학원 원장·행정사·세무사를 가르치려면 ★그 직업 지니야를 먼저 써보셔야 한다.
 //   ★교육생에겐 아예 없다(VIP가 아니면 403). 자기 직업 고정.
@@ -2012,8 +2023,9 @@ app.get('/api/admin/jobs', (req, res) => {
   if (!sessionOf(req)) return res.status(401).json({ ok: false, error: '로그인이 필요해요' });
   if (!_isAdmin(req)) return res.status(403).json({ ok: false, error: '대표님 전용 기능이에요' });
   const me = String((sessionOf(req) || {}).email || '').toLowerCase();
-  res.json({ ok: true, 어드민: true, 지금직업: _ADMIN_MODE[me] || '', 내직업: '재무설계·보험',
-    직업목록: jobKw.목록(), 발송함: false });
+  const 지금 = _ADMIN_MODE[me] || '';
+  res.json({ ok: true, 어드민: true, 지금직업: 지금, 내직업: '재무설계·보험',
+    직업목록: jobProf.전체(), 설정: 지금 ? jobProf.불러오기(지금) : jobProf.불러오기('재무설계·보험'), 발송함: false });
 });
 app.post('/api/admin/job', (req, res) => {
   if (!sessionOf(req)) return res.status(401).json({ ok: false, error: '로그인이 필요해요' });
@@ -2023,7 +2035,8 @@ app.post('/api/admin/job', (req, res) => {
   if (!j) { delete _ADMIN_MODE[me]; console.log('[🎭직업전환] 원래 직업으로 복귀'); return res.json({ ok: true, 지금직업: '', 복귀: true }); }
   _ADMIN_MODE[me] = j;
   console.log(`[🎭직업전환] "${j}" 모드로 체험 — ★밤샘·발송은 그대로(체험 겉옷일 뿐)`);
-  res.json({ ok: true, 지금직업: j, 직업이름: jobKw.직업이름(j), 검색어: jobKw.기본검색어(j), 발송함: false });
+  res.json({ ok: true, 지금직업: j, 직업이름: jobKw.직업이름(j), 검색어: jobKw.기본검색어(j),
+    설정: jobProf.불러오기(j), 발송함: false });
 });
 // 🎭 그 직업으로 ★시험 발굴 — 기존 발굴 라우트는 손대지 않고, 밤샘 엔진을 1회 빌려 쓴다.
 app.post('/api/admin/tryfind', async (req, res) => {
@@ -2838,7 +2851,7 @@ async function orderHandler(req, res) {
         console.log('[🛡️수문장→sheetCRUD] 활성명단 전체조회 · q="' + String(q).slice(0, 30) + '" · reply="' + String((rc && rc.reply) || '(빈)').replace(/\n/g, ' ').slice(0, 150) + '"');
         out = { kind: '🗂️ 고객명단', text: rc.reply || '명단을 시트에서 불러왔어요.', pending: rc.pending || null, engine: MODEL_DEEP };
       } else {
-        const sysG = genyaPersona(job, { email: _uidG }) + '\n[지금 이 방에서 최근 일어난 일 — 실제 발생] 아래는 이 지니야 화면에서 실제로 일어난 이벤트다. "방금 올린/만든/한 것"을 물으면 이걸 근거로 정확히 인지하고 답한다(절대 "안 보인다"고 하지 마라). 개별 값을 지어내지는 않는다.\n★명단·시트 저장 이벤트(roster_upload=명단 업로드 등)가 있으면, 그 명단은 이미 회원 구글 시트(고객명단 탭)에 저장돼 있는 것이다. 개별 고객 정보를 물으면 "다시 올려주세요/재업로드"라고 절대 하지 말고, "그 명단은 시트에 저장돼 있어요. \'○○님 정보 알려줘\'라고 하시면 시트에서 바로 조회해 드릴게요. (구글 데이터 연결이 필요할 수 있어요)"라고 안내한다. 시트에 없는 일회성 파일만 없을 때 다시 올려달라 한다.\n' + _gateEvents;
+        const sysG = genyaPersona(job, { email: _uidG }) + _findCtx(req) + '\n[지금 이 방에서 최근 일어난 일 — 실제 발생] 아래는 이 지니야 화면에서 실제로 일어난 이벤트다. "방금 올린/만든/한 것"을 물으면 이걸 근거로 정확히 인지하고 답한다(절대 "안 보인다"고 하지 마라). 개별 값을 지어내지는 않는다.\n★명단·시트 저장 이벤트(roster_upload=명단 업로드 등)가 있으면, 그 명단은 이미 회원 구글 시트(고객명단 탭)에 저장돼 있는 것이다. 개별 고객 정보를 물으면 "다시 올려주세요/재업로드"라고 절대 하지 말고, "그 명단은 시트에 저장돼 있어요. \'○○님 정보 알려줘\'라고 하시면 시트에서 바로 조회해 드릴게요. (구글 데이터 연결이 필요할 수 있어요)"라고 안내한다. 시트에 없는 일회성 파일만 없을 때 다시 올려달라 한다.\n' + _gateEvents;
         const text = await askClaude(sysG, hist.concat([{ role: 'user', content: q }]), 8192, { admin: _admin });
         out = { kind: '💬 지니야', text, engine: _lastAskModel || pickedModel(q, { admin: _admin }) };
       }
@@ -2868,7 +2881,7 @@ async function orderHandler(req, res) {
       } catch (e) { extra = '\n[명단 조회 오류 — 구글 시트 연결을 확인하라고 안내한다.]\n'; console.log('[📇명단 조회 실패] ' + e.message); }
       console.log('[📇명단 자동주입] ' + extra.length + 'chars · q="' + String(q).slice(0, 30) + '"');
       console.log('[📇명단 내용확인] ' + (extra || '').slice(0, 500));
-      const sysP = genyaPersona(job, { email: uid }) + '\n[활성 고객명단 — 실제 시트 데이터(마스터 시트)]' + extra;
+      const sysP = genyaPersona(job, { email: uid }) + _findCtx(req) + '\n[활성 고객명단 — 실제 시트 데이터(마스터 시트)]' + extra;
       const text = await askClaude(sysP, hist.concat([{ role: 'user', content: q }]), 8192, { admin: _admin });
       out = { kind: '📇 고객명단', text, engine: _lastAskModel || pickedModel(q, { admin: _admin }) };
     } else if (activeSkill && SKILL_CTX[activeSkill] && !_toolIntent) {
