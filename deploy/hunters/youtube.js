@@ -42,17 +42,26 @@ async function search(persona, opts) {
   if (!key) return [];
   const out = [];
   const max = opts.max || 30;
+  // ★2026-07-27 수확 개선: 예전엔 order=date로 "방금 올라온 영상 3개"만 봤다.
+  //   갓 올라온 영상은 댓글이 0~2개라 아무리 돌려도 리드가 안 나왔다(유튜브가 비어 보이던 진짜 원인).
+  //   → 최근 90일 안에서 ★조회수 높은 영상을 본다. 사람이 모인 곳에 고민 댓글이 있다.
+  //   ★비용은 거의 그대로: 검색은 maxResults와 무관하게 1회 100 units, 댓글 조회만 영상당 1 unit.
+  //     영상 3→6, 댓글 10→20이면 댓글 풀이 4배인데 비용은 3 units만 는다.
+  const since = new Date(Date.now() - 90 * 24 * 3600 * 1000).toISOString();
   for (const kw of _keywords(persona, opts.agent)) {
     let s;
-    try { s = await (await fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&order=date&maxResults=3&q=${encodeURIComponent(kw)}&key=${key}`)).json(); }
-    catch (e) { continue; }
+    try {
+      s = await (await fetch('https://www.googleapis.com/youtube/v3/search?part=snippet&type=video'
+        + '&order=viewCount&maxResults=6&relevanceLanguage=ko&regionCode=KR'
+        + `&publishedAfter=${encodeURIComponent(since)}&q=${encodeURIComponent(kw)}&key=${key}`)).json();
+    } catch (e) { continue; }
     if (s.error) throw new Error(s.error.message || 'youtube search 실패');
     for (const it of (s.items || [])) {
       const vid = it.id && it.id.videoId; if (!vid) continue;
       const vCh = (it.snippet && it.snippet.channelId) || '';
       if (vCh === EXCLUDE_CH) continue;   // 내 채널은 ① 전용 기자 담당
       let cs;
-      try { cs = await (await fetch(`https://www.googleapis.com/youtube/v3/commentThreads?part=snippet&maxResults=10&order=relevance&videoId=${vid}&key=${key}`)).json(); }
+      try { cs = await (await fetch(`https://www.googleapis.com/youtube/v3/commentThreads?part=snippet&maxResults=20&order=relevance&videoId=${vid}&key=${key}`)).json(); }
       catch (e) { continue; }
       (cs.items || []).forEach((ci) => {
         const sn = ci.snippet && ci.snippet.topLevelComment && ci.snippet.topLevelComment.snippet; if (!sn) return;

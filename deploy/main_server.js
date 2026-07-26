@@ -1159,6 +1159,7 @@ app.get('/api/find/leads', async (req, res) => {
       score: l.score, grade: l.grade, foundLabel: l.foundLabel, foundBy: l.foundBy,
       hunter: l.hunter, channel: _lbl[l.hunter] || l.source,   // 화면에서 채널별로 묶을 이름(이모지 포함)
       review: l.review || null,                                 // 🛡️ 검수AI 판정 + 본문 인용 근거
+      foundAt: l.foundAt,                                       // 발굴 시각(ISO) — 화면이 "2026-07-27 06:30"으로 표시
     }));
     // 채널이 하나도 안 켜졌으면 정직하게 안내(가짜 0건으로 감추지 않는다)
     const anyOn = !!key || (desk.roster || []).some((r) => r.on);
