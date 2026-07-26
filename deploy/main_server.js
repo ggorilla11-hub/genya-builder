@@ -1131,6 +1131,76 @@ hunterDesk.reviewer.init(async (prompt) => {
   });
   return (r.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');
 });
+// ═══ 📇 카드 묶음 해석 — "브리핑에서 말한 그 사람들"을 카드로 부를 수 있게 ═══
+//   ★2026-07-27 버그: 브리핑은 비고 칸을 읽어 "상담 대기 4명"이라 묶었는데,
+//     카드 호출은 '상담'이라는 이름을 찾다가 실패했다. 말 따로 카드 따로였다.
+//   → 브리핑이 쓰는 것과 ★같은 시트·같은 기준으로 찾는다.
+//   ★지어내지 않는다: 시트에 실제로 있는 행만 돌려준다. 없으면 없다고 한다.
+//   ★서버 저장 0: 시트를 읽어 이름만 골라 응답에 싣고 끝.
+const _CARD_GROUPS = [
+  { key: '상담 대기', re: /(상담|미팅|면담|방문|대기)/,
+    hit: /(상담|미팅|면담|방문|대기|예정|요청|문의)/, how: '비고 등 모든 칸에서 상담·미팅·면담·방문·대기' },
+  { key: '생일', re: /(생일|기념일)/, dateCol: /(생일|생년|기념일)/, within: 30, how: '생일·기념일 30일 이내' },
+];
+function _rowName(t, row) {
+  // 이름 칸을 찾는다. 못 찾으면 사람 이름처럼 생긴 첫 값을 쓴다(하드코딩 없음)
+  const keys = Object.keys(row || {});
+  const nk = keys.find((k) => /(고객명|성명|이름|name)/i.test(k));
+  if (nk && String(row[nk] || '').trim()) return String(row[nk]).trim();
+  for (const k of keys) { const v = String(row[k] || '').trim(); if (/^[가-힣]{2,4}$/.test(v)) return v; }
+  return '';
+}
+function _isExpired(row, within) {
+  const keys = Object.keys(row || {});
+  const dk = keys.filter((k) => /(만기|만료|종료|갱신)/.test(k));
+  if (!dk.length) return false;
+  const today = new Date(Date.now() + 9 * 3600 * 1000);
+  for (const k of dk) {
+    const m = String(row[k] || '').match(/(\d{4})[.\-/년\s]+(\d{1,2})[.\-/월\s]+(\d{1,2})/);
+    if (!m) continue;
+    const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+    const days = Math.round((d - today) / 86400000);
+    if (within == null ? days < 0 : (days >= 0 && days <= within)) return true;
+  }
+  return false;
+}
+/** @returns {{names:[], label, how}} */
+function _resolveCardGroup(q, t, lastMentioned) {
+  const rows = (t && t.rows) || [];
+  // ⓪ "방금 말한 4명" — 직전 브리핑이 실제로 언급한 사람들(화면이 기억해 보내준다)
+  if (/(방금|아까|위에|위의|말한|언급|그\s*\d*\s*명)/.test(q) && Array.isArray(lastMentioned) && lastMentioned.length) {
+    const inSheet = lastMentioned.filter((n) => rows.some((r) => _rowName(t, r) === n));
+    if (inSheet.length) return { names: inSheet.slice(0, 12), label: '방금 말씀드린', how: '직전 브리핑에서 언급' };
+  }
+  // ① 만기 — 지났는가 / 임박인가
+  if (/(만기|만료|경과|갱신)/.test(q)) {
+    const past = /(지난|경과|넘긴|지나|끝난)/.test(q);
+    const names = rows.filter((r) => _isExpired(r, past ? null : 30)).map((r) => _rowName(t, r)).filter(Boolean);
+    return { names: names.slice(0, 12), label: past ? '만기 지난' : '만기 임박(30일 내)', how: past ? '만기일이 오늘보다 이전' : '만기일이 30일 이내' };
+  }
+  // ② 그 외 묶음 — ★브리핑과 같이 "모든 칸"을 훑는다(명단에 '상담' 컬럼이 없어도 비고로 잡힌다)
+  for (const g of _CARD_GROUPS) {
+    if (!g.re.test(q) || g.dateCol) continue;
+    const names = rows.filter((r) => Object.keys(r).some((k) => g.hit.test(String(r[k] || ''))))
+      .map((r) => _rowName(t, r)).filter(Boolean);
+    return { names: names.slice(0, 12), label: g.key, how: g.how };
+  }
+  // ③ 아무 조건도 안 걸리면 질문의 낱말로 전 칸 검색(지어내기 대신 실제 값 매칭)
+  const words = String(q).replace(/카드|보여|띄워|띄우|열어|해줘|줘|명단|고객|사람|들|의|을|를|좀|\d+\s*명/g, ' ')
+    .split(/\s+/).map((w) => w.trim()).filter((w) => w.length >= 2);
+  if (words.length) {
+    // ★낱말이 "전부" 맞아야 한다. 하나만 맞아도 되게 하면
+    //   "해지 예정" 물었는데 "상담 예정" 고객이 딸려 나온다(엉뚱한 사람에게 연락하는 사고).
+    const names = rows.filter((r) => {
+      const all = Object.keys(r).map((k) => String(r[k] || '')).join(' ');
+      return words.every((w) => all.indexOf(w) >= 0);
+    }).map((r) => _rowName(t, r)).filter(Boolean);
+    if (names.length) return { names: names.slice(0, 12), label: words.join(' '), how: '모든 칸에서 "' + words.join(' ') + '" 전부 포함' };
+    return { names: [], label: words.join(' '), how: '모든 칸에서 "' + words.join(' ') + '" 검색' };
+  }
+  return { names: [], label: '해당', how: '' };
+}
+
 // 🛡️ 사후 검수 — 화면이 담아둔 리드를 조금씩 보내 판정만 받아간다(선담기 후검수).
 //   ★서버 저장 0: 받은 글은 판정하고 그 자리에서 버린다. 개인정보가 서버에 남지 않는다.
 //   ★통과한 것만 화면에서 [답글 초안] 버튼이 열린다 → 경쟁자에게 답글 다는 사고를 원천 차단.
@@ -1503,6 +1573,15 @@ async function orderHandler(req, res) {
     const _isCardCmd = /(카드|스캔)/.test(q) && /(띄워|띄우|띄|보여|열어|열|뜨|스캔|해줘|해|줘)/.test(q);
     let _cardName = '';
     if (_isCardCmd) { const _c = q.replace(/고객님|고객|카드|스캔해줘|스캔해|스캔|띄워줘|띄워|띄우|보여줘|보여|열어줘|열어|해줘|줘|증권|서류|자료|파일|명단|이거|저거|화면|을|를|의|좀|씨|님/g, ' ').trim(); const _m = _c.match(/([가-힣]{2,4})/); _cardName = _m ? _m[1] : ''; }
+    // ★2026-07-27 "브리핑엔 있는데 카드엔 없다" 버그:
+    //   "상담 대기 4명 카드 보여줘" → '상담'을 사람 이름으로 알고 찾다가 실패했다.
+    //   브리핑은 비고 칸을 읽어 "상담 대기"로 묶는데, 카드는 그 해석을 몰랐다.
+    //   → 이름이 아니라 ★묶음(그룹)을 말한 것인지 먼저 가린다.
+    const _isGroupCard = _isCardCmd && (
+      /(상담|미팅|면담|방문|대기)/.test(q) || /(만기|만료|경과|지난|임박)/.test(q) ||
+      /(생일|기념일)/.test(q) || /(방금|아까|위에|그\s*\d+명|말한|언급)/.test(q) ||
+      /\d+\s*명/.test(q)
+    );
     // ⭐ 이벤트 만들기 명령: "결혼기념일 이벤트 만들어줘" → 대시보드 [＋ 이벤트 추가]와 똑같이 실행. Vapi FC 미사용(텍스트 신호만).
     //   ★트리거 3개 배타 구분: 카드(카드/스캔) · 결재(결재/발송/알림톡/승인) · 이벤트(이벤트+만들/추가/생성).
     //     '이벤트'라는 낱말은 나머지 둘에 안 쓰이고, 여기서 카드·결재 낱말을 명시적으로 배제해 서로 안 물린다.
@@ -1623,12 +1702,27 @@ async function orderHandler(req, res) {
       }
     } else if (_isEventCmd) {
       out = { kind: '⭐ 이벤트', text: '어떤 이벤트를 만들까요? "결혼기념일 이벤트 만들어줘"처럼 이름을 함께 말씀해 주세요.' };
-    } else if (_isCardCmd && _cardName) {
-      let _found = false;
-      try { const t = await sheetsCrud.loadTable(null); if (t && t.rows) _found = sheetsCrud.findByName(t, _cardName).length > 0; } catch (e) {}
-      out = _found
-        ? { kind: '📇 고객카드', action: 'open_card', customer: _cardName, text: _cardName + ' 고객 카드를 띄울게요.' }
-        : { kind: '📇 고객카드', customer: _cardName, text: '명단에서 "' + _cardName + '" 고객을 못 찾았어요. 이름을 다시 확인해 주세요.' };
+    } else if (_isCardCmd && (_isGroupCard || _cardName)) {
+      let t = null;
+      try { t = await sheetsCrud.loadTable(null); } catch (e) {}
+      // ① 먼저 사람 이름으로 찾아본다(기존 동작 그대로 — 회귀 없음)
+      let hit = [];
+      if (_cardName && t && t.rows) { try { hit = sheetsCrud.findByName(t, _cardName); } catch (e) { hit = []; } }
+      if (hit.length) {
+        out = { kind: '📇 고객카드', action: 'open_card', customer: _cardName, text: _cardName + ' 고객 카드를 띄울게요.' };
+      } else {
+        // ② 이름이 아니면 ★브리핑과 같은 기준으로 묶음을 찾는다(상담 대기·만기 경과 등)
+        const g = _resolveCardGroup(q, t, (req.body && req.body.lastMentioned) || []);
+        if (g.names.length) {
+          out = { kind: '📇 고객카드', action: 'open_cards', customers: g.names, label: g.label,
+            text: `${g.label} ${g.names.length}명 카드를 띄울게요 — ${g.names.join(' · ')}` };
+        } else if (_cardName && !_isGroupCard) {
+          out = { kind: '📇 고객카드', customer: _cardName, text: '명단에서 "' + _cardName + '" 고객을 못 찾았어요. 이름을 다시 확인해 주세요.' };
+        } else {
+          // ★지어내지 않는다 — 진짜 없으면 없다고 말한다(무슨 기준으로 찾았는지까지)
+          out = { kind: '📇 고객카드', text: `${g.label}에 해당하는 고객이 명단에 없어요.` + (g.how ? ` (${g.how} 기준으로 찾았어요)` : '') };
+        }
+      }
     } else if (_gateEvents) {
       // 🛡️ 이 방 이벤트 인지 응답(LLM + 수문장 컨텍스트) — 엄마2 Phase6-3 수문장(무접촉 병합)
       const job = String((req.body && req.body.job) || req.query.job || '');
