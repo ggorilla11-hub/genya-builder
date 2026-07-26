@@ -1680,19 +1680,38 @@ app.post('/api/find/reply-draft', async (req, res) => {
     const greet = who ? `안녕하세요, ${who}${cert ? ' ' + cert : ''}입니다` : '안녕하세요';
     // ★2026-07-27: 답글이 "…무료 재무진단을" 하고 끊겼다(max_tokens 350이 모자랐다).
     //   반드시 5조각이 다 있어야 한다: 인사 → 공감 → 진단 안내 → [링크] → 감사합니다.
-    const sys = '너는 재무설계사를 돕는 어시스턴트다. 유튜브 댓글/카페 글에 달 "답글 초안"을 쓴다. 톤: 친절하고 전문적.\n'
-      + '★반드시 아래 5조각을 ★모두★ 갖춘 완결된 글을 쓴다. 중간에 끊기면 안 된다.\n'
+    // ★2026-07-27 대표님 지적: 답글이 일반 인사글에 가까웠다.
+    //   네이버 카페·블로그 글은 복사가 안 돼 대표님이 붙여넣을 수도 없다.
+    //   → 발굴할 때 이미 가져온 ★본문 발췌를 지니야가 직접 읽고, 그 고민에 답하게 한다.
+    //   ★발췌에 없는 건 지어내지 않는다. 발췌가 짧으면 일반 공감으로 물러선다.
+    const 발췌 = text;
+    const 짧음 = 발췌.replace(/\s/g, '').length < 25;   // 제목만 있고 내용이 거의 없는 경우
+    const 맥락 = [
+      b.channel ? `채널: ${String(b.channel).slice(0, 20)}` : '',
+      b.why ? `지니야가 뽑은 이유: ${String(b.why).slice(0, 60)}` : '',
+      b.quote ? `검수AI가 짚은 구절: "${String(b.quote).slice(0, 80)}"` : '',
+    ].filter(Boolean).join(' / ');
+    const sys = '너는 재무설계사를 돕는 어시스턴트다. 공개 글(카페·블로그·지식iN·유튜브 댓글)에 달 "답글 초안"을 쓴다. 톤: 친절하고 전문적.\n'
+      + '★★가장 중요: 아래 [본문 발췌]를 ★실제로 읽고★ 그 사람의 구체적인 고민에 답해라.\n'
+      + '   두루뭉술한 인사글은 실패다. 발췌에 나온 상황(예: 신혼집 대출·재건축·전세·목돈·연금 등)을\n'
+      + '   ★그대로 짚어서 언급해야 한다. 어느 리드에나 붙는 문장은 쓰지 마라.\n'
+      + '★★환각 금지: 발췌에 ★없는 사실(나이·자산·가족·지역·금액)을 지어내지 마라.\n'
+      + (짧음 ? '   ※ 이번 발췌는 짧다 — 구체적 상황을 억지로 만들지 말고 일반적인 공감으로 담백하게 써라.\n' : '')
+      + '\n반드시 아래 5조각을 ★모두★ 갖춘 완결된 글을 쓴다. 중간에 끊기면 안 된다.\n'
       + `  ① 인사 — 첫 문장은 반드시 "${greet}."로 시작한다(다른 인사말로 바꾸지 마라)\n`
-      + '  ② 공감 — 상대 고민을 그대로 짚어 진심으로 공감(1~2문장)\n'
-      + '  ③ 도움 — "무료 재무진단으로 지금 상황을 점검해보시라"고 자연스럽게 권함(1~2문장)\n'
+      + '  ② ★그 글의 고민에 답 — 발췌에 나온 상황을 짚고, 도움이 될 방향을 1~2가지 짧게 짚는다\n'
+      + '       ★단 여기서 다 풀어주지 마라. 방향만 짚고 정밀 진단은 아래로 넘긴다(미끼 유지).\n'
+      + '  ③ 공감·연결 — 왜 점검이 필요한지 한 문장\n'
       + '  ④ 안내처 — 링크 자리로 [링크] 토큰을 ★정확히 한 번★ 넣는다.\n'
       + '       예: "[링크]으로 편하게 문의해주시면 자세히 안내해드리겠습니다."\n'
       + '       ★[링크] 말고 다른 주소(URL)를 쓰지 마라. 주소를 지어내지 마라.\n'
       + '  ⑤ 마무리 — 마지막 줄은 "감사합니다."로 끝낸다\n'
-      + '전체 5~7문장. 강매·전화번호·과장·이모지 남발 금지.\n'
+      + '전체 5~8문장. 강매·전화번호·과장·이모지 남발 금지.\n'
       + '★자격·경력을 지어내지 마라. 위 인사말에 없는 자격을 덧붙이지 않는다.\n'
       + '답글 본문만 출력(설명 없이).';
-    const cr = await _anthropic.messages.create({ model: WS_CHAT_MODEL, max_tokens: 1200, system: sys, messages: [{ role: 'user', content: `[출처: ${source}] 상대 글/댓글:\n"${text}"\n\n이 사람에게 달 답글 초안을 써줘.` }] });
+    const usr = `[출처: ${source}]${맥락 ? '\n[맥락] ' + 맥락 : ''}\n\n[본문 발췌]\n"""${발췌}"""\n\n`
+      + '위 발췌를 읽고, 이 사람의 고민에 맞춘 답글 초안을 써줘. 발췌에 없는 사실은 넣지 마.';
+    const cr = await _anthropic.messages.create({ model: WS_CHAT_MODEL, max_tokens: 1200, system: sys, messages: [{ role: 'user', content: usr }] });
     let draft = (cr.content || []).filter((x) => x.type === 'text').map((x) => x.text).join('').trim();
     // ★끝까지 왔는지 확인하고, 빠진 조각은 여기서 채운다(잘린 채로 내보내지 않는다)
     const link = String(b.link || '').trim() || 'https://ohwant.net';
@@ -1701,7 +1720,40 @@ app.post('/api/find/reply-draft', async (req, res) => {
     if (draft.indexOf('[링크]') < 0) draft += '\n\n[링크]으로 편하게 문의해주시면 자세히 안내해드리겠습니다.';
     if (!/감사합니다/.test(draft.slice(-40))) draft += '\n\n감사합니다.';
     draft = draft.split('[링크]').join(link);          // ★남은 토큰을 전부 홈페이지 주소로
-    res.json({ ok: true, draft, truncated: cr.stop_reason === 'max_tokens' });
+
+    // ★★본문이 있는데 "인사말만" 나가면 실패다 — 여기서 잡아 한 번 다시 쓴다(2026-07-27 대표님 지시).
+    //   판정: 발췌의 핵심 낱말이 답글에 하나도 안 들어갔으면 그 본문을 안 읽은 것이다.
+    const 핵심 = Array.from(new Set((발췌.match(/[가-힣]{2,}/g) || [])
+      .filter((w) => w.length >= 2 && !/^(그리고|하지만|그런데|저는|제가|해서|해야|되는|있는|없는|같은|정도|경우|생각|질문|답변|부탁|드립니다|합니다|입니다|어떻게|무엇|이런|저런|많이|조금|아직|지금|요즘)$/.test(w))));
+    const 반영 = 핵심.filter((w) => draft.indexOf(w) >= 0).length;
+    let 재작성 = false;
+    if (!짧음 && 핵심.length >= 4 && 반영 < 2) {
+      재작성 = true;
+      try {
+        const cr2 = await _anthropic.messages.create({
+          model: WS_CHAT_MODEL, max_tokens: 1200,
+          system: sys + '\n\n★방금 쓴 답글이 본문 내용을 전혀 반영하지 않았다. 다시 써라.\n'
+            + `★아래 낱말 중 실제로 글에 나온 것을 최소 2개 이상 그대로 언급해라: ${핵심.slice(0, 12).join(', ')}\n`
+            + '단 억지로 끼워 넣지 말고, 그 사람의 상황을 짚는 자연스러운 문장 안에서 쓴다.',
+          messages: [{ role: 'user', content: usr }],
+        });
+        let d2 = (cr2.content || []).filter((x) => x.type === 'text').map((x) => x.text).join('').trim();
+        if (d2) {
+          d2 = d2.replace(/https?:\/\/ohwant-class\.netlify\.app\/\S*/g, '[링크]');
+          if (d2.indexOf('[링크]') < 0) d2 += '\n\n[링크]으로 편하게 문의해주시면 자세히 안내해드리겠습니다.';
+          if (!/감사합니다/.test(d2.slice(-40))) d2 += '\n\n감사합니다.';
+          d2 = d2.split('[링크]').join(link);
+          const 반영2 = 핵심.filter((w) => d2.indexOf(w) >= 0).length;
+          if (반영2 > 반영) draft = d2;                 // 나아졌을 때만 바꾼다
+        }
+      } catch (e) { /* 다시 쓰기 실패해도 첫 초안은 그대로 살린다 */ }
+    }
+    const 반영최종 = 핵심.filter((w) => draft.indexOf(w) >= 0).length;
+    console.log(`[✍️답글] 발췌 ${발췌.length}자 · 핵심낱말 ${핵심.length} · 반영 ${반영최종}${재작성 ? ' (재작성함)' : ''}${짧음 ? ' · 발췌짧음' : ''}`);
+
+    // ★무엇을 읽고 썼는지 화면에 보여주기 위해 발췌를 함께 돌려준다(서버 저장 0 — 응답에만)
+    res.json({ ok: true, draft, basedOn: 발췌.slice(0, 200), thin: 짧음,
+      grounded: 반영최종 >= 2, matched: 반영최종, truncated: cr.stop_reason === 'max_tokens' });
   } catch (e) { res.json({ ok: false, error: e.message }); }
 });
 

@@ -1893,18 +1893,25 @@ function _doneBadge(l){
 function _draftsSave(){
   (window._FIND||[]).forEach(function(l,i){
     var ta=document.getElementById('draftTa-'+i);
-    if(ta){ var k=_draftKey(l); if(k) window._DRAFTS[k]=Object.assign(window._DRAFTS[k]||{}, {text:ta.value}); }   // ★대표님이 고쳐 쓴 내용까지 보존
+    if(ta){ var k=_draftKey(l); if(k) window._DRAFTS[k]=Object.assign(window._DRAFTS[k]||{}, {text:ta.value}); }   // ★고쳐 쓴 내용은 덮고, 발췌(basedOn)는 그대로 유지
   });
 }
 function _draftsRestore(){
   (window._FIND||[]).forEach(function(l,i){
     var k=_draftKey(l), d=k&&window._DRAFTS[k];
-    if(d&&d.text!=null){ var box=document.getElementById('draft-'+i); if(box&&!box.innerHTML) box.innerHTML=_draftHTML(i,l,d.text,d.diagKey); }
+    if(d&&d.text!=null){ var box=document.getElementById('draft-'+i); if(box&&!box.innerHTML) box.innerHTML=_draftHTML(i,l,d.text,d.diagKey,d.basedOn,d.thin,d.grounded); }
   });
 }
-function _draftHTML(i,l,txt,diagKey){
+function _draftHTML(i,l,txt,diagKey,basedOn,thin,grounded){
+  var src=String(basedOn||l.text||'').slice(0,160);
+  var mark = thin ? '' : (grounded===false
+    ? '<div style="color:#c0392b;margin-top:4px">⚠️ <b>본문 내용이 잘 안 담겼어요</b> — 원문을 보고 손봐주세요.</div>'
+    : (grounded===true ? '<div style="color:#0f766e;margin-top:4px">✅ 이 글의 고민을 반영해 썼어요</div>' : ''));
   return '<div style="margin-top:8px;background:#f5f9f8;border:1px solid var(--teal-bd);border-radius:8px;padding:9px 10px">'
     +'<div style="font-size:11px;color:var(--teal-d);font-weight:700;margin-bottom:5px">✍️ 지니야 답글 초안 (수정 가능 · 게시는 직접)</div>'
+    // ★무엇을 읽고 썼는지 — 대표님이 답글 정확성을 바로 검수하실 수 있게
+    +(src?('<div style="font-size:10.5px;color:#556;background:#fff;border:1px dashed #cfe8e1;border-radius:6px;padding:6px 8px;margin-bottom:6px;line-height:1.5">📌 <b>이 글을 읽고 썼어요</b><br>'+_escOb(src)+(String(basedOn||l.text||'').length>160?'…':'')
+      +(thin?'<div style="color:#8a6d1a;margin-top:4px">※ 발췌가 짧아 일반적인 공감으로 썼어요 — 원문을 보고 손봐주세요.</div>':mark)+'</div>'):'')
     // ★진단페이지 미끼 선택기 제거(2026-07-27) — CTA는 홈페이지 ohwant.net 하나로 통일
     +'<textarea id="draftTa-'+i+'" oninput="_draftsSave()" style="width:100%;min-height:80px;font-size:12.5px;font-family:inherit;line-height:1.6;color:#0d1b2a;background:#fff;border:1px solid #dbe2ea;border-radius:6px;padding:8px;box-sizing:border-box;resize:vertical">'+_escOb(txt)+'</textarea>'
     +'<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">'
@@ -1925,17 +1932,20 @@ function findDraft(i){
   var l=(window._FIND||[])[i]; if(!l)return;
   var box=document.getElementById('draft-'+i); if(!box)return;
   box.innerHTML='<div style="margin-top:8px;font-size:12px;color:var(--teal-d)">✍️ 지니야가 답글 초안 작성 중…</div>';
-  // ★이름·자격을 함께 보낸다 — "안녕하세요, 오상열 CFP입니다"로 시작하게(익명 영업 아닌 전문가 신뢰)
+  // ★이름·자격 + ★발굴한 본문 발췌와 맥락을 함께 보낸다
+  //   (2026-07-27) 전에는 본문만 보내 두루뭉술한 답글이 나왔다.
+  //   무엇을 근거로 뽑은 리드인지(추천 근거·채널·등급)까지 줘야 그 사람에게 맞는 답이 나온다.
   fetch('/api/find/reply-draft',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({text:l.text,author:l.name,source:l.source,name:_myName(),cert:_myCert(),link:_findDraftLink(i)})})
+    body:JSON.stringify({text:l.text,author:l.name,source:l.source,channel:l.ch,why:l.why,tier:l.tier,
+      quote:(l.review&&l.review.quote)||'',name:_myName(),cert:_myCert(),link:_findDraftLink(i)})})
    .then(function(r){return r.json();}).then(function(d){
      if(!d||!d.ok||!d.draft){ box.innerHTML='<div style="margin-top:8px;font-size:12px;color:#c0392b">초안 생성 실패 — <span onclick="findDraft('+i+')" style="text-decoration:underline;cursor:pointer">다시</span></div>'; return; }
      // ★혹시 [링크] 토큰이 남아 있으면 홈페이지로. 옛 진단페이지 주소가 섞여 와도 홈페이지로 정리.
      var txt=String(d.draft).replace(/\[링크\]/g, GENYA_HOME)
        .replace(/https?:\/\/ohwant-class\.netlify\.app\/\S*/g, GENYA_HOME);
      // ★보관부터 한다 — 검수가 뒤에서 화면을 다시 그려도 이 초안이 되살아난다
-     var k=_draftKey(l); if(k) window._DRAFTS[k]={text:txt};
-     box.innerHTML=_draftHTML(i,l,txt,null);
+     var k=_draftKey(l); if(k) window._DRAFTS[k]={text:txt, basedOn:d.basedOn, thin:d.thin, grounded:d.grounded};
+     box.innerHTML=_draftHTML(i,l,txt,null,d.basedOn,d.thin,d.grounded);
    })
    .catch(function(){ box.innerHTML='<div style="margin-top:8px;font-size:12px;color:#c0392b">초안 생성 실패 — <span onclick="findDraft('+i+')" style="text-decoration:underline;cursor:pointer">다시</span></div>'; });
 }
