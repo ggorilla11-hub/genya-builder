@@ -1128,12 +1128,27 @@ const hunterDesk = require('./hunters');
 // 🛡️ 검수AI 두뇌 연결 — hunters 폴더가 API 키를 직접 다루지 않게, 호출 함수만 주입한다.
 //   저비용 모델로 심사한다(정찰·판별은 싼 모델로 충분하고, 건수가 많다).
 hunterDesk.reviewer.init(async (prompt) => {
-  const r = await _anthropic.messages.create({
-    model: process.env.REVIEW_MODEL || 'claude-haiku-4-5-20251001',
-    max_tokens: 1500, temperature: 0,
-    messages: [{ role: 'user', content: prompt }],
-  });
-  return (r.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');
+  // ★과부하(429·529)를 만나면 잠깐 쉬었다 다시 — 251건을 돌리면 순간 몰릴 수 있다.
+  //   여기서 안 견디면 그 배치가 통째로 '검수불가'가 되어 답글이 안 열린다.
+  const _sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  let last = null;
+  for (let t = 0; t < 3; t++) {
+    try {
+      const r = await _anthropic.messages.create({
+        model: process.env.REVIEW_MODEL || 'claude-haiku-4-5-20251001',   // ★저비용 모델(검수는 판정만)
+        max_tokens: 1500, temperature: 0,
+        messages: [{ role: 'user', content: prompt }],
+      });
+      return (r.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');
+    } catch (e) {
+      last = e;
+      const st = e && (e.status || e.statusCode);
+      const busy = st === 429 || st === 500 || st === 502 || st === 503 || st === 529 || /overload|rate/i.test(e && e.message || '');
+      if (!busy || t === 2) throw e;
+      await _sleep(700 * Math.pow(2, t));      // 0.7 → 1.4초
+    }
+  }
+  throw last;
 });
 // ═══ 📇 카드 묶음 해석 — "브리핑에서 말한 그 사람들"을 카드로 부를 수 있게 ═══
 //   ★2026-07-27 버그: 브리핑은 비고 칸을 읽어 "상담 대기 4명"이라 묶었는데,

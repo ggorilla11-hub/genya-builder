@@ -1501,52 +1501,92 @@ var _RV={run:false, done:0, pass:0, drop:0, total:0, stop:false};
 function _rvBar(){
   var b=document.getElementById('rvBar'); if(!b)return;
   var wait=Math.max(0,_RV.total-_RV.done);
+  // ★지금 바로 답글 달 수 있는 게 몇 개인지 — 대표님이 제일 궁금한 숫자
+  var ready=(window._FIND||[]).filter(function(l){ return l.review&&l.review.verdict==='고객'; });
+  var hot=ready.filter(function(l){ return /핫|🔥/.test(String(l.tier||'')); }).length;
   b.innerHTML='<div style="font-size:11.5px;color:#0f766e;background:#f2f9f7;border:1px solid #cfe8e1;border-radius:8px;padding:8px 10px;margin-bottom:10px;line-height:1.6">'
-    +'🛡️ <b>검수AI</b> — 총 <b>'+_RV.total+'건</b> 담김 · 검수 완료 <b>'+_RV.done+'건</b> · 통과 <b style="color:#0f766e">'+_RV.pass+'건</b> · 경쟁자 탈락 <b>'+_RV.drop+'건</b>'
+    +'🛡️ <b>검수AI</b> — 총 <b>'+_RV.total+'건</b> · 검수 <b>'+_RV.done+'건</b> · 통과 <b style="color:#0f766e">'+_RV.pass+'건</b> · 경쟁자 탈락 <b>'+_RV.drop+'건</b>'
     +(wait?(' · 대기 '+wait+'건'):'')
-    +(_RV.run?'<div style="color:#8a93a3;margin-top:3px">뒤에서 검수 중이에요 — 통과한 것부터 답글 버튼이 열립니다</div>'
+    +(ready.length?('<div style="color:#0f766e;font-weight:700;margin-top:4px">✍️ 지금 답글 쓸 수 있는 리드 <b>'+ready.length+'건</b>'+(hot?(' (🔥핫 '+hot+'건)'):'')+'</div>'):'')
+    +(_RV.run?'<div style="color:#8a93a3;margin-top:3px">뒤에서 '+RV_LANES+'줄이 동시에 검수 중 — ★점수 높은 것부터 열립니다</div>'
              :(wait?'':'<div style="color:#8a93a3;margin-top:3px">검수 완료 — 통과한 리드만 답글을 쓸 수 있어요</div>'))
     +'</div>';
 }
+// ★2026-07-27 251건 적체 해결 — 배치 병렬 + 점수 우선
+//   전: 12건씩 ★한 줄로 → 251건이면 21번을 차례로 기다렸다(2분+).
+//   후: 3줄이 동시에 돈다(한 번에 36건) + ★점수 높은 것부터 → 좋은 리드부터 5분 안에 답글 가능.
+//   ★251건 동시 호출은 안 한다 — API가 막히고 비용이 튄다. 동시 상한을 3줄로 묶는다.
+var RV_LANES=3, RV_BATCH=12;      // 동시 3줄 × 12건 = 한 번에 36건
+function _rvNextBatch(){
+  // ★점수 높은 순 — 대표님이 먼저 답글 달 리드부터 통과시킨다
+  var idx=[];
+  (window._FIND||[]).forEach(function(l,i){ if(!l.review && !l._rvBusy) idx.push(i); });
+  idx.sort(function(a,b){
+    var A=(window._FIND||[])[a], B=(window._FIND||[])[b];
+    var hot=function(l){ return /핫|🔥/.test(String((l&&l.tier)||''))?2:(/웜|🌤/.test(String((l&&l.tier)||''))?1:0); };
+    return (hot(B)-hot(A)) || ((B&&B.score||0)-(A&&A.score||0));
+  });
+  var take=idx.slice(0,RV_BATCH);
+  take.forEach(function(i){ (window._FIND||[])[i]._rvBusy=true; });
+  return take.map(function(i){ return {i:i, text:String(((window._FIND||[])[i]||{}).text||'').slice(0,300)}; });
+}
+function _rvApply(results){
+  (results||[]).forEach(function(v){
+    var l=(window._FIND||[])[v.i]; if(!l) return;
+    l.review={verdict:v.verdict, why:v.why, quote:v.quote, by:'검수AI'};
+    delete l._rvBusy;
+    _RV.done++;
+    if(v.verdict==='고객') _RV.pass++; else if(v.verdict==='공급자') _RV.drop++;
+  });
+  // 탈락(공급자)은 화면에서 조용히 뺀다 — 대표님이 실수로 답글 달 일이 없게
+  window._FIND=(window._FIND||[]).filter(function(l){ return !(l.review&&l.review.verdict==='공급자'); });
+  _RV.total=window._FIND.length+_RV.drop;
+  // ★열어둔 답글은 다시 그려도 살아남게(2026-07-27 사고)
+  _draftsSave();
+  if(typeof window._RENDER_FIND==='function') window._RENDER_FIND();
+  _draftsRestore();
+  _rvBar();
+}
 function startReview(){
   if(_RV.run) return;
-  var list=(window._FIND||[]);
-  if(!list.length) return;
-  _RV.total=list.length; _RV.stop=false; _RV.run=true; _rvBar();
-  (function step(){
-    if(_RV.stop){ _RV.run=false; _rvBar(); return; }
-    var todo=[];
-    (window._FIND||[]).forEach(function(l,i){ if(!l.review && todo.length<12) todo.push({i:i, text:String(l.text||'').slice(0,300)}); });
-    if(!todo.length){ _RV.run=false; _rvBar(); return; }
-    fetch('/api/find/review',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({items:todo})})
-     .then(function(r){ return r.json(); })
-     .then(function(d){
-       if(!d||!d.ok||!d.results) throw 0;
-       d.results.forEach(function(v){
-         var l=(window._FIND||[])[v.i]; if(!l) return;
-         l.review={verdict:v.verdict, why:v.why, quote:v.quote, by:'검수AI'};
-         _RV.done++;
-         if(v.verdict==='고객') _RV.pass++; else if(v.verdict==='공급자') _RV.drop++;
-       });
-       // 탈락(공급자)은 화면에서 조용히 뺀다 — 대표님이 실수로 답글 달 일이 없게
-       window._FIND=(window._FIND||[]).filter(function(l){ return !(l.review&&l.review.verdict==='공급자'); });
-       _RV.total=window._FIND.length+_RV.drop;
-       // ★2026-07-27 "답글이 0.1초 만에 사라짐" 사고:
-       //   검수가 뒤에서 돌며 목록을 다시 그리는 바람에, 열어둔 답글 초안이 통째로 날아갔다.
-       //   → 다시 그리기 전에 열려 있는 답글(편집한 내용까지)을 담아두고, 그린 뒤 되살린다.
-       _draftsSave();
-       if(typeof window._RENDER_FIND==='function') window._RENDER_FIND();
-       _draftsRestore();
-       _rvBar();
-       setTimeout(step, 250);                    // 서버를 몰아치지 않게 살짝 쉰다
-     })
-     .catch(function(){
-       // 검수가 막혀도 담긴 리드를 버리지 않는다 — 대기 상태로 두고 멈춘다(답글은 계속 잠김 = 안전)
-       _RV.run=false; _rvBar();
-       var b=document.getElementById('rvBar');
-       if(b) b.innerHTML+='<div style="font-size:11.5px;color:#8a6d1a;background:#fffdf5;border:1px solid #ecdca8;border-radius:8px;padding:7px 10px">⚠️ 검수가 멈췄어요 — <span onclick="startReview()" style="text-decoration:underline;cursor:pointer">다시 시도</span> (검수 전 리드는 답글이 잠겨 있어 안전합니다)</div>';
-     });
-  })();
+  if(!(window._FIND||[]).length) return;
+  _RV.total=(window._FIND||[]).length; _RV.stop=false; _RV.run=true; _RV.err=0; _rvBar();
+  var lanes=0, done=0;
+  function lane(){
+    lanes++;
+    (function step(delay){
+      if(_RV.stop){ finish(); return; }
+      var todo=_rvNextBatch();
+      if(!todo.length){ finish(); return; }
+      setTimeout(function(){
+        fetch('/api/find/review',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({items:todo})})
+         .then(function(r){ if(r.status===429||r.status===503||r.status===529) throw {busy:true}; return r.json(); })
+         .then(function(d){
+           if(!d||!d.ok||!d.results) throw 0;
+           _rvApply(d.results); _RV.err=0;
+           step(120);                                  // 다음 배치(서버를 몰아치지 않게 아주 짧게 쉼)
+         })
+         .catch(function(e){
+           // ★리드를 버리지 않는다 — 다시 대기로 돌려놓고 잠시 쉬었다 재시도(API 과부하 대비)
+           todo.forEach(function(x){ var l=(window._FIND||[])[x.i]; if(l) delete l._rvBusy; });
+           _RV.err++;
+           if(_RV.err<=4){ step(Math.min(8000, 800*Math.pow(2,_RV.err))); return; }   // 0.8→1.6→3.2→6.4초
+           finish(true);
+         });
+      }, delay||0);
+    })(0);
+  }
+  function finish(hard){
+    lanes--; done++;
+    if(lanes>0) return;
+    _RV.run=false; _rvBar();
+    if(hard){
+      var b=document.getElementById('rvBar');
+      if(b) b.innerHTML+='<div style="font-size:11.5px;color:#8a6d1a;background:#fffdf5;border:1px solid #ecdca8;border-radius:8px;padding:7px 10px">⚠️ 검수가 잠시 멈췄어요(서버 혼잡) — <span onclick="startReview()" style="text-decoration:underline;cursor:pointer">이어서 검수</span> · 검수 전 리드는 답글이 잠겨 있어 안전합니다</div>';
+    }
+  }
+  // ★3줄을 조금씩 시차를 두고 띄운다(동시에 쏘면 순간 부하가 튄다)
+  for(var k=0;k<RV_LANES;k++) setTimeout(lane, k*200);
 }
 // ── 🛡️ 검수AI 결과 — 기자가 물어온 것을 심사한 뒤에만 통과시켰다는 사실을 보여준다 ──
 function _findReview(d){
