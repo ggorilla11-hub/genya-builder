@@ -1216,6 +1216,29 @@ ${lines.join('\n')}`;
   return out.slice(0, 12);
 }
 
+// ★카드 트리거 단일 소스 — 실제 대화 처리와 진단창구가 ★같은 함수를 쓴다.
+//   2026-07-27: 트리거가 대화 코드 안에만 있어서 "검증은 통과인데 실제는 안 된다"를 확인할 길이 없었다.
+//   이제 /api/diag/card 로 물어보면 실제로 어느 분기가 켜지는지 그대로 나온다.
+function cardFlags(q) {
+  q = String(q || '');
+  const isCardCmd = /(카드|스캔)/.test(q) && /(띄워|띄우|띄|보여|열어|열|뜨|스캔|해줘|해|줘)/.test(q);
+  // 닫기는 ★이름 검색보다 먼저 가로챈다("카드 없애"를 사람 이름으로 알아듣던 버그)
+  const isCardClose = /(카드|화면|이거|저거|그거)/.test(q)
+    && /(없애|없애줘|닫아|닫아줘|닫기|사라지|지워|지워줘|내려|내려줘|치워|치워줘|끄|꺼|그만\s*보여|안\s*보이게|숨겨)/.test(q);
+  // 이름인지 묶음인지 가린다("상담 대기 4명"을 사람 이름으로 알고 찾던 버그)
+  const isGroupCard = isCardCmd && (
+    /(상담|미팅|면담|방문|대기)/.test(q) || /(만기|만료|경과|지난|임박)/.test(q) ||
+    /(생일|기념일)/.test(q) || /(방금|아까|위에|그\s*\d+명|말한|언급)/.test(q) ||
+    /\d+\s*명/.test(q));
+  let cardName = '';
+  if (isCardCmd) {
+    const c = q.replace(/고객님|고객|카드|스캔해줘|스캔해|스캔|띄워줘|띄워|띄우|보여줘|보여|열어줘|열어|해줘|줘|증권|서류|자료|파일|명단|이거|저거|화면|을|를|의|좀|씨|님/g, ' ').trim();
+    const m = c.match(/([가-힣]{2,4})/);
+    cardName = m ? m[1] : '';
+  }
+  return { isCardCmd, isCardClose, isGroupCard, cardName };
+}
+
 /** 이 글에 나온 사람 중 ★명단에 실제로 있는 이름만 (지어내기 차단) */
 async function _namesInText(text) {
   let t = null;
@@ -1292,15 +1315,27 @@ app.get('/api/diag/card', async (req, res) => {
     if (String(req.query.ai || '') === '1' && !/(만기|만료|생일)/.test(q)) { try { ai = await _resolveCardByLLM(q, t); } catch (e) {} }
     // 어떤 칸에 상담류 낱말이 들어 있는지(값이 아니라 ★칸 이름만)
     const 상담칸 = keys.filter((k) => rows.some((r) => /(상담|미팅|면담|방문|대기)/.test(String(r[k] || ''))));
+    // ★실제 대화가 쓰는 것과 같은 트리거 함수 — "말한 대로 실제로 도는지"를 여기서 확인한다
+    const cf = cardFlags(q);
+    const named = [];
+    for (const r of rows) { const n = _rowName(t, r); if (n && n.length >= 2 && q.indexOf(n) >= 0 && named.indexOf(n) < 0) named.push(n); }
+    const route = cf.isCardClose ? '카드 닫기'
+      : (!cf.isCardCmd ? '카드 아님(일반 대화로 감)'
+        : (named.length >= 2 ? `카드 ${named.length}장(이름 여러 개)`
+          : (named.length === 1 ? '카드 1장(이름)'
+            : (cf.isGroupCard ? '묶음 카드' : (cf.cardName ? '이름 검색' : '되묻기(대상 없음)')))));
     const out = {
       질문: q,
+      '★라우팅': route,
+      트리거: { 카드명령: cf.isCardCmd, 닫기: cf.isCardClose, 묶음: cf.isGroupCard, 이름추출: cf.cardName },
+      말속_명단이름_수: named.length,
       시트연결: !!(t && t.id), 행수: rows.length, 컬럼: keys,
       이름컬럼_추정: keys.find((k) => /(고객명|성명|이름|name)/i.test(k)) || '(못 찾음)',
       상담류_낱말이_있는_칸: 상담칸,
       묶음판정: g.label, 찾은기준: g.how, 매칭건수: g.names.length,
       두뇌판단_건수: ai.length,                      // ?ai=1 일 때만 — 낱말 대신 뜻으로 고른 결과
     };
-    if (me) { out.매칭이름 = g.names; out.두뇌판단_이름 = ai; }   // 로그인한 본인에게만
+    if (me) { out.매칭이름 = g.names; out.두뇌판단_이름 = ai; out.말속_이름 = named; }   // 로그인한 본인에게만
     else out.안내 = '이름은 로그인해야 보입니다(개인정보 보호). 지금은 건수만 표시.';
     res.json(out);
   } catch (e) { res.status(502).json({ ok: false, error: e.message }); }
@@ -1667,30 +1702,23 @@ async function orderHandler(req, res) {
     if (_uidG && personalMem.configured() && _gateMatch && !_toolIntent) {
       try { _gateEvents = await personalMem.recallRecentEvents({ ownerId: _uidG, limit: 5 }); } catch (e) {}
     }
-    console.log('[🛡️수문장] order 가드 · uid=' + (_uidG || '(없음)') + ' · pineconeReady=' + personalMem.configured() + ' · match=' + _gateMatch + ' · events=' + (_gateEvents ? 'HIT(' + _gateEvents.slice(0, 40) + '…)' : 'MISS') + ' · q="' + String(q).slice(0, 30) + '"');
+    // ★이 로그의 match/events는 "방금 올린 것 인지"용이다 — ★카드·발굴과 무관하다(오해 방지).
+    console.log('[🛡️수문장·방금올린것인지] uid=' + (_uidG || '(없음)') + ' · pineconeReady=' + personalMem.configured() + ' · match=' + _gateMatch + ' · events=' + (_gateEvents ? 'HIT(' + _gateEvents.slice(0, 40) + '…)' : 'MISS') + ' · q="' + String(q).slice(0, 30) + '" (카드 여부는 [📇카드] 줄을 보세요)');
     // ★버그수정: activeSkill(localStorage 복원)이 시트·발송 도구 의도를 가로채던 문제 → _toolIntent(위에서 정의)면 activeSkill·events·명단 분기를 건너뛰고 approval/sheetCRUD 도구 분기로.
     // ★이슈#1 근본수정(웹검색 라우팅 가로챔): 최신정보 토픽(시세·환율·세법·판례 등)이면서 고객(○○님) 지칭이 아니면
     //   시트/캘린더 분기가 "어때/조회/뭐야"로 가로채는 것을 막고 일반대화(웹검색) 우선. ★고객명 시트조회는 그대로 유지.
     //   보수적: 요즘/최근/오늘 단독은 제외(예: "요즘 만기 고객"이 웹으로 새지 않게). 명확한 최신 토픽 키워드만.
     const _hasCustomerName = /[가-힣]{2,4}\s*님/.test(q);
     const _webQuery = !_hasCustomerName && /시세|환율|원[·\s]?달러|주가|주식|코스피|코스닥|나스닥|다우|증시|증권시장|시장\s*동향|금리|기준금리|국채|채권\s*금리|유가|국제유가|금값|금\s*시세|비트코인|가상자산|암호화폐|뉴스|속보|판례|대법원|헌재|법령|시행령|개정안|세법\s*개정|종부세|종합부동산세|양도세|양도소득세|상속세|증여세|재산세|공시지가|기준시가|부동산\s*대책|물가|인플레|경기\s*전망|환테크/.test(q);
-    // ★고객카드 띄우기 명령(홍보·자비스): "○○ 카드 띄워/스캔해줘/보여줘/열어줘" → 프론트가 ghRowDetail로 카드 표시. Vapi FC 미사용(텍스트 신호만).
-    const _isCardCmd = /(카드|스캔)/.test(q) && /(띄워|띄우|띄|보여|열어|열|뜨|스캔|해줘|해|줘)/.test(q);
-    let _cardName = '';
-    if (_isCardCmd) { const _c = q.replace(/고객님|고객|카드|스캔해줘|스캔해|스캔|띄워줘|띄워|띄우|보여줘|보여|열어줘|열어|해줘|줘|증권|서류|자료|파일|명단|이거|저거|화면|을|를|의|좀|씨|님/g, ' ').trim(); const _m = _c.match(/([가-힣]{2,4})/); _cardName = _m ? _m[1] : ''; }
-    // ★2026-07-27 "카드 없애" → "'띄운것' 고객 못 찾음" 버그:
-    //   띄우기만 있고 닫기가 없어서, 닫기 명령을 사람 이름으로 알아듣고 명단을 뒤졌다.
-    //   → 닫기는 ★이름 검색보다 먼저 가로챈다. 화면의 카드만 없애고 데이터는 안 건드린다.
-    const _isCardClose = /(카드|화면|이거|저거|그거)/.test(q)
-      && /(없애|없애줘|닫아|닫아줘|닫기|사라지|지워|지워줘|내려|내려줘|치워|치워줘|끄|꺼|그만\s*보여|안\s*보이게|숨겨)/.test(q);
-    //   "상담 대기 4명 카드 보여줘" → '상담'을 사람 이름으로 알고 찾다가 실패했다.
-    //   브리핑은 비고 칸을 읽어 "상담 대기"로 묶는데, 카드는 그 해석을 몰랐다.
-    //   → 이름이 아니라 ★묶음(그룹)을 말한 것인지 먼저 가린다.
-    const _isGroupCard = _isCardCmd && (
-      /(상담|미팅|면담|방문|대기)/.test(q) || /(만기|만료|경과|지난|임박)/.test(q) ||
-      /(생일|기념일)/.test(q) || /(방금|아까|위에|그\s*\d+명|말한|언급)/.test(q) ||
-      /\d+\s*명/.test(q)
-    );
+    // ★고객카드 트리거 — ★진단창구(/api/diag/card)와 ★같은 함수를 쓴다.
+    //   전에는 트리거가 여기에만 있어서 "검증은 통과인데 실제는 안 됨"을 확인할 길이 없었다.
+    const _cf = cardFlags(q);
+    const _isCardCmd = _cf.isCardCmd, _isCardClose = _cf.isCardClose, _isGroupCard = _cf.isGroupCard;
+    const _cardName = _cf.cardName;
+    if (_isCardCmd || _isCardClose) {
+      // ★대표님이 로그에서 바로 볼 수 있게 — 수문장 로그(match=false)는 "방금 올린 것" 인지용이라 카드와 무관하다.
+      console.log(`[📇카드] 트리거 ON · ${_isCardClose ? '닫기' : (_isGroupCard ? '묶음' : '이름')} · 이름추출="${_cardName}" · q="${String(q).slice(0, 40)}"`);
+    }
     // ⭐ 이벤트 만들기 명령: "결혼기념일 이벤트 만들어줘" → 대시보드 [＋ 이벤트 추가]와 똑같이 실행. Vapi FC 미사용(텍스트 신호만).
     //   ★트리거 3개 배타 구분: 카드(카드/스캔) · 결재(결재/발송/알림톡/승인) · 이벤트(이벤트+만들/추가/생성).
     //     '이벤트'라는 낱말은 나머지 둘에 안 쓰이고, 여기서 카드·결재 낱말을 명시적으로 배제해 서로 안 물린다.
