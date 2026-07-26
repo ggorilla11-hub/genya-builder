@@ -1243,7 +1243,28 @@ function _annivIn(v) {
   if (t < today) t = Date.UTC(y + 1, p.m - 1, p.d);
   return Math.round((t - today) / 86400000);
 }
-async function buildBrief(ma, req) {
+// ★어느 항목을 물으셨나 — "만기 현황"인데 전체 브리핑을 쏟아내지 않게(2026-07-27)
+//   위에서부터 먼저 걸리는 것 하나. 아무것도 안 걸리면 전체.
+const _BRIEF_SCOPE = [
+  { k: 'expire', re: /(만기|만료|갱신|경과)/, t: '만기' },
+  { k: 'anniv', re: /(생일|생신|기념일)/, t: '생일·기념일' },
+  { k: 'consult', re: /(상담|미팅|면담|방문|주요건|대기)/, t: '상담 대기' },
+  { k: 'sched', re: /(일정|스케줄|약속|캘린더)/, t: '오늘 일정' },
+  { k: 'find', re: /(발굴|리드|잠재고객|채널)/, t: '발굴 리드' },
+  { k: 'sales', re: /(매출|결제|수익|입금|객단가)/, t: '결제·매출' },
+  { k: 'roster', re: /(명단|고객\s*수|총원|몇\s*명|인원)/, t: '고객 명단' },
+];
+function briefScope(q) {
+  q = String(q || '');
+  // "전체·전부·다·회사 상황"이면 무조건 전체
+  if (/(전체|전부|다\s*(알려|보여)|모두|종합|회사\s*(상황|현황))/.test(q)) return { k: 'all', t: '' };
+  for (const s of _BRIEF_SCOPE) if (s.re.test(q)) return s;
+  return { k: 'all', t: '' };
+}
+async function buildBrief(ma, req, scope) {
+  const S = (scope && scope.k) || 'all';
+  const ALL = S === 'all';
+  const on = (k) => ALL || S === k;   // 이 항목을 낼 것인가
   const L = [];
   const mentioned = [];
   const push = (n) => { if (n && mentioned.indexOf(n) < 0) mentioned.push(n); };
@@ -1253,8 +1274,10 @@ async function buildBrief(ma, req) {
   const keys = Object.keys(rows[0] || {}).filter((k) => k !== '_rowNum');
   const nameOf = (r) => _rowName(t, r);
 
+  const H = (n, t) => (ALL ? `**${n}. ${t}**` : `**${t}**`);   // 한 항목만 낼 땐 번호를 안 붙인다
   // ── 1. 고객 명단 현황 ──
-  L.push('**1. 고객 명단**');
+  if (on('roster')) {
+  L.push(H(1, '고객 명단'));
   if (!rows.length) L.push('· 아직 명단이 없어요. [명단·연결]에서 파일을 올리시면 여기부터 채워집니다.');
   else {
     // 정보 완성 = 이름·연락처가 둘 다 있는 행 (기준을 고정해 매번 같게)
@@ -1262,10 +1285,13 @@ async function buildBrief(ma, req) {
     const full = rows.filter((r) => nameOf(r) && pk && String(r[pk] || '').trim()).length;
     L.push(`· 총 **${rows.length}명** (연락처 있음 ${full}명 · 없음 ${rows.length - full}명)`);
   }
+  }
 
   // ── 2. 급한 일 — 만기 ──
-  L.push('\n**2. 급한 일 — 만기**');
+  // ★블록 밖에서 선언한다 — 마지막 "한 줄 요약"이 이 값을 쓴다(안에 두면 그때 터진다)
   const expCol = keys.filter((k) => /(만기|만료|종료|갱신)/.test(k));
+  if (on('expire')) {
+  L.push((ALL ? '\n' : '') + H(2, '급한 일 — 만기'));
   if (!expCol.length) L.push('· 명단에 만기일 칸이 없어 확인할 수 없어요.');
   else {
     const arr = [];
@@ -1279,9 +1305,11 @@ async function buildBrief(ma, req) {
     else arr.slice(0, 8).forEach((x) => { push(x.n); L.push(`· ${x.d < 0 ? `**${-x.d}일 지남**` : (x.d === 0 ? '**오늘**' : `${x.d}일 뒤`)} — ${x.n}`); });
     if (arr.length > 8) L.push(`· … 외 ${arr.length - 8}명`);
   }
+  }
 
   // ── 3. 생일·기념일 ──
-  L.push('\n**3. 생일·기념일 (30일 이내)**');
+  if (on('anniv')) {
+  L.push((ALL ? '\n' : '') + H(3, '생일·기념일 (30일 이내)'));
   const anCol = keys.filter((k) => /(생일|생년|기념일)/.test(k));
   if (!anCol.length) L.push('· 명단에 생일·기념일 칸이 없어요.');
   else {
@@ -1291,17 +1319,24 @@ async function buildBrief(ma, req) {
     if (!arr.length) L.push('· 30일 이내 없음');
     else arr.slice(0, 8).forEach((x) => { push(x.n); L.push(`· ${x.d === 0 ? '**오늘**' : `${x.d}일 뒤`} — ${x.n} (${x.k})`); });
   }
+  }
 
   // ── 4. 상담 대기·주요 건 (비고 해석 — 카드 호출과 ★같은 기준) ──
-  L.push('\n**4. 상담 대기·주요 건**');
-  const g = _resolveCardGroup('상담 대기 고객 카드', t, []);
-  let waitNames = g.names;
-  if (!waitNames.length) { try { waitNames = await _resolveCardByLLM('상담 대기 중인 고객', t, 0); } catch (e) { waitNames = []; } }
+  let waitNames = [];
+  if (on('consult') || ALL) {
+    const g = _resolveCardGroup('상담 대기 고객 카드', t, []);
+    waitNames = g.names;
+    if (!waitNames.length) { try { waitNames = await _resolveCardByLLM('상담 대기 중인 고객', t, 0); } catch (e) { waitNames = []; } }
+  }
+  if (on('consult')) {
+  L.push((ALL ? '\n' : '') + H(4, '상담 대기·주요 건'));
   if (!waitNames.length) L.push('· 비고에 상담·미팅 표시된 고객 없음');
   else { waitNames.slice(0, 8).forEach((n) => { push(n); L.push(`· ${n}`); }); L.push(`· → "상담 대기 ${waitNames.length}명 카드 보여줘"라고 하시면 카드로 띄워드려요.`); }
+  }
 
   // ── 5. 오늘 일정 ──
-  L.push('\n**5. 오늘 일정**');
+  if (on('sched')) {
+  L.push((ALL ? '\n' : '') + H(5, '오늘 일정'));
   if (!ma) L.push('· 구글 캘린더 연결 후 표시됩니다.');
   else {
     try {
@@ -1311,21 +1346,39 @@ async function buildBrief(ma, req) {
       else ev.slice(0, 8).forEach((e) => L.push(`· ${e.time || ''} ${e.title || ''}`.trim()));
     } catch (e) { L.push('· 캘린더를 읽지 못했어요 — [연결하기]가 필요할 수 있어요.'); }
   }
+  }
 
   // ── 6. 발굴 리드 현황 ──
-  L.push('\n**6. 발굴 리드**');
-  let on = [];
-  try { on = hunterDesk.roster().filter((r) => r.on).map((r) => r.label); } catch (e) {}
-  if (process.env.YOUTUBE_API_KEY) on.unshift('📺 유튜브');
-  L.push(on.length ? `· 가동 채널 ${on.length}개 — ${on.join(' · ')}` : '· 채널이 모두 꺼져 있어요(API 키 필요).');
-  L.push('· 실제 건수·검수 통과 수는 [고객발굴비서 → 발굴 리드]에서 [지금 발굴]을 누르면 나와요.');
+  //   ★"탭 눌러보세요"로 떠넘기지 않는다 — 화면이 마지막 발굴 결과를 보내주면 그 실제 숫자를 쓴다.
+  if (on('find')) {
+  L.push((ALL ? '\n' : '') + H(6, '발굴 리드'));
+  let onCh = [];
+  try { onCh = hunterDesk.roster().filter((r) => r.on).map((r) => r.label); } catch (e) {}
+  if (process.env.YOUTUBE_API_KEY) onCh.unshift('📺 유튜브');
+  const fs2 = (req && req.body && req.body.findStats) || null;   // 화면이 보내주는 마지막 발굴 결과(숫자만)
+  if (fs2 && fs2.total) {
+    L.push(`· 마지막 발굴 **${fs2.total}건**` + (fs2.pass != null ? ` · 검수 통과 **${fs2.pass}건**` : '')
+      + (fs2.drop ? ` · 경쟁자 탈락 ${fs2.drop}건` : '') + (fs2.wait ? ` · 검수 대기 ${fs2.wait}건` : ''));
+    const by = fs2.byChannel || {};
+    const ks = Object.keys(by);
+    if (ks.length) L.push('· 채널별 — ' + ks.map((k) => `${k} ${by[k]}`).join(' · '));
+  } else {
+    L.push('· 아직 이번 접속에서 발굴을 돌리지 않았어요.');
+  }
+  L.push(onCh.length ? `· 가동 채널 ${onCh.length}개 — ${onCh.join(' · ')}` : '· 채널이 모두 꺼져 있어요(API 키 필요).');
+  if (!(fs2 && fs2.total)) L.push('· [고객발굴비서 → 🔍 지금 발굴]을 누르시면 채널별 실제 건수가 여기에 표시됩니다.');
+  }
 
   // ── 7. 결제·매출 (준비 중) ──
-  L.push('\n**7. 결제·매출**');
+  if (on('sales')) {
+  L.push((ALL ? '\n' : '') + H(7, '결제·매출'));
   L.push('· **준비 중** — 유입·전환 시트를 연결하면 여기에 오늘/이번달 건수·금액·객단가가 표시됩니다.');
   L.push('· 지금은 [고객발굴비서 → 진단 유입] 탭에서 신청자 표로 보실 수 있어요.');
+  }
 
   // ── 마무리: 한 줄 요약 + 팀장 추천 (★규칙으로 정한다 — 매번 같게) ──
+  //   ★한 항목만 물으셨을 땐 붙이지 않는다(물은 것만 답한다).
+  if (!ALL) return { text: L.join('\n'), mentioned, scope: S };
   const 지남 = [];
   if (expCol.length) rows.forEach((r) => { let b = null; expCol.forEach((k) => { const d = _dday(r[k]); if (d != null && (b == null || d < b)) b = d; }); if (b != null && b < 0) 지남.push(nameOf(r)); });
   L.push('\n---');
@@ -1912,7 +1965,7 @@ async function orderHandler(req, res) {
     const _isBriefAsk = /(회사|사업|전체|우리|오늘)?\s*(상황|현황|보고|브리핑|리포트)/.test(q)
       && !/(추가|수정|삭제|등록|변경|바꿔|고쳐|지워|빼|입력)/.test(q)
       && !/(발송|결재|승인|알림톡|초안)/.test(q);
-    if (_isBriefAsk) console.log(`[📊브리핑] 고정 틀로 응답 · q="${String(q).slice(0, 40)}"`);
+    if (_isBriefAsk) console.log(`[📊브리핑] 범위=${briefScope(q).k} · 고정 틀로 응답 · q="${String(q).slice(0, 40)}"`);
     if (_isCardCmd || _isCardClose) {
       // ★대표님이 로그에서 바로 볼 수 있게 — 수문장 로그(match=false)는 "방금 올린 것" 인지용이라 카드와 무관하다.
       console.log(`[📇카드] 트리거 ON · ${_isCardClose ? '닫기' : (_isGroupCard ? '묶음(조건 — 이름검색 안 함)' : '이름')} · 이름추출="${_isGroupCard ? '(조건이라 안 뽑음)' : _cardName}" · q="${String(q).slice(0, 40)}"`);
@@ -1959,9 +2012,11 @@ async function orderHandler(req, res) {
     const _isPromoCmd = _noBase && !/(잡아|잡을|예약|비워)/.test(q) && !_reRemind.test(q) && _rePromo.test(q) && _reWrite.test(q);
     const _isRemindCmd = _noBase && _reRemind.test(q) && _reSet.test(q);
     if (_isBriefAsk) {
-      // 📊 회사 상황 — ★코드가 실제 데이터로 고정 틀을 채운다. LLM 해석 없음 → 매번 같은 답.
-      const b = await buildBrief(ma, req);
-      out = { kind: '📊 회사 상황', text: b.text, mentioned: b.mentioned };
+      // 📊 상황 보고 — ★코드가 실제 데이터로 고정 틀을 채운다. LLM 해석 없음 → 매번 같은 답.
+      //   ★물으신 범위만 답한다 — "발굴 리드 현황"에 7항목을 쏟아내지 않는다.
+      const _sc = briefScope(q);
+      const b = await buildBrief(ma, req, _sc);
+      out = { kind: _sc.k === 'all' ? '📊 회사 상황' : ('📊 ' + _sc.t), text: b.text, mentioned: b.mentioned };
     } else if (_isPromoCmd) {
       // 화면이 홍보 패널을 열고 실제 /api/promo/draft를 돌린다. 결과가 나온 뒤에만 원고가 표시된다(거짓 완료 금지).
       const _topic = q.replace(_rePromo, ' ').replace(/글|문구|원고|콘텐츠|써줘|써|쓰|만들어줘|만들|생성해줘|생성|작성해줘|작성|뽑아줘|뽑아|해줘|좀|용|로|를|을|의/g, ' ').replace(/\s+/g, ' ').trim();

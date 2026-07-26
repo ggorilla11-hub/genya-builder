@@ -1691,6 +1691,12 @@ function prospectLoadFind(){
        bx.innerHTML=h2;
        _rvBar();
        _setKpi('kpiFind', (window._FIND||[]).length+'명');
+       // ★"발굴 리드 현황" 질문에 실제 숫자로 답하도록 마지막 결과를 기억한다(숫자만·개인정보 0)
+       try{
+         var byCh={}; (window._FIND||[]).forEach(function(l){ var c=l.ch||'기타'; byCh[c]=(byCh[c]||0)+1; });
+         window._FIND_STATS={ total:(window._FIND||[]).length, pass:_RV.pass, drop:_RV.drop,
+           wait:Math.max(0,_RV.total-_RV.done), byChannel:byCh };
+       }catch(e){}
      };
      window._RENDER_FIND();                                           // ④ 정상 — 담긴 것을 바로 보여준다(안 멈춘다)
      startReview();                                                   // ★그다음 뒤에서 검수 시작
@@ -3889,7 +3895,7 @@ window.sendMsg=function(){
   w.innerHTML='<div class="av"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3l7 4v6c0 4-3 6.5-7 8-4-1.5-7-4-7-8V7l7-4z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><circle cx="12" cy="11" r="2.2" fill="currentColor"/></svg></div><div class="bubble" style="color:#98a4b2">지니야가 생각하는 중…</div>';
   s.appendChild(w); s.scrollTop=s.scrollHeight;
   var job=(GENYA_JOBS[CUR_JOB]||{}).label||'';
-  fetch('/api/order',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({q:v,message:v,job:job,history:_histForSend(),activeSkill:(window._ACTIVE_SKILL||''),lastMentioned:(window._LAST_MENTIONED||[]),cardOpen:_isCardOpen()})})
+  fetch('/api/order',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({q:v,message:v,job:job,history:_histForSend(),activeSkill:(window._ACTIVE_SKILL||''),lastMentioned:(window._LAST_MENTIONED||[]),cardOpen:_isCardOpen(),findStats:(window._FIND_STATS||null)})})
    .then(function(r){return r.json();}).then(function(d){ w.remove();
      if(d&&d.needsConnect){ pushMsg('gen',(d.text||'구글 데이터 연결이 필요해요')+' <a href="#" onclick="connectGoogle();return false;" style="color:var(--teal-d);font-weight:700">연결하기 →</a>'); return; }
      var reply=(d&&(d.text||d.answer))||(d&&d.error)||'(응답 없음)';
@@ -3974,7 +3980,7 @@ function sheetWriteCommit(){
 function _apOpenBtnHtml(){ return '<div style="margin-top:7px"><button onclick="openApproval()" style="background:var(--teal);color:#fff;border:none;border-radius:9px;padding:8px 15px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit">🗂️ 결재함 열기 · 확인·승인 →</button></div>'; }
 // ★음성 액션 실행: 통화 중 결재/발송 발화를 텍스트처럼 /api/order로 보내 서버가 실제 처리. ★실제 등록 결과(서버 d.text)만 표시 → 등록 안 됐으면 "올렸다"고 안 함(환각 방지). Vapi FC 미사용.
 function _voiceExec(q){
-  fetch('/api/order',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({q:q, history:(typeof _histForSend==='function'?_histForSend():[]), lastMentioned:(window._LAST_MENTIONED||[]), cardOpen:_isCardOpen()})})
+  fetch('/api/order',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({q:q, history:(typeof _histForSend==='function'?_histForSend():[]), lastMentioned:(window._LAST_MENTIONED||[]), cardOpen:_isCardOpen(), findStats:(window._FIND_STATS||null)})})
     .then(function(r){return r.json();}).then(function(d){
       if(!d) return;
       if(d.text) pushMsg('gen', renderMd(d.text)); // 서버가 실제로 올렸을 때만 "결재함에 올렸어요"라고 답함(approval.create 결과)
