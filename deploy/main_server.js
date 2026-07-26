@@ -935,16 +935,19 @@ const PROSPECT_SHEET_TAB = process.env.PROSPECT_SHEET_TAB || '연금진단리드
 // ★2026-07-27 대표님 지시: 진행 중인 다른 신청 시트(부트캠프 등)도 붙일 수 있게.
 //   화면에서 시트 주소를 넣으면 그 시트를 읽는다. ★회원별로 따로 기억한다(남의 시트가 안 섞이게).
 //   ★서버에 저장하는 건 시트 "주소"뿐 — 신청자 이름·연락처·금액은 저장하지 않는다.
-const _inflowSheetOf = {};                     // { 이메일: {id, tab} }
+//   ★여러 개(부트캠프·연금진단·상담신청 등)를 동시에 붙일 수 있다. 합산과 파일별을 함께 본다.
+const INFLOW_MAX = 5;                          // 한 회원이 붙일 수 있는 시트 수
+const _inflowSheetOf = {};                     // { 이메일: [{id, tab, title}] }
 function _sheetIdFrom(v) {
   const s = String(v || '').trim();
   const m = s.match(/\/spreadsheets\/d\/([A-Za-z0-9_-]{20,})/);
   return m ? m[1] : (/^[A-Za-z0-9_-]{20,}$/.test(s) ? s : '');
 }
-function _inflowTarget(req) {
+function _inflowTargets(req) {
   const me = String((sessionOf(req) || {}).email || '').toLowerCase();
   const own = _inflowSheetOf[me];
-  return { id: (own && own.id) || PROSPECT_SHEET_ID, tab: (own && own.tab) || PROSPECT_SHEET_TAB, custom: !!own };
+  if (Array.isArray(own) && own.length) return { list: own, custom: true };
+  return { list: [{ id: PROSPECT_SHEET_ID, tab: PROSPECT_SHEET_TAB, title: '기본 신청 시트' }], custom: false };
 }
 // 📥 유입 전환 — 신청 시트 연결/해제 (★주소만 기억, 개인정보 저장 0)
 app.post('/api/prospect/sheet', async (req, res) => {
@@ -952,7 +955,15 @@ app.post('/api/prospect/sheet', async (req, res) => {
   if (!s) return res.status(401).json({ ok: false, error: '로그인이 필요해요' });
   const me = String(s.email || '').toLowerCase();
   const b = req.body || {};
-  if (b.clear) { delete _inflowSheetOf[me]; return res.json({ ok: true, cleared: true }); }
+  const cur = () => (_inflowSheetOf[me] || []);
+  if (b.list) return res.json({ ok: true, sheets: cur().map((x) => ({ id: x.id, tab: x.tab, title: x.title })) });
+  if (b.clear) { delete _inflowSheetOf[me]; return res.json({ ok: true, cleared: true, sheets: [] }); }
+  if (b.remove) {                                        // 한 개만 빼기
+    const rid = _sheetIdFrom(b.remove) || String(b.remove);
+    _inflowSheetOf[me] = cur().filter((x) => !(x.id === rid && (!b.tab || x.tab === b.tab)));
+    if (!_inflowSheetOf[me].length) delete _inflowSheetOf[me];
+    return res.json({ ok: true, removed: true, sheets: cur().map((x) => ({ id: x.id, tab: x.tab, title: x.title })) });
+  }
   const id = _sheetIdFrom(b.url || b.id);
   if (!id) return res.json({ ok: false, error: '구글 시트 주소를 붙여넣어 주세요 (docs.google.com/spreadsheets/d/… 형태)' });
   const tab = String(b.tab || '').trim();
@@ -962,8 +973,12 @@ app.post('/api/prospect/sheet', async (req, res) => {
     const meta = await sheets.spreadsheets.get({ spreadsheetId: id, fields: 'properties.title,sheets.properties.title' });
     const tabs = (meta.data.sheets || []).map((x) => x.properties.title);
     const use = tab && tabs.indexOf(tab) >= 0 ? tab : tabs[0];
-    _inflowSheetOf[me] = { id, tab: use };
-    res.json({ ok: true, title: (meta.data.properties || {}).title || '', tab: use, tabs });
+    const title = (meta.data.properties || {}).title || '';
+    const list = cur().filter((x) => !(x.id === id && x.tab === use));   // 같은 시트·탭은 덮어쓴다
+    if (list.length >= INFLOW_MAX) return res.json({ ok: false, error: `시트는 최대 ${INFLOW_MAX}개까지 붙일 수 있어요. 하나를 빼고 다시 시도해 주세요.` });
+    list.push({ id, tab: use, title });
+    _inflowSheetOf[me] = list;
+    res.json({ ok: true, title, tab: use, tabs, sheets: list.map((x) => ({ id: x.id, tab: x.tab, title: x.title })) });
   } catch (e) {
     res.json({ ok: false, error: /permission|403/i.test(e.message || '')
       ? '시트를 못 읽었어요 — 그 시트를 서비스계정 이메일에 "뷰어"로 공유해 주세요'
@@ -981,45 +996,75 @@ app.get('/api/prospect/inflow', async (req, res) => {
   try {
     const auth = await getServiceAuth();
     const sheets = google.sheets({ version: 'v4', auth });
-    const tgt = _inflowTarget(req);              // ★화면에서 연결한 시트가 있으면 그것을 읽는다
-    let tab = tgt.tab;
-    let got;
-    try { got = await sheets.spreadsheets.values.get({ spreadsheetId: tgt.id, range: `'${tab}'!A1:Z` }); }
-    catch (e) {
-      // 탭 이름이 다를 수 있다 — 첫 탭으로 한 번 더
-      const meta = await sheets.spreadsheets.get({ spreadsheetId: tgt.id, fields: 'sheets.properties.title' });
-      tab = (((meta.data.sheets || [])[0] || {}).properties || {}).title || 'Sheet1';
-      got = await sheets.spreadsheets.values.get({ spreadsheetId: tgt.id, range: `'${tab}'!A1:Z` });
-    }
-    const rows = got.data.values || [];
-    if (rows.length < 2) return res.json({ ok: true, configured: true, tab, rows: [], missing: [], sum: { 건수: 0, 금액: 0, 객단가: 0 } });
-    const head = rows[0].map((h) => String(h || '').trim());
-    const iName = _pickCol(head, ['이름', '성명', '신청자']);
-    const iPhone = _pickCol(head, ['연락처', '휴대폰', '전화', '전화번호']);
-    const iCourse = _pickCol(head, ['상품명', '과정', '과정명', '강의명', '구분']);
-    const iAmt = _pickCol(head, ['금액', '결제금액', '신청금액']);
-    const iDate = _pickCol(head, ['신청일시', '신청일', '접수시각', '신청시각', 'timestamp']);
-    const iAgent = _pickCol(head, ['유입설계사', 'agent', '설계사']);
-    const iPaid = _pickCol(head, ['결제여부', '상태']);
-    const iFree = _pickCol(head, ['유무료']);
-    const iSrc = _pickCol(head, ['유입경로', 'source']);
-    const missing = [];
-    if (iName < 0) missing.push('이름'); if (iPhone < 0) missing.push('연락처');
-    if (iCourse < 0) missing.push('상품명(과정)'); if (iAmt < 0) missing.push('금액'); if (iDate < 0) missing.push('신청일시');
-
+    const tg = _inflowTargets(req);              // ★연결한 시트 여러 개를 모두 읽는다
     const isVip = String(s.email || '').toLowerCase() === VIP_EMAIL;
     const myName = String((s.nick || s.name || '')).replace(/님$/, '').trim();
     const out = [];
-    for (let r = 1; r < rows.length; r++) {
-      const row = rows[r]; const g = (i) => (i >= 0 ? String(row[i] == null ? '' : row[i]).trim() : '');
-      if (!g(iName) && !g(iPhone) && !g(iCourse)) continue;              // 빈 행
-      if (!isVip) { if (!myName || g(iAgent) !== myName) continue; }     // ★남의 신청자는 안 보인다
-      out.push({ 이름: g(iName), 연락처: g(iPhone), 과정: g(iCourse), 금액: _wonNum(g(iAmt)),
-        신청일: g(iDate), 유무료: g(iFree), 결제: g(iPaid), 유입경로: g(iSrc) });
+    const files = [];                            // 파일별 결과(어디서 매출이 나는지)
+    const missSet = new Set();
+    let tab = '';
+
+    for (const t of tg.list) {
+      let tb = t.tab, got = null, err = '';
+      try { got = await sheets.spreadsheets.values.get({ spreadsheetId: t.id, range: `'${tb}'!A1:Z` }); }
+      catch (e1) {
+        try {                                    // 탭 이름이 다를 수 있다 — 첫 탭으로 한 번 더
+          const meta = await sheets.spreadsheets.get({ spreadsheetId: t.id, fields: 'sheets.properties.title' });
+          tb = (((meta.data.sheets || [])[0] || {}).properties || {}).title || 'Sheet1';
+          got = await sheets.spreadsheets.values.get({ spreadsheetId: t.id, range: `'${tb}'!A1:Z` });
+        } catch (e2) {
+          err = /permission|403/i.test(e2.message || '') ? '서비스계정에 공유 안 됨' : (e2.message || '').slice(0, 60);
+        }
+      }
+      const label = t.title || tb || '시트';
+      if (!got) { files.push({ 파일: label, 탭: tb, 오류: err, 신청: 0, 결제: 0, 금액: 0 }); continue; }
+      const rows = got.data.values || [];
+      if (!tab) tab = tb;
+      if (rows.length < 2) { files.push({ 파일: label, 탭: tb, 신청: 0, 결제: 0, 금액: 0 }); continue; }
+      // ★파일마다 컬럼 이름이 다르다 — 뜻이 같은 이름을 폭넓게 받아 공통 항목으로 매핑한다
+      const head = rows[0].map((h) => String(h || '').trim());
+      const iName = _pickCol(head, ['이름', '성명', '신청자', '고객명', '성함', '참가자']);
+      const iPhone = _pickCol(head, ['연락처', '휴대폰', '전화', '전화번호', '핸드폰', '휴대전화', '연락처(휴대폰)']);
+      const iCourse = _pickCol(head, ['상품명', '과정', '과정명', '강의명', '신청과정', '프로그램', '구분', '종류']);
+      const iAmt = _pickCol(head, ['금액', '결제금액', '신청금액', '입금액', '결제액', '수강료', '가격']);
+      const iDate = _pickCol(head, ['신청일시', '신청일', '접수시각', '신청시각', '결제일', '결제일시', '등록일', 'timestamp', '타임스탬프']);
+      const iAgent = _pickCol(head, ['유입설계사', 'agent', '설계사', '담당', '담당자', '추천인']);
+      const iPaid = _pickCol(head, ['결제여부', '결제상태', '입금여부', '상태', '결제']);
+      const iFree = _pickCol(head, ['유무료']);
+      const iSrc = _pickCol(head, ['유입경로', 'source', '경로', '유입']);
+      if (iName < 0) missSet.add(`${label}: 이름`);
+      if (iAmt < 0) missSet.add(`${label}: 금액`);
+      if (iPaid < 0) missSet.add(`${label}: 결제여부`);
+      if (iDate < 0) missSet.add(`${label}: 신청일`);
+
+      const mine = [];
+      for (let r = 1; r < rows.length; r++) {
+        const row = rows[r]; const g = (i) => (i >= 0 ? String(row[i] == null ? '' : row[i]).trim() : '');
+        if (!g(iName) && !g(iPhone) && !g(iCourse)) continue;             // 빈 행
+        if (!isVip) { if (!myName || g(iAgent) !== myName) continue; }    // ★남의 신청자는 안 보인다
+        mine.push({ 이름: g(iName), 연락처: g(iPhone), 과정: g(iCourse), 금액: _wonNum(g(iAmt)),
+          신청일: g(iDate), 유무료: g(iFree), 결제: iPaid < 0 ? 'Y' : g(iPaid), 유입경로: g(iSrc),
+          _파일: label, _결제칸없음: iPaid < 0 });
+      }
+      const isPaid = (x) => /^(y|예|완료|결제완료|o|입금|입금완료|성공|결제됨)$/i.test(String(x.결제 || '').trim());
+      const p = mine.filter(isPaid);
+      files.push({ 파일: label, 탭: tb, 신청: mine.length, 결제: p.length, 금액: p.reduce((a, x) => a + x.금액, 0) });
+      out.push(...mine);
     }
+    const missing = Array.from(missSet);
+    // ★같은 사람이 여러 파일에 있으면 매출을 두 번 세지 않는다 — 연락처(숫자만)+금액 기준
+    const seen = new Set();
+    const dedup = [];
+    let 중복 = 0;
+    for (const x of out) {
+      const key = (String(x.연락처 || '').replace(/[^0-9]/g, '') || ('n:' + x.이름)) + '|' + x.금액;
+      if (key && seen.has(key)) { 중복++; continue; }
+      seen.add(key); dedup.push(x);
+    }
+    out.length = 0; out.push(...dedup);
     out.reverse();                                                       // 최신순(append 시트 = 아래가 최신)
     // 합계 — 결제된 건만 매출로 잡는다(결제여부 컬럼이 있을 때). 없으면 금액 그대로.
-    const paidOf = (x) => (iPaid < 0 ? true : /^(y|예|완료|결제완료|o)$/i.test(String(x.결제 || '').trim()));
+    const paidOf = (x) => (x._결제칸없음 ? true : /^(y|예|완료|결제완료|o|입금|입금완료|성공|결제됨)$/i.test(String(x.결제 || '').trim()));
     const paid = out.filter(paidOf);
     const total = paid.reduce((a, x) => a + x.금액, 0);
     const kst = (d) => new Date(d.getTime() + 9 * 3600 * 1000).toISOString().slice(0, 10);
@@ -1027,12 +1072,14 @@ app.get('/api/prospect/inflow', async (req, res) => {
     const dayOf = (x) => String(x.신청일 || '').replace(/[./]/g, '-').slice(0, 10);
     const tRows = paid.filter((x) => dayOf(x) === today), mRows = paid.filter((x) => dayOf(x).slice(0, 7) === month);
     const sum1 = (a) => a.reduce((s2, x) => s2 + x.금액, 0);
+    files.sort((a, b) => b.금액 - a.금액);                                 // 매출 큰 파일부터
     const sum = { 건수: paid.length, 금액: total, 객단가: paid.length ? Math.round(total / paid.length) : 0,
-      신청: out.length, 미결제: out.length - paid.length,
+      신청: out.length, 미결제: out.length - paid.length, 중복제외: 중복, 파일수: tg.list.length,
       오늘: { 건수: tRows.length, 금액: sum1(tRows) },
-      이번달: { 건수: mRows.length, 금액: sum1(mRows) } };
+      이번달: { 건수: mRows.length, 금액: sum1(mRows) },
+      파일별: files };
     _SALES_CACHE = { sum, tab, at: Date.now(), by: String(s.email || '').toLowerCase() };  // ★브리핑 7번이 쓸 숫자만(이름·연락처 없음)
-    res.json({ ok: true, configured: true, tab, custom: tgt.custom,
+    res.json({ ok: true, configured: true, tab, custom: tg.custom, files,
       권한: isVip ? '전체' : ('내 리드(' + (myName || '이름없음') + ')'),
       rows: out, missing, sum });
   } catch (e) {
@@ -1438,7 +1485,11 @@ async function buildBrief(ma, req, scope) {
     L.push(`· 오늘 **${(sv.오늘 || {}).건수 || 0}건** · ${won((sv.오늘 || {}).금액)}`);
     L.push(`· 이번달 **${(sv.이번달 || {}).건수 || 0}건** · ${won((sv.이번달 || {}).금액)}`);
     L.push(`· 전체 결제 **${sv.건수 || 0}건** · ${won(sv.금액)} · 객단가 ${won(sv.객단가)}`);
+    // ★어디서 매출이 나는지 — 파일별로 나눠 보여준다
+    const ff = (sv.파일별 || []).filter((f) => f.신청 || f.금액 || f.오류);
+    if (ff.length > 1) ff.forEach((f) => L.push(`  · ${f.파일} — 결제 ${f.결제 || 0}건 · ${won(f.금액)}${f.오류 ? ` ⚠️ ${f.오류}` : ''}`));
     if (sv.미결제) L.push(`· 신청했지만 아직 결제 안 한 분 **${sv.미결제}명** — 여기가 다음 매출이에요.`);
+    if (sv.중복제외) L.push(`· 여러 시트에 겹친 ${sv.중복제외}건은 한 번만 셌어요.`);
     L.push('· ★매출은 결제여부가 Y인 건만 잡습니다(신청만 한 건은 제외).');
   } else {
     L.push('· 아직 이번 접속에서 [유입 전환] 탭을 열지 않았어요.');

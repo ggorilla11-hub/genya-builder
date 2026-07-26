@@ -1441,6 +1441,37 @@ window.inflowConnect=function(){
    })
    .catch(function(){ toast('연결 실패 — 잠시 뒤 다시 시도해 주세요'); });
 };
+// ★파일별 매출 — 부트캠프·통합리드·연금진단 어디서 돈이 나는지 나눠 본다
+function _inflowFiles(files){
+  files=(files||[]).filter(function(f){ return f && (f.신청||f.금액||f.오류); });
+  if(files.length<2) return '';
+  var rows=files.map(function(f){
+    return '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #f0f3f6">'
+      +'<div style="font-size:11.5px;font-weight:700;color:#0d1b2a;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+_escOb(f.파일||'')+'</div>'
+      +'<div style="font-size:11.5px;white-space:nowrap;color:'+(f.오류?'#8a6d1a':'#556')+'">'
+        +(f.오류?('⚠️ '+_escOb(f.오류)):('결제 <b style="color:#0f766e">'+(f.결제||0)+'건</b> · <b>'+_won(f.금액)+'</b> <span style="color:#8a93a3">(신청 '+(f.신청||0)+')</span>'))
+      +'</div></div>';
+  }).join('');
+  return '<div style="border:1px solid #e5e9ee;border-radius:10px;padding:8px 11px;margin-bottom:8px;background:#fafbfc">'
+    +'<div style="font-size:11.5px;font-weight:800;color:#0d1b2a;margin-bottom:4px">📂 파일별 매출</div>'+rows+'</div>';
+}
+// 연결한 시트 관리(빼기)
+window.inflowManage=function(){
+  fetch('/api/prospect/sheet',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({list:1})})
+   .then(function(r){return r.json();}).then(function(d){
+     var ls=(d&&d.sheets)||[];
+     if(!ls.length){ toast('연결한 시트가 없어요'); return; }
+     var msg='연결한 시트\n\n'+ls.map(function(x,i){ return (i+1)+'. '+(x.title||'')+' / '+(x.tab||''); }).join('\n')
+       +'\n\n뺄 번호를 입력하세요 (전부 빼려면 0)';
+     var a=prompt(msg); if(a===null) return;
+     var n=parseInt(String(a).trim(),10);
+     if(n===0){ fetch('/api/prospect/sheet',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({clear:1})})
+       .then(function(){ toast('전부 뺐어요 — 기본 시트로'); prospectLoadInflow(); }); return; }
+     var t=ls[n-1]; if(!t){ toast('번호를 다시 확인해 주세요'); return; }
+     fetch('/api/prospect/sheet',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({remove:t.id,tab:t.tab})})
+      .then(function(){ toast('뺐어요 — '+(t.title||'')); prospectLoadInflow(); });
+   }).catch(function(){ toast('불러오지 못했어요'); });
+};
 // ── 신청자 표 — 실제 구글시트만 읽는다. 시트가 비면 "0건"이라고 하지 가짜 줄을 만들지 않는다 ──
 function _won(n){ return (Number(n)||0).toLocaleString('ko-KR')+'원'; }
 function prospectLoadInflow(){
@@ -1462,8 +1493,11 @@ function prospectLoadInflow(){
          +'<div style="font-size:13px;font-weight:800;color:#0d1b2a">'+_won(sm.금액)+' <span style="font-size:11px;color:#0f766e">('+(sm.건수||0)+'건 · '+_won(sm.객단가)+')</span></div></div>'
        +'</div>'
        // ★신청만 하고 아직 결제 안 한 분 = 다음 매출
-       +((sm.미결제)?('<div style="font-size:11.5px;color:#8a6d1a;background:#fffdf5;border:1px solid #ecdca8;border-radius:8px;padding:7px 10px;margin-bottom:8px">💰 신청 '+(sm.신청||0)+'명 중 <b>'+sm.미결제+'명이 아직 결제 전</b>이에요 — 여기가 다음 매출입니다.</div>'):'')
-       +(d.custom?'<div style="font-size:10.5px;color:#0f766e;margin-bottom:6px">🔗 연결한 시트: <b>'+_escOb(d.tab||'')+'</b> · <span onclick="inflowConnect()" style="text-decoration:underline;cursor:pointer">바꾸기</span></div>':'');
+       +((sm.미결제)?('<div style="font-size:11.5px;color:#8a6d1a;background:#fffdf5;border:1px solid #ecdca8;border-radius:8px;padding:7px 10px;margin-bottom:8px">💰 신청 '+(sm.신청||0)+'명 중 <b>'+sm.미결제+'명이 아직 결제 전</b>이에요 — 여기가 다음 매출입니다.'
+         +((sm.중복제외)?('<div style="color:#8a93a3;margin-top:3px">여러 시트에 겹친 '+sm.중복제외+'건은 한 번만 셌어요.</div>'):'')+'</div>'):'')
+       // ★파일별 — 어디서 매출이 나는지 한눈에
+       +_inflowFiles(d.files||sm.파일별||[])
+       +(d.custom?'<div style="font-size:10.5px;color:#0f766e;margin-bottom:6px">🔗 연결한 시트 '+((d.files||[]).length)+'개 · <span onclick="inflowConnect()" style="text-decoration:underline;cursor:pointer">＋ 추가</span> · <span onclick="inflowManage()" style="text-decoration:underline;cursor:pointer">관리</span></div>':'');
      if(d.missing&&d.missing.length) head+='<div style="font-size:11px;color:#8a6d1a;background:#fffdf5;border:1px solid #ecdca8;border-radius:8px;padding:6px 9px;margin-bottom:8px">⚠️ 시트에 없는 항목: <b>'+d.missing.map(_escOb).join(', ')+'</b> — 그 칸은 비어서 나옵니다</div>';
      if(!rows.length){ box.innerHTML=head+'<div style="font-size:12px;color:#8a93a3;padding:6px 0 12px">아직 신청자가 없어요. (시트 '+_escOb(d.tab||'')+' · '+_escOb(d.권한||'')+')</div>'; return; }
      var tb='<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid #e5e9ee;border-radius:10px"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:460px">'
