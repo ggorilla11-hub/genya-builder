@@ -1942,7 +1942,9 @@ function findDraft(i){
      if(!d||!d.ok||!d.draft){ box.innerHTML='<div style="margin-top:8px;font-size:12px;color:#c0392b">초안 생성 실패 — <span onclick="findDraft('+i+')" style="text-decoration:underline;cursor:pointer">다시</span></div>'; return; }
      // ★혹시 [링크] 토큰이 남아 있으면 홈페이지로. 옛 진단페이지 주소가 섞여 와도 홈페이지로 정리.
      var txt=String(d.draft).replace(/\[링크\]/g, GENYA_HOME)
-       .replace(/https?:\/\/ohwant-class\.netlify\.app\/\S*/g, GENYA_HOME);
+       .replace(/https?:\/\/ohwant-class\.netlify\.app\/\S*/g, GENYA_HOME)
+       // ★주소 뒤에 한글이 붙으면 네이버가 뒷 문장까지 URL로 삼킨다 → 줄을 나눈다(마지막 안전망)
+       .replace(/(https?:\/\/[A-Za-z0-9.\-/_?=&%#]+)([가-힣])/g, '$1\n$2');
      // ★보관부터 한다 — 검수가 뒤에서 화면을 다시 그려도 이 초안이 되살아난다
      var k=_draftKey(l); if(k) window._DRAFTS[k]={text:txt, basedOn:d.basedOn, thin:d.thin, grounded:d.grounded};
      box.innerHTML=_draftHTML(i,l,txt,null,d.basedOn,d.thin,d.grounded);

@@ -1450,6 +1450,38 @@ function cardFlags(q, cardOpen) {
   return { isCardCmd, isCardClose, isGroupCard, cardName, notName: NOT_NAME.source };
 }
 
+// ★2026-07-27 링크 깨짐 사고: "https://ohwant.net으로 편하게…"처럼 조사가 바로 붙으면
+//   네이버가 URL 끝을 못 찾고 뒷 문장까지 삼켜 xn--로 시작하는 깨진 링크를 만든다 → 클릭이 안 된다.
+//   → 주소를 ★한 줄에 혼자★ 둔다. 조사는 떼고, 문장은 다음 줄로 내린다.
+const _LINK_P = '(으로|로|에서|에게|에|을|를|은|는|이|가|께|와|과|랑|이랑)';
+function _linkOwnLine(draft, link) {
+  const reTok = new RegExp('\\[링크\\]' + _LINK_P + '?', 'g');
+  const lines = String(draft).split('\n');
+  const out = [];
+  let placed = false;
+  for (const raw of lines) {
+    if (raw.indexOf('[링크]') < 0) { out.push(raw); continue; }
+    // 한 줄에 토큰이 여러 번 있어도 ★주소는 한 번만 놓는다. 조사는 떼고 문장만 살린다.
+    const parts = raw.replace(reTok, ' ').split(' ');
+    const head = String(parts.shift() || '').trim();
+    const tail = parts.join(' ').replace(/\s+/g, ' ').trim();
+    if (head) out.push(head);
+    if (!placed) { out.push(link); placed = true; }
+    if (tail) out.push(tail);
+  }
+  let s = out.join('\n');
+  s = s.split('[링크]').join(placed ? '' : link);      // 남은 토큰 정리
+  // ★최후 안전망: 어떤 경로로든 주소 뒤에 한글이 붙었으면 줄을 나눈다
+  s = s.replace(/(https?:\/\/[A-Za-z0-9.\-/_?=&%#]+)([가-힣])/g, '$1\n$2');
+  // 그렇게 나뉜 줄이 조사로 시작하면 그 조사만 떼어낸다 ("으로 문의주세요" → "문의주세요")
+  const ls = s.split('\n');
+  for (let i = 1; i < ls.length; i++) {
+    if (!/^https?:\/\/\S+$/.test(ls[i - 1].trim())) continue;
+    ls[i] = ls[i].replace(new RegExp('^' + _LINK_P + '\\s*'), '');
+  }
+  return ls.join('\n').replace(/[ \t]+$/gm, '').replace(/\n{3,}/g, '\n\n').trim();
+}
+
 /** 이 글에 나온 사람 중 ★명단에 실제로 있는 이름만 (지어내기 차단) */
 async function _namesInText(text) {
   let t = null;
@@ -1703,7 +1735,11 @@ app.post('/api/find/reply-draft', async (req, res) => {
       + '       ★단 여기서 다 풀어주지 마라. 방향만 짚고 정밀 진단은 아래로 넘긴다(미끼 유지).\n'
       + '  ③ 공감·연결 — 왜 점검이 필요한지 한 문장\n'
       + '  ④ 안내처 — 링크 자리로 [링크] 토큰을 ★정확히 한 번★ 넣는다.\n'
-      + '       예: "[링크]으로 편하게 문의해주시면 자세히 안내해드리겠습니다."\n'
+      + '       ★[링크]는 ★한 줄에 혼자★ 둔다. 바로 뒤에 조사(으로·에서·에)나 다른 글자를 붙이지 마라\n'
+      + '         (붙이면 주소가 깨져 클릭이 안 된다).\n'
+      + '       이렇게 써라:\n'
+      + '         아래 홈페이지에서 편하게 문의해주시면 자세히 안내해드리겠습니다.\n'
+      + '         [링크]\n'
       + '       ★[링크] 말고 다른 주소(URL)를 쓰지 마라. 주소를 지어내지 마라.\n'
       + '  ⑤ 마무리 — 마지막 줄은 "감사합니다."로 끝낸다\n'
       + '전체 5~8문장. 강매·전화번호·과장·이모지 남발 금지.\n'
@@ -1717,9 +1753,9 @@ app.post('/api/find/reply-draft', async (req, res) => {
     const link = String(b.link || '').trim() || 'https://ohwant.net';
     // ★옛 진단페이지 주소가 섞여 나오면 홈페이지로 정리(2026-07-27 대표님 지시: CTA는 홈페이지 하나)
     draft = draft.replace(/https?:\/\/ohwant-class\.netlify\.app\/\S*/g, '[링크]');
-    if (draft.indexOf('[링크]') < 0) draft += '\n\n[링크]으로 편하게 문의해주시면 자세히 안내해드리겠습니다.';
+    if (draft.indexOf('[링크]') < 0) draft += '\n\n[링크]\n편하게 문의해주시면 자세히 안내해드리겠습니다.';
     if (!/감사합니다/.test(draft.slice(-40))) draft += '\n\n감사합니다.';
-    draft = draft.split('[링크]').join(link);          // ★남은 토큰을 전부 홈페이지 주소로
+    draft = _linkOwnLine(draft, link);                 // ★주소를 한 줄에 혼자 — 네이버가 뒷 문장까지 삼키는 것 방지
 
     // ★★본문이 있는데 "인사말만" 나가면 실패다 — 여기서 잡아 한 번 다시 쓴다(2026-07-27 대표님 지시).
     //   판정: 발췌의 핵심 낱말이 답글에 하나도 안 들어갔으면 그 본문을 안 읽은 것이다.
@@ -1740,9 +1776,9 @@ app.post('/api/find/reply-draft', async (req, res) => {
         let d2 = (cr2.content || []).filter((x) => x.type === 'text').map((x) => x.text).join('').trim();
         if (d2) {
           d2 = d2.replace(/https?:\/\/ohwant-class\.netlify\.app\/\S*/g, '[링크]');
-          if (d2.indexOf('[링크]') < 0) d2 += '\n\n[링크]으로 편하게 문의해주시면 자세히 안내해드리겠습니다.';
+          if (d2.indexOf('[링크]') < 0) d2 += '\n\n[링크]\n편하게 문의해주시면 자세히 안내해드리겠습니다.';
           if (!/감사합니다/.test(d2.slice(-40))) d2 += '\n\n감사합니다.';
-          d2 = d2.split('[링크]').join(link);
+          d2 = _linkOwnLine(d2, link);
           const 반영2 = 핵심.filter((w) => d2.indexOf(w) >= 0).length;
           if (반영2 > 반영) draft = d2;                 // 나아졌을 때만 바꾼다
         }
