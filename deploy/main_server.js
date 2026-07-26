@@ -1999,6 +1999,14 @@ app.get('/api/find/leads', async (req, res) => {
 //   ★여기서 하는 일은 발굴과 기록뿐 — 발송·답글·메일은 코드 자체가 없다(서버가 실수로도 못 보낸다).
 const nightFind = require('./night_find');
 const showCards = require('./show_cards');            // 👀 "보여줘 비서" — 말→무엇을 보여줄지만 정함
+const jobKw = require('./job_keywords');              // 🗂️ 직업별 기본 검색어 표(표 하나 · 발송 0)
+// 🩺 직업별 검색어 표 확인 — 로그인 없이. ★표만 보여준다(개인정보 0).
+app.get('/api/diag/jobkw', (req, res) => {
+  const j = String(req.query.job || '');
+  res.json({ 물은직업: j, 직업이름: jobKw.직업이름(j), 기본검색어: jobKw.기본검색어(j),
+    표에있는직업: jobKw.목록().map((x) => x.이름),
+    안내: j && !jobKw.기본검색어(j).length ? '표에 없는 직업이에요 — 검색어를 직접 넣어주시면 그걸 씁니다(지어내지 않습니다).' : '' });
+});
 // 🩺 보여줘 진단 — "이 말을 하면 무엇이 뜨나". ★판정만·아무것도 실행하지 않는다.
 app.get('/api/diag/show', (req, res) => {
   const q = String(req.query.q || '핫 리드 보여줘');
@@ -2026,7 +2034,11 @@ app.post('/api/night/profile', async (req, res) => {
   try {
     const b = req.body || {};
     const kw = Array.isArray(b.키워드) ? b.키워드 : String(b.키워드 || '').split(/[,\n]/);
-    const p = await nightFind.saveProfile(s.email, { 켜짐: !!b.켜짐, 직업: b.직업 || '', 키워드: kw });
+    // 🗂️ 대표가 넣은 게 있으면 그게 우선, 비었으면 ★직업별 기본 표에서 채운다(지어내지 않는다)
+    const 직업 = String(b.직업 || '');
+    const 채움 = jobKw.채우기(직업, kw);
+    const p = await nightFind.saveProfile(s.email, { 켜짐: !!b.켜짐, 직업, 키워드: 채움.검색어 });
+    p.검색어출처 = 채움.출처;
     console.log(`[🌙밤샘발굴] 프로필 ${p.켜짐 ? '켬' : '끔'} · 직업=${p.직업} · 키워드 ${p.키워드.length}개 (이메일은 안 담음)`);
     res.json({ ok: true, 프로필: p, 안내: p.켜짐
       ? '밤에 서버가 이 키워드로 발굴합니다. PC는 꺼두셔도 됩니다. ★발송은 하지 않습니다.'
@@ -2036,8 +2048,13 @@ app.post('/api/night/profile', async (req, res) => {
 app.get('/api/night/profile', async (req, res) => {
   const s = sessionOf(req);
   if (!s) return res.status(401).json({ ok: false, error: '로그인이 필요해요' });
-  try { res.json({ ok: true, 프로필: await nightFind.loadProfile(s.email) }); }
-  catch (e) { res.status(502).json({ ok: false, error: e.message }); }
+  try {
+    const p = await nightFind.loadProfile(s.email);
+    // 화면이 켜기 창을 채울 재료 — 내 직업 추정 + 그 직업 기본 검색어 + 고를 수 있는 직업 목록
+    const 내직업 = (p && p.직업) || (String(s.email || '').toLowerCase() === VIP_EMAIL ? '재무설계' : '');
+    res.json({ ok: true, 프로필: p, 내직업,
+      기본검색어: jobKw.기본검색어(내직업), 직업이름: jobKw.직업이름(내직업), 직업목록: jobKw.목록() });
+  } catch (e) { res.status(502).json({ ok: false, error: e.message }); }
 });
 // 🌙 밤사이 결과 보기 — ★로그인한 본인 것만(남의 리드는 안 나온다). 공개글 링크·발췌만.
 app.get('/api/night/find', async (req, res) => {

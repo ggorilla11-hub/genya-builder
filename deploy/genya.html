@@ -1414,11 +1414,103 @@ window.genyaShowCards=function(spec){
   if(!spec) return;
   try{
     var 종=spec.종류||'';
+    if(종==='night_set') return genyaNight();
     if(종==='lead_count') return _showCount();
     if(종.indexOf('lead')===0) return _showLeads(spec);
     if(종.indexOf('sales')===0) return _showSales(spec);
   }catch(e){ try{ pushMsg('gen','보여드리려다 막혔어요 — 다시 말씀해 주세요.'); }catch(e2){} }
 };
+// ═══ 🌙 밤샘 발굴 켜기 — ★화면 버튼 (콘솔 없이 교육생도 쓰게 · 2026-07-27) ═══
+//   ★기존 화면은 한 곳도 안 고친다. 떠 있는 버튼 하나와 새 창만 ★더한다.
+//   ★켜고 끄는 것뿐 — 발송은 여기 없다.
+window.genyaNight=function(){
+  var el=document.getElementById('nightBox');
+  if(!el){ el=document.createElement('div'); el.id='nightBox';
+    el.style.cssText='position:fixed;right:14px;top:14px;width:min(420px,calc(100vw - 28px));z-index:9200;'
+      +'background:#fff;border:1px solid #dbe2ea;border-radius:14px;box-shadow:0 12px 40px rgba(13,27,42,.22);font-family:inherit';
+    document.body.appendChild(el); }
+  el.style.display='block';
+  el.innerHTML='<div style="padding:14px">불러오는 중이에요…</div>';
+  fetch('/api/night/profile',{credentials:'include'}).then(function(r){ return r.json().then(function(j){ return {s:r.status,j:j}; }); })
+   .then(function(x){
+     if(x.s===401){ el.innerHTML=_nightShell('<div style="font-size:12.5px;color:#8a6d1a">로그인이 필요해요 — 새로고침 후 구글로 로그인해 주세요.</div>'); return; }
+     var d=x.j||{};
+     if(!d.ok){ el.innerHTML=_nightShell('<div style="font-size:12.5px;color:#c0392b">설정을 못 불러왔어요 — '+_escOb(d.error||'')+'</div>'); return; }
+     var p=d.프로필||null;
+     var 켜짐=!!(p&&p.켜짐);
+     var 직업=(p&&p.직업)||d.내직업||'';
+     var 키워드=((p&&p.키워드&&p.키워드.length)?p.키워드:(d.기본검색어||[])).join(', ');
+     var 목록=(d.직업목록||[]).map(function(j){ return '<option value="'+_escOb(j.이름)+'"'+(j.이름===직업?' selected':'')+'>'+_escOb(j.이름)+'</option>'; }).join('');
+     el.innerHTML=_nightShell(
+       '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">'
+        +'<span style="font-size:12px;color:#556">지금 상태</span>'
+        +'<b style="font-size:13px;color:'+(켜짐?'#0f766e':'#8a93a3')+'">'+(켜짐?'🌙 켜짐 — 밤에 서버가 돌립니다':'꺼짐')+'</b></div>'
+       +'<div style="font-size:11.5px;color:#556;margin-bottom:4px">내 직업</div>'
+       +'<select id="nightJob" onchange="nightJobPick()" style="width:100%;padding:8px;border:1px solid #dbe2ea;border-radius:8px;font-family:inherit;font-size:12.5px;margin-bottom:9px">'
+        +'<option value="">— 고르세요 —</option>'+목록
+        +'<option value="__직접__"'+((직업&&!목록.match(new RegExp('>'+직업+'<')))?' selected':'')+'>직접 입력</option></select>'
+       +'<input id="nightJobFree" placeholder="직접 입력할 직업" value="'+_escOb(직업)+'" style="width:100%;padding:8px;border:1px solid #dbe2ea;border-radius:8px;font-family:inherit;font-size:12.5px;margin-bottom:9px">'
+       +'<div style="font-size:11.5px;color:#556;margin-bottom:4px">검색어 <span style="color:#8a93a3">(쉼표로 구분 · 고치셔도 됩니다)</span></div>'
+       +'<textarea id="nightKw" rows="3" style="width:100%;padding:8px;border:1px solid #dbe2ea;border-radius:8px;font-family:inherit;font-size:12.5px;resize:vertical">'+_escOb(키워드)+'</textarea>'
+       +'<div style="display:flex;gap:8px;margin-top:11px">'
+        +'<button onclick="nightSave(true)" style="flex:1;padding:10px;border:1px solid var(--teal);background:var(--teal);color:#fff;border-radius:9px;font-weight:800;cursor:pointer;font-family:inherit;font-size:13px">🌙 밤샘 발굴 켜기</button>'
+        +'<button onclick="nightSave(false)" style="padding:10px 14px;border:1px solid #dbe2ea;background:#fff;color:#556;border-radius:9px;font-weight:700;cursor:pointer;font-family:inherit;font-size:13px">끄기</button>'
+       +'</div>'
+       +'<div style="font-size:10.5px;color:#8a93a3;margin-top:9px;line-height:1.6">'
+        +'켜두시면 PC를 꺼두셔도 밤에 서버가 이 검색어로 공개 글을 찾아 둡니다.<br>'
+        +'★찾아서 모아두기만 합니다 — <b>보내는 일은 하지 않습니다.</b></div>');
+   }).catch(function(){ el.innerHTML=_nightShell('<div style="font-size:12.5px;color:#c0392b">설정 창을 못 열었어요.</div>'); });
+};
+function _nightShell(안){
+  return '<div style="display:flex;justify-content:space-between;align-items:center;padding:11px 13px;border-bottom:1px solid #eef1f5">'
+    +'<b style="font-size:13px;color:#0d1b2a">🌙 밤샘 발굴</b>'
+    +'<button onclick="nightClose()" style="border:none;background:none;font-size:18px;color:#8a93a3;cursor:pointer;font-family:inherit">×</button></div>'
+    +'<div style="padding:13px">'+안+'</div>';
+}
+window.nightClose=function(){ var el=document.getElementById('nightBox'); if(el) el.style.display='none'; };
+// 직업을 고르면 그 직업 기본 검색어를 자동으로 채운다(대표가 고친 게 있으면 안 덮는다)
+window.nightJobPick=function(){
+  var sel=document.getElementById('nightJob'), free=document.getElementById('nightJobFree'), kw=document.getElementById('nightKw');
+  if(!sel) return;
+  var v=sel.value;
+  if(v==='__직접__'||!v){ if(free) free.focus(); return; }
+  if(free) free.value=v;
+  if(!kw) return;
+  fetch('/api/diag/jobkw?job='+encodeURIComponent(v)).then(function(r){ return r.json(); }).then(function(j){
+    var 기본=(j&&j.기본검색어)||[];
+    if(기본.length && !String(kw.value).trim()) kw.value=기본.join(', ');
+    else if(기본.length && confirm('"'+v+'" 기본 검색어로 바꿀까요?\n(지금 적힌 건 지워집니다)')) kw.value=기본.join(', ');
+  }).catch(function(){});
+};
+window.nightSave=function(켜짐){
+  var free=document.getElementById('nightJobFree'), sel=document.getElementById('nightJob'), kw=document.getElementById('nightKw');
+  var 직업=String((free&&free.value)||'').trim() || String((sel&&sel.value!=='__직접__'&&sel.value)||'').trim();
+  var 키워드=String((kw&&kw.value)||'').split(/[,\n]/).map(function(s){ return s.trim(); }).filter(Boolean);
+  if(켜짐 && !직업){ toast('직업을 골라주세요 — 그 직업 검색어로 찾습니다'); return; }
+  fetch('/api/night/profile',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({켜짐:!!켜짐, 직업:직업, 키워드:키워드})})
+   .then(function(r){ return r.json(); }).then(function(d){
+     if(!d||!d.ok){ toast((d&&d.error)||'저장하지 못했어요'); return; }
+     var p=d.프로필||{};
+     try{ pushMsg('gen', renderMd(켜짐
+       ? ('🌙 **밤샘 발굴을 켰어요.**\n\n· 직업: '+(p.직업||'-')+'\n· 검색어 '+((p.키워드||[]).length)+'개'+(p.검색어출처?(' ('+p.검색어출처+')'):'')
+          +'\n\nPC를 꺼두셔도 밤에 서버가 찾아 둡니다. 아침에 **"밤사이 발굴 보여줘"**라고 하시면 보여드릴게요.\n\n찾아서 모아두기만 합니다 — **보내는 일은 하지 않습니다.**')
+       : '밤샘 발굴을 **껐어요.** 다시 켜시려면 🌙 버튼을 눌러주세요.')); }catch(e){}
+     genyaNight();                                   // 상태를 다시 그린다
+   }).catch(function(){ toast('저장하지 못했어요 — 잠시 뒤 다시'); });
+};
+// ★떠 있는 🌙 버튼 하나만 더한다(기존 화면 무접촉)
+(function(){ function 붙이기(){
+  if(document.getElementById('nightBtn')) return;
+  var b=document.createElement('button'); b.id='nightBtn'; b.textContent='🌙';
+  b.title='밤샘 발굴 켜기/끄기';
+  b.onclick=function(){ try{ genyaNight(); }catch(e){} };
+  b.style.cssText='position:fixed;right:16px;top:96px;z-index:9150;width:42px;height:42px;border-radius:50%;'
+    +'border:1px solid #dbe2ea;background:#fff;box-shadow:0 4px 14px rgba(13,27,42,.16);cursor:pointer;font-size:19px;font-family:inherit';
+  document.body.appendChild(b);
+}
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',붙이기); else setTimeout(붙이기,0);
+})();
 // 🔢 "총 몇 명?" — ★화면에 실제로 있는 숫자를 읽어 답한다(지어내기 0·서버에 안 보냄)
 function _showCount(){
   var L=window._FIND||[];
