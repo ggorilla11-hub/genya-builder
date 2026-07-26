@@ -1672,7 +1672,19 @@ app.post('/api/find/reply-draft', async (req, res) => {
     const text = String(b.text || '').slice(0, 500);
     const source = String(b.source || '공개 채널');
     if (!text) return res.json({ ok: false, error: '내용 없음' });
-    const sys = '너는 재무설계사를 돕는 어시스턴트다. 유튜브 댓글/카페 글에 달 "답글 초안"을 쓴다. 톤: 친절하고 전문적. 규칙: ① 2~3문장 짧게 ② 상대 고민에 진심으로 공감 ③ "무료 재무진단으로 지금 상황을 점검해보시라"고 자연스럽게 권함 ④ 마지막에 링크 자리로 [링크] 토큰 하나만 넣기 ⑤ 강매·전화번호·과장·이모지 남발 금지. 답글 본문만 출력(설명 없이).';
+    // ★2026-07-27 대표님 의견: "안녕하세요"로 익명 시작하면 영업 글로 보인다.
+    //   이름·자격을 밝히고 시작해야 전문가로 신뢰받는다. 교육생은 각자 프로필 이름·자격으로.
+    //   ★지어내지 않는다 — 이름·자격이 없으면 그냥 "안녕하세요"로 두고 자격을 붙이지 않는다.
+    const who = String(b.name || '').replace(/님$/, '').trim();
+    const cert = String(b.cert || '').trim();
+    const greet = who ? `안녕하세요, ${who}${cert ? ' ' + cert : ''}입니다` : '안녕하세요';
+    const sys = '너는 재무설계사를 돕는 어시스턴트다. 유튜브 댓글/카페 글에 달 "답글 초안"을 쓴다. 톤: 친절하고 전문적.\n'
+      + `규칙: ① ★첫 문장은 반드시 "${greet}."로 시작한다(다른 인사말로 바꾸지 마라)\n`
+      + '② 그다음 2~3문장 짧게 ③ 상대 고민에 진심으로 공감\n'
+      + '④ "무료 재무진단으로 지금 상황을 점검해보시라"고 자연스럽게 권함\n'
+      + '⑤ 마지막에 링크 자리로 [링크] 토큰 하나만 넣기 ⑥ 강매·전화번호·과장·이모지 남발 금지\n'
+      + '⑦ ★자격·경력을 지어내지 마라. 위 인사말에 없는 자격을 덧붙이지 않는다.\n'
+      + '답글 본문만 출력(설명 없이).';
     const cr = await _anthropic.messages.create({ model: WS_CHAT_MODEL, max_tokens: 350, system: sys, messages: [{ role: 'user', content: `[출처: ${source}] 상대 글/댓글:\n"${text}"\n\n이 사람에게 달 답글 초안을 써줘.` }] });
     const draft = (cr.content || []).filter((x) => x.type === 'text').map((x) => x.text).join('').trim();
     res.json({ ok: true, draft });
