@@ -1304,14 +1304,32 @@ function _agentName(){ return String(CUR_NICK||'').replace(/님$/,'').trim(); } 
 function _prospectLink(url){ var a=_agentName(); return url+(a?('?agent='+encodeURIComponent(a)):''); }  // ★자기 이름 자동 첨부
 // ★2026-07-27 단계 축소: 열면 곧바로 [🔍 발굴 리드]가 보인다(전엔 진단페이지 탭이 먼저였다).
 //   그리고 마지막 발굴 결과가 있으면 ★[지금 발굴]을 누르지 않아도 바로 뜬다(빈 화면 안 보이게).
+// ★2026-07-27 발굴 팝업 유지: 전엔 전체화면 백드롭(showModal)이라 대화창을 누르면 닫혔다.
+//   답글을 복사해 붙이던 작업이 통째로 끊겼다.
+//   → 고객카드처럼 ★백드롭 없는 독립 패널로 띄운다. 대화·다른 기능을 써도 안 닫힌다.
+//   ★오직 X(닫기)를 눌러야 닫힌다.
+function _discHost(){
+  var el=document.getElementById('discPanel');
+  if(!el){
+    el=document.createElement('div'); el.id='discPanel';
+    el.style.cssText='position:fixed;right:14px;bottom:14px;width:min(560px,calc(100vw - 28px));'
+      +'max-height:min(78vh,760px);overflow-y:auto;overflow-x:hidden;z-index:9100;background:#fff;'
+      +'border:1px solid #dbe2ea;border-radius:14px;box-shadow:0 12px 40px rgba(13,27,42,.22);'
+      +'-webkit-overflow-scrolling:touch;font-family:inherit;display:none';
+    document.body.appendChild(el);
+  }
+  return el;
+}
+window.closeDiscovery=function(){ var el=document.getElementById('discPanel'); if(el){ el.style.display='none'; el.innerHTML=''; } };
+function _discRender(){ var h=_discHost(); h.innerHTML=_prospectHTML(); h.style.display='block'; }
 function discoveryPanel(tab){
   window._ACTIVE_SKILL='client_discovery';
   window._PTAB=tab||'find';
-  showModal(_prospectHTML());
+  _discRender();
   if(window._PTAB==='find') _findAutoShow();
   if(window._PTAB==='leads'){ prospectLoadInflow(); prospectLoadLeads(); }
 }
-function prospectTab(which){ window._PTAB=which; document.getElementById('modalBox').innerHTML=_prospectHTML(); if(which==='leads'){ prospectLoadInflow(); prospectLoadLeads(); } if(which==='find') _findAutoShow(); }
+function prospectTab(which){ window._PTAB=which; _discRender(); if(which==='leads'){ prospectLoadInflow(); prospectLoadLeads(); } if(which==='find') _findAutoShow(); }
 // ★발굴 리드 자동 표시 — 이미 찾아둔 게 있으면 그걸 즉시 그리고(다시 안 부른다),
 //   없으면 그때만 실제로 발굴한다. 어느 경우에도 빈 화면을 안 보여준다.
 function _findAutoShow(){
@@ -1325,8 +1343,9 @@ function _findAutoShow(){
 function _prospectHTML(){
   var tab=window._PTAB||'find';   // ★기본은 발굴 리드(대표님 최우선)
   var tb=function(id,label){ var on=(tab===id); return '<button onclick="prospectTab(\''+id+'\')" style="flex:1;padding:9px 8px;border:none;background:none;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;color:'+(on?'var(--teal-d)':'#8a93a3')+';border-bottom:2px solid '+(on?'var(--teal)':'transparent')+'">'+label+'</button>'; };
-  return '<div style="max-width:560px;padding:22px 24px">'
-   +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px"><b style="font-size:16px;color:#0d1b2a">📡 고객발굴비서</b><span onclick="closeModal()" style="cursor:pointer;color:#8a93a3;font-size:20px">×</span></div>'
+  return '<div style="padding:16px 18px 18px">'
+   // ★닫기는 여기 X 하나뿐 — 대화·다른 기능을 써도 이 패널은 안 닫힌다
+   +'<div style="position:sticky;top:0;background:#fff;z-index:2;display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #f0f3f6"><b style="font-size:16px;color:#0d1b2a">📡 고객발굴비서</b><span onclick="closeDiscovery()" title="닫기" style="cursor:pointer;color:#8a93a3;font-size:22px;width:34px;height:34px;line-height:34px;text-align:center;border-radius:50%;background:#f2f5f8">×</span></div>'
    +'<div style="display:flex;margin-bottom:14px;border-bottom:1px solid #e5e9ee;overflow-x:auto">'+tb('find','🔍 발굴 리드')+tb('leads','📥 진단 유입')+tb('deploy','📤 진단페이지')+'</div>'
    +'<div id="prospectBody">'+(tab==='deploy'?_deployBody():(tab==='find'?_findBody():_leadsBody()))+'</div></div>';
 }
