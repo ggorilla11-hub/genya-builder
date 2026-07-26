@@ -1454,7 +1454,13 @@ window.genyaLogoMenu=function(ev){
   m.style.display='block';
 };
 window.genyaGoHome=function(){ try{ window.open('https://ohwant.net','_blank','noopener'); }catch(e){} var el=document.getElementById('logoMenu'); if(el) el.style.display='none'; };
-window.genyaGoOnboard=function(){ location.href='/?onboarding=1'; };
+window.genyaGoOnboard=function(){
+  var el=document.getElementById('logoMenu'); if(el) el.style.display='none';
+  // ★2026-07-27: 전엔 '/?onboarding=1'로 보냈는데 서버가 모르는 주소라 그냥 메인이 떴다.
+  //   → ★실제 온보딩 화면을 그리는 함수를 직접 부른다(첫 페이지 = 부르는 이름).
+  if(typeof renderOnboarding==='function'){ try{ renderOnboarding(true); window.scrollTo(0,0); return; }catch(e){} }
+  try{ toast('온보딩 화면을 못 열었어요 — 새로고침 후 다시 시도해 주세요'); }catch(e){}
+};
 window.genyaLogout=function(){
   if(!confirm('로그아웃할까요?\n\n(밤샘 발굴 설정은 그대로 남습니다)')) return;
   location.href='/logout';
@@ -1484,7 +1490,7 @@ window.genyaJobSwitch=function(){
   el.innerHTML='<div style="padding:14px">불러오는 중이에요…</div>';
   fetch('/api/admin/jobs',{credentials:'include'}).then(function(r){ return r.json().then(function(j){ return {s:r.status,j:j}; }); })
    .then(function(x){
-     if(x.s===403){ el.style.display='none'; try{ toast('대표님 전용 기능이에요'); }catch(e){} return; }
+     if(x.s===403){ el.innerHTML=_jobShell('<div style="font-size:12.5px;color:#8a6d1a">이 기능은 대표님(오상열) 계정에서만 열립니다.<br>지금 로그인된 계정으로는 쓸 수 없어요.</div>'); return; }
      if(x.s===401){ el.innerHTML=_jobShell('<div style="font-size:12.5px;color:#8a6d1a">로그인이 필요해요.</div>'); return; }
      var d=x.j||{}; if(!d.ok){ el.innerHTML=_jobShell('<div style="font-size:12.5px;color:#c0392b">'+_escOb(d.error||'')+'</div>'); return; }
      var 지금=d.지금직업||'';
@@ -1495,7 +1501,7 @@ window.genyaJobSwitch=function(){
          +(on?'var(--teal)':'#dbe2ea')+';background:'+(on?'var(--teal-l)':'#fff')+';color:'+(on?'var(--teal-d)':'#556')
          +';border-radius:999px;font-size:12px;font-weight:'+(on?'800':'600')+';cursor:pointer;font-family:inherit;margin:0 5px 6px 0">'
          +(on?'✓ ':'')+_escOb(j.이름)+(표준?' <span style="color:#0f766e">★표준</span>':' <span style="color:#b0b8c2">기본</span>')+'</button>'; }).join('');
-     el.innerHTML=_jobShell(
+     try{ el.innerHTML=_jobShell(
        '<div style="font-size:11.5px;color:#556;margin-bottom:7px">부트캠프에서 가르치시려면 그 직업 지니야를 먼저 써보셔야 합니다.<br>클릭하면 그 직업 설정이 올라옵니다.</div>'
        +'<div style="margin-bottom:4px">'+칩+'</div>'
        + _jobSetting(d.설정)
@@ -1503,7 +1509,13 @@ window.genyaJobSwitch=function(){
        +'<div style="font-size:10.5px;color:#8a93a3;margin-top:10px;line-height:1.6">'
         +'★체험용입니다. 대표님 <b>밤샘 발굴은 재무 그대로</b> 돌고, <b>저장·발송은 하지 않습니다.</b><br>'
         +'설정 편집·공식 배포는 <b>다음 단계</b>입니다(이번은 구조까지).</div>');
-   }).catch(function(){ el.style.display='none'; });
+     }catch(err){ el.innerHTML=_jobShell('<div style="font-size:12.5px;color:#c0392b">창을 그리다 막혔어요 — '+_escOb(String(err&&err.message||''))+'</div>'); }
+   }).catch(function(e){
+     // ★2026-07-27 "버튼 눌러도 무반응"의 정체: 실패하면 창을 ★숨겨버렸다.
+     //   → 숨기지 않고 ★왜 안 되는지 그 자리에 적는다.
+     el.innerHTML=_jobShell('<div style="font-size:12.5px;color:#c0392b">직업 전환 창을 못 열었어요.<br>'
+       +'<span style="color:#8a93a3">'+_escOb(String((e&&e.message)||''))+'</span><br>새로고침 후 다시 눌러주세요.</div>');
+   });
 };
 // 그 직업 설정을 보여준다 — ★없는 건 "아직 기본 세팅"이라고 정직하게
 function _jobSetting(s){

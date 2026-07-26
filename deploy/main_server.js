@@ -2627,7 +2627,9 @@ async function orderHandler(req, res) {
     //   ★판정은 autoRunFlags() 한 곳에서만 한다 — 진단 창구(/api/diag/autorun)가 같은 함수를 쓰므로
     //     "진단은 되는데 실제는 다르다"가 생길 수 없다(카드의 cardFlags와 같은 방식).
     // 👀 "보여줘 비서" — 새 파일이 판정한다. 기존이 알아듣는 말은 parse()가 null을 돌려 양보한다.
-    const _showSpec = (_noBase && !_isBriefAsk) ? showCards.parse(q) : null;
+    // ★2026-07-27: 관문을 parse() 안으로 옮겼다. 여기서 또 거르면 ★진단과 실제가 달라진다.
+    //   (대표님 지적: 진단은 "된다"는데 실제론 안 됐다 — 그 구멍을 막는다)
+    const _showSpec = _isBriefAsk ? null : showCards.parse(q);
     const _ar = autoRunFlags(q, { noBase: _noBase, briefAsk: _isBriefAsk });
     const { findRun: _isFindRun, findVague: _isFindVague, openInflow: _isOpenInflow,
       openFind: _isOpenFind, refresh: _isRefresh, channel: _findCh } = _ar;
