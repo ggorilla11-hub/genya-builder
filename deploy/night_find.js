@@ -57,6 +57,8 @@ async function _query(coll, where, limit) {
   const r = await _fs().projects.databases.documents.runQuery({ parent: DB, requestBody: { structuredQuery: q } });
   return (r.data || []).filter((x) => x.document).map((x) => x.document.fields || {});
 }
+// ★2026-07-27 실측: 질의하는 칸 이름이 한글이면 Firestore가 400을 낸다(필드경로 규칙).
+//   → ★찾는 데 쓰는 칸(owner·on·at)만 영문으로 둔다. 내용은 json 한 덩이라 한글 그대로다.
 const _같음 = (칸, 값) => ({ fieldFilter: { field: { fieldPath: 칸 }, op: 'EQUAL', value: { stringValue: String(값) } } });
 const _풀기 = (f) => { try { return JSON.parse((f.json || {}).stringValue || '{}'); } catch (e) { return null; } };
 
@@ -68,8 +70,8 @@ async function saveProfile(email, { 켜짐, 직업, 키워드 }) {
   const 정리 = (키워드 || []).map((k) => String(k || '').trim()).filter(Boolean).slice(0, 20);
   const p = { 지문: id, 켜짐: !!켜짐, 직업: String(직업 || '').slice(0, 40), 키워드: 정리, at: new Date().toISOString() };
   await _add(PROF_COLL, {
-    지문: { stringValue: id },
-    켜짐: { stringValue: p.켜짐 ? 'Y' : 'N' },
+    owner: { stringValue: id },
+    on: { stringValue: p.켜짐 ? 'Y' : 'N' },
     at: { stringValue: p.at },
     json: { stringValue: JSON.stringify(p) },
   });
@@ -77,17 +79,17 @@ async function saveProfile(email, { 켜짐, 직업, 키워드 }) {
 }
 // 같은 지문이 여러 번 저장됐으면 ★가장 최근 것만 쓴다(덮어쓰기 대신 최신 우선)
 async function loadProfile(email) {
-  const rows = await _query(PROF_COLL, _같음('지문', 지문(email)), 50, 'at');
+  const rows = await _query(PROF_COLL, _같음('owner', 지문(email)), 50, 'at');
   const ps = rows.map(_풀기).filter(Boolean).sort((a, b) => String(b.at).localeCompare(String(a.at)));
   return ps[0] || null;
 }
 async function listOn() {
-  const rows = await _query(PROF_COLL, _같음('켜짐', 'Y'), 200, 'at');
+  const rows = await _query(PROF_COLL, _같음('on', 'Y'), 200, 'at');
   const 최신 = {};
   rows.map(_풀기).filter(Boolean).sort((a, b) => String(a.at).localeCompare(String(b.at)))
     .forEach((p) => { 최신[p.지문] = p; });                      // 나중 것이 이긴다
   // 그 뒤에 꺼버린 대표는 빠져야 하므로 '꺼짐' 기록도 확인한다
-  const off = (await _query(PROF_COLL, _같음('켜짐', 'N'), 200, 'at')).map(_풀기).filter(Boolean);
+  const off = (await _query(PROF_COLL, _같음('on', 'N'), 200, 'at')).map(_풀기).filter(Boolean);
   off.forEach((p) => { const cur = 최신[p.지문]; if (cur && String(p.at) > String(cur.at)) delete 최신[p.지문]; });
   return Object.values(최신).slice(0, 대표상한);
 }
@@ -147,8 +149,7 @@ async function runOne(deps, prof) {
   let 저장됨 = false, 저장오류 = '';
   try {
     await _add(RUN_COLL, {
-      지문: { stringValue: 회차.지문 }, at: { stringValue: at },
-      신규: { integerValue: String(회차.신규) },
+      owner: { stringValue: 회차.지문 }, at: { stringValue: at },
       json: { stringValue: JSON.stringify(회차) },
     });
     저장됨 = true;
@@ -176,7 +177,7 @@ async function runAll(deps) {
 // ═══ 아침에 읽는 것 — ★자기 것만 ═══
 async function loadRuns(지문값, limit) {
   // ★넉넉히 가져와 ★코드에서 최신순 정렬한 뒤 자른다(Firestore 정렬은 색인이 필요해 400이 난다)
-  const rows = await _query(RUN_COLL, _같음('지문', String(지문값)), 300);
+  const rows = await _query(RUN_COLL, _같음('owner', String(지문값)), 300);
   return rows.map(_풀기).filter(Boolean)
     .sort((a, b) => String(b.at).localeCompare(String(a.at)))
     .slice(0, Math.min(보관, limit || 12));
