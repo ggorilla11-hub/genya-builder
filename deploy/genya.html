@@ -1386,7 +1386,7 @@ function _prospectHTML(){
        +'<span id="discMinBtn" onmousedown="event.stopPropagation()" onclick="toggleDiscoveryMin()" title="접기" style="cursor:pointer;color:#8a93a3;font-size:16px;width:34px;height:34px;line-height:32px;text-align:center;border-radius:50%;background:#f2f5f8">＿</span>'
        +'<span onmousedown="event.stopPropagation()" onclick="closeDiscovery()" title="닫기" style="cursor:pointer;color:#8a93a3;font-size:22px;width:34px;height:34px;line-height:34px;text-align:center;border-radius:50%;background:#f2f5f8">×</span>'
      +'</span></div>'
-   +'<div id="discTabs" style="display:flex;margin-bottom:14px;border-bottom:1px solid #e5e9ee;overflow-x:auto">'+tb('find','🔍 발굴 리드')+tb('leads','📥 진단 유입')+tb('deploy','📤 진단페이지')+'</div>'
+   +'<div id="discTabs" style="display:flex;margin-bottom:14px;border-bottom:1px solid #e5e9ee;overflow-x:auto">'+tb('find','🔍 발굴 리드')+tb('leads','📥 유입 전환')+tb('deploy','📤 진단페이지')+'</div>'
    +'<div id="prospectBody">'+(tab==='deploy'?_deployBody():(tab==='find'?_findBody():_leadsBody()))+'</div></div>';
 }
 // ── 탭1: 진단페이지 배포 (카드 2개 · 데스크톱 나란히 / 모바일 세로) ──
@@ -1417,12 +1417,30 @@ function prospectCopy(i){ var p=_PROSPECT_PAGES[i]; if(!p)return; var link=_pros
   catch(e){ toast('복사 실패 — 길게 눌러 복사하세요'); } }
 // ── 탭2: 진단 유입 리드 (4상태: 로딩→빈/에러/정상 · 내 리드만 필터 · 연락=직접) ──
 function _leadsBody(){
-  return '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">'
-     +'<div style="font-size:12px;color:#556;line-height:1.5">내 진단 링크로 신청한 고객만 표시 · <span style="color:#c0392b">연락은 직접(자동발송 없음)</span></div>'
-     +'<button onclick="prospectLoadLeads()" style="padding:6px 10px;border:1px solid #dbe2ea;background:#fff;border-radius:8px;font-size:12px;cursor:pointer;color:#556;font-family:inherit;white-space:nowrap">↻ 새로고침</button></div>'
+  return '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:10px;flex-wrap:wrap">'
+     +'<div style="font-size:12px;color:#556;line-height:1.5">신청·결제 시트를 읽어 <b>실제 매출</b>을 보여드려요 · <span style="color:#c0392b">연락은 직접(자동발송 없음)</span></div>'
+     +'<div style="display:flex;gap:6px">'
+       +'<button onclick="inflowConnect()" style="padding:6px 10px;border:1px solid var(--teal);background:var(--teal-l);color:var(--teal-d);border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap">＋ 시트 연결</button>'
+       +'<button onclick="prospectLoadInflow(); prospectLoadLeads();" style="padding:6px 10px;border:1px solid #dbe2ea;background:#fff;border-radius:8px;font-size:12px;cursor:pointer;color:#556;font-family:inherit;white-space:nowrap">↻ 새로고침</button>'
+     +'</div></div>'
    +'<div id="inflowBox">'+_leadsSkeleton()+'</div>'    // ★신청자 표(이름·연락처·과정·금액·신청일 + 합계)
    +'<div id="leadsList">'+_leadsSkeleton()+'</div>';   // 로딩상태(스켈레톤) 먼저
 }
+// ★2026-07-27: 진행 중인 다른 신청 시트(부트캠프 등)도 붙일 수 있게 — 주소만 넣으면 된다.
+//   ★서버가 기억하는 건 시트 "주소"뿐. 신청자 이름·연락처·금액은 저장하지 않는다.
+window.inflowConnect=function(){
+  var url=prompt('신청자 구글 시트 주소를 붙여넣으세요.\n\n(먼저 그 시트를 서비스계정 이메일에 "뷰어"로 공유해 주세요)\n\n· 비우고 확인 = 기본 시트로 되돌리기');
+  if(url===null) return;
+  var body=String(url).trim()?{url:url}:{clear:1};
+  fetch('/api/prospect/sheet',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
+   .then(function(r){return r.json();})
+   .then(function(d){
+     if(!d||!d.ok){ toast((d&&d.error)||'시트를 연결하지 못했어요'); return; }
+     toast(d.cleared?'기본 시트로 되돌렸어요':('연결됨 — '+(d.title||'')+' / '+(d.tab||'')));
+     prospectLoadInflow(); prospectLoadLeads();
+   })
+   .catch(function(){ toast('연결 실패 — 잠시 뒤 다시 시도해 주세요'); });
+};
 // ── 신청자 표 — 실제 구글시트만 읽는다. 시트가 비면 "0건"이라고 하지 가짜 줄을 만들지 않는다 ──
 function _won(n){ return (Number(n)||0).toLocaleString('ko-KR')+'원'; }
 function prospectLoadInflow(){
@@ -1435,13 +1453,17 @@ function prospectLoadInflow(){
      if(x.s===401){ box.innerHTML=''; return; }                       // 로그인 안 됨 — 아래 기존 안내가 뜬다
      if(!d||!d.ok){ box.innerHTML='<div style="font-size:11.5px;color:#8a6d1a;background:#fffdf5;border:1px solid #ecdca8;border-radius:8px;padding:8px 10px;margin-bottom:10px">📥 신청자 표를 못 불러왔어요 — '+_escOb((d&&d.error)||'오류')+'</div>'; return; }
      var rows=d.rows||[], sm=d.sum||{};
+     window._SALES_STATS=sm;                    // ★브리핑 7번(매출)이 쓸 숫자 — 이름·연락처 없음
      var head='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">'
-       +_kpiChip('오늘', (sm.오늘&&sm.오늘.건수)||0, (sm.오늘&&sm.오늘.금액)||0)
-       +_kpiChip('이번달', (sm.이번달&&sm.이번달.건수)||0, (sm.이번달&&sm.이번달.금액)||0)
-       +'<div style="flex:1;min-width:130px;border:1px solid var(--teal-bd);background:var(--teal-l);border-radius:9px;padding:7px 10px">'
-         +'<div style="font-size:10.5px;color:#0f766e;font-weight:700">전체 · 객단가</div>'
-         +'<div style="font-size:13px;font-weight:800;color:#0d1b2a">'+(sm.건수||0)+'명 · '+_won(sm.객단가)+'</div></div>'
-       +'</div>';
+       +_kpiChip('오늘 결제', (sm.오늘&&sm.오늘.건수)||0, (sm.오늘&&sm.오늘.금액)||0)
+       +_kpiChip('이번달 결제', (sm.이번달&&sm.이번달.건수)||0, (sm.이번달&&sm.이번달.금액)||0)
+       +'<div style="flex:1;min-width:150px;border:1px solid var(--teal-bd);background:var(--teal-l);border-radius:9px;padding:7px 10px">'
+         +'<div style="font-size:10.5px;color:#0f766e;font-weight:700">전체 매출 · 객단가</div>'
+         +'<div style="font-size:13px;font-weight:800;color:#0d1b2a">'+_won(sm.금액)+' <span style="font-size:11px;color:#0f766e">('+(sm.건수||0)+'건 · '+_won(sm.객단가)+')</span></div></div>'
+       +'</div>'
+       // ★신청만 하고 아직 결제 안 한 분 = 다음 매출
+       +((sm.미결제)?('<div style="font-size:11.5px;color:#8a6d1a;background:#fffdf5;border:1px solid #ecdca8;border-radius:8px;padding:7px 10px;margin-bottom:8px">💰 신청 '+(sm.신청||0)+'명 중 <b>'+sm.미결제+'명이 아직 결제 전</b>이에요 — 여기가 다음 매출입니다.</div>'):'')
+       +(d.custom?'<div style="font-size:10.5px;color:#0f766e;margin-bottom:6px">🔗 연결한 시트: <b>'+_escOb(d.tab||'')+'</b> · <span onclick="inflowConnect()" style="text-decoration:underline;cursor:pointer">바꾸기</span></div>':'');
      if(d.missing&&d.missing.length) head+='<div style="font-size:11px;color:#8a6d1a;background:#fffdf5;border:1px solid #ecdca8;border-radius:8px;padding:6px 9px;margin-bottom:8px">⚠️ 시트에 없는 항목: <b>'+d.missing.map(_escOb).join(', ')+'</b> — 그 칸은 비어서 나옵니다</div>';
      if(!rows.length){ box.innerHTML=head+'<div style="font-size:12px;color:#8a93a3;padding:6px 0 12px">아직 신청자가 없어요. (시트 '+_escOb(d.tab||'')+' · '+_escOb(d.권한||'')+')</div>'; return; }
      var tb='<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid #e5e9ee;border-radius:10px"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:460px">'
@@ -4088,7 +4110,7 @@ window.sendMsg=function(){
   w.innerHTML='<div class="av"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3l7 4v6c0 4-3 6.5-7 8-4-1.5-7-4-7-8V7l7-4z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><circle cx="12" cy="11" r="2.2" fill="currentColor"/></svg></div><div class="bubble" style="color:#98a4b2">지니야가 생각하는 중…</div>';
   s.appendChild(w); s.scrollTop=s.scrollHeight;
   var job=(GENYA_JOBS[CUR_JOB]||{}).label||'';
-  fetch('/api/order',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({q:v,message:v,job:job,history:_histForSend(),activeSkill:(window._ACTIVE_SKILL||''),lastMentioned:(window._LAST_MENTIONED||[]),cardOpen:_isCardOpen(),findStats:(window._FIND_STATS||null)})})
+  fetch('/api/order',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({q:v,message:v,job:job,history:_histForSend(),activeSkill:(window._ACTIVE_SKILL||''),lastMentioned:(window._LAST_MENTIONED||[]),cardOpen:_isCardOpen(),findStats:(window._FIND_STATS||null),salesStats:(window._SALES_STATS||null)})})
    .then(function(r){return r.json();}).then(function(d){ w.remove();
      if(d&&d.needsConnect){ pushMsg('gen',(d.text||'구글 데이터 연결이 필요해요')+' <a href="#" onclick="connectGoogle();return false;" style="color:var(--teal-d);font-weight:700">연결하기 →</a>'); return; }
      var reply=(d&&(d.text||d.answer))||(d&&d.error)||'(응답 없음)';
@@ -4173,7 +4195,7 @@ function sheetWriteCommit(){
 function _apOpenBtnHtml(){ return '<div style="margin-top:7px"><button onclick="openApproval()" style="background:var(--teal);color:#fff;border:none;border-radius:9px;padding:8px 15px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit">🗂️ 결재함 열기 · 확인·승인 →</button></div>'; }
 // ★음성 액션 실행: 통화 중 결재/발송 발화를 텍스트처럼 /api/order로 보내 서버가 실제 처리. ★실제 등록 결과(서버 d.text)만 표시 → 등록 안 됐으면 "올렸다"고 안 함(환각 방지). Vapi FC 미사용.
 function _voiceExec(q){
-  fetch('/api/order',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({q:q, history:(typeof _histForSend==='function'?_histForSend():[]), lastMentioned:(window._LAST_MENTIONED||[]), cardOpen:_isCardOpen(), findStats:(window._FIND_STATS||null)})})
+  fetch('/api/order',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({q:q, history:(typeof _histForSend==='function'?_histForSend():[]), lastMentioned:(window._LAST_MENTIONED||[]), cardOpen:_isCardOpen(), findStats:(window._FIND_STATS||null), salesStats:(window._SALES_STATS||null)})})
     .then(function(r){return r.json();}).then(function(d){
       if(!d) return;
       if(d.text) pushMsg('gen', renderMd(d.text)); // 서버가 실제로 올렸을 때만 "결재함에 올렸어요"라고 답함(approval.create 결과)

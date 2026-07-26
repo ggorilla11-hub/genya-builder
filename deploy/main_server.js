@@ -932,7 +932,48 @@ app.post('/api/promo/expand', async (req, res) => {
 const { getServiceAuth } = require('./service_auth');   // 시트 읽기는 서비스 계정(로그인 OAuth는 사용자 인증 전용)
 const PROSPECT_SHEET_ID = process.env.PROSPECT_SHEET_ID || '1sQZG3WSSAw7RZLIyvCCtxvr3biPuhdhvJsokXacEF_w';
 const PROSPECT_SHEET_TAB = process.env.PROSPECT_SHEET_TAB || '연금진단리드';
+// ★2026-07-27 대표님 지시: 진행 중인 다른 신청 시트(부트캠프 등)도 붙일 수 있게.
+//   화면에서 시트 주소를 넣으면 그 시트를 읽는다. ★회원별로 따로 기억한다(남의 시트가 안 섞이게).
+//   ★서버에 저장하는 건 시트 "주소"뿐 — 신청자 이름·연락처·금액은 저장하지 않는다.
+const _inflowSheetOf = {};                     // { 이메일: {id, tab} }
+function _sheetIdFrom(v) {
+  const s = String(v || '').trim();
+  const m = s.match(/\/spreadsheets\/d\/([A-Za-z0-9_-]{20,})/);
+  return m ? m[1] : (/^[A-Za-z0-9_-]{20,}$/.test(s) ? s : '');
+}
+function _inflowTarget(req) {
+  const me = String((sessionOf(req) || {}).email || '').toLowerCase();
+  const own = _inflowSheetOf[me];
+  return { id: (own && own.id) || PROSPECT_SHEET_ID, tab: (own && own.tab) || PROSPECT_SHEET_TAB, custom: !!own };
+}
+// 📥 유입 전환 — 신청 시트 연결/해제 (★주소만 기억, 개인정보 저장 0)
+app.post('/api/prospect/sheet', async (req, res) => {
+  const s = sessionOf(req);
+  if (!s) return res.status(401).json({ ok: false, error: '로그인이 필요해요' });
+  const me = String(s.email || '').toLowerCase();
+  const b = req.body || {};
+  if (b.clear) { delete _inflowSheetOf[me]; return res.json({ ok: true, cleared: true }); }
+  const id = _sheetIdFrom(b.url || b.id);
+  if (!id) return res.json({ ok: false, error: '구글 시트 주소를 붙여넣어 주세요 (docs.google.com/spreadsheets/d/… 형태)' });
+  const tab = String(b.tab || '').trim();
+  try {
+    const auth = await getServiceAuth();
+    const sheets = google.sheets({ version: 'v4', auth });
+    const meta = await sheets.spreadsheets.get({ spreadsheetId: id, fields: 'properties.title,sheets.properties.title' });
+    const tabs = (meta.data.sheets || []).map((x) => x.properties.title);
+    const use = tab && tabs.indexOf(tab) >= 0 ? tab : tabs[0];
+    _inflowSheetOf[me] = { id, tab: use };
+    res.json({ ok: true, title: (meta.data.properties || {}).title || '', tab: use, tabs });
+  } catch (e) {
+    res.json({ ok: false, error: /permission|403/i.test(e.message || '')
+      ? '시트를 못 읽었어요 — 그 시트를 서비스계정 이메일에 "뷰어"로 공유해 주세요'
+      : (/not found|404/i.test(e.message || '') ? '그 주소의 시트를 찾을 수 없어요' : e.message) });
+  }
+});
 function _pickCol(head, names) { for (const n of names) { const i = head.indexOf(n); if (i >= 0) return i; } return -1; }
+// ★브리핑 7번(매출)이 쓸 ★숫자만 잠깐 담아둔다 — 이름·연락처는 담지 않는다(개인정보 저장 0).
+//   화면이 [유입 전환]을 열면 채워지고, 브리핑이 그 숫자를 쓴다.
+let _SALES_CACHE = { sum: null, tab: '', at: 0, by: '' };
 function _wonNum(v) { const n = Number(String(v == null ? '' : v).replace(/[^0-9.-]/g, '')); return isFinite(n) ? n : 0; }
 app.get('/api/prospect/inflow', async (req, res) => {
   const s = sessionOf(req);
@@ -940,14 +981,15 @@ app.get('/api/prospect/inflow', async (req, res) => {
   try {
     const auth = await getServiceAuth();
     const sheets = google.sheets({ version: 'v4', auth });
-    let tab = PROSPECT_SHEET_TAB;
+    const tgt = _inflowTarget(req);              // ★화면에서 연결한 시트가 있으면 그것을 읽는다
+    let tab = tgt.tab;
     let got;
-    try { got = await sheets.spreadsheets.values.get({ spreadsheetId: PROSPECT_SHEET_ID, range: `'${tab}'!A1:Z` }); }
+    try { got = await sheets.spreadsheets.values.get({ spreadsheetId: tgt.id, range: `'${tab}'!A1:Z` }); }
     catch (e) {
       // 탭 이름이 다를 수 있다 — 첫 탭으로 한 번 더
-      const meta = await sheets.spreadsheets.get({ spreadsheetId: PROSPECT_SHEET_ID, fields: 'sheets.properties.title' });
+      const meta = await sheets.spreadsheets.get({ spreadsheetId: tgt.id, fields: 'sheets.properties.title' });
       tab = (((meta.data.sheets || [])[0] || {}).properties || {}).title || 'Sheet1';
-      got = await sheets.spreadsheets.values.get({ spreadsheetId: PROSPECT_SHEET_ID, range: `'${tab}'!A1:Z` });
+      got = await sheets.spreadsheets.values.get({ spreadsheetId: tgt.id, range: `'${tab}'!A1:Z` });
     }
     const rows = got.data.values || [];
     if (rows.length < 2) return res.json({ ok: true, configured: true, tab, rows: [], missing: [], sum: { 건수: 0, 금액: 0, 객단가: 0 } });
@@ -985,11 +1027,14 @@ app.get('/api/prospect/inflow', async (req, res) => {
     const dayOf = (x) => String(x.신청일 || '').replace(/[./]/g, '-').slice(0, 10);
     const tRows = paid.filter((x) => dayOf(x) === today), mRows = paid.filter((x) => dayOf(x).slice(0, 7) === month);
     const sum1 = (a) => a.reduce((s2, x) => s2 + x.금액, 0);
-    res.json({ ok: true, configured: true, tab, 권한: isVip ? '전체' : ('내 리드(' + (myName || '이름없음') + ')'),
-      rows: out, missing,
-      sum: { 건수: paid.length, 금액: total, 객단가: paid.length ? Math.round(total / paid.length) : 0,
-             오늘: { 건수: tRows.length, 금액: sum1(tRows) },
-             이번달: { 건수: mRows.length, 금액: sum1(mRows) } } });
+    const sum = { 건수: paid.length, 금액: total, 객단가: paid.length ? Math.round(total / paid.length) : 0,
+      신청: out.length, 미결제: out.length - paid.length,
+      오늘: { 건수: tRows.length, 금액: sum1(tRows) },
+      이번달: { 건수: mRows.length, 금액: sum1(mRows) } };
+    _SALES_CACHE = { sum, tab, at: Date.now(), by: String(s.email || '').toLowerCase() };  // ★브리핑 7번이 쓸 숫자만(이름·연락처 없음)
+    res.json({ ok: true, configured: true, tab, custom: tgt.custom,
+      권한: isVip ? '전체' : ('내 리드(' + (myName || '이름없음') + ')'),
+      rows: out, missing, sum });
   } catch (e) {
     // 시트가 서비스계정에 공유 안 됐을 때가 가장 흔하다 — 무엇을 해야 하는지 그대로 알린다
     const msg = /permission|not found|404|403/i.test(e.message || '')
@@ -1384,11 +1429,21 @@ async function buildBrief(ma, req, scope) {
   if (!(fs2 && fs2.total)) L.push('· [고객발굴비서 → 🔍 지금 발굴]을 누르시면 채널별 실제 건수가 여기에 표시됩니다.');
   }
 
-  // ── 7. 결제·매출 (준비 중) ──
+  // ── 7. 결제·매출 — ★[유입 전환] 탭에서 읽은 실제 숫자로 채운다 ──
   if (on('sales')) {
   L.push((ALL ? '\n' : '') + H(7, '결제·매출'));
-  L.push('· **준비 중** — 유입·전환 시트를 연결하면 여기에 오늘/이번달 건수·금액·객단가가 표시됩니다.');
-  L.push('· 지금은 [고객발굴비서 → 진단 유입] 탭에서 신청자 표로 보실 수 있어요.');
+  const sv = (req && req.body && req.body.salesStats) || _SALES_CACHE.sum || null;
+  const won = (n) => (Number(n) || 0).toLocaleString('ko-KR') + '원';
+  if (sv && (sv.신청 || sv.건수)) {
+    L.push(`· 오늘 **${(sv.오늘 || {}).건수 || 0}건** · ${won((sv.오늘 || {}).금액)}`);
+    L.push(`· 이번달 **${(sv.이번달 || {}).건수 || 0}건** · ${won((sv.이번달 || {}).금액)}`);
+    L.push(`· 전체 결제 **${sv.건수 || 0}건** · ${won(sv.금액)} · 객단가 ${won(sv.객단가)}`);
+    if (sv.미결제) L.push(`· 신청했지만 아직 결제 안 한 분 **${sv.미결제}명** — 여기가 다음 매출이에요.`);
+    L.push('· ★매출은 결제여부가 Y인 건만 잡습니다(신청만 한 건은 제외).');
+  } else {
+    L.push('· 아직 이번 접속에서 [유입 전환] 탭을 열지 않았어요.');
+    L.push('· [고객발굴비서 → 📥 유입 전환]을 한 번 열면 여기에 오늘/이번달 건수·금액·객단가가 채워집니다.');
+  }
   }
 
   // ── 마무리: 한 줄 요약 + 팀장 추천 (★규칙으로 정한다 — 매번 같게) ──
@@ -1554,6 +1609,45 @@ function _resolveCardGroup(q, t, lastMentioned) {
   }
   return { names: [], label: '해당', how: '' };
 }
+
+// 🩺 유입전환 진단 — 신청·결제 시트가 매출을 낼 수 있는 상태인지 확인.
+//   ★로그인 없이: 컬럼 이름·건수만(고객 이름·연락처·금액 0노출).
+app.get('/api/diag/inflow', async (req, res) => {
+  try {
+    const auth = await getServiceAuth();
+    const sheets = google.sheets({ version: 'v4', auth });
+    let tab = PROSPECT_SHEET_TAB, got;
+    try { got = await sheets.spreadsheets.values.get({ spreadsheetId: PROSPECT_SHEET_ID, range: `'${tab}'!A1:Z` }); }
+    catch (e) {
+      const meta = await sheets.spreadsheets.get({ spreadsheetId: PROSPECT_SHEET_ID, fields: 'sheets.properties.title' });
+      tab = (((meta.data.sheets || [])[0] || {}).properties || {}).title || 'Sheet1';
+      got = await sheets.spreadsheets.values.get({ spreadsheetId: PROSPECT_SHEET_ID, range: `'${tab}'!A1:Z` });
+    }
+    const rows = got.data.values || [];
+    const head = (rows[0] || []).map((h) => String(h || '').trim());
+    const i = (names) => _pickCol(head, names);
+    const iPaid = i(['결제여부', '상태']), iAmt = i(['금액', '결제금액', '신청금액']);
+    let 결제완료 = 0, 미결제 = 0, 금액있는행 = 0;
+    for (let r = 1; r < rows.length; r++) {
+      const g = (k) => (k >= 0 ? String(rows[r][k] || '').trim() : '');
+      if (!rows[r] || !rows[r].join('').trim()) continue;
+      if (iAmt >= 0 && _wonNum(g(iAmt)) > 0) 금액있는행++;
+      if (iPaid >= 0) { if (/^(y|예|완료|결제완료|o)$/i.test(g(iPaid))) 결제완료++; else 미결제++; }
+    }
+    res.json({
+      시트연결: true, 탭: tab, 데이터행: Math.max(0, rows.length - 1), 컬럼: head,
+      매출낼수있나: iAmt >= 0 && iPaid >= 0,
+      있는칸: { 이름: i(['이름', '성명', '신청자']) >= 0, 연락처: i(['연락처', '휴대폰', '전화']) >= 0,
+        과정: i(['상품명', '과정', '과정명', '강의명', '구분']) >= 0, 금액: iAmt >= 0,
+        신청일: i(['신청일시', '신청일', '접수시각']) >= 0, 결제여부: iPaid >= 0, 유입경로: i(['유입경로', 'source']) >= 0 },
+      건수: { 결제완료, 미결제, 금액입력됨: 금액있는행 },
+      안내: '개인정보·금액 값은 로그인한 본인 화면에서만 보입니다(여기는 구조·건수만).',
+    });
+  } catch (e) {
+    res.status(502).json({ ok: false, error: /permission|not found|404|403/i.test(e.message || '')
+      ? '시트를 못 읽었어요 — 신청자 시트를 서비스계정 이메일에 "뷰어"로 공유해 주세요' : e.message });
+  }
+});
 
 // 🩺 브리핑 진단 — 틀이 매번 같은지 ★진짜 명단으로 확인한다.
 //   ★로그인 없이: 항목 제목과 줄 수만(고객 이름·값 0노출). 로그인하면 본문까지.
