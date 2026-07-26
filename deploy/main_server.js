@@ -1216,6 +1216,135 @@ ${lines.join('\n')}`;
   return out.slice(0, 12);
 }
 
+// ═══ 📊 회사 상황 브리핑 — ★틀 고정 (2026-07-27) ═══
+//   문제: "회사 상황 알려줘"의 답이 매번 달랐다. 어떤 땐 만기·상담·생일을 잘 브리핑하고,
+//        어떤 땐 "자료 없어요"로 후퇴했다. 기준(틀)이 없어 LLM이 그때그때 다르게 해석한 탓이다.
+//   해법: ★LLM에게 맡기지 않는다. 숫자·명단은 코드가 실제 데이터에서 뽑아 고정된 7개 항목에 채운다.
+//        → 몇 번을 물어도 같은 틀·같은 숫자가 나온다.
+//   ★환각 0: 시트에 있는 값만 쓴다. 없으면 "없음" 또는 "준비 중"이라고 적는다.
+//   ★서버 저장 0: 읽어서 화면으로 보내고 끝.
+function _briefDate(v) {
+  const m = String(v || '').match(/(\d{4})[.\-/년\s]*(\d{1,2})[.\-/월\s]*(\d{1,2})/);
+  return m ? { y: +m[1], m: +m[2], d: +m[3] } : null;
+}
+function _dday(v) {
+  const p = _briefDate(v); if (!p) return null;
+  const kst = new Date(Date.now() + 9 * 3600e3);
+  const today = Date.UTC(kst.getUTCFullYear(), kst.getUTCMonth(), kst.getUTCDate());
+  return Math.round((Date.UTC(p.y, p.m - 1, p.d) - today) / 86400000);
+}
+/** 생일·기념일은 연도를 무시하고 올해 기준으로 며칠 남았는지 */
+function _annivIn(v) {
+  const p = _briefDate(v); if (!p) return null;
+  const kst = new Date(Date.now() + 9 * 3600e3);
+  const y = kst.getUTCFullYear();
+  const today = Date.UTC(y, kst.getUTCMonth(), kst.getUTCDate());
+  let t = Date.UTC(y, p.m - 1, p.d);
+  if (t < today) t = Date.UTC(y + 1, p.m - 1, p.d);
+  return Math.round((t - today) / 86400000);
+}
+async function buildBrief(ma, req) {
+  const L = [];
+  const mentioned = [];
+  const push = (n) => { if (n && mentioned.indexOf(n) < 0) mentioned.push(n); };
+  let t = null;
+  try { t = await sheetsCrud.loadTable(null); } catch (e) {}
+  const rows = (t && t.rows) || [];
+  const keys = Object.keys(rows[0] || {}).filter((k) => k !== '_rowNum');
+  const nameOf = (r) => _rowName(t, r);
+
+  // ── 1. 고객 명단 현황 ──
+  L.push('**1. 고객 명단**');
+  if (!rows.length) L.push('· 아직 명단이 없어요. [명단·연결]에서 파일을 올리시면 여기부터 채워집니다.');
+  else {
+    // 정보 완성 = 이름·연락처가 둘 다 있는 행 (기준을 고정해 매번 같게)
+    const pk = keys.find((k) => /(연락처|휴대폰|전화)/.test(k));
+    const full = rows.filter((r) => nameOf(r) && pk && String(r[pk] || '').trim()).length;
+    L.push(`· 총 **${rows.length}명** (연락처 있음 ${full}명 · 없음 ${rows.length - full}명)`);
+  }
+
+  // ── 2. 급한 일 — 만기 ──
+  L.push('\n**2. 급한 일 — 만기**');
+  const expCol = keys.filter((k) => /(만기|만료|종료|갱신)/.test(k));
+  if (!expCol.length) L.push('· 명단에 만기일 칸이 없어 확인할 수 없어요.');
+  else {
+    const arr = [];
+    rows.forEach((r) => {
+      let best = null;
+      expCol.forEach((k) => { const d = _dday(r[k]); if (d != null && (best == null || d < best)) best = d; });
+      if (best != null && best <= 30) arr.push({ n: nameOf(r), d: best });
+    });
+    arr.sort((a, b) => a.d - b.d);
+    if (!arr.length) L.push('· 30일 이내 만기 고객 없음');
+    else arr.slice(0, 8).forEach((x) => { push(x.n); L.push(`· ${x.d < 0 ? `**${-x.d}일 지남**` : (x.d === 0 ? '**오늘**' : `${x.d}일 뒤`)} — ${x.n}`); });
+    if (arr.length > 8) L.push(`· … 외 ${arr.length - 8}명`);
+  }
+
+  // ── 3. 생일·기념일 ──
+  L.push('\n**3. 생일·기념일 (30일 이내)**');
+  const anCol = keys.filter((k) => /(생일|생년|기념일)/.test(k));
+  if (!anCol.length) L.push('· 명단에 생일·기념일 칸이 없어요.');
+  else {
+    const arr = [];
+    rows.forEach((r) => anCol.forEach((k) => { const d = _annivIn(r[k]); if (d != null && d <= 30) arr.push({ n: nameOf(r), d, k }); }));
+    arr.sort((a, b) => a.d - b.d);
+    if (!arr.length) L.push('· 30일 이내 없음');
+    else arr.slice(0, 8).forEach((x) => { push(x.n); L.push(`· ${x.d === 0 ? '**오늘**' : `${x.d}일 뒤`} — ${x.n} (${x.k})`); });
+  }
+
+  // ── 4. 상담 대기·주요 건 (비고 해석 — 카드 호출과 ★같은 기준) ──
+  L.push('\n**4. 상담 대기·주요 건**');
+  const g = _resolveCardGroup('상담 대기 고객 카드', t, []);
+  let waitNames = g.names;
+  if (!waitNames.length) { try { waitNames = await _resolveCardByLLM('상담 대기 중인 고객', t, 0); } catch (e) { waitNames = []; } }
+  if (!waitNames.length) L.push('· 비고에 상담·미팅 표시된 고객 없음');
+  else { waitNames.slice(0, 8).forEach((n) => { push(n); L.push(`· ${n}`); }); L.push(`· → "상담 대기 ${waitNames.length}명 카드 보여줘"라고 하시면 카드로 띄워드려요.`); }
+
+  // ── 5. 오늘 일정 ──
+  L.push('\n**5. 오늘 일정**');
+  if (!ma) L.push('· 구글 캘린더 연결 후 표시됩니다.');
+  else {
+    try {
+      const c = await _readCalendar(ma, req, 'today');
+      const ev = (c && c.events) || [];
+      if (!ev.length) L.push('· 오늘 일정 없음');
+      else ev.slice(0, 8).forEach((e) => L.push(`· ${e.time || ''} ${e.title || ''}`.trim()));
+    } catch (e) { L.push('· 캘린더를 읽지 못했어요 — [연결하기]가 필요할 수 있어요.'); }
+  }
+
+  // ── 6. 발굴 리드 현황 ──
+  L.push('\n**6. 발굴 리드**');
+  let on = [];
+  try { on = hunterDesk.roster().filter((r) => r.on).map((r) => r.label); } catch (e) {}
+  if (process.env.YOUTUBE_API_KEY) on.unshift('📺 유튜브');
+  L.push(on.length ? `· 가동 채널 ${on.length}개 — ${on.join(' · ')}` : '· 채널이 모두 꺼져 있어요(API 키 필요).');
+  L.push('· 실제 건수·검수 통과 수는 [고객발굴비서 → 발굴 리드]에서 [지금 발굴]을 누르면 나와요.');
+
+  // ── 7. 결제·매출 (준비 중) ──
+  L.push('\n**7. 결제·매출**');
+  L.push('· **준비 중** — 유입·전환 시트를 연결하면 여기에 오늘/이번달 건수·금액·객단가가 표시됩니다.');
+  L.push('· 지금은 [고객발굴비서 → 진단 유입] 탭에서 신청자 표로 보실 수 있어요.');
+
+  // ── 마무리: 한 줄 요약 + 팀장 추천 (★규칙으로 정한다 — 매번 같게) ──
+  const 지남 = [];
+  if (expCol.length) rows.forEach((r) => { let b = null; expCol.forEach((k) => { const d = _dday(r[k]); if (d != null && (b == null || d < b)) b = d; }); if (b != null && b < 0) 지남.push(nameOf(r)); });
+  L.push('\n---');
+  if (지남.length) {
+    L.push(`**한 줄 요약** — 만기가 이미 지난 고객이 ${지남.length}명 있어요. 이게 가장 급합니다.`);
+    L.push(`⭐ **팀장 추천** — ${지남[0]} 고객부터 연락해 보세요. "${지남[0]} 카드 보여줘"라고 하시면 정보가 바로 떠요.`);
+  } else if (waitNames.length) {
+    L.push(`**한 줄 요약** — 상담을 기다리는 고객이 ${waitNames.length}명 있어요.`);
+    L.push(`⭐ **팀장 추천** — "상담 대기 ${waitNames.length}명 카드 보여줘"로 확인하고 오늘 안에 연락해 보세요.`);
+  } else if (!rows.length) {
+    L.push('**한 줄 요약** — 아직 명단이 없어요.');
+    L.push('⭐ **팀장 추천** — [명단·연결]에서 고객 파일을 올려주세요. 그때부터 만기·생일을 제가 챙깁니다.');
+  } else {
+    L.push('**한 줄 요약** — 급한 만기·상담 건은 없습니다.');
+    L.push('⭐ **팀장 추천** — [지금 발굴]로 새 잠재고객을 찾아보세요.');
+  }
+  return { text: L.join('\n'), mentioned };
+}
+
 // ★카드 트리거 단일 소스 — 실제 대화 처리와 진단창구가 ★같은 함수를 쓴다.
 //   2026-07-27: 트리거가 대화 코드 안에만 있어서 "검증은 통과인데 실제는 안 된다"를 확인할 길이 없었다.
 //   이제 /api/diag/card 로 물어보면 실제로 어느 분기가 켜지는지 그대로 나온다.
@@ -1299,6 +1428,27 @@ function _resolveCardGroup(q, t, lastMentioned) {
   }
   return { names: [], label: '해당', how: '' };
 }
+
+// 🩺 브리핑 진단 — 틀이 매번 같은지 ★진짜 명단으로 확인한다.
+//   ★로그인 없이: 항목 제목과 줄 수만(고객 이름·값 0노출). 로그인하면 본문까지.
+app.get('/api/diag/brief', async (req, res) => {
+  const me = !!sessionOf(req);
+  try {
+    const b = await buildBrief(memberAuth(req), req);
+    const secs = b.text.split('\n').filter((l) => /^\*\*\d\./.test(l)).map((l) => l.replace(/\*/g, ''));
+    const out = {
+      항목수: secs.length, 항목: secs,
+      줄수: b.text.split('\n').length,
+      언급된_고객수: (b.mentioned || []).length,
+      한줄요약_있음: /한 줄 요약/.test(b.text),
+      팀장추천_있음: /팀장 추천/.test(b.text),
+      매출_준비중표시: /\*\*준비 중\*\*/.test(b.text),
+      자료없음으로_끝나지_않음: !/자료.{0,4}없어요\s*$/.test(b.text.trim()),
+    };
+    if (me) out.본문 = b.text; else out.안내 = '본문은 로그인해야 보입니다(고객 이름 보호).';
+    res.json(out);
+  } catch (e) { res.status(502).json({ ok: false, error: e.message }); }
+});
 
 // 🩺 카드 묶음 진단 — "왜 카드가 안 뜨나"를 ★진짜 명단으로 확인한다.
 //   ★로그인 없이 열면: 컬럼명·행수·매칭 건수만(이름·값 0노출).
@@ -1715,6 +1865,14 @@ async function orderHandler(req, res) {
     const _cf = cardFlags(q);
     const _isCardCmd = _cf.isCardCmd, _isCardClose = _cf.isCardClose, _isGroupCard = _cf.isGroupCard;
     const _cardName = _cf.cardName;
+    // ★2026-07-27 로그로 확인된 버그: "회사 상황 알려줘"가 sheetCRUD(명단 관리)로 새서
+    //   "회사 상황 볼 자료 없어요"로 거절당했다. sheetCRUD는 종합 브리핑 틀을 모른다.
+    //   → 브리핑 계열은 ★어느 분기보다 먼저 가로채 고정 틀로 답한다(매번 같은 답).
+    //   ★"김철수 수정/추가/삭제" 같은 진짜 시트 관리는 그대로 sheetCRUD로 간다(아래 제외 조건).
+    const _isBriefAsk = /(회사|사업|전체|우리|오늘)?\s*(상황|현황|보고|브리핑|리포트)/.test(q)
+      && !/(추가|수정|삭제|등록|변경|바꿔|고쳐|지워|빼|입력)/.test(q)
+      && !/(발송|결재|승인|알림톡|초안)/.test(q);
+    if (_isBriefAsk) console.log(`[📊브리핑] 고정 틀로 응답 · q="${String(q).slice(0, 40)}"`);
     if (_isCardCmd || _isCardClose) {
       // ★대표님이 로그에서 바로 볼 수 있게 — 수문장 로그(match=false)는 "방금 올린 것" 인지용이라 카드와 무관하다.
       console.log(`[📇카드] 트리거 ON · ${_isCardClose ? '닫기' : (_isGroupCard ? '묶음' : '이름')} · 이름추출="${_cardName}" · q="${String(q).slice(0, 40)}"`);
@@ -1760,7 +1918,11 @@ async function orderHandler(req, res) {
     const _noBase = !/(카드|스캔)/.test(q) && !/(결재|결제|발송|알림톡|승인)/.test(q) && !/이벤트/.test(q) && !_reDoc.test(q);
     const _isPromoCmd = _noBase && !/(잡아|잡을|예약|비워)/.test(q) && !_reRemind.test(q) && _rePromo.test(q) && _reWrite.test(q);
     const _isRemindCmd = _noBase && _reRemind.test(q) && _reSet.test(q);
-    if (_isPromoCmd) {
+    if (_isBriefAsk) {
+      // 📊 회사 상황 — ★코드가 실제 데이터로 고정 틀을 채운다. LLM 해석 없음 → 매번 같은 답.
+      const b = await buildBrief(ma, req);
+      out = { kind: '📊 회사 상황', text: b.text, mentioned: b.mentioned };
+    } else if (_isPromoCmd) {
       // 화면이 홍보 패널을 열고 실제 /api/promo/draft를 돌린다. 결과가 나온 뒤에만 원고가 표시된다(거짓 완료 금지).
       const _topic = q.replace(_rePromo, ' ').replace(/글|문구|원고|콘텐츠|써줘|써|쓰|만들어줘|만들|생성해줘|생성|작성해줘|작성|뽑아줘|뽑아|해줘|좀|용|로|를|을|의/g, ' ').replace(/\s+/g, ' ').trim();
       out = { kind: '📣 홍보', action: 'open_promo', topic: _topic, text: '홍보 원고를 만들게요. 잠시만요.' };
