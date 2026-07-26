@@ -1348,12 +1348,16 @@ async function buildBrief(ma, req) {
 // ★카드 트리거 단일 소스 — 실제 대화 처리와 진단창구가 ★같은 함수를 쓴다.
 //   2026-07-27: 트리거가 대화 코드 안에만 있어서 "검증은 통과인데 실제는 안 된다"를 확인할 길이 없었다.
 //   이제 /api/diag/card 로 물어보면 실제로 어느 분기가 켜지는지 그대로 나온다.
-function cardFlags(q) {
+function cardFlags(q, cardOpen) {
   q = String(q || '');
   const isCardCmd = /(카드|스캔)/.test(q) && /(띄워|띄우|띄|보여|열어|열|뜨|스캔|해줘|해|줘)/.test(q);
   // 닫기는 ★이름 검색보다 먼저 가로챈다("카드 없애"를 사람 이름으로 알아듣던 버그)
-  const isCardClose = /(카드|화면|이거|저거|그거)/.test(q)
-    && /(없애|없애줘|닫아|닫아줘|닫기|사라지|지워|지워줘|내려|내려줘|치워|치워줘|끄|꺼|그만\s*보여|안\s*보이게|숨겨)/.test(q);
+  const CLOSE = /(없애|없애줘|닫아|닫아|닫으|닫어|닫기|접어|접기|사라지|지워|지워줘|내려|내려줘|치워|치워줘|끄|꺼|그만\s*보여|안\s*보이게|숨겨|숨겨줘)/;
+  // ★2026-07-27: "닫아"·"닫으라구"처럼 ★단독으로 말해도 알아듣게.
+  //   단, 아무 때나 잡으면 다른 대화를 삼키므로 ★카드가 실제로 떠 있을 때만(화면이 알려준다).
+  const bareClose = !!cardOpen && CLOSE.test(q) && q.replace(/\s/g, '').length <= 12
+    && !/(명단|시트|고객|결재|발송|이벤트|일정|발굴)/.test(q);
+  const isCardClose = (/(카드|화면|이거|저거|그거)/.test(q) && CLOSE.test(q)) || bareClose;
   // 이름인지 묶음인지 가린다("상담 대기 4명"을 사람 이름으로 알고 찾던 버그)
   const isGroupCard = isCardCmd && (
     /(상담|미팅|면담|방문|대기)/.test(q) || /(만기|만료|경과|지난|임박)/.test(q) ||
@@ -1862,7 +1866,7 @@ async function orderHandler(req, res) {
     const _webQuery = !_hasCustomerName && /시세|환율|원[·\s]?달러|주가|주식|코스피|코스닥|나스닥|다우|증시|증권시장|시장\s*동향|금리|기준금리|국채|채권\s*금리|유가|국제유가|금값|금\s*시세|비트코인|가상자산|암호화폐|뉴스|속보|판례|대법원|헌재|법령|시행령|개정안|세법\s*개정|종부세|종합부동산세|양도세|양도소득세|상속세|증여세|재산세|공시지가|기준시가|부동산\s*대책|물가|인플레|경기\s*전망|환테크/.test(q);
     // ★고객카드 트리거 — ★진단창구(/api/diag/card)와 ★같은 함수를 쓴다.
     //   전에는 트리거가 여기에만 있어서 "검증은 통과인데 실제는 안 됨"을 확인할 길이 없었다.
-    const _cf = cardFlags(q);
+    const _cf = cardFlags(q, !!(req.body && req.body.cardOpen));   // 화면이 "카드 떠 있음"을 알려준다
     const _isCardCmd = _cf.isCardCmd, _isCardClose = _cf.isCardClose, _isGroupCard = _cf.isGroupCard;
     const _cardName = _cf.cardName;
     // ★2026-07-27 로그로 확인된 버그: "회사 상황 알려줘"가 sheetCRUD(명단 관리)로 새서
@@ -2026,13 +2030,29 @@ async function orderHandler(req, res) {
       // 이름이 명단 표기와 조금 달라도(띄어쓰기 등) 잡히게 — 한 명만 말했을 때의 기존 경로 유지
       let hit = [];
       if (!_named.length && _cardName && t && t.rows) { try { hit = sheetsCrud.findByName(t, _cardName); } catch (e) { hit = []; } }
+      // ★2026-07-27 "서버는 성공, 화면이 안 받음" 사고:
+      //   서버는 서비스계정으로 명단을 읽어 찾았는데, 화면은 /api/roster/list(회원 OAuth)로 ★다시 조회했다.
+      //   회원 구글 데이터 스코프가 없으면 그 조회만 실패해 카드가 안 떴다.
+      //   → 서버가 찾은 카드 내용을 ★응답에 직접 실어 보낸다. 화면은 다시 조회하지 않는다.
+      const _rowsFor = (names) => {
+        const out2 = [];
+        for (const n of names) {
+          const r = ((t && t.rows) || []).find((x) => _rowName(t, x) === n);
+          if (r) { const o = {}; Object.keys(r).forEach((k) => { if (k !== '_rowNum') o[k] = r[k]; }); out2.push(o); }
+        }
+        return out2;
+      };
       if (_named.length >= 2) {
         out = { kind: '📇 고객카드', action: 'open_cards', customers: _named.slice(0, 12), label: '말씀하신',
+          rows: _rowsFor(_named.slice(0, 12)),
           text: `${_named.length}명 카드를 띄울게요 — ${_named.join(' · ')}` };
       } else if (_named.length === 1) {
-        out = { kind: '📇 고객카드', action: 'open_card', customer: _named[0], text: _named[0] + ' 고객 카드를 띄울게요.' };
+        out = { kind: '📇 고객카드', action: 'open_card', customer: _named[0], rows: _rowsFor(_named),
+          text: _named[0] + ' 고객 카드를 띄울게요.' };
       } else if (hit.length) {
-        out = { kind: '📇 고객카드', action: 'open_card', customer: _cardName, text: _cardName + ' 고객 카드를 띄울게요.' };
+        const h0 = hit[0]; const o = {}; Object.keys(h0).forEach((k) => { if (k !== '_rowNum') o[k] = h0[k]; });
+        out = { kind: '📇 고객카드', action: 'open_card', customer: _cardName, rows: [o],
+          text: _cardName + ' 고객 카드를 띄울게요.' };
       } else if (!_isGroupCard && !_cardName) {
         // ★대상이 없으면 지어내지 않고 되묻는다 ("고객카드 띄워줘")
         out = { kind: '📇 고객카드', text: '누구 카드를 띄울까요? 이름을 말씀해 주세요. (여러 명도 됩니다 — "강수연 오정서 카드"처럼요)' };
@@ -2057,6 +2077,7 @@ async function orderHandler(req, res) {
         }
         if (g.names.length) {
           out = { kind: '📇 고객카드', action: 'open_cards', customers: g.names, label: g.label,
+            rows: _rowsFor(g.names),                              // ★카드 내용을 함께 — 화면이 다시 조회하지 않게
             text: `${g.label} ${g.names.length}명 카드를 띄울게요 — ${g.names.join(' · ')}` };
         } else if (_cardName && !_isGroupCard) {
           out = { kind: '📇 고객카드', customer: _cardName, text: '명단에서 "' + _cardName + '" 고객을 못 찾았어요. 이름을 다시 확인해 주세요.' };

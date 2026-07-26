@@ -3889,7 +3889,7 @@ window.sendMsg=function(){
   w.innerHTML='<div class="av"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3l7 4v6c0 4-3 6.5-7 8-4-1.5-7-4-7-8V7l7-4z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><circle cx="12" cy="11" r="2.2" fill="currentColor"/></svg></div><div class="bubble" style="color:#98a4b2">지니야가 생각하는 중…</div>';
   s.appendChild(w); s.scrollTop=s.scrollHeight;
   var job=(GENYA_JOBS[CUR_JOB]||{}).label||'';
-  fetch('/api/order',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({q:v,message:v,job:job,history:_histForSend(),activeSkill:(window._ACTIVE_SKILL||''),lastMentioned:(window._LAST_MENTIONED||[])})})
+  fetch('/api/order',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({q:v,message:v,job:job,history:_histForSend(),activeSkill:(window._ACTIVE_SKILL||''),lastMentioned:(window._LAST_MENTIONED||[]),cardOpen:_isCardOpen()})})
    .then(function(r){return r.json();}).then(function(d){ w.remove();
      if(d&&d.needsConnect){ pushMsg('gen',(d.text||'구글 데이터 연결이 필요해요')+' <a href="#" onclick="connectGoogle();return false;" style="color:var(--teal-d);font-weight:700">연결하기 →</a>'); return; }
      var reply=(d&&(d.text||d.answer))||(d&&d.error)||'(응답 없음)';
@@ -3903,6 +3903,7 @@ window.sendMsg=function(){
      _HIST.push({role:'user',content:v}); _HIST.push({role:'assistant',content:reply}); _persistHist();
      if(reply) pushMsg('gen', renderMd(reply));
      // ★고객카드 띄우기 명령 신호(자비스): 명단·연결 드로어 열고 해당 고객 카드(ghRowDetail) 자동 표시
+     if(d && d.rows) { try{ _cacheCardRows(d.rows); }catch(e){} }                                                    // ★서버가 보내준 카드 내용을 먼저 받아둔다
      if(d && d.action==='open_card' && d.customer){ try{ openCustomerCard(d.customer); }catch(e){} }
      if(d && d.action==='open_cards' && d.customers){ try{ openCustomerCards(d.customers, d.label); }catch(e){} }   // 📇 묶음 카드(상담 대기·만기 등)
      if(d && d.action==='close_card'){ try{ closeCustomerCards(d.customer); }catch(e){} }                            // 📇 카드 닫기(화면만·데이터 무접촉)
@@ -3973,11 +3974,12 @@ function sheetWriteCommit(){
 function _apOpenBtnHtml(){ return '<div style="margin-top:7px"><button onclick="openApproval()" style="background:var(--teal);color:#fff;border:none;border-radius:9px;padding:8px 15px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit">🗂️ 결재함 열기 · 확인·승인 →</button></div>'; }
 // ★음성 액션 실행: 통화 중 결재/발송 발화를 텍스트처럼 /api/order로 보내 서버가 실제 처리. ★실제 등록 결과(서버 d.text)만 표시 → 등록 안 됐으면 "올렸다"고 안 함(환각 방지). Vapi FC 미사용.
 function _voiceExec(q){
-  fetch('/api/order',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({q:q, history:(typeof _histForSend==='function'?_histForSend():[]), lastMentioned:(window._LAST_MENTIONED||[])})})
+  fetch('/api/order',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({q:q, history:(typeof _histForSend==='function'?_histForSend():[]), lastMentioned:(window._LAST_MENTIONED||[]), cardOpen:_isCardOpen()})})
     .then(function(r){return r.json();}).then(function(d){
       if(!d) return;
       if(d.text) pushMsg('gen', renderMd(d.text)); // 서버가 실제로 올렸을 때만 "결재함에 올렸어요"라고 답함(approval.create 결과)
       if(d.pending){ try{ pushMsg('gen', _apOpenBtnHtml()); }catch(e){} try{ if(document.getElementById('apList')) apRender(); }catch(e){} } // 실제 등록됨(서버 pending) → 열기 버튼 + 열려있는 결재함 즉시 갱신
+      if(d.rows){ try{ _cacheCardRows(d.rows); }catch(e){} }
       if(d.action==='open_card'&&d.customer){ try{ openCustomerCard(d.customer); }catch(e){} }
       if(d.action==='open_cards'&&d.customers){ try{ openCustomerCards(d.customers, d.label); }catch(e){} }
       if(d.action==='close_card'){ try{ closeCustomerCards(d.customer); }catch(e){} }
@@ -4076,8 +4078,23 @@ function _jarvisShow(r){
   host.innerHTML='<div style="position:sticky;top:0;display:flex;justify-content:space-between;align-items:center;gap:8px;padding:12px 14px 9px;background:#fff;border-bottom:1px solid #f2e6d4"><b style="font-size:15px;color:#0d1b2a">📇 '+_jarvisEsc(String(name))+'</b><span onclick="jarvisCardClose()" style="cursor:pointer;color:#b0b8c2;font-size:22px;line-height:1;padding:2px 6px">×</span></div><div style="padding:6px 14px 14px">'+det+'</div>';
   host.style.display='block';
 }
+// ★2026-07-27 "서버는 성공, 화면이 안 받음" 사고:
+//   화면이 /api/roster/list(회원 OAuth)로 ★다시 조회했는데, 구글 데이터 스코프가 없으면 그것만 실패했다.
+//   → 서버가 카드 내용을 함께 보내주면 ★다시 조회하지 않고 바로 그린다.
+window._CARD_ROWS={};
+// ★지금 카드가 떠 있는가 — 서버가 "닫아" 단독 명령을 알아듣는 근거가 된다(카드 없을 땐 안 잡는다)
+function _isCardOpen(){ try{ var el=document.getElementById('jarvisCard'); return !!(el && el.style.display!=='none' && el.innerHTML); }catch(e){ return false; } }
+function _cacheCardRows(rows){
+  (rows||[]).forEach(function(r){
+    var nm=r['고객명']||r['이름']||r['성명']||r['성함']||'';
+    nm=String(nm).trim(); if(nm) window._CARD_ROWS[nm]=r;
+  });
+}
 function openCustomerCard(name){
   if(!name) return;
+  // ① 서버가 보내준 내용이 있으면 그걸로 즉시 그린다(가장 확실한 경로)
+  var direct=window._CARD_ROWS[String(name).trim()];
+  if(direct){ _jarvisShow(direct); return; }
   var norm=function(s){return String(s||'').replace(/\s/g,'').toLowerCase();};
   var target=norm(name);
   var find=function(map){
