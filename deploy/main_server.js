@@ -2012,7 +2012,7 @@ app.get('/api/cron/find', async (req, res) => {
   }
   try {
     console.log('[🌙밤샘발굴] 시작 — 켜둔 대표들 순회 · ★발굴·기록만 (발송 안 함)');
-    const r = await nightFind.runAll({ collect: (a, b) => hunterDesk.collect(a, b), max: Number(req.query.max) || 30 });
+    const r = await nightFind.runAll({ collect: (a, b) => hunterDesk.collect(a, b), max: Number(req.query.max) || 30, vipEmail: VIP_EMAIL });
     console.log(`[🌙밤샘발굴] 끝 — 대표 ${r.대표수}명 · 새로 ${r.합계신규}건(핫 ${r.합계핫}) · ★발송 0`);
     res.json(Object.assign({ ok: true }, r, {
       안내: '이 창구는 발굴하고 적어두기만 합니다. 고객에게 나가는 것은 없습니다.' }));

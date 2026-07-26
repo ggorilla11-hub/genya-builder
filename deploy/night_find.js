@@ -19,6 +19,7 @@
 
 const crypto = require('crypto');
 const { google } = require('googleapis');
+const leadShare = require('./lead_share');            // ⚖️ 나누기(순수 계산 · 발송 코드 없음)
 
 const RUN_COLL = 'genya_night_find';                    // 회차 기록
 const PROF_COLL = 'genya_night_profiles';               // 켜둔 대표 프로필
@@ -157,19 +158,76 @@ async function runOne(deps, prof) {
   return Object.assign({}, 회차, { 저장됨, 저장오류 });
 }
 
-// ═══ 밤에 서버가 부르는 것 — 켜둔 대표 전부 ═══
+// ═══ 밤에 서버가 부르는 것 — ★직업별로 딱 한 번 발굴하고 그 직업 사람들에게 나눈다 ═══
+//   ★왜: 대표마다 따로 발굴하면 재무설계사 10명일 때 같은 검색을 10번 돌린다.
+//       API 할당량 10배 + ★10명이 같은 글을 받아 한 사람에게 답글이 10개 달린다(민원).
+//   → 직업별 1회 발굴 → lead_share가 겹치지 않게 나눈다.
 async function runAll(deps) {
   const 대표들 = await listOn();
+  const vip지문 = deps && deps.vipEmail ? 지문(deps.vipEmail) : '';
+  // 직업으로 묶는다(직업이 비면 '기타')
+  const 묶음 = {};
+  대표들.forEach((p) => { const j = String(p.직업 || '기타'); (묶음[j] = 묶음[j] || []).push(p); });
+
   const 결과 = [];
-  for (const p of 대표들) {                              // ★차례로(동시에 때리면 채널이 막는다)
-    try { 결과.push(await runOne(deps, p)); }
-    catch (e) { 결과.push({ 지문: p.지문, 직업: p.직업 || '', at: new Date().toISOString(), 신규: 0, 핫: 0, 오류: String(e.message || '').slice(0, 160), 발송함: false }); }
+  const 직업별 = [];
+  for (const 직업 of Object.keys(묶음)) {                 // ★차례로(동시에 때리면 채널이 막는다)
+    const 식구 = 묶음[직업];
+    // 그 직업의 키워드 = 식구들 키워드를 합쳐 중복 제거(각자 고친 게 있으면 그게 우선 반영됨)
+    const kw = [];
+    식구.forEach((p) => (p.키워드 || []).forEach((k) => { if (kw.indexOf(k) < 0) kw.push(k); }));
+    const 시작 = Date.now();
+    let desk = null, 시간초과 = false, 오류 = '';
+    try {
+      const bail = new Promise((r) => setTimeout(() => { 시간초과 = true; r(null); }, RUN_MS));
+      desk = await Promise.race([deps.collect({ 키워드: kw, 직업 }, { max: deps.max || 30 }), bail]);
+    } catch (e) { 오류 = String(e.message || '').slice(0, 160); }
+    const 간추림 = ((desk && desk.leads) || []).map(_간추리기).filter((x) => x.링크);
+
+    // ★중복 제거 — 이 직업 식구들이 지난 회차에 이미 받은 링크는 새것이 아니다
+    const 이전 = new Set();
+    for (const p of 식구) {
+      try { (await loadRuns(p.지문, 보관)).forEach((r) => (r.리드 || []).forEach((x) => { if (이전.size < 링크기억) 이전.add(x.링크); })); }
+      catch (e) { /* 못 읽어도 이번 것은 나눈다 */ }
+    }
+    const 본것 = new Set(); const 신규 = [];
+    for (const x of 간추림) { if (본것.has(x.링크)) continue; 본것.add(x.링크); if (!이전.has(x.링크)) 신규.push(x); }
+
+    // ★나누기 — 재무는 교육생 10개씩+나머지 오대표, 그 외는 1/n
+    const 명단 = 식구.map((p) => ({ 지문: p.지문, 직업: p.직업 || 직업, vip: !!(vip지문 && p.지문 === vip지문) }));
+    const { 몫, 설명 } = leadShare.나누기(직업, 신규, 명단, { 날짜: new Date().toISOString() });
+    직업별.push({ 직업, 켠사람: 식구.length, 발굴: 간추림.length, 신규: 신규.length,
+      중복: 간추림.length - 신규.length, 걸린초: Math.round((Date.now() - 시작) / 1000), 오류, 시간초과, 설명 });
+
+    // ★각자 몫만 자기 앞으로 적어둔다(남의 것과 안 섞인다)
+    const at = new Date().toISOString();
+    for (const p of 식구) {
+      const 내몫 = 몫[p.지문] || [];
+      const 채널별 = {};
+      내몫.forEach((x) => { 채널별[x.채널] = (채널별[x.채널] || 0) + 1; });
+      const 회차 = {
+        지문: p.지문, 직업: p.직업 || 직업, at, 배분: true, 배분설명: 설명,
+        건수: 간추림.length, 신규: 내몫.length, 중복: 0,
+        핫: leadShare.핫세기(내몫), 채널별, 시간초과, 오류,
+        걸린초: Math.round((Date.now() - 시작) / 1000),
+        리드: 내몫.slice(0, 200),
+        발송함: false,                                    // ★언제나 false — 이 파일엔 발송 코드가 없다
+      };
+      let 저장됨 = false, 저장오류 = '';
+      try {
+        await _add(RUN_COLL, { owner: { stringValue: 회차.지문 }, at: { stringValue: at },
+          json: { stringValue: JSON.stringify(회차) } });
+        저장됨 = true;
+      } catch (e) { 저장오류 = String(e.message || '').slice(0, 160); }
+      결과.push(Object.assign({}, 회차, { 저장됨, 저장오류 }));
+    }
   }
   return {
-    대표수: 대표들.length,
-    합계신규: 결과.reduce((a, r) => a + (r.신규 || 0), 0),
+    대표수: 대표들.length, 직업수: Object.keys(묶음).length,
+    합계신규: 직업별.reduce((a, r) => a + (r.신규 || 0), 0),
     합계핫: 결과.reduce((a, r) => a + (r.핫 || 0), 0),
-    회차: 결과.map((r) => ({ 지문: r.지문, 직업: r.직업, 신규: r.신규, 핫: r.핫, 걸린초: r.걸린초, 오류: r.오류 || '', 저장됨: !!r.저장됨 })),
+    직업별,
+    회차: 결과.map((r) => ({ 지문: r.지문, 직업: r.직업, 신규: r.신규, 핫: r.핫, 저장됨: !!r.저장됨, 오류: r.오류 || '' })),
     발송함: false,
   };
 }
@@ -195,10 +253,13 @@ function summaryText(runs, now) {
   밤.forEach((r) => Object.keys(r.채널별 || {}).forEach((k) => { ch[k] = (ch[k] || 0) + r.채널별[k]; }));
   const 줄 = Object.keys(ch).sort((a, b) => ch[b] - ch[a]).map((k) => k + ' ' + ch[k]).join(' · ');
   const 탈 = 밤.filter((r) => r.오류 || r.시간초과);
-  return `🌙 밤사이 **${총}건** 새로 나왔어요 (핫 ${핫}건 · ${밤.length}회 돌았습니다)`
+  const 직 = (밤.find((r) => r.직업) || {}).직업 || '';
+  const 설명 = (밤.find((r) => r.배분설명) || {}).배분설명 || '';
+  return `🌙 오늘 배분받은 리드 **${총}개**${직 ? ` (내 직업: ${직})` : ''} — 핫 ${핫}건`
+    + (설명 ? `\n\n· ${설명}` : '')
     + (줄 ? `\n\n${줄}` : '')
     + (탈.length ? `\n\n⚠️ ${탈.length}회는 온전히 못 돌았어요 — ${(탈[0].오류 || '시간 초과')}` : '')
     + '\n\n답글은 대표님이 보시고 [승인]하셔야 나갑니다 — 밤사이 나간 것은 **하나도 없습니다.**';
 }
 
-module.exports = { 지문, saveProfile, loadProfile, listOn, runOne, runAll, loadRuns, loadMine, summaryText, _간추리기, _핫인가, RUN_COLL, PROF_COLL };
+module.exports = { 지문, leadShare, saveProfile, loadProfile, listOn, runOne, runAll, loadRuns, loadMine, summaryText, _간추리기, _핫인가, RUN_COLL, PROF_COLL };
