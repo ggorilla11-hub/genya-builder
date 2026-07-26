@@ -1164,9 +1164,33 @@ function _isExpired(row, within) {
   }
   return false;
 }
+/** 이 글에 나온 사람 중 ★명단에 실제로 있는 이름만 (지어내기 차단) */
+async function _namesInText(text) {
+  let t = null;
+  try { t = await sheetsCrud.loadTable(null); } catch (e) { return []; }
+  const rows = (t && t.rows) || [];
+  const out = [];
+  for (const r of rows) {
+    const n = _rowName(t, r);
+    if (n && n.length >= 2 && text.indexOf(n) >= 0 && out.indexOf(n) < 0) out.push(n);
+  }
+  return out.slice(0, 12);
+}
+
 /** @returns {{names:[], label, how}} */
 function _resolveCardGroup(q, t, lastMentioned) {
   const rows = (t && t.rows) || [];
+  // ★말 속에 명단 이름이 여러 개 있으면 그 사람들이다
+  //   ("박민수·오세훈·임재현·정수진 카드" — 전에는 첫 이름만 보고 '상담'을 찾다 실패했다)
+  const inQ = [];
+  for (const r of rows) { const n = _rowName(t, r); if (n && n.length >= 2 && q.indexOf(n) >= 0 && inQ.indexOf(n) < 0) inQ.push(n); }
+  if (inQ.length) return { names: inQ.slice(0, 12), label: '말씀하신', how: '문장에 있는 이름을 명단에서 확인' };
+  // ★"4명 카드 보여줘"처럼 숫자만 말해도 직전 브리핑에서 말한 사람들로 이어준다
+  if (Array.isArray(lastMentioned) && lastMentioned.length && /(\d+\s*명|사람들|고객들|카드들|들\s*카드)/.test(q)
+      && !/(만기|만료|생일|기념일)/.test(q)) {
+    const inSheet = lastMentioned.filter((n) => rows.some((r) => _rowName(t, r) === n));
+    if (inSheet.length) return { names: inSheet.slice(0, 12), label: '방금 말씀드린', how: '직전 브리핑에서 언급' };
+  }
   // ⓪ "방금 말한 4명" — 직전 브리핑이 실제로 언급한 사람들(화면이 기억해 보내준다)
   if (/(방금|아까|위에|위의|말한|언급|그\s*\d*\s*명)/.test(q) && Array.isArray(lastMentioned) && lastMentioned.length) {
     const inSheet = lastMentioned.filter((n) => rows.some((r) => _rowName(t, r) === n));
@@ -1200,6 +1224,32 @@ function _resolveCardGroup(q, t, lastMentioned) {
   }
   return { names: [], label: '해당', how: '' };
 }
+
+// 🩺 카드 묶음 진단 — "왜 카드가 안 뜨나"를 ★진짜 명단으로 확인한다.
+//   ★로그인 없이 열면: 컬럼명·행수·매칭 건수만(이름·값 0노출).
+//   ★로그인하면: 실제로 어떤 이름이 잡히는지까지(대표님 본인 데이터).
+app.get('/api/diag/card', async (req, res) => {
+  const q = String(req.query.q || '상담 대기 4명 카드 보여줘');
+  const me = !!sessionOf(req);
+  try {
+    const t = await sheetsCrud.loadTable(null);
+    const rows = (t && t.rows) || [];
+    const keys = Object.keys(rows[0] || {});
+    const g = _resolveCardGroup(q, t, []);
+    // 어떤 칸에 상담류 낱말이 들어 있는지(값이 아니라 ★칸 이름만)
+    const 상담칸 = keys.filter((k) => rows.some((r) => /(상담|미팅|면담|방문|대기)/.test(String(r[k] || ''))));
+    const out = {
+      질문: q,
+      시트연결: !!(t && t.id), 행수: rows.length, 컬럼: keys,
+      이름컬럼_추정: keys.find((k) => /(고객명|성명|이름|name)/i.test(k)) || '(못 찾음)',
+      상담류_낱말이_있는_칸: 상담칸,
+      묶음판정: g.label, 찾은기준: g.how, 매칭건수: g.names.length,
+    };
+    if (me) out.매칭이름 = g.names;                 // 로그인한 본인에게만
+    else out.안내 = '이름은 로그인해야 보입니다(개인정보 보호). 지금은 건수만 표시.';
+    res.json(out);
+  } catch (e) { res.status(502).json({ ok: false, error: e.message }); }
+});
 
 // 🛡️ 사후 검수 — 화면이 담아둔 리드를 조금씩 보내 판정만 받아간다(선담기 후검수).
 //   ★서버 저장 0: 받은 글은 판정하고 그 자리에서 버린다. 개인정보가 서버에 남지 않는다.
@@ -1842,6 +1892,14 @@ async function orderHandler(req, res) {
     }
     // ★이모지 0 최종 게이트: askClaude를 안 타는 응답(결재함·커넥터 등)까지 포함해 모든 지니야 text에서 이모지 제거(결정적).
     if (out && typeof out.text === 'string') out.text = stripEmoji(out.text);
+    // ★2026-07-27 재진단: "그 4명 카드"가 안 되던 진짜 이유 —
+    //   화면이 "직전에 말한 이름"을 명단 드로어(_GH_ROWMAP)에서만 찾았다.
+    //   대표님이 드로어를 안 열었으면 기억할 재료가 아예 없어 항상 빈손이었다.
+    //   → 시트를 갖고 있는 ★서버가 직접 알려준다. 브리핑에 나온 이름 중 명단에 실제 있는 것만.
+    //   ★서버 저장 0 — 응답에 실어 보내고 끝.
+    if (out && typeof out.text === 'string' && out.text.length > 4) {
+      try { out.mentioned = await _namesInText(out.text); } catch (e) {}
+    }
     res.json({ ok: true, ...out, saved });
   } catch (e) {
     // ★권한부족이 여기까지 새면 대화 전체가 막히지 않도록 "연결하기"로 정직히 안내(500 대신)

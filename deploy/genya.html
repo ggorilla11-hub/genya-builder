@@ -4094,8 +4094,14 @@ function _cardsShow(){
 //   ★지어내지 않는다: 명단에 실제로 있는 이름만 기억한다. 브라우저 메모리에만 둔다(서버 저장 0).
 function _rememberMentioned(d){
   try{
-    var txt=String((d&&d.text)||''); if(!txt) return;
-    if(d&&d.action==='open_cards'&&d.customers){ window._LAST_MENTIONED=d.customers.slice(0,12); return; }
+    if(!d) return;
+    // ★서버가 직접 알려준다(시트를 갖고 있으니 확실하다). 명단 드로어를 안 열었어도 동작한다.
+    //   2026-07-27 버그: 예전엔 _GH_ROWMAP(드로어에 로드된 명단)에서만 찾아서,
+    //   드로어를 안 연 상태에선 항상 빈손이었다 → "그 4명 카드"가 절대 안 됐다.
+    if(Array.isArray(d.mentioned) && d.mentioned.length){ window._LAST_MENTIONED=d.mentioned.slice(0,12); return; }
+    if(d.action==='open_cards'&&d.customers){ window._LAST_MENTIONED=d.customers.slice(0,12); return; }
+    // 폴백: 명단이 이미 로드돼 있으면 거기서라도 찾는다
+    var txt=String(d.text||''); if(!txt) return;
     var map=window._GH_ROWMAP||{}; var found=[];
     Object.keys(map).forEach(function(k){
       var r=map[k]; var nm=r['고객명']||r['이름']||r['성명']||r['성함']||'';
