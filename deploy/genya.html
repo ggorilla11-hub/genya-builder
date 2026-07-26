@@ -1497,7 +1497,9 @@ function _inflowFiles(files){
       +'<div style="font-size:11.5px;font-weight:700;color:#0d1b2a;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+_escOb(f.파일||'')+'</div>'
       +'<div style="font-size:11.5px;white-space:nowrap;color:'+(f.오류?'#8a6d1a':'#556')+'">'
         +(f.오류?('⚠️ '+_escOb(f.오류)):('결제 <b style="color:#0f766e">'+(f.결제||0)+'건</b> · <b>'+_won(f.금액)+'</b> <span style="color:#8a93a3">(신청 '+(f.신청||0)+')</span>'))
-      +'</div></div>';
+      +'</div></div>'
+      // ★0원인 이유를 짐작하지 않게 그 줄 아래에 바로 알린다
+      +(f.힌트?('<div style="font-size:10.5px;color:#8a6d1a;padding:0 0 5px 2px">↳ '+_escOb(f.힌트)+'</div>'):'');
   }).join('');
   return '<div style="border:1px solid #e5e9ee;border-radius:10px;padding:8px 11px;margin-bottom:8px;background:#fafbfc">'
     +'<div style="font-size:11.5px;font-weight:800;color:#0d1b2a;margin-bottom:4px">📂 탭별 매출 <span style="font-weight:500;color:#8a93a3">('+files.length+'개 탭)</span></div>'+rows+'</div>';

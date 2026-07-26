@@ -1094,7 +1094,14 @@ async function _inflowHandler(req, res) {
       }
       const isPaid = (x) => /^(y|예|완료|결제완료|o|입금|입금완료|성공|결제됨)$/i.test(String(x.결제 || '').trim());
       const p = mine.filter(isPaid);
-      files.push({ 파일: label, 탭: tb, 신청: mine.length, 결제: p.length, 금액: p.reduce((a, x) => a + x.금액, 0) });
+      // ★"이 탭은 왜 0원이지?"를 대표님이 짐작하지 않게 한다.
+      //   빈칸을 결제로 치면 매출이 부풀어 원칙(매출=결제자만)이 깨진다 — 대신 이유를 말해준다.
+      const 금액있음 = mine.filter((x) => x.금액 > 0).length;
+      const 힌트 = (!p.length && 금액있음 && iPaid >= 0)
+        ? `결제 칸이 비어 있어 매출 0원 — 금액이 적힌 ${금액있음}줄의 결제 칸에 Y를 넣으면 매출로 잡혀요`
+        : '';
+      files.push({ 파일: label, 탭: tb, 신청: mine.length, 결제: p.length, 힌트,
+        금액: p.reduce((a, x) => a + x.금액, 0) });
       out.push(...mine);
       }                                          // 탭 반복 끝
     }                                            // 문서 반복 끝
@@ -1537,7 +1544,8 @@ async function buildBrief(ma, req, scope) {
     L.push(`· 전체 결제 **${sv.건수 || 0}건** · ${won(sv.금액)} · 객단가 ${won(sv.객단가)}`);
     // ★어디서 매출이 나는지 — 탭별로 나눠 보여준다(한 문서의 연금진단·부트캠프·통합리드)
     const ff = (sv.파일별 || []).filter((f) => f.신청 || f.금액 || f.오류);
-    if (ff.length) ff.forEach((f) => L.push(`  · ${f.파일} — 결제 ${f.결제 || 0}건 · ${won(f.금액)}${f.오류 ? ` ⚠️ ${f.오류}` : ''}`));
+    if (ff.length) ff.forEach((f) => L.push(`  · ${f.파일} — 결제 ${f.결제 || 0}건 · ${won(f.금액)}`
+      + `${f.오류 ? ` ⚠️ ${f.오류}` : ''}${f.힌트 ? `\n     ↳ ${f.힌트}` : ''}`));
     if (sv.미결제) L.push(`· 신청했지만 아직 결제 안 한 분 **${sv.미결제}명** — 여기가 다음 매출이에요.`);
     if (sv.중복제외) L.push(`· 여러 탭에 겹친 ${sv.중복제외}건은 한 번만 셌어요.`);
     if (sv.탭넘침) L.push(`· ⚠️ 탭이 많아 ${sv.탭넘침}개는 못 읽었어요.`);
