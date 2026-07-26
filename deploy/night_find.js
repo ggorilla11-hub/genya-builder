@@ -49,10 +49,11 @@ function _fs() {
 async function _add(coll, fields) {
   await _fs().projects.databases.documents.createDocument({ parent: DB, collectionId: coll, requestBody: { fields } });
 }
-async function _query(coll, where, limit, orderBy) {
-  const q = { from: [{ collectionId: coll }], limit: Math.max(1, Math.min(200, limit || 20)) };
+// ★2026-07-27 실측: where + orderBy를 같이 쓰면 Firestore가 400(복합 색인 필요)을 낸다.
+//   이미 잘 도는 토큰 보관함처럼 ★where만 쓰고, 정렬은 아래에서 코드로 한다(색인 안 만들어도 됨).
+async function _query(coll, where, limit) {
+  const q = { from: [{ collectionId: coll }], limit: Math.max(1, Math.min(300, limit || 20)) };
   if (where) q.where = where;
-  if (orderBy) q.orderBy = [{ field: { fieldPath: orderBy }, direction: 'DESCENDING' }];
   const r = await _fs().projects.databases.documents.runQuery({ parent: DB, requestBody: { structuredQuery: q } });
   return (r.data || []).filter((x) => x.document).map((x) => x.document.fields || {});
 }
@@ -174,8 +175,11 @@ async function runAll(deps) {
 
 // ═══ 아침에 읽는 것 — ★자기 것만 ═══
 async function loadRuns(지문값, limit) {
-  const rows = await _query(RUN_COLL, _같음('지문', String(지문값)), Math.min(보관, limit || 12), 'at');
-  return rows.map(_풀기).filter(Boolean).sort((a, b) => String(b.at).localeCompare(String(a.at)));
+  // ★넉넉히 가져와 ★코드에서 최신순 정렬한 뒤 자른다(Firestore 정렬은 색인이 필요해 400이 난다)
+  const rows = await _query(RUN_COLL, _같음('지문', String(지문값)), 300);
+  return rows.map(_풀기).filter(Boolean)
+    .sort((a, b) => String(b.at).localeCompare(String(a.at)))
+    .slice(0, Math.min(보관, limit || 12));
 }
 async function loadMine(email, limit) { return loadRuns(지문(email), limit); }
 
