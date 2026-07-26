@@ -944,6 +944,21 @@ function _sheetIdFrom(v) {
   return m ? m[1] : (/^[A-Za-z0-9_-]{20,}$/.test(s) ? s : '');
 }
 function _inflowTargets(req) {
+  // ★2026-07-27 "＋추가가 교체됨" 사고:
+  //   연결 목록을 서버 메모리에 담았더니 Render가 재시작할 때마다 날아가,
+  //   두 번째 시트를 넣으면 첫 번째가 사라진 것처럼 보였다.
+  //   → ★목록은 브라우저가 갖고 매번 보내준다. 서버는 아무것도 저장하지 않는다(원칙에도 더 맞다).
+  const fromClient = (req.body && req.body.sheets) || null;
+  if (Array.isArray(fromClient) && fromClient.length) {
+    const list = [];
+    for (const x of fromClient.slice(0, INFLOW_MAX)) {
+      const id = _sheetIdFrom(x && (x.id || x.url));
+      if (!id) continue;
+      if (list.some((y) => y.id === id && y.tab === String((x && x.tab) || ''))) continue;
+      list.push({ id, tab: String((x && x.tab) || ''), title: String((x && x.title) || '').slice(0, 60) });
+    }
+    if (list.length) return { list, custom: true };
+  }
   const me = String((sessionOf(req) || {}).email || '').toLowerCase();
   const own = _inflowSheetOf[me];
   if (Array.isArray(own) && own.length) return { list: own, custom: true };
@@ -978,7 +993,8 @@ app.post('/api/prospect/sheet', async (req, res) => {
     if (list.length >= INFLOW_MAX) return res.json({ ok: false, error: `시트는 최대 ${INFLOW_MAX}개까지 붙일 수 있어요. 하나를 빼고 다시 시도해 주세요.` });
     list.push({ id, tab: use, title });
     _inflowSheetOf[me] = list;
-    res.json({ ok: true, title, tab: use, tabs, sheets: list.map((x) => ({ id: x.id, tab: x.tab, title: x.title })) });
+    // ★화면이 목록을 갖는다 — id·tab·title을 돌려줘 브라우저에 쌓게 한다(서버 저장에 의존하지 않음)
+    res.json({ ok: true, id, title, tab: use, tabs, sheets: list.map((x) => ({ id: x.id, tab: x.tab, title: x.title })) });
   } catch (e) {
     res.json({ ok: false, error: /permission|403/i.test(e.message || '')
       ? '시트를 못 읽었어요 — 그 시트를 서비스계정 이메일에 "뷰어"로 공유해 주세요'
@@ -990,7 +1006,10 @@ function _pickCol(head, names) { for (const n of names) { const i = head.indexOf
 //   화면이 [유입 전환]을 열면 채워지고, 브리핑이 그 숫자를 쓴다.
 let _SALES_CACHE = { sum: null, tab: '', at: 0, by: '' };
 function _wonNum(v) { const n = Number(String(v == null ? '' : v).replace(/[^0-9.-]/g, '')); return isFinite(n) ? n : 0; }
-app.get('/api/prospect/inflow', async (req, res) => {
+// ★POST도 받는다 — 화면이 "연결한 시트 목록"을 함께 보내기 때문(서버 저장 0).
+app.post('/api/prospect/inflow', (req, res) => _inflowHandler(req, res));
+app.get('/api/prospect/inflow', (req, res) => _inflowHandler(req, res));
+async function _inflowHandler(req, res) {
   const s = sessionOf(req);
   if (!s) return res.status(401).json({ ok: false, error: '로그인이 필요해요' });
   try {
@@ -1089,7 +1108,7 @@ app.get('/api/prospect/inflow', async (req, res) => {
       : e.message;
     res.status(502).json({ ok: false, error: msg });
   }
-});
+}
 
 // 🩺 진단 — 지금 켜진 발굴 채널이 무엇인가. ★키 값은 절대 안 찍는다(있다/없다와 변수 이름만).
 //   대표님이 로그인 없이도 "네이버가 켜졌나"를 눈으로 확인하시라고 공개로 둔다.

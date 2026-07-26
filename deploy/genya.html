@@ -1428,15 +1428,27 @@ function _leadsBody(){
 }
 // ★2026-07-27: 진행 중인 다른 신청 시트(부트캠프 등)도 붙일 수 있게 — 주소만 넣으면 된다.
 //   ★서버가 기억하는 건 시트 "주소"뿐. 신청자 이름·연락처·금액은 저장하지 않는다.
+//   ★2026-07-27 "＋추가가 교체됨" 사고: 목록을 서버 메모리에 뒀더니 재시작 때 날아가
+//   두 번째를 넣으면 첫 번째가 사라진 것처럼 보였다. → ★목록은 브라우저가 갖는다(서버 저장 0).
+var _INFLOW_KEY='genya_inflow_sheets';
+function inflowSheets(){ try{ var a=JSON.parse(localStorage.getItem(_INFLOW_KEY)||'[]'); return Array.isArray(a)?a:[]; }catch(e){ return []; } }
+function inflowSave(a){ try{ localStorage.setItem(_INFLOW_KEY, JSON.stringify((a||[]).slice(0,5))); }catch(e){} }
 window.inflowConnect=function(){
-  var url=prompt('신청자 구글 시트 주소를 붙여넣으세요.\n\n(먼저 그 시트를 서비스계정 이메일에 "뷰어"로 공유해 주세요)\n\n· 비우고 확인 = 기본 시트로 되돌리기');
-  if(url===null) return;
-  var body=String(url).trim()?{url:url}:{clear:1};
-  fetch('/api/prospect/sheet',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
+  var cur=inflowSheets();
+  var url=prompt('신청자 구글 시트 주소를 붙여넣으세요.\n\n지금 연결됨: '+(cur.length?cur.map(function(x){return x.title||x.tab;}).join(', '):'없음')
+    +'\n\n★기존 시트는 그대로 두고 ＋추가됩니다 (최대 5개)\n(먼저 그 시트를 서비스계정 이메일에 "뷰어"로 공유해 주세요)');
+  if(url===null || !String(url).trim()) return;
+  fetch('/api/prospect/sheet',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:url})})
    .then(function(r){return r.json();})
    .then(function(d){
      if(!d||!d.ok){ toast((d&&d.error)||'시트를 연결하지 못했어요'); return; }
-     toast(d.cleared?'기본 시트로 되돌렸어요':('연결됨 — '+(d.title||'')+' / '+(d.tab||'')));
+     var list=inflowSheets();
+     if(list.length>=5){ toast('시트는 최대 5개까지예요 — [관리]에서 하나를 빼주세요'); return; }
+     // ★같은 시트·탭이면 덮어쓰고, 아니면 ★더한다(교체 아님)
+     list=list.filter(function(x){ return !(x.id===d.id && x.tab===d.tab); });
+     list.push({id:d.id, tab:d.tab, title:d.title||d.tab});
+     inflowSave(list);
+     toast('＋추가됨 — '+(d.title||'')+' (총 '+list.length+'개)');
      prospectLoadInflow(); prospectLoadLeads();
    })
    .catch(function(){ toast('연결 실패 — 잠시 뒤 다시 시도해 주세요'); });
@@ -1457,27 +1469,26 @@ function _inflowFiles(files){
 }
 // 연결한 시트 관리(빼기)
 window.inflowManage=function(){
-  fetch('/api/prospect/sheet',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({list:1})})
-   .then(function(r){return r.json();}).then(function(d){
-     var ls=(d&&d.sheets)||[];
-     if(!ls.length){ toast('연결한 시트가 없어요'); return; }
-     var msg='연결한 시트\n\n'+ls.map(function(x,i){ return (i+1)+'. '+(x.title||'')+' / '+(x.tab||''); }).join('\n')
-       +'\n\n뺄 번호를 입력하세요 (전부 빼려면 0)';
-     var a=prompt(msg); if(a===null) return;
-     var n=parseInt(String(a).trim(),10);
-     if(n===0){ fetch('/api/prospect/sheet',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({clear:1})})
-       .then(function(){ toast('전부 뺐어요 — 기본 시트로'); prospectLoadInflow(); }); return; }
-     var t=ls[n-1]; if(!t){ toast('번호를 다시 확인해 주세요'); return; }
-     fetch('/api/prospect/sheet',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({remove:t.id,tab:t.tab})})
-      .then(function(){ toast('뺐어요 — '+(t.title||'')); prospectLoadInflow(); });
-   }).catch(function(){ toast('불러오지 못했어요'); });
+  var ls=inflowSheets();
+  if(!ls.length){ toast('연결한 시트가 없어요 — [＋ 시트 연결]로 추가하세요'); return; }
+  var msg='연결한 시트 '+ls.length+'개\n\n'+ls.map(function(x,i){ return (i+1)+'. '+(x.title||'')+' / '+(x.tab||''); }).join('\n')
+    +'\n\n뺄 번호를 입력하세요 (전부 빼려면 0)';
+  var a=prompt(msg); if(a===null) return;
+  var n=parseInt(String(a).trim(),10);
+  if(n===0){ inflowSave([]); toast('전부 뺐어요 — 기본 시트로'); prospectLoadInflow(); return; }
+  var t=ls[n-1]; if(!t){ toast('번호를 다시 확인해 주세요'); return; }
+  inflowSave(ls.filter(function(x,i){ return i!==(n-1); }));
+  toast('뺐어요 — '+(t.title||'')+' (남은 '+(ls.length-1)+'개)');
+  prospectLoadInflow();
 };
 // ── 신청자 표 — 실제 구글시트만 읽는다. 시트가 비면 "0건"이라고 하지 가짜 줄을 만들지 않는다 ──
 function _won(n){ return (Number(n)||0).toLocaleString('ko-KR')+'원'; }
 function prospectLoadInflow(){
   var box=document.getElementById('inflowBox'); if(!box)return;
   box.innerHTML=_leadsSkeleton();
-  fetch('/api/prospect/inflow',{credentials:'include'})
+  // ★연결한 시트 목록을 함께 보낸다 — 서버는 저장하지 않는다(재시작에도 안 날아감)
+  fetch('/api/prospect/inflow',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({sheets:inflowSheets()})})
    .then(function(r){ return r.json().then(function(j){ return {s:r.status,j:j}; }); })
    .then(function(x){
      var d=x.j;
