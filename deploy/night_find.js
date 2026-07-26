@@ -36,8 +36,10 @@ function 지문(email) {
 }
 
 function _fs() {
-  const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON || '';
-  if (!raw) throw new Error('GOOGLE_SERVICE_ACCOUNT_JSON 없음 — 밤샘 결과를 적어둘 수 없어요');
+  // ★2026-07-27 실측: 시트용 자격(GOOGLE_SERVICE_ACCOUNT_JSON)으로는 Firestore가 403이다.
+  //   이미 잘 돌아가는 토큰 보관함과 ★같은 자격(GOOGLE_SA_JSON)을 쓴다.
+  const raw = process.env.GOOGLE_SA_JSON || process.env.GOOGLE_SERVICE_ACCOUNT_JSON || '';
+  if (!raw) throw new Error('GOOGLE_SA_JSON 없음 — 밤샘 결과를 적어둘 수 없어요');
   const auth = new google.auth.GoogleAuth({
     credentials: JSON.parse(raw),
     scopes: ['https://www.googleapis.com/auth/datastore'],
