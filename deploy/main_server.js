@@ -1998,6 +1998,14 @@ app.get('/api/find/leads', async (req, res) => {
 //   ★새 파일(night_find.js) + 새 라우트만. 기존 발굴 라우트·함수는 ★한 줄도 안 건드린다.
 //   ★여기서 하는 일은 발굴과 기록뿐 — 발송·답글·메일은 코드 자체가 없다(서버가 실수로도 못 보낸다).
 const nightFind = require('./night_find');
+const showCards = require('./show_cards');            // 👀 "보여줘 비서" — 말→무엇을 보여줄지만 정함
+// 🩺 보여줘 진단 — "이 말을 하면 무엇이 뜨나". ★판정만·아무것도 실행하지 않는다.
+app.get('/api/diag/show', (req, res) => {
+  const q = String(req.query.q || '핫 리드 보여줘');
+  const s = showCards.parse(q);
+  res.json({ 물음: q, 보여줄것: s ? (s.제목 + (s.채널 ? ' · ' + s.채널 : '') + (s.개수 ? ' · ' + s.개수 + '개' : '') + (s.최소점수 ? ' · ' + s.최소점수 + '점 이상' : '')) : '(기존 기능이 처리하거나, 그냥 대화로 답합니다)',
+    판정: s, 발송하나: false, 안내: '판정만 합니다 — 아무것도 실행하지 않고, 발송은 어떤 말로도 일어나지 않습니다.' });
+});
 app.get('/api/cron/find', async (req, res) => {
   if (String(req.query.key || '') !== String(process.env.CRON_SECRET || '__nokey__')) {
     return res.status(403).json({ ok: false, error: '예약 열쇠가 필요해요' });
@@ -2544,6 +2552,8 @@ async function orderHandler(req, res) {
     //       그 길은 humanApproval 하드가드가 지킨다(a853121·df11f5d). 이 엔진은 그 문을 열지 않는다.
     //   ★판정은 autoRunFlags() 한 곳에서만 한다 — 진단 창구(/api/diag/autorun)가 같은 함수를 쓰므로
     //     "진단은 되는데 실제는 다르다"가 생길 수 없다(카드의 cardFlags와 같은 방식).
+    // 👀 "보여줘 비서" — 새 파일이 판정한다. 기존이 알아듣는 말은 parse()가 null을 돌려 양보한다.
+    const _showSpec = (_noBase && !_isBriefAsk) ? showCards.parse(q) : null;
     const _ar = autoRunFlags(q, { noBase: _noBase, briefAsk: _isBriefAsk });
     const { findRun: _isFindRun, findVague: _isFindVague, openInflow: _isOpenInflow,
       openFind: _isOpenFind, refresh: _isRefresh, channel: _findCh } = _ar;
@@ -2566,6 +2576,25 @@ async function orderHandler(req, res) {
       out = { kind: '🔍 발굴 리드', action: 'open_tab', tab: 'find', text: '발굴 리드를 열게요.' };
     } else if (_isRefresh) {
       out = { kind: '🔄 새로고침', action: 'refresh', text: '지금 보시는 것을 다시 불러올게요.' };
+    } else if (_showSpec) {
+      // ═══ 👀 "보여줘 비서" — 조회·표시만(발송 아님). 새 파일 show_cards.js가 ★무엇을 보여줄지만 정한다.
+      //   ★기존 라우터가 이미 알아듣는 말(이름 카드·일정·브리핑·제안서…)은 parse()가 양보한다 → 회귀 0.
+      if (_showSpec.종류 === 'help') {
+        out = { kind: '👀 보여줄 수 있는 것', text: showCards.helpText() };
+      } else if (_showSpec.종류 === 'client') {
+        // 📇 고객 명단은 ★이미 있는 카드 엔진을 그대로 부른다(새로 만들지 않는다)
+        const _t = await sheetsCrud.loadTable(ma).catch(() => null);
+        const _g = _t ? _resolveCardGroup(q, _t, (req.body && req.body.lastMentioned) || []) : { names: [], label: '', how: '' };
+        out = _g.names.length
+          ? { kind: '📇 고객카드', action: 'open_cards', customers: _g.names, label: _g.label,
+              rows: _rowsFor(_g.names), text: `${_g.label} ${_g.names.length}명을 카드로 띄웠어요. (${_g.how})` }
+          : { kind: '📇 고객카드', text: `명단에서 ${_g.label || '해당'} 고객을 못 찾았어요. — ${_g.how || '조건에 맞는 분이 없습니다'}\n\n지어내지 않고 있는 그대로 말씀드립니다.` };
+      } else {
+        // 🔍💰 발굴·매출은 화면이 이미 갖고 있는 숫자로 그린다(서버가 개인정보를 들고 있지 않는다)
+        out = { kind: _showSpec.제목, action: 'show_cards', spec: _showSpec,
+          text: `${_showSpec.제목}을 띄울게요.` };
+      }
+      console.log(`[👀보여줘] ${_showSpec.종류}${_showSpec.채널 ? '(' + _showSpec.채널 + ')' : ''} · q="${String(q).slice(0, 40)}" · ★조회·표시만(발송 아님)`);
     } else if (_isBriefAsk) {
       // 📊 상황 보고 — ★코드가 실제 데이터로 고정 틀을 채운다. LLM 해석 없음 → 매번 같은 답.
       //   ★물으신 범위만 답한다 — "발굴 리드 현황"에 7항목을 쏟아내지 않는다.

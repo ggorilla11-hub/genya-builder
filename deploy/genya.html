@@ -1406,6 +1406,104 @@ window.genyaRunFind=function(ch){
     }).catch(function(){ try{ pushMsg('gen', renderMd(_findReport(ch,'발굴 서버에 닿지 못했어요'))); }catch(e){} });
   }, 700);
 };
+// ═══ 👀 "보여줘 비서" — 발굴·매출을 카드로 (2026-07-27) ═══
+//   ★기존 고객카드 렌더(openCustomerCards)는 ★손대지 않는다. 고객은 서버가 그쪽으로 보낸다.
+//   여기서는 ★화면이 이미 갖고 있는 숫자(window._FIND·_RV·_SALES_STATS)로만 그린다 — 서버에 개인정보 0.
+//   ★없는 자료는 "아직 없어요"라고 말한다. 지어내지 않는다.
+window.genyaShowCards=function(spec){
+  if(!spec) return;
+  try{
+    var 종=spec.종류||'';
+    if(종.indexOf('lead')===0) return _showLeads(spec);
+    if(종.indexOf('sales')===0) return _showSales(spec);
+  }catch(e){ try{ pushMsg('gen','보여드리려다 막혔어요 — 다시 말씀해 주세요.'); }catch(e2){} }
+};
+function _showBox(제목, 안내, 카드들){
+  var host=document.getElementById('showCardBox');
+  if(!host){ host=document.createElement('div'); host.id='showCardBox';
+    host.style.cssText='position:fixed;left:14px;bottom:14px;width:min(680px,calc(100vw - 28px));z-index:9050;'
+      +'background:#fff;border:1px solid #dbe2ea;border-radius:14px;box-shadow:0 12px 40px rgba(13,27,42,.22);font-family:inherit';
+    document.body.appendChild(host); }
+  host.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid #eef1f5">'
+      +'<b style="font-size:13px;color:#0d1b2a">'+_escOb(제목)+'</b>'
+      +'<button onclick="showCardsClose()" style="border:none;background:none;font-size:18px;color:#8a93a3;cursor:pointer;font-family:inherit" title="닫기">×</button></div>'
+    +(안내?('<div style="font-size:11.5px;color:#8a93a3;padding:8px 12px 0">'+안내+'</div>'):'')
+    +(카드들.length
+      ? '<div style="display:flex;gap:10px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding:10px 12px 12px">'+카드들.join('')+'</div>'
+      : '<div style="padding:18px 14px;font-size:12.5px;color:#8a6d1a;background:#fffdf5;border-top:1px solid #ecdca8">'
+        +'그 자료가 <b>아직 없어요.</b> 지어내지 않고 있는 그대로 말씀드립니다.</div>');
+  host.style.display='block';
+}
+window.showCardsClose=function(){ var el=document.getElementById('showCardBox'); if(el){ el.style.display='none'; el.innerHTML=''; } };
+function _card(제목, 줄들, 색){
+  return '<div style="flex:0 0 auto;width:230px;border:1px solid '+(색||'#e5e9ee')+';border-radius:11px;padding:10px 11px;background:#fafbfc">'
+    +'<div style="font-size:12px;font-weight:800;color:#0d1b2a;margin-bottom:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+제목+'</div>'
+    +줄들.join('')+'</div>';
+}
+function _줄(라벨, 값){ return '<div style="display:flex;justify-content:space-between;gap:6px;font-size:11.5px;padding:2px 0"><span style="color:#8a93a3">'+라벨+'</span><b style="color:#0d1b2a">'+값+'</b></div>'; }
+// 🔍 발굴 리드 카드
+function _showLeads(spec){
+  var L=(window._FIND||[]).slice();
+  if(spec.종류==='lead_night') return _showNight(spec);
+  if(!L.length){ _showBox(spec.제목, '', []);
+    try{ pushMsg('gen','아직 발굴한 리드가 없어요. **"발굴 돌려"**라고 하시면 제가 지금 돌리겠습니다.'); }catch(e){} return; }
+  var 통과=function(l){ return !!(l.review && /통과|고객/.test(String(l.review.verdict||l.verdict||''))); };
+  if(spec.종류==='lead_pass') L=L.filter(통과);
+  else if(spec.종류==='lead_wait') L=L.filter(function(l){ return !l.review; });
+  else if(spec.종류==='lead_hot') L=L.filter(function(l){ return /^(A|S)$/i.test(String(l.tier||''))||Number(l.score||0)>=60||l.verdict==='고객'; });
+  else if(spec.종류==='lead_score') L=L.filter(function(l){ return Number(l.score||0)>=(spec.최소점수||80); });
+  else if(spec.종류==='lead_ch'&&spec.채널) L=L.filter(function(l){ return (l.ch||'')===spec.채널; });
+  L.sort(function(a,b){ return Number(b.score||0)-Number(a.score||0); });
+  var n=spec.개수||12;
+  var 카드=L.slice(0,n).map(function(l){
+    return _card((l.ch||'')+' '+_escOb(String(l.name||'').slice(0,10)), [
+      _줄('점수', (l.score!=null?l.score:'-')),
+      _줄('등급', _escOb(String(l.tier||'-'))),
+      _줄('검수', l.review?_escOb(String(l.review.verdict||'판정됨')):'대기'),
+      '<div style="font-size:11px;color:#556;margin-top:6px;line-height:1.5;max-height:60px;overflow:hidden">'+_escOb(String(l.text||'').slice(0,80))+'</div>',
+      l.link?('<a href="'+_escOb(l.link)+'" target="_blank" rel="noopener" style="display:inline-block;margin-top:7px;font-size:11px;color:#0f766e;font-weight:700">원글 열기 ↗</a>'):'',
+    ], '#cfe8e1');
+  });
+  _showBox(spec.제목+' <span style="font-weight:500;color:#8a93a3">'+L.length+'건 중 '+카드.length+'장</span>',
+    (L.length>카드.length?('점수 높은 순 '+카드.length+'장만 띄웠어요 · 좌우로 넘겨 보세요'):'좌우로 넘겨 보세요'), 카드);
+  try{ pushMsg('gen', renderMd('**'+spec.제목+' '+L.length+'건**'+(L.length?'\n\n점수 높은 순으로 '+카드.length+'장 띄웠어요. 답글은 [승인]하셔야 나갑니다.':''))); }catch(e){}
+}
+// 🌙 밤사이 발굴 — 서버에서 내 것만 가져온다
+function _showNight(spec){
+  _showBox(spec.제목, '불러오는 중이에요…', []);
+  fetch('/api/night/find',{credentials:'include'}).then(function(r){ return r.json().then(function(j){ return {s:r.status,j:j}; }); })
+   .then(function(x){
+     if(x.s===401){ _showBox(spec.제목,'',[]); try{ pushMsg('gen','로그인이 필요해요 — 새로고침 후 다시 말씀해 주세요.'); }catch(e){} return; }
+     var d=x.j; if(!d||!d.ok){ _showBox(spec.제목,'',[]); try{ pushMsg('gen','밤사이 기록을 못 읽었어요 — '+_escOb((d&&d.error)||'')); }catch(e){} return; }
+     var 회=(d.회차||[]);
+     var 카드=회.slice(0,12).map(function(r){
+       return _card('🌙 '+String(r.at||'').slice(5,16).replace('T',' '), [
+         _줄('새 리드', (r.신규||0)+'건'), _줄('핫', (r.핫||0)+'건'),
+         _줄('중복 제외', (r.중복||0)+'건'), _줄('걸린 시간', (r.걸린초||0)+'초'),
+         (r.오류?('<div style="font-size:11px;color:#8a6d1a;margin-top:6px">⚠️ '+_escOb(r.오류)+'</div>'):''),
+       ], '#dcd7f0');
+     });
+     _showBox(spec.제목, 회.length?'좌우로 넘겨 보세요':'', 카드);
+     try{ pushMsg('gen', renderMd(d.요약||'')); }catch(e){}
+   }).catch(function(){ _showBox(spec.제목,'',[]); });
+}
+// 💰 매출 카드 — 화면이 이미 받은 숫자만 쓴다
+function _showSales(spec){
+  var sm=window._SALES_STATS;
+  if(!sm){ _showBox(spec.제목, '', []);
+    try{ pushMsg('gen','매출 숫자를 아직 안 받았어요. **"유입 전환 열어"**라고 하시면 불러온 뒤 보여드릴게요.'); }catch(e){} return; }
+  var W=function(n){ return (Number(n)||0).toLocaleString('ko-KR')+'원'; };
+  var 카드=[];
+  if(spec.종류==='sales_today') 카드.push(_card('💰 오늘 결제', [_줄('건수',((sm.오늘&&sm.오늘.건수)||0)+'건'), _줄('금액',W(sm.오늘&&sm.오늘.금액))], '#cfe8e1'));
+  else if(spec.종류==='sales_month') 카드.push(_card('💰 이번 달 결제', [_줄('건수',((sm.이번달&&sm.이번달.건수)||0)+'건'), _줄('금액',W(sm.이번달&&sm.이번달.금액))], '#cfe8e1'));
+  else if(spec.종류==='sales_wait') 카드.push(_card('⏳ 결제 대기', [_줄('신청',(sm.신청||0)+'명'), _줄('아직 결제 전',(sm.미결제||0)+'명'), _줄('결제 완료',(sm.건수||0)+'건')], '#ecdca8'));
+  else if(spec.종류==='sales_tab') 카드=(sm.파일별||[]).filter(function(f){ return f.신청||f.금액||f.오류; })
+      .map(function(f){ return _card('📂 '+_escOb(f.파일||''), [_줄('결제',(f.결제||0)+'건'), _줄('금액',W(f.금액)), _줄('신청',(f.신청||0)+'명'),
+        (f.힌트?('<div style="font-size:10.5px;color:#8a6d1a;margin-top:5px">↳ '+_escOb(f.힌트)+'</div>'):'')], '#e5e9ee'); });
+  else 카드.push(_card('💰 전체 매출', [_줄('결제',(sm.건수||0)+'건'), _줄('금액',W(sm.금액)), _줄('객단가',W(sm.객단가)), _줄('아직 결제 전',(sm.미결제||0)+'명')], '#cfe8e1'));
+  _showBox(spec.제목, 카드.length>1?'좌우로 넘겨 보세요':'', 카드);
+  try{ pushMsg('gen','**'+spec.제목+'**을 띄웠어요. 매출은 결제여부가 Y인 건만 잡습니다.'); }catch(e){}
+}
 // 🔄 새로고침 — 지금 보고 계신 것을 다시 불러온다(데이터 무접촉·되돌릴 수 있음)
 window.genyaRefresh=function(){
   var el=document.getElementById('discPanel');
@@ -4336,6 +4434,7 @@ window.sendMsg=function(){
      if(d && d.action==='run_find'){ try{ genyaRunFind(d.channel||''); }catch(e){} }
      if(d && d.action==='open_tab'){ try{ discoveryPanel(d.tab||'find'); }catch(e){} }
      if(d && d.action==='refresh'){ try{ genyaRefresh(); }catch(e){} }
+     if(d && d.action==='show_cards'){ try{ genyaShowCards(d.spec); }catch(e){} }   // 👀 보여줘 비서
      // ★pending 구분: sheetCRUD 쓰기(action+sig)=승인·반영 UI(완료 표현 금지) / 결재함=모달 알림
      if(d && d.pending){
        if(d.pending.action && d.pending.sig){ renderSheetWriteApprove(d.pending); }
@@ -4412,6 +4511,7 @@ function _voiceExec(q){
       if(d.action==='run_find'){ try{ genyaRunFind(d.channel||''); }catch(e){} }                                 // 🤖 음성으로 "발굴 돌려"
       if(d.action==='open_tab'){ try{ discoveryPanel(d.tab||'find'); }catch(e){} }
       if(d.action==='refresh'){ try{ genyaRefresh(); }catch(e){} }
+      if(d.action==='show_cards'){ try{ genyaShowCards(d.spec); }catch(e){} }              // 👀 음성으로도 보여줘
     }).catch(function(){ try{ pushMsg('gen','결재 처리 중 오류가 났어요. 잠시 후 다시 말씀해 주세요.'); }catch(e){} });
 }
 // ===== 📅 일정관리 비서 — 구글 캘린더 실데이터만(가짜·하드코딩 0). 오늘/이번주/이번달 전환 =====
