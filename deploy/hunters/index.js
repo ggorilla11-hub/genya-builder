@@ -19,6 +19,7 @@ const fs = require('fs');
 const path = require('path');
 const C = require('./_contract');
 const S = require('./_scoring');
+const R = require('./_reviewer');            // 🛡️ 검수AI — 기자와 분리된 심사관
 const leadFilter = require('../lead_filter');
 
 // ── 1) 기자 자동 등록 ──
@@ -117,10 +118,41 @@ async function collect(persona, opts) {
     }
     }
   }
-  // 고객 먼저, 그다음 점수 높은 순
+  // ── 7) ★검수AI 게이트 — 기자가 물어온 것을 "심사한 뒤에만" 발행인께 올린다 ──
+  //    순서 강제: 수집 → 규칙필터 → 근거검증 → 채점 → ★검수AI → 화면
+  //    경쟁자 글에 답글을 달면 민원이 되므로, 공급자 판정은 화면에서 제외한다.
+  let review = { 심사: 0, 통과: 0, 탈락_공급자: 0, 보류_애매: 0, 검수불가: 0 };
+  let passed = leads;
+  if (leads.length) {
+    try {
+      const rv = await R.review(leads);
+      review = rv.stats;
+      // AI별 성적표에도 검수 결과를 남긴다(누가 물어온 게 잘 통과하는지 = 상벌제 근거)
+      leads.forEach((l) => {
+        const st = Object.values(stats).find((s) => s.AI === l.foundBy);
+        if (!st || !l.review) return;
+        if (l.review.verdict === '공급자') st.검수탈락 = (st.검수탈락 || 0) + 1;
+        else if (l.review.verdict === '고객') st.검수통과 = (st.검수통과 || 0) + 1;
+      });
+      passed = R.gate(leads);          // ★공급자 제외
+    } catch (e) {
+      // 검수가 통째로 실패해도 발굴을 0으로 만들지 않는다 — 대신 "검수 안 됨"을 정직하게 남긴다
+      console.log('[🛡️검수AI] 실패: ' + e.message);
+      leads.forEach((l) => { if (!l.review) l.review = { verdict: '검수불가', why: '검수 실패', quote: '', by: '검수AI' }; });
+      review.검수불가 = leads.length;
+    }
+  }
+  // 검수 통과 먼저 → 규칙 판정 → 점수 높은 순
+  const rOrd = { '고객': 0, '애매': 1, '검수불가': 2 };
   const vOrd = { '고객': 0, '애매': 1 };
-  leads.sort((a, b) => ((vOrd[a.verdict] != null ? vOrd[a.verdict] : 9) - (vOrd[b.verdict] != null ? vOrd[b.verdict] : 9)) || (b.score - a.score));
-  return { leads, stats, roster: roster() };
+  passed.sort((a, b) => {
+    const ra = rOrd[(a.review || {}).verdict] != null ? rOrd[(a.review || {}).verdict] : 9;
+    const rb = rOrd[(b.review || {}).verdict] != null ? rOrd[(b.review || {}).verdict] : 9;
+    return (ra - rb)
+      || ((vOrd[a.verdict] != null ? vOrd[a.verdict] : 9) - (vOrd[b.verdict] != null ? vOrd[b.verdict] : 9))
+      || (b.score - a.score);
+  });
+  return { leads: passed, stats, roster: roster(), review };
 }
 
-module.exports = { hunters, roster, collect, verifyReason };
+module.exports = { hunters, roster, collect, verifyReason, reviewer: R };

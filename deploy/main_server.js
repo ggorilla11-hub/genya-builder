@@ -1121,13 +1121,23 @@ async function findYouTubeLeads(key, max) {
 
 // 📰 hunters 뼈대 — 네이버 지식iN 등 새 채널은 여기로 붙는다(유튜브 옛 경로는 그대로 두어 회귀 위험 0)
 const hunterDesk = require('./hunters');
+// 🛡️ 검수AI 두뇌 연결 — hunters 폴더가 API 키를 직접 다루지 않게, 호출 함수만 주입한다.
+//   저비용 모델로 심사한다(정찰·판별은 싼 모델로 충분하고, 건수가 많다).
+hunterDesk.reviewer.init(async (prompt) => {
+  const r = await _anthropic.messages.create({
+    model: process.env.REVIEW_MODEL || 'claude-haiku-4-5-20251001',
+    max_tokens: 1500, temperature: 0,
+    messages: [{ role: 'user', content: prompt }],
+  });
+  return (r.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');
+});
 app.get('/api/find/leads', async (req, res) => {
   if (!sessionOf(req)) return res.status(401).json({ ok: false, error: '로그인이 필요해요' });
   const key = process.env.YOUTUBE_API_KEY;
   try {
     // ── ① 기자단 순회 — ★유튜브 AI 2명 포함(전에는 exclude로 빠져 실제로 안 돌았다) ──
     //    ★홍보대사 정체성: 회원 프로필의 키워드로 검색·초안을 만든다(대표님/교육생 각자).
-    let desk = { leads: [], stats: {}, roster: [] };
+    let desk = { leads: [], stats: {}, roster: [], review: {} };
     try { desk = await hunterDesk.collect({ 키워드: [] }, { max: 30 }); }
     catch (e) { console.log('[🔍발굴] 기자단 오류: ' + e.message); }
     // ── ② 유튜브 옛 경로 = ★기자단이 유튜브에서 한 건도 못 물어왔을 때만 도는 예비 경로 ──
@@ -1148,6 +1158,7 @@ app.get('/api/find/leads', async (req, res) => {
       tier: l.tier, verdict: l.verdict, why: (l.reason && l.reason.why) || '',
       score: l.score, grade: l.grade, foundLabel: l.foundLabel, foundBy: l.foundBy,
       hunter: l.hunter, channel: _lbl[l.hunter] || l.source,   // 화면에서 채널별로 묶을 이름(이모지 포함)
+      review: l.review || null,                                 // 🛡️ 검수AI 판정 + 본문 인용 근거
     }));
     // 채널이 하나도 안 켜졌으면 정직하게 안내(가짜 0건으로 감추지 않는다)
     const anyOn = !!key || (desk.roster || []).some((r) => r.on);
@@ -1159,7 +1170,7 @@ app.get('/api/find/leads', async (req, res) => {
     console.log(`[🔍발굴] 기자단 ${nv.length}건(유튜브 ${ytFromDesk}) · 예비경로 ${yt.length}건 · 홍보자 제외 ${_findSkip}건 · 확인필요 ${_findMaybe}건`);
     res.json({ ok: true, youtube: yt, naver: nv,
       filtered: { 홍보자제외: _findSkip, 확인필요: _findMaybe },
-      desk: { roster: desk.roster, stats: desk.stats } });   // ★통계는 숫자만(개인정보 없음)
+      desk: { roster: desk.roster, stats: desk.stats, review: desk.review || {} } });   // ★통계는 숫자만(개인정보 없음)
   } catch (e) { res.status(502).json({ ok: false, error: e.message }); }
 });
 
