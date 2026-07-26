@@ -64,12 +64,12 @@ function makeNaverHunter(cfg) {
     const max = opts.max || 30;
     for (const kw of keywords(persona, opts.agent, cfg.fallbackKw)) {
       let j;
+      // ★타임아웃 필수 — 네이버가 매달리면 발굴 전체가 멈춘다(2026-07-27 사고)
       try {
-        const r = await fetch(`${API}?query=${encodeURIComponent(kw)}&display=20&sort=date`, {
+        j = await C.fetchJson(`${API}?query=${encodeURIComponent(kw)}&display=20&sort=date`, {
           headers: { 'X-Naver-Client-Id': id, 'X-Naver-Client-Secret': sec },
         });
-        j = await r.json();
-      } catch (e) { continue; }
+      } catch (e) { if (/응답 없음/.test(e.message)) throw e; continue; }
       if (j && j.errorCode) throw new Error(`네이버 API: ${j.errorMessage || j.errorCode}`);
       (j.items || []).forEach((it) => {
         const title = clean(it.title);

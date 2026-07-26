@@ -26,6 +26,38 @@ const FORBIDDEN = [
   '기자 자체 판별 규칙',               // 판별은 lead_filter 한 곳
 ];
 
+// ★2026-07-27 사고: "발굴 중…"에서 영원히 멈춤. 리드도 에러도 안 떴다.
+//   원인 = Node의 fetch는 ★기본 타임아웃이 없다. 상대 서버가 응답을 안 주면 무한 대기한다.
+//   한 채널이 매달리면 발굴 전체가 멈춘다 → 모든 외부 호출은 반드시 이 함수를 쓴다.
+const FETCH_MS = Number(process.env.HUNTER_FETCH_MS) || 7000;
+async function fetchJson(url, opts, ms) {
+  const timeout = ms || FETCH_MS;
+  const o = Object.assign({}, opts || {});
+  let timer = null;
+  if (typeof AbortSignal !== 'undefined' && AbortSignal.timeout) {
+    o.signal = AbortSignal.timeout(timeout);
+  } else {                                   // 구버전 Node 대비
+    const ac = new AbortController(); o.signal = ac.signal;
+    timer = setTimeout(() => ac.abort(), timeout);
+  }
+  // ★2중 안전: AbortSignal은 "fetch가 신호를 지켜줄 때만" 듣는다.
+  //   무시하는 구현을 만나면 그대로 매달리므로, 밖에서도 시계를 하나 더 건다.
+  const LATE = Symbol('late');
+  let guardTimer = null;
+  const guard = new Promise((res) => { guardTimer = setTimeout(() => res(LATE), timeout + 500); });
+  try {
+    const r = await Promise.race([fetch(url, o), guard]);
+    if (r === LATE) throw new Error(`응답 없음(${Math.round(timeout / 1000)}초 초과)`);
+    const j = await Promise.race([r.json(), guard]);
+    if (j === LATE) throw new Error(`응답 없음(${Math.round(timeout / 1000)}초 초과)`);
+    return j;
+  } catch (e) {
+    const nm = String((e && e.name) || '');
+    if (nm === 'TimeoutError' || nm === 'AbortError') throw new Error(`응답 없음(${Math.round(timeout / 1000)}초 초과)`);
+    throw e;
+  } finally { if (timer) clearTimeout(timer); if (guardTimer) clearTimeout(guardTimer); }
+}
+
 /** 리드 1건의 표준 모양. 여기서 벗어나면 편집장이 반려한다. */
 function makeLead(o) {
   return {
@@ -88,4 +120,4 @@ function validateHunter(mod) {
   return { ok: true };
 }
 
-module.exports = { FORBIDDEN, makeLead, makeReason, makeId, validateHunter, autoName, displayName };
+module.exports = { FORBIDDEN, makeLead, makeReason, makeId, validateHunter, autoName, displayName, fetchJson, FETCH_MS };

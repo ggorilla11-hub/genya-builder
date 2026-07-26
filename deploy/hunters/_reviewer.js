@@ -29,6 +29,7 @@ function init(fn) { _ask = fn; }
 function ready() { return typeof _ask === 'function'; }
 
 const BATCH = 12;          // 한 번에 심사할 건수(길어지면 판정이 흐려진다)
+const REVIEW_MS = Number(process.env.REVIEW_MS) || 15000;   // ★심사관이 안 답하면 여기서 끊는다
 const PASS = ['고객'];     // 통과 판정
 
 function _norm(s) { return String(s || '').replace(/\s+/g, '').toLowerCase(); }
@@ -80,11 +81,17 @@ async function review(leads) {
     leads.forEach((l) => { l.review = { verdict: '검수불가', why: '검수AI 미연결', quote: '', by: '검수AI' }; stats.검수불가++; });
     return { leads, stats };
   }
-  for (let i = 0; i < leads.length; i += BATCH) {
-    const chunk = leads.slice(i, i + BATCH);
-    let vs = null;
-    try { vs = parseVerdicts(await _ask(buildPrompt(chunk))); }
-    catch (e) { vs = null; }
+  // ★묶음을 동시에 심사한다 — 순차로 돌리면 리드 40건에 30초가 넘어 화면이 멈춘 것처럼 보인다.
+  //   ★타임아웃 필수: 심사관이 응답을 안 주면 발굴 전체가 매달린다(2026-07-27 사고).
+  const chunks = [];
+  for (let i = 0; i < leads.length; i += BATCH) chunks.push(leads.slice(i, i + BATCH));
+  const answers = await Promise.all(chunks.map((chunk) => {
+    const guard = new Promise((res) => setTimeout(() => res(null), REVIEW_MS));
+    return Promise.race([Promise.resolve(_ask(buildPrompt(chunk))).catch(() => null), guard]);
+  }));
+  for (let ci = 0; ci < chunks.length; ci++) {
+    const chunk = chunks[ci];
+    const vs = parseVerdicts(answers[ci]);
     if (!vs) {
       chunk.forEach((l) => { l.review = { verdict: '검수불가', why: '심사 실패', quote: '', by: '검수AI' }; stats.검수불가++; });
       continue;

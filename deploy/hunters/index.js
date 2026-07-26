@@ -81,19 +81,46 @@ async function collect(persona, opts) {
   const stats = {};   // 기자별 숫자 — ★개인정보 없음
   const leads = [];
   const skip = new Set(opts.exclude || []);   // 이미 다른 경로로 처리한 채널은 건너뛴다(중복 방지)
+
+  // ★2026-07-27 "발굴 중…에서 멈춤" 사고 대응 — 3중 안전장치
+  //   ① 병렬: 11명이 동시에 나간다(순차면 채널 6개 도는 데만 1~2분)
+  //   ② 개별 격리: 한 AI가 느리거나 죽어도 나머지 결과는 그대로 나온다
+  //   ③ 시간 상한: 정해진 시간이 지나면 늦은 AI는 두고 지금까지 모은 걸로 발행한다
+  const AGENT_MS = Number(opts.agentMs) || 20000;   // AI 한 명이 쓸 수 있는 최대 시간
+  const withCap = (p, ms, onLate) => new Promise((resolve) => {
+    let done = false;
+    const t = setTimeout(() => { if (!done) { done = true; onLate(); resolve(null); } }, ms);
+    p.then((v) => { if (!done) { done = true; clearTimeout(t); resolve(v); } })
+     .catch((e) => { if (!done) { done = true; clearTimeout(t); resolve({ __err: e && e.message ? e.message : String(e) }); } });
+  });
+
+  // 순회 대상(기자 × AI)을 먼저 펼친다
+  const jobs = [];
   for (const h of hunters()) {
     if (skip.has(h.key)) continue;
     // ★한 채널에 AI 여러 명. 없으면 기본 1명(자동 이름).
     const agents = (Array.isArray(h.agents) && h.agents.length) ? h.agents : [{ name: C.autoName(h.key) }];
-    for (const agent of agents) {
+    for (const agent of agents) jobs.push({ h, agent });
+  }
+  // ★동시에 내보낸다 — 전체 시간 = 가장 느린 한 명(순차 합계가 아니다)
+  const harvest = await Promise.all(jobs.map(({ h, agent }) => {
     const aiName = `${agent.name}(${h.label})`;
     const st = stats[h.key + '::' + agent.name] = { AI: aiName, 채널: h.label, 담당: (agent.beat || []).join(','), 수집: 0, 홍보자제외: 0, 근거반려: 0, 채택: 0, 확인필요: 0, 에러: '' };
-    let raw = [];
+    let p;
     try {
-      const p = h.probe();
-      if (!p || !p.ok) { st.에러 = p && p.reason ? p.reason : '사용 불가'; continue; }
-      raw = await h.search(persona, { max: opts.max || 30, agent });
-    } catch (e) { st.에러 = e.message; continue; }
+      const pr = h.probe();
+      if (!pr || !pr.ok) { st.에러 = pr && pr.reason ? pr.reason : '사용 불가'; return Promise.resolve({ h, agent, aiName, st, raw: [] }); }
+      p = Promise.resolve(h.search(persona, { max: opts.max || 30, agent }));
+    } catch (e) { st.에러 = e.message; return Promise.resolve({ h, agent, aiName, st, raw: [] }); }
+    return withCap(p, AGENT_MS, () => { st.에러 = `시간 초과(${Math.round(AGENT_MS / 1000)}초) — 다음엔 나올 수 있어요`; })
+      .then((raw) => {
+        if (raw && raw.__err) { st.에러 = raw.__err; raw = []; }
+        return { h, agent, aiName, st, raw: Array.isArray(raw) ? raw : [] };
+      });
+  }));
+
+  // 수확물을 한 곳에서 판별·채점한다(판별을 기자별로 흩뜨리지 않는다)
+  for (const { h, aiName, st, raw } of harvest) {
     st.수집 = raw.length;
     for (const item of raw) {
       const lead = (h.enrich ? h.enrich(item) : item);
@@ -116,43 +143,32 @@ async function collect(persona, opts) {
       st.채택++;
       leads.push(lead);
     }
-    }
   }
-  // ── 7) ★검수AI 게이트 — 기자가 물어온 것을 "심사한 뒤에만" 발행인께 올린다 ──
-  //    순서 강제: 수집 → 규칙필터 → 근거검증 → 채점 → ★검수AI → 화면
-  //    경쟁자 글에 답글을 달면 민원이 되므로, 공급자 판정은 화면에서 제외한다.
-  let review = { 심사: 0, 통과: 0, 탈락_공급자: 0, 보류_애매: 0, 검수불가: 0 };
-  let passed = leads;
-  if (leads.length) {
-    try {
-      const rv = await R.review(leads);
-      review = rv.stats;
-      // AI별 성적표에도 검수 결과를 남긴다(누가 물어온 게 잘 통과하는지 = 상벌제 근거)
-      leads.forEach((l) => {
-        const st = Object.values(stats).find((s) => s.AI === l.foundBy);
-        if (!st || !l.review) return;
-        if (l.review.verdict === '공급자') st.검수탈락 = (st.검수탈락 || 0) + 1;
-        else if (l.review.verdict === '고객') st.검수통과 = (st.검수통과 || 0) + 1;
-      });
-      passed = R.gate(leads);          // ★공급자 제외
-    } catch (e) {
-      // 검수가 통째로 실패해도 발굴을 0으로 만들지 않는다 — 대신 "검수 안 됨"을 정직하게 남긴다
-      console.log('[🛡️검수AI] 실패: ' + e.message);
-      leads.forEach((l) => { if (!l.review) l.review = { verdict: '검수불가', why: '검수 실패', quote: '', by: '검수AI' }; });
-      review.검수불가 = leads.length;
-    }
-  }
-  // 검수 통과 먼저 → 규칙 판정 → 점수 높은 순
-  const rOrd = { '고객': 0, '애매': 1, '검수불가': 2 };
-  const vOrd = { '고객': 0, '애매': 1 };
-  passed.sort((a, b) => {
-    const ra = rOrd[(a.review || {}).verdict] != null ? rOrd[(a.review || {}).verdict] : 9;
-    const rb = rOrd[(b.review || {}).verdict] != null ? rOrd[(b.review || {}).verdict] : 9;
-    return (ra - rb)
-      || ((vOrd[a.verdict] != null ? vOrd[a.verdict] : 9) - (vOrd[b.verdict] != null ? vOrd[b.verdict] : 9))
-      || (b.score - a.score);
+  // ── 6) ★선담기 후검수 (2026-07-27 대표님 결정) ──
+  //    전에는 여기서 검수AI를 다 돌린 뒤에야 화면에 보냈다. 250건이면 몇 분이 걸려 화면이 멈춘 것처럼 보였다.
+  //    이제 발굴은 "담기"까지만 하고 바로 돌려준다. 검수는 화면이 뜬 뒤 백그라운드로 진행한다.
+  //    ★한 건도 버리지 않는다 — 다 담고 다 검수한다(저점도 접어서 보여줄 뿐 지우지 않는다).
+  //    ★담긴 리드는 아직 '미검수'다 → 화면에서 답글 버튼이 잠긴다(경쟁자에게 답글 다는 사고 방지).
+  leads.sort((a, b) => {
+    const vOrd = { '고객': 0, '애매': 1 };
+    return ((vOrd[a.verdict] != null ? vOrd[a.verdict] : 9) - (vOrd[b.verdict] != null ? vOrd[b.verdict] : 9))
+      || ((b.score || 0) - (a.score || 0));
   });
-  return { leads: passed, stats, roster: roster(), review };
+  return { leads, stats, roster: roster(), review: { 담김: leads.length, 검수: '대기' } };
 }
 
-module.exports = { hunters, roster, collect, verifyReason, reviewer: R };
+/**
+ * 🛡️ 사후 검수 — 화면이 담아둔 리드를 조금씩 보내 판정만 받아간다.
+ *   ★서버에 리드를 쌓아두지 않는다(제로 인그레스). 판정하고 그 자리에서 버린다.
+ *   @param items [{i, text}]
+ *   @returns [{i, verdict, why, quote}]
+ */
+async function reviewBatch(items) {
+  const arr = (items || []).filter((x) => x && String(x.text || '').trim()).slice(0, R.BATCH);
+  if (!arr.length) return [];
+  const tmp = arr.map((x) => ({ text: String(x.text).slice(0, 300) }));
+  await R.review(tmp);
+  return arr.map((x, n) => Object.assign({ i: x.i }, tmp[n].review || { verdict: '검수불가', why: '판정 없음', quote: '' }));
+}
+
+module.exports = { hunters, roster, collect, reviewBatch, verifyReason, reviewer: R };

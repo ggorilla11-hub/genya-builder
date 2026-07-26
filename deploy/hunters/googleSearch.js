@@ -48,13 +48,12 @@ async function search(persona, opts) {
   const max = opts.max || 30;
   for (const kw of _keywords(persona, opts.agent)) {
     let j;
+    // ★타임아웃 필수 — 구글이 매달리면 발굴 전체가 멈춘다(2026-07-27 사고)
     try {
       // lr=lang_ko 한국어만 · dateRestrict=m3 최근 3개월 · num=10 (무료 한도 아끼기)
-      const url = `${API}?key=${encodeURIComponent(k)}&cx=${encodeURIComponent(cx)}`
-        + `&q=${encodeURIComponent(kw)}&num=10&lr=lang_ko&dateRestrict=m3`;
-      const r = await fetch(url);
-      j = await r.json();
-    } catch (e) { continue; }
+      j = await C.fetchJson(`${API}?key=${encodeURIComponent(k)}&cx=${encodeURIComponent(cx)}`
+        + `&q=${encodeURIComponent(kw)}&num=10&lr=lang_ko&dateRestrict=m3`);
+    } catch (e) { if (/응답 없음/.test(e.message)) throw e; continue; }
     if (j && j.error) throw new Error(`구글 API: ${(j.error && j.error.message) || 'error'}`);
     (j.items || []).forEach((it) => {
       const title = _clean(it.title);

@@ -50,19 +50,20 @@ async function search(persona, opts) {
   const since = new Date(Date.now() - 90 * 24 * 3600 * 1000).toISOString();
   for (const kw of _keywords(persona, opts.agent)) {
     let s;
+    // ★타임아웃 필수 — 유튜브가 매달리면 발굴 전체가 멈춘다(2026-07-27 사고)
     try {
-      s = await (await fetch('https://www.googleapis.com/youtube/v3/search?part=snippet&type=video'
+      s = await C.fetchJson('https://www.googleapis.com/youtube/v3/search?part=snippet&type=video'
         + '&order=viewCount&maxResults=6&relevanceLanguage=ko&regionCode=KR'
-        + `&publishedAfter=${encodeURIComponent(since)}&q=${encodeURIComponent(kw)}&key=${key}`)).json();
-    } catch (e) { continue; }
+        + `&publishedAfter=${encodeURIComponent(since)}&q=${encodeURIComponent(kw)}&key=${key}`);
+    } catch (e) { if (/응답 없음/.test(e.message)) throw e; continue; }
     if (s.error) throw new Error(s.error.message || 'youtube search 실패');
     for (const it of (s.items || [])) {
       const vid = it.id && it.id.videoId; if (!vid) continue;
       const vCh = (it.snippet && it.snippet.channelId) || '';
       if (vCh === EXCLUDE_CH) continue;   // 내 채널은 ① 전용 기자 담당
       let cs;
-      try { cs = await (await fetch(`https://www.googleapis.com/youtube/v3/commentThreads?part=snippet&maxResults=20&order=relevance&videoId=${vid}&key=${key}`)).json(); }
-      catch (e) { continue; }
+      try { cs = await C.fetchJson(`https://www.googleapis.com/youtube/v3/commentThreads?part=snippet&maxResults=20&order=relevance&videoId=${vid}&key=${key}`); }
+      catch (e) { continue; }   // 댓글이 꺼진 영상은 흔하다 — 건너뛰고 다음 영상으로
       (cs.items || []).forEach((ci) => {
         const sn = ci.snippet && ci.snippet.topLevelComment && ci.snippet.topLevelComment.snippet; if (!sn) return;
         out.push(C.makeLead({

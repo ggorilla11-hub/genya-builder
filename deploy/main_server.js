@@ -1131,15 +1131,35 @@ hunterDesk.reviewer.init(async (prompt) => {
   });
   return (r.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');
 });
+// 🛡️ 사후 검수 — 화면이 담아둔 리드를 조금씩 보내 판정만 받아간다(선담기 후검수).
+//   ★서버 저장 0: 받은 글은 판정하고 그 자리에서 버린다. 개인정보가 서버에 남지 않는다.
+//   ★통과한 것만 화면에서 [답글 초안] 버튼이 열린다 → 경쟁자에게 답글 다는 사고를 원천 차단.
+app.post('/api/find/review', async (req, res) => {
+  if (!sessionOf(req)) return res.status(401).json({ ok: false, error: '로그인이 필요해요' });
+  try {
+    const out = await hunterDesk.reviewBatch((req.body || {}).items || []);
+    res.json({ ok: true, results: out });
+  } catch (e) { res.status(502).json({ ok: false, error: e.message }); }
+});
+
 app.get('/api/find/leads', async (req, res) => {
   if (!sessionOf(req)) return res.status(401).json({ ok: false, error: '로그인이 필요해요' });
   const key = process.env.YOUTUBE_API_KEY;
   try {
     // ── ① 기자단 순회 — ★유튜브 AI 2명 포함(전에는 exclude로 빠져 실제로 안 돌았다) ──
     //    ★홍보대사 정체성: 회원 프로필의 키워드로 검색·초안을 만든다(대표님/교육생 각자).
+    //    ★2026-07-27 "발굴 중…에서 멈춤" 사고 — 마지막 안전망.
+    //    안쪽(기자·검수)에 이미 타임아웃이 있지만, 그래도 응답이 없으면 여기서 끊고 화면에 알린다.
+    //    화면이 영원히 도는 것보다 "오래 걸려 중단했다"고 말하는 게 낫다.
+    const DESK_MS = Number(process.env.FIND_TOTAL_MS) || 45000;
     let desk = { leads: [], stats: {}, roster: [], review: {} };
-    try { desk = await hunterDesk.collect({ 키워드: [] }, { max: 30 }); }
-    catch (e) { console.log('[🔍발굴] 기자단 오류: ' + e.message); }
+    let timedOut = false;
+    try {
+      const bail = new Promise((r) => setTimeout(() => { timedOut = true; r(null); }, DESK_MS));
+      const got = await Promise.race([hunterDesk.collect({ 키워드: [] }, { max: 30 }), bail]);
+      if (got) desk = got;
+      else console.log(`[🔍발굴] 전체 시간 초과(${DESK_MS}ms) — 중단하고 응답`);
+    } catch (e) { console.log('[🔍발굴] 기자단 오류: ' + e.message); desk.오류 = e.message; }
     // ── ② 유튜브 옛 경로 = ★기자단이 유튜브에서 한 건도 못 물어왔을 때만 도는 예비 경로 ──
     //    항상 둘 다 돌리면 유튜브 할당량(하루 10,000)을 두 배로 먹는다 → 예비로만 둔다.
     const ytFromDesk = desk.leads.filter((l) => l.hunter === 'youtube').length;
@@ -1171,6 +1191,7 @@ app.get('/api/find/leads', async (req, res) => {
     console.log(`[🔍발굴] 기자단 ${nv.length}건(유튜브 ${ytFromDesk}) · 예비경로 ${yt.length}건 · 홍보자 제외 ${_findSkip}건 · 확인필요 ${_findMaybe}건`);
     res.json({ ok: true, youtube: yt, naver: nv,
       filtered: { 홍보자제외: _findSkip, 확인필요: _findMaybe },
+      timedOut, error: desk.오류 || '',                       // 왜 비었는지 화면이 설명할 수 있게
       desk: { roster: desk.roster, stats: desk.stats, review: desk.review || {} } });   // ★통계는 숫자만(개인정보 없음)
   } catch (e) { res.status(502).json({ ok: false, error: e.message }); }
 });
