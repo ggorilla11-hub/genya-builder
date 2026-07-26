@@ -1685,7 +1685,9 @@ app.post('/api/find/reply-draft', async (req, res) => {
       + `  ① 인사 — 첫 문장은 반드시 "${greet}."로 시작한다(다른 인사말로 바꾸지 마라)\n`
       + '  ② 공감 — 상대 고민을 그대로 짚어 진심으로 공감(1~2문장)\n'
       + '  ③ 도움 — "무료 재무진단으로 지금 상황을 점검해보시라"고 자연스럽게 권함(1~2문장)\n'
-      + '  ④ 링크 — 링크 자리로 [링크] 토큰을 ★정확히 한 번★ 넣는다\n'
+      + '  ④ 안내처 — 링크 자리로 [링크] 토큰을 ★정확히 한 번★ 넣는다.\n'
+      + '       예: "[링크]으로 편하게 문의해주시면 자세히 안내해드리겠습니다."\n'
+      + '       ★[링크] 말고 다른 주소(URL)를 쓰지 마라. 주소를 지어내지 마라.\n'
       + '  ⑤ 마무리 — 마지막 줄은 "감사합니다."로 끝낸다\n'
       + '전체 5~7문장. 강매·전화번호·과장·이모지 남발 금지.\n'
       + '★자격·경력을 지어내지 마라. 위 인사말에 없는 자격을 덧붙이지 않는다.\n'
@@ -1693,10 +1695,12 @@ app.post('/api/find/reply-draft', async (req, res) => {
     const cr = await _anthropic.messages.create({ model: WS_CHAT_MODEL, max_tokens: 1200, system: sys, messages: [{ role: 'user', content: `[출처: ${source}] 상대 글/댓글:\n"${text}"\n\n이 사람에게 달 답글 초안을 써줘.` }] });
     let draft = (cr.content || []).filter((x) => x.type === 'text').map((x) => x.text).join('').trim();
     // ★끝까지 왔는지 확인하고, 빠진 조각은 여기서 채운다(잘린 채로 내보내지 않는다)
-    const link = String(b.link || '').trim();
-    if (draft.indexOf('[링크]') < 0) draft += (draft.endsWith('.') || draft.endsWith('요') ? '\n\n' : '\n\n') + '아래에서 무료로 점검해보실 수 있어요.\n[링크]';
+    const link = String(b.link || '').trim() || 'https://ohwant.net';
+    // ★옛 진단페이지 주소가 섞여 나오면 홈페이지로 정리(2026-07-27 대표님 지시: CTA는 홈페이지 하나)
+    draft = draft.replace(/https?:\/\/ohwant-class\.netlify\.app\/\S*/g, '[링크]');
+    if (draft.indexOf('[링크]') < 0) draft += '\n\n[링크]으로 편하게 문의해주시면 자세히 안내해드리겠습니다.';
     if (!/감사합니다/.test(draft.slice(-40))) draft += '\n\n감사합니다.';
-    if (link) draft = draft.replace('[링크]', link);   // 화면이 준 진단 링크로 바로 치환
+    draft = draft.split('[링크]').join(link);          // ★남은 토큰을 전부 홈페이지 주소로
     res.json({ ok: true, draft, truncated: cr.stop_reason === 'max_tokens' });
   } catch (e) { res.json({ ok: false, error: e.message }); }
 });

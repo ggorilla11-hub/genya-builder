@@ -1779,12 +1779,12 @@ function _findDiagFor(l){
   var d=_PROSPECT_PAGES.filter(function(x){return x.key==='health';})[0]||_PROSPECT_PAGES[0];
   return {page:d, why:'기본(가장 넓게 통하는 진단)'};
 }
-function _findDraftLink(i){
-  var no=String((i==null?0:i)+1).padStart(3,'0');
-  var l=(window._FIND||[])[i];
-  var url=(l?_findDiagFor(l).page.url:_findDiagBase());     // ★리드 성격에 맞춘 진단 링크
-  return url+(url.indexOf('?')>=0?'&':'?')+'from='+encodeURIComponent(_tagId()+'_'+no);
-}
+// ★2026-07-27 대표님 지시: 답글 CTA는 ★홈페이지(ohwant.net) 하나로.
+//   전에는 "…개인상담진단페이지.html?from=대표_001" 같은 긴 주소가 붙어 사족이었다.
+//   이제 짧고 기억하기 쉬운 홈페이지 주소만 넣는다(꼬리표 없이 깔끔하게).
+//   ※ [진단페이지 배포] 탭의 11개 링크는 그대로다 — 거기선 ?agent= 꼬리표가 계속 붙는다.
+var GENYA_HOME='https://ohwant.net';
+function _findDraftLink(i){ return GENYA_HOME; }
 // ═══ ✍️ 답글 초안 보존 (2026-07-27 "0.1초 만에 사라짐" 사고) ═══
 //   검수가 뒤에서 돌며 목록을 다시 그리는데, 그때 열어둔 답글이 통째로 날아갔다.
 //   ★리드 번호(i)는 공급자가 빠지면서 바뀌므로 절대 열쇠로 쓰면 안 된다 → 리드 고유 열쇠로 보관한다.
@@ -1865,13 +1865,9 @@ function _draftsRestore(){
   });
 }
 function _draftHTML(i,l,txt,diagKey){
-  var pick=_findDiagFor(l);
-  var selKey=diagKey||pick.page.key;
   return '<div style="margin-top:8px;background:#f5f9f8;border:1px solid var(--teal-bd);border-radius:8px;padding:9px 10px">'
     +'<div style="font-size:11px;color:var(--teal-d);font-weight:700;margin-bottom:5px">✍️ 지니야 답글 초안 (수정 가능 · 게시는 직접)</div>'
-    +'<div style="font-size:10.5px;color:#0f766e;background:#eef7f4;border:1px solid #cfe8e1;border-radius:6px;padding:5px 8px;margin-bottom:6px">🎣 미끼 <span style="color:#8a93a3">('+_escOb(pick.why)+')</span> '
-      +'<select id="diagSel-'+i+'" onchange="_findDiagSwap('+i+')" style="font-family:inherit;font-size:10.5px;border:1px solid #cfe8e1;border-radius:5px;padding:2px 4px;max-width:200px">'
-      +_PROSPECT_PAGES.map(function(p){ return '<option value="'+_escOb(p.key)+'"'+(p.key===selKey?' selected':'')+'>'+_escOb(p.name)+'</option>'; }).join('')+'</select></div>'
+    // ★진단페이지 미끼 선택기 제거(2026-07-27) — CTA는 홈페이지 ohwant.net 하나로 통일
     +'<textarea id="draftTa-'+i+'" oninput="_draftsSave()" style="width:100%;min-height:80px;font-size:12.5px;font-family:inherit;line-height:1.6;color:#0d1b2a;background:#fff;border:1px solid #dbe2ea;border-radius:6px;padding:8px;box-sizing:border-box;resize:vertical">'+_escOb(txt)+'</textarea>'
     +'<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">'
       +'<button id="draftCopy-'+i+'" onclick="findDraftCopy('+i+')" style="padding:6px 12px;border:none;background:var(--teal);color:#fff;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">📋 답글 복사</button>'
@@ -1896,9 +1892,11 @@ function findDraft(i){
     body:JSON.stringify({text:l.text,author:l.name,source:l.source,name:_myName(),cert:_myCert(),link:_findDraftLink(i)})})
    .then(function(r){return r.json();}).then(function(d){
      if(!d||!d.ok||!d.draft){ box.innerHTML='<div style="margin-top:8px;font-size:12px;color:#c0392b">초안 생성 실패 — <span onclick="findDraft('+i+')" style="text-decoration:underline;cursor:pointer">다시</span></div>'; return; }
-     var txt=String(d.draft).replace('[링크]', _findDraftLink(i));
+     // ★혹시 [링크] 토큰이 남아 있으면 홈페이지로. 옛 진단페이지 주소가 섞여 와도 홈페이지로 정리.
+     var txt=String(d.draft).replace(/\[링크\]/g, GENYA_HOME)
+       .replace(/https?:\/\/ohwant-class\.netlify\.app\/\S*/g, GENYA_HOME);
      // ★보관부터 한다 — 검수가 뒤에서 화면을 다시 그려도 이 초안이 되살아난다
-     var k=_draftKey(l); if(k) window._DRAFTS[k]={text:txt, diagKey:_findDiagFor(l).page.key};
+     var k=_draftKey(l); if(k) window._DRAFTS[k]={text:txt};
      box.innerHTML=_draftHTML(i,l,txt,null);
    })
    .catch(function(){ box.innerHTML='<div style="margin-top:8px;font-size:12px;color:#c0392b">초안 생성 실패 — <span onclick="findDraft('+i+')" style="text-decoration:underline;cursor:pointer">다시</span></div>'; });
@@ -1915,18 +1913,17 @@ function findDraftCopy(i){
   var ng=function(){ if(el){ el.select(); try{ document.execCommand('copy'); ok(); return; }catch(e){} } toast('복사 실패 — 글을 길게 눌러 직접 복사하세요'); };
   try{ if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(ok,ng); else ng(); }catch(e){ ng(); }
 }
-// 미끼(진단페이지)를 바꾸면 초안 안의 링크만 갈아 끼운다 — 대표가 쓴 문장은 건드리지 않는다
+// ★2026-07-27 폐기: 미끼(진단페이지) 바꾸기 — CTA를 홈페이지 하나로 통일해 더 이상 쓰지 않는다.
+//   옛 화면이 남아 이 함수를 부르더라도 아무 일도 일어나지 않게 둔다(에러 대신 무반응).
 function _findDiagSwap(i){
   var sel=document.getElementById('diagSel-'+i), ta=document.getElementById('draftTa-'+i); if(!sel||!ta)return;
   var p=_PROSPECT_PAGES.filter(function(x){return x.key===sel.value;})[0]; if(!p)return;
-  var no=String((i==null?0:i)+1).padStart(3,'0');
-  var neu=p.url+(p.url.indexOf('?')>=0?'&':'?')+'from='+encodeURIComponent(_tagId()+'_'+no);
+  var neu=p.url;
   var old=_PROSPECT_PAGES.map(function(x){return x.url;}).filter(function(u){ return ta.value.indexOf(u)>=0; })[0];
   if(old){ ta.value=ta.value.replace(new RegExp(old.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\S*'), neu); }
   else { ta.value=ta.value+'\n'+neu; }
-  // 바꾼 내용도 보관 — 검수가 화면을 다시 그려도 그대로 살아난다
   var l=(window._FIND||[])[i], k=l&&_draftKey(l);
-  if(k) window._DRAFTS[k]={text:ta.value, diagKey:p.key};
+  if(k) window._DRAFTS[k]={text:ta.value};
   toast('미끼를 '+p.name+'(으)로 바꿨어요');
 }
 function prospectRunFind(){
