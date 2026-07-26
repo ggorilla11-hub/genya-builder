@@ -1469,7 +1469,7 @@ function _findCard(i, l){
     // 좌: 출처 · 우: ✅검수통과 뱃지 + 등급 + ★발굴 날짜·시각
     +'<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">'
       +'<div style="font-size:13px;font-weight:700;color:#0d1b2a;min-width:0">'+l.icon+' '+_escOb(l.name||'(출처)')+'</div>'
-      +'<div style="text-align:right;white-space:nowrap;flex:0 0 auto">'+_doneBadge(l)+_findPassBadge(l.review)+_findTier(l.tier)
+      +'<div style="text-align:right;white-space:nowrap;flex:0 0 auto"><span id="doneBadge-'+i+'">'+_doneBadge(l)+'</span>'+_findPassBadge(l.review)+_findTier(l.tier)
         +(l.foundAt?('<div style="font-size:10px;color:#8a93a3;margin-top:3px">'+_escOb(_findWhen(l.foundAt))+'</div>'):'')
       +'</div></div>'
     // ★고객인지 확실치 않으면 답글 전에 사람이 보라고 표시(홍보자에게 잘못 답글 다는 사고 방지)
@@ -1660,8 +1660,9 @@ function _findChSection(title, items, d){
   var hot=good.filter(function(x){ return /핫|🔥/.test(String(x.l.tier||'')); });
   var warm=good.filter(function(x){ return !/핫|🔥/.test(String(x.l.tier||'')); });
   // ★이미 처리한 건(복사·방문)은 아래로 내린다 — 아직 안 한 것부터 눈에 들어오게
+  //   단 답글을 열어둔 동안엔 순서를 바꾸지 않는다(보던 카드가 밀려나면 사라진 것처럼 보인다)
   var ord=hot.concat(warm);
-  ord = ord.filter(function(x){ return !_doneOf(x.l); }).concat(ord.filter(function(x){ return !!_doneOf(x.l); }));
+  if(!_anyDraftOpen()) ord = ord.filter(function(x){ return !_doneOf(x.l); }).concat(ord.filter(function(x){ return !!_doneOf(x.l); }));
   var body=ord.map(function(x){ return _findCard(x.gi, x.l); }).join('');
   if(!good.length) body='<div style="font-size:12px;color:#8a93a3;padding:4px 0 10px">좋은 리드는 아직 없어요.</div>';
   var id='rest-'+title.replace(/[^A-Za-z0-9가-힣]/g,'');
@@ -1799,13 +1800,34 @@ function _myCert(){
     return String(c||'').trim().slice(0,20);
   }catch(e){ return ''; }
 }
+// ★답글에 쓸 ★실제 이름 — 닉네임이 '대표'·'회장님' 같은 호칭이면 이름이 아니다.
+//   2026-07-27: "안녕하세요, 대표 CFP입니다"로 나가던 문제.
+var _TITLE_ONLY=/^(대표|대표님|회장|회장님|사장|사장님|팀장|본부장|이사|소장|원장|관리자|admin|나|저)$/i;
+function _myName(){
+  try{
+    var cands=[ (window._ME&&(window._ME.realName||window._ME.name||window._ME.이름)) || '',
+                localStorage.getItem('genya_realname')||'',
+                String(CUR_NICK||'') ];
+    for(var i=0;i<cands.length;i++){
+      var n=String(cands[i]||'').replace(/님$/,'').trim();
+      if(n && !_TITLE_ONLY.test(n) && /^[가-힣]{2,4}$/.test(n)) return n;
+    }
+    // 대표님 계정은 프로필이 비어 있어도 실명으로(본인 계정 기본값)
+    if(String((window._ME&&window._ME.email)||'').toLowerCase()==='ggorilla11@gmail.com') return '오상열';
+    return '';   // ★모르면 지어내지 않는다 — 그냥 "안녕하세요"로 나간다
+  }catch(e){ return ''; }
+}
 // ═══ ✓ 액션 완료 표시 (이중 작업 방지 · 2026-07-27 대표님 의견) ═══
 //   251건 중 이미 답글 복사했거나 방문한 걸 또 하는 일이 없게.
 //   ★브라우저에만 기억한다(서버 저장 0). 담는 건 리드 열쇠와 "복사함/방문함" 두 글자뿐 — 개인정보 0.
 var _DONE_KEY='genya_lead_done';
 function _doneMap(){ try{ return JSON.parse(localStorage.getItem(_DONE_KEY)||'{}'); }catch(e){ return {}; } }
 function _doneOf(l){ var k=_draftKey(l); return (k&&_doneMap()[k])||null; }
-function _markDone(l, what){
+// ★2026-07-27 치명 사고: 복사를 누르면 작업 메뉴가 통째로 사라졌다.
+//   원인 = 여기서 화면을 ★다시 그렸다. 그 바람에 답글·바로가기 버튼이 날아가
+//   "복사 → 바로가기 → 방문 체크" 흐름이 끊겼다.
+//   → ★화면을 다시 그리지 않는다. 그 카드의 뱃지만 그 자리에서 바꿔 넣는다.
+function _markDone(l, what, i){
   try{
     var k=_draftKey(l); if(!k) return;
     var m=_doneMap(); var cur=m[k]||{};
@@ -1816,7 +1838,13 @@ function _markDone(l, what){
     if(ks.length>800){ ks.sort(function(a,b){ return (m[a].t||0)-(m[b].t||0); }).slice(0,200).forEach(function(x){ delete m[x]; }); }
     localStorage.setItem(_DONE_KEY, JSON.stringify(m));
   }catch(e){}
-  if(typeof window._RENDER_FIND==='function'){ _draftsSave(); window._RENDER_FIND(); _draftsRestore(); }
+  // 뱃지만 제자리 교체 — 답글·바로가기는 그대로 남는다
+  try{ var el=document.getElementById('doneBadge-'+i); if(el) el.innerHTML=_doneBadge(l); }catch(e){}
+}
+// ★열어둔 답글이 있으면 뒤에서 도는 검수가 목록 순서를 바꾸지 않게 한다
+//   (순서가 바뀌면 보던 카드가 저 아래로 밀려 "사라진 것처럼" 보인다)
+function _anyDraftOpen(){
+  try{ return (window._FIND||[]).some(function(l,i){ return !!document.getElementById('draftTa-'+i); }); }catch(e){ return false; }
 }
 function _doneBadge(l){
   var d=_doneOf(l); if(!d) return '';
@@ -1853,7 +1881,7 @@ function _draftHTML(i,l,txt,diagKey){
     +'<div style="font-size:10.5px;color:#c0392b;margin-top:6px">복사 → 바로가기 → 붙여넣기 → <b>직접 게시</b>. 지니야는 자동 게시 안 함(계정 안전).</div></div>';
 }
 // ★[바로가기]를 누르면 "✓ 방문함"으로 남긴다. 링크는 그대로 열린다(막지 않는다).
-function findVisited(i){ var l=(window._FIND||[])[i]; if(l) setTimeout(function(){ _markDone(l,'visit'); }, 400); }
+function findVisited(i){ var l=(window._FIND||[])[i]; if(l) _markDone(l,'visit',i); }
 function findDraftClose(i){
   var l=(window._FIND||[])[i]; var k=l&&_draftKey(l);
   if(k) delete window._DRAFTS[k];
@@ -1865,7 +1893,7 @@ function findDraft(i){
   box.innerHTML='<div style="margin-top:8px;font-size:12px;color:var(--teal-d)">✍️ 지니야가 답글 초안 작성 중…</div>';
   // ★이름·자격을 함께 보낸다 — "안녕하세요, 오상열 CFP입니다"로 시작하게(익명 영업 아닌 전문가 신뢰)
   fetch('/api/find/reply-draft',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({text:l.text,author:l.name,source:l.source,name:_agentName(),cert:_myCert()})})
+    body:JSON.stringify({text:l.text,author:l.name,source:l.source,name:_myName(),cert:_myCert(),link:_findDraftLink(i)})})
    .then(function(r){return r.json();}).then(function(d){
      if(!d||!d.ok||!d.draft){ box.innerHTML='<div style="margin-top:8px;font-size:12px;color:#c0392b">초안 생성 실패 — <span onclick="findDraft('+i+')" style="text-decoration:underline;cursor:pointer">다시</span></div>'; return; }
      var txt=String(d.draft).replace('[링크]', _findDraftLink(i));
@@ -1881,8 +1909,8 @@ function findDraftCopy(i){
   var ok=function(){
     toast('답글 복사됨 — [바로가기]로 가서 붙여넣고 직접 게시하세요');
     if(btn){ btn.textContent='복사됨 ✅'; btn.style.background='#0f766e'; }
-    // ★"✓ 답글 복사함"으로 남긴다 — 251건 중 이미 한 걸 또 하지 않게(브라우저에만 기록)
-    var l=(window._FIND||[])[i]; if(l) setTimeout(function(){ _markDone(l,'copy'); }, 900);
+    // ★"✓ 답글 복사함"으로 남긴다 — 화면은 그대로 두고 뱃지만 바꾼다(메뉴가 안 사라진다)
+    var l=(window._FIND||[])[i]; if(l) _markDone(l,'copy',i);
   };
   var ng=function(){ if(el){ el.select(); try{ document.execCommand('copy'); ok(); return; }catch(e){} } toast('복사 실패 — 글을 길게 눌러 직접 복사하세요'); };
   try{ if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(ok,ng); else ng(); }catch(e){ ng(); }

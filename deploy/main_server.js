@@ -1678,16 +1678,26 @@ app.post('/api/find/reply-draft', async (req, res) => {
     const who = String(b.name || '').replace(/님$/, '').trim();
     const cert = String(b.cert || '').trim();
     const greet = who ? `안녕하세요, ${who}${cert ? ' ' + cert : ''}입니다` : '안녕하세요';
+    // ★2026-07-27: 답글이 "…무료 재무진단을" 하고 끊겼다(max_tokens 350이 모자랐다).
+    //   반드시 5조각이 다 있어야 한다: 인사 → 공감 → 진단 안내 → [링크] → 감사합니다.
     const sys = '너는 재무설계사를 돕는 어시스턴트다. 유튜브 댓글/카페 글에 달 "답글 초안"을 쓴다. 톤: 친절하고 전문적.\n'
-      + `규칙: ① ★첫 문장은 반드시 "${greet}."로 시작한다(다른 인사말로 바꾸지 마라)\n`
-      + '② 그다음 2~3문장 짧게 ③ 상대 고민에 진심으로 공감\n'
-      + '④ "무료 재무진단으로 지금 상황을 점검해보시라"고 자연스럽게 권함\n'
-      + '⑤ 마지막에 링크 자리로 [링크] 토큰 하나만 넣기 ⑥ 강매·전화번호·과장·이모지 남발 금지\n'
-      + '⑦ ★자격·경력을 지어내지 마라. 위 인사말에 없는 자격을 덧붙이지 않는다.\n'
+      + '★반드시 아래 5조각을 ★모두★ 갖춘 완결된 글을 쓴다. 중간에 끊기면 안 된다.\n'
+      + `  ① 인사 — 첫 문장은 반드시 "${greet}."로 시작한다(다른 인사말로 바꾸지 마라)\n`
+      + '  ② 공감 — 상대 고민을 그대로 짚어 진심으로 공감(1~2문장)\n'
+      + '  ③ 도움 — "무료 재무진단으로 지금 상황을 점검해보시라"고 자연스럽게 권함(1~2문장)\n'
+      + '  ④ 링크 — 링크 자리로 [링크] 토큰을 ★정확히 한 번★ 넣는다\n'
+      + '  ⑤ 마무리 — 마지막 줄은 "감사합니다."로 끝낸다\n'
+      + '전체 5~7문장. 강매·전화번호·과장·이모지 남발 금지.\n'
+      + '★자격·경력을 지어내지 마라. 위 인사말에 없는 자격을 덧붙이지 않는다.\n'
       + '답글 본문만 출력(설명 없이).';
-    const cr = await _anthropic.messages.create({ model: WS_CHAT_MODEL, max_tokens: 350, system: sys, messages: [{ role: 'user', content: `[출처: ${source}] 상대 글/댓글:\n"${text}"\n\n이 사람에게 달 답글 초안을 써줘.` }] });
-    const draft = (cr.content || []).filter((x) => x.type === 'text').map((x) => x.text).join('').trim();
-    res.json({ ok: true, draft });
+    const cr = await _anthropic.messages.create({ model: WS_CHAT_MODEL, max_tokens: 1200, system: sys, messages: [{ role: 'user', content: `[출처: ${source}] 상대 글/댓글:\n"${text}"\n\n이 사람에게 달 답글 초안을 써줘.` }] });
+    let draft = (cr.content || []).filter((x) => x.type === 'text').map((x) => x.text).join('').trim();
+    // ★끝까지 왔는지 확인하고, 빠진 조각은 여기서 채운다(잘린 채로 내보내지 않는다)
+    const link = String(b.link || '').trim();
+    if (draft.indexOf('[링크]') < 0) draft += (draft.endsWith('.') || draft.endsWith('요') ? '\n\n' : '\n\n') + '아래에서 무료로 점검해보실 수 있어요.\n[링크]';
+    if (!/감사합니다/.test(draft.slice(-40))) draft += '\n\n감사합니다.';
+    if (link) draft = draft.replace('[링크]', link);   // 화면이 준 진단 링크로 바로 치환
+    res.json({ ok: true, draft, truncated: cr.stop_reason === 'max_tokens' });
   } catch (e) { res.json({ ok: false, error: e.message }); }
 });
 
