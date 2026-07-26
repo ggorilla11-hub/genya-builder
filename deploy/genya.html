@@ -3821,18 +3821,10 @@ function _histForSend(){
     if(/knowledge|case|precedent|판례|지식|법/.test(t)) return knowledgeCard;
     return null;
   }
-  window.renderHoloCards=function(cards){
-    var s=document.getElementById('chatScroll'); if(!s) return;
-    (cards||[]).forEach(function(c,i){
-      var fn=pickRenderer(c&&c.type); if(!fn){ try{ console.warn('[홀로그램] 알 수 없는 카드 type:', c&&c.type); }catch(e){} return; }
-      var wrap=document.createElement('div'); wrap.className='msg gen';
-      wrap.innerHTML='<div class="av"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3l7 4v6c0 4-3 6.5-7 8-4-1.5-7-4-7-8V7l7-4z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><circle cx="12" cy="11" r="2.2" fill="currentColor"/></svg></div>';
-      var holder=document.createElement('div'); holder.style.cssText='flex:1;min-width:0'; holder.innerHTML=fn(c.data||{});
-      wrap.appendChild(holder); s.appendChild(wrap); s.scrollTop=s.scrollHeight;
-      var card=holder.querySelector('.holo-card');
-      setTimeout(function(){ if(card){ card.classList.add('in'); if(card.getAttribute('data-chart')) drawChart(card); } }, 80+i*300);
-    });
-  };
+  // ★2026-07-27 폐기: 홀로그램 카드는 LLM이 값을 지어내 만든 것이라 화면에 에러로 튀어나왔다.
+  //   고객카드는 openCustomerCard / openCustomerCards 가 ★실제 명단에서만 띄운다.
+  //   옛 호출이 어디 남아 있어도 아무 일도 일어나지 않게 빈 함수로 둔다(에러 대신 무반응).
+  window.renderHoloCards=function(){};
 })();
 window.sendMsg=function(){
   var inp=document.getElementById('chatInput'); var v=(inp.value||'').trim(); if(!v)return;
@@ -3852,21 +3844,19 @@ window.sendMsg=function(){
    .then(function(r){return r.json();}).then(function(d){ w.remove();
      if(d&&d.needsConnect){ pushMsg('gen',(d.text||'구글 데이터 연결이 필요해요')+' <a href="#" onclick="connectGoogle();return false;" style="color:var(--teal-d);font-weight:700">연결하기 →</a>'); return; }
      var reply=(d&&(d.text||d.answer))||(d&&d.error)||'(응답 없음)';
-     // ★E-4 응답 JSON 파싱: cards는 (1)서버 분리 필드 d.cards 또는 (2)지니야 응답이 { text, cards } JSON 문자열
-     var cards=(d&&d.cards&&Array.isArray(d.cards))?d.cards:null;
-     if(!cards && typeof reply==='string'){
-       var _t=reply.trim();
-       if(_t.charAt(0)==='{' || _t.indexOf('```')===0){
-         try{ var _p=JSON.parse(_t.replace(/^```(json)?/i,'').replace(/```$/,'').trim()); if(_p && Array.isArray(_p.cards)){ cards=_p.cards; reply=_p.text||''; } }catch(e){}
-       }
+     // ★2026-07-27 홀로그램 폐기: LLM이 만들던 {text,cards} 카드는 값을 지어내고 에러로 튀어나왔다.
+     //   고객카드는 아래 open_card/open_cards로 ★실제 명단에서만 띄운다.
+     //   혹시 옛 습관으로 JSON이 오더라도 화면에 그대로 뿌리지 말고 사람이 읽는 글만 남긴다.
+     if(typeof reply==='string' && reply.indexOf('"cards"')>=0){
+       var _t=reply.trim().replace(/^```(json)?/i,'').replace(/```$/,'').trim();
+       if(_t.charAt(0)==='{'){ try{ var _p=JSON.parse(_t); if(_p&&Array.isArray(_p.cards)) reply=String(_p.text||''); }catch(e){} }
      }
      _HIST.push({role:'user',content:v}); _HIST.push({role:'assistant',content:reply}); _persistHist();
      if(reply) pushMsg('gen', renderMd(reply));
-     // ★E-4 프론트 도킹: cards[] → v4 JARVIS 홀로그램 렌더
-     if(cards && cards.length && window.renderHoloCards){ window.renderHoloCards(cards); }
      // ★고객카드 띄우기 명령 신호(자비스): 명단·연결 드로어 열고 해당 고객 카드(ghRowDetail) 자동 표시
      if(d && d.action==='open_card' && d.customer){ try{ openCustomerCard(d.customer); }catch(e){} }
      if(d && d.action==='open_cards' && d.customers){ try{ openCustomerCards(d.customers, d.label); }catch(e){} }   // 📇 묶음 카드(상담 대기·만기 등)
+     if(d && d.action==='close_card'){ try{ closeCustomerCards(d.customer); }catch(e){} }                            // 📇 카드 닫기(화면만·데이터 무접촉)
      _rememberMentioned(d);                                                                                          // ★브리핑이 말한 이름을 기억 → "방금 말한 4명 카드"
      // ⭐ 말로 이벤트 만들기: 서버가 실제로 만든 경우에만 이 신호가 온다 → 대시보드를 열어 새 타일을 "짠" 하고 보여준다.
      if(d && d.action==='create_event' && d.eventName){ try{ _eventCreated(d.eventName, d.eventCount); }catch(e){} }
@@ -3941,6 +3931,7 @@ function _voiceExec(q){
       if(d.pending){ try{ pushMsg('gen', _apOpenBtnHtml()); }catch(e){} try{ if(document.getElementById('apList')) apRender(); }catch(e){} } // 실제 등록됨(서버 pending) → 열기 버튼 + 열려있는 결재함 즉시 갱신
       if(d.action==='open_card'&&d.customer){ try{ openCustomerCard(d.customer); }catch(e){} }
       if(d.action==='open_cards'&&d.customers){ try{ openCustomerCards(d.customers, d.label); }catch(e){} }
+      if(d.action==='close_card'){ try{ closeCustomerCards(d.customer); }catch(e){} }
       _rememberMentioned(d);
       if(d.action==='create_event'&&d.eventName){ try{ _eventCreated(d.eventName, d.eventCount); }catch(e){} }  // ⭐ 음성으로 만든 이벤트도 화면에 즉시
       if(d.action==='skill_gen'){ try{ skillGen(d.docType||'pdf'); }catch(e){} }                                 // 📄 음성으로도 문서 생성
@@ -4064,6 +4055,19 @@ function openCustomerCard(name){
 //   ★2026-07-27: 브리핑은 "상담 대기 4명"이라 묶는데 카드는 '상담'이란 이름을 찾다 실패했다.
 //   이제 서버가 브리핑과 같은 기준으로 그 사람들을 찾아 이름을 보내주고, 여기서 한 장씩 넘겨 본다.
 window._CARDS=[]; window._CARDI=0;
+// 📇 카드 닫기 — ★화면에서만 없앤다. 명단 데이터는 손대지 않는다.
+//   이름을 함께 말했으면 그 카드만(여러 장 중 그것만 빼고 나머지는 계속 본다).
+window.closeCustomerCards=function(name){
+  if(name && (window._CARDS||[]).length>1){
+    var left=window._CARDS.filter(function(n){ return n!==name; });
+    if(left.length!==window._CARDS.length){
+      window._CARDS=left; window._CARDI=Math.min(window._CARDI, left.length-1);
+      if(left.length){ _cardsShow(); return; }
+    }
+  }
+  window._CARDS=[]; window._CARDI=0;
+  try{ jarvisCardClose(); }catch(e){}
+};
 window.openCustomerCards=function(names, label){
   names=(names||[]).filter(Boolean);
   if(!names.length) return;

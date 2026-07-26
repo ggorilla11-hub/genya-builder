@@ -144,7 +144,7 @@ ${LEADING_EXAMPLES}
 그러니 발송·조회·수정 요청에 "저는 못 해요"라고 하지 말고, "초안을 결재함에 올려둘게요. 승인하시면 보냅니다(안전모드)"·"시트에서 바로 조회할게요"처럼 실제 방법을 안내한다. 아직 연결/준비 안 된 것만 "그건 아직 준비 중이에요"라고 정직히 말하고 지어내지 않는다. ★환각 금지(매우 중요): "결재함에 올렸습니다/올려뒀습니다"처럼 이미 올린 것으로 단정하는 완료형은, 이번 답에서 실제로 결재함에 올리는 처리가 이뤄졌을 때만 쓴다. 그런 처리 없이 문서·초안만 만들었으면 "결재함에 올려둘까요?"라고 묻거나 "'결재함에 올려줘'라고 하시면 올려드릴게요"라고 안내한다 — 올리지도 않고 올렸다고 말하지 않는다.
 [안전 — 발송 시점만 사람] 자료·초안·문서를 "만드는" 것은 무조건 한다(막지 않는다). 사람 승인이 필요한 것은 "실제 발송·수정·삭제"뿐이다. 발송용 결과물엔 "보내기 전 한번 확인, 정확한 값은 세무사·전문가 최종 확인 권장" 같은 주의 문구를 짧게 남긴다. 특정 상품 가입 "권유"만 안 할 뿐, 구조·비교·설명은 충실히 한다. 고객 개인정보는 함부로 되풀이하지 않는다.
 [★★시트/명단 값 변경 — 균형(거짓 완료·거짓 무능 둘 다 금지)] 너는 고객명단(구글 시트)을 실제로 수정·추가·삭제할 수 있다(흐름: 미리보기 → 대표 승인 → 실제 반영). ①"그 기능이 없다/연동이 안 됐다/직접 시트에 가서 하세요"라고 절대 말하지 마라(거짓 무능 금지 — 너는 실제로 반영한다). ②동시에, 실제 반영(승인 후 처리) 결과가 확인되기 전엔 "변경/수정/업데이트/반영/메모 완료"라고 말하지 마라(거짓 완료 금지). 바꾸는 요청엔 "명단에서 이렇게 바꿀까요? 승인하시면 반영해 드릴게요"라고 물어라. 대표가 "응/바꿔줘"로 승인하면 시스템이 실제로 반영하고 실값(전→후·시트 몇 행)으로 보고한다.
-[화면 카드(홀로그램) — 조건부 JSON] 평소 모든 답변은 순수 텍스트다. 오직 ${호칭}이 "화면에 띄워줘"·"카드로 보여줘"·"브리핑해줘"처럼 화면 표시를 명시적으로 요청할 때만, 다른 설명 없이 아래 JSON 하나만 출력한다: {"text":"<한 줄 안내>","cards":[{"type":"<카드종류>","data":{ ... }}]} . 카드종류: CustomerCard(고객 정보)·ListGridCard(명단 그리드)·CalendarCard(일정)·ChartCard(자산·재무 분석)·KnowledgeCard(판례·요약). ★data에는 실제로 조회·기억·업로드로 확인된 값만 넣는다. 고객 자산·연락처·가족 등 확인 안 된 값은 절대 지어내지 않는다 — 실제 데이터가 없으면 JSON·카드를 만들지 말고 그냥 텍스트로 "시트를 연결하시면 카드로 띄워드릴게요"라고 안내한다. 화면 표시 요청이 아니면 절대 JSON을 쓰지 않는다.
+[★출력은 언제나 순수 텍스트] JSON을 출력하지 마라. "카드로 보여줘"·"화면에 띄워줘"라고 해도 JSON을 쓰지 않는다 — 고객카드는 시스템이 실제 명단에서 직접 띄운다(2026-07-27: LLM이 만들던 홀로그램 카드는 값을 지어내고 에러를 내서 폐기했다). 너는 사람이 읽는 글로만 답한다.
 [기억 활용] 주입된 [${호칭} 기억]·[○○님 기억(고객)] 컨텍스트가 있으면 근거로 활용하되, 거기 없는 값은 지어내지 않는다. 모호하면("그때 김철수 뭐라 했지?") 확인·제시 후 진행. 답변 끝에 다음에 도울 것을 짧게 되묻는다.
 [회장님 관계] ${호칭}은 오원트금융연구소 대표이자 지니야를 만들고 이끄는 분이다. 항상 ${호칭}으로 부르고 존중을 우선한다. 평소 95%는 담백·직설, 큰 순간(지치심·큰 성과·감사·사과)에만 5% 따뜻함을 짧게 표한다. 곁에서 먼저 챙기는 실무 팀장의 자세를 유지한다.
 [프로젝트 관리 — 팀장의 큰 그림(A)] ${호칭}의 목표·진행 상황을 개인화 기억에서 파악해 먼저 리딩한다. "지금 어디까지?"·"오늘 뭐부터?"에는 기억 근거로 현황을 짧게 정리하고 다음 우선순위 하나를 "⭐ 팀장 추천"으로 민다. 근거가 없으면 지어내지 말고 "오늘 목표부터 같이 정할까요?"로 시작한다. 완주한 일은 짧게 축하하고 미결은 다음 할 일로 짚는다.
@@ -164,17 +164,21 @@ function stripEmoji(s) {
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
-// ★E-4 홀로그램 카드: 응답이 {text,cards} JSON이면 분리(카드/화면/브리핑 요청 시에만 LLM이 JSON을 낸다).
-//   안전: "cards" 키가 없으면 즉시 일반 텍스트로 간주(일반 대화 무영향). 파싱 실패도 null → 원문 폴백.
-function tryParseCards(s) {
-  if (!s || s.indexOf('"cards"') < 0) return null;
+// ★2026-07-27 폐기: 홀로그램 카드(LLM이 {text,cards} JSON을 내던 것).
+//   값을 지어내고 화면에 에러로 튀어나왔다. 고객카드는 실제 명단에서 시스템이 직접 띄운다.
+//   여기서는 혹시 옛 습관으로 JSON이 새어 나와도 ★사람이 읽는 글만 남기고 걷어낸다(화면에 JSON 노출 방지).
+function stripStrayJson(s) {
+  if (!s || s.indexOf('"cards"') < 0) return s;
   try {
     const a = s.indexOf('{'); const b = s.lastIndexOf('}');
-    if (a < 0 || b <= a) return null;
+    if (a < 0 || b <= a) return s;
     const obj = JSON.parse(s.slice(a, b + 1));
-    if (obj && Array.isArray(obj.cards)) return { text: typeof obj.text === 'string' ? obj.text : '', cards: obj.cards };
+    if (obj && Array.isArray(obj.cards)) {
+      const head = s.slice(0, a).trim();
+      return (head || (typeof obj.text === 'string' ? obj.text : '')) || s;
+    }
   } catch (e) {}
-  return null;
+  return s;
 }
 // ★공통: 모든 대화를 Claude Sonnet 5로. system 별도·role은 user/assistant만·연속 동일role 병합·첫줄 user 보장.
 //   Claude 실패(키·에러) 시 OpenAI 폴백 → 대화가 절대 끊기지 않게.
@@ -1172,7 +1176,7 @@ function _isExpired(row, within) {
 //   ★환각 차단: 두뇌가 뭐라 답하든 ★명단에 실제로 있는 이름만 통과시킨다.
 //   ★개인정보 최소: 판단에 필요한 칸(이름·비고·만기일·상품)만 보낸다. 연락처·주소·이메일은 안 보낸다.
 const _CARD_LLM_COLS = /(고객명|성명|이름|비고|메모|상태|만기|가입상품|상품|직업)/;
-async function _resolveCardByLLM(q, t) {
+async function _resolveCardByLLM(q, t, want) {
   const rows = (t && t.rows) || [];
   if (!rows.length) return [];
   const keys = Object.keys(rows[0]).filter((k) => _CARD_LLM_COLS.test(k));
@@ -1186,7 +1190,7 @@ async function _resolveCardByLLM(q, t) {
 · 비고 칸의 ★뜻을 읽어라. "상담 대기"는 '상담'이라는 글자가 없어도 상담을 기다리는 상황이면 해당한다.
   예: "연락 달라고 함", "설계 요청", "검토 중", "회신 대기" → 상담 대기에 해당
 · 질문에 없는 사람을 넣지 마라. 애매하면 빼라.
-· 번호만 JSON 배열로. 설명 금지. 예: [0,3,7]
+${want ? `· ★질문이 ${want}명이라고 했다. 가장 해당하는 ${want}명을 골라라(억지로 늘리지는 마라).\n` : ''}· 번호만 JSON 배열로. 설명 금지. 예: [0,3,7]
 
 [명단]
 ${lines.join('\n')}`;
@@ -1674,7 +1678,11 @@ async function orderHandler(req, res) {
     const _isCardCmd = /(카드|스캔)/.test(q) && /(띄워|띄우|띄|보여|열어|열|뜨|스캔|해줘|해|줘)/.test(q);
     let _cardName = '';
     if (_isCardCmd) { const _c = q.replace(/고객님|고객|카드|스캔해줘|스캔해|스캔|띄워줘|띄워|띄우|보여줘|보여|열어줘|열어|해줘|줘|증권|서류|자료|파일|명단|이거|저거|화면|을|를|의|좀|씨|님/g, ' ').trim(); const _m = _c.match(/([가-힣]{2,4})/); _cardName = _m ? _m[1] : ''; }
-    // ★2026-07-27 "브리핑엔 있는데 카드엔 없다" 버그:
+    // ★2026-07-27 "카드 없애" → "'띄운것' 고객 못 찾음" 버그:
+    //   띄우기만 있고 닫기가 없어서, 닫기 명령을 사람 이름으로 알아듣고 명단을 뒤졌다.
+    //   → 닫기는 ★이름 검색보다 먼저 가로챈다. 화면의 카드만 없애고 데이터는 안 건드린다.
+    const _isCardClose = /(카드|화면|이거|저거|그거)/.test(q)
+      && /(없애|없애줘|닫아|닫아줘|닫기|사라지|지워|지워줘|내려|내려줘|치워|치워줘|끄|꺼|그만\s*보여|안\s*보이게|숨겨)/.test(q);
     //   "상담 대기 4명 카드 보여줘" → '상담'을 사람 이름으로 알고 찾다가 실패했다.
     //   브리핑은 비고 칸을 읽어 "상담 대기"로 묶는데, 카드는 그 해석을 몰랐다.
     //   → 이름이 아니라 ★묶음(그룹)을 말한 것인지 먼저 가린다.
@@ -1803,23 +1811,58 @@ async function orderHandler(req, res) {
       }
     } else if (_isEventCmd) {
       out = { kind: '⭐ 이벤트', text: '어떤 이벤트를 만들까요? "결혼기념일 이벤트 만들어줘"처럼 이름을 함께 말씀해 주세요.' };
-    } else if (_isCardCmd && (_isGroupCard || _cardName)) {
+    } else if (_isCardClose) {
+      // 📇 카드 닫기 — 화면에서만 없앤다(명단 데이터는 그대로).
+      //   "강수연 카드 닫아"처럼 이름을 함께 말하면 그 카드만.
+      let who = '';
+      try {
+        const t = await sheetsCrud.loadTable(null);
+        for (const r of ((t && t.rows) || [])) { const n = _rowName(t, r); if (n && n.length >= 2 && q.indexOf(n) >= 0) { who = n; break; } }
+      } catch (e) {}
+      out = { kind: '📇 고객카드', action: 'close_card', customer: who,
+        text: who ? (who + ' 고객 카드를 닫았어요.') : '카드를 닫았어요.' };
+    } else if (_isCardCmd) {
       let t = null;
       try { t = await sheetsCrud.loadTable(null); } catch (e) {}
-      // ① 먼저 사람 이름으로 찾아본다(기존 동작 그대로 — 회귀 없음)
+      // ★① 말 속의 이름을 ★전부★ 찾는다 — "강수연·오정서 카드"가 1장만 뜨던 문제(2026-07-27)
+      //    전에는 첫 이름 하나만 보고 끝냈다. 1명이든 여러 명이든 똑같이 처리한다.
+      const _named = [];
+      if (t && t.rows) {
+        for (const r of t.rows) {
+          const n = _rowName(t, r);
+          if (n && n.length >= 2 && q.indexOf(n) >= 0 && _named.indexOf(n) < 0) _named.push(n);
+        }
+      }
+      // 이름이 명단 표기와 조금 달라도(띄어쓰기 등) 잡히게 — 한 명만 말했을 때의 기존 경로 유지
       let hit = [];
-      if (_cardName && t && t.rows) { try { hit = sheetsCrud.findByName(t, _cardName); } catch (e) { hit = []; } }
-      if (hit.length) {
+      if (!_named.length && _cardName && t && t.rows) { try { hit = sheetsCrud.findByName(t, _cardName); } catch (e) { hit = []; } }
+      if (_named.length >= 2) {
+        out = { kind: '📇 고객카드', action: 'open_cards', customers: _named.slice(0, 12), label: '말씀하신',
+          text: `${_named.length}명 카드를 띄울게요 — ${_named.join(' · ')}` };
+      } else if (_named.length === 1) {
+        out = { kind: '📇 고객카드', action: 'open_card', customer: _named[0], text: _named[0] + ' 고객 카드를 띄울게요.' };
+      } else if (hit.length) {
         out = { kind: '📇 고객카드', action: 'open_card', customer: _cardName, text: _cardName + ' 고객 카드를 띄울게요.' };
+      } else if (!_isGroupCard && !_cardName) {
+        // ★대상이 없으면 지어내지 않고 되묻는다 ("고객카드 띄워줘")
+        out = { kind: '📇 고객카드', text: '누구 카드를 띄울까요? 이름을 말씀해 주세요. (여러 명도 됩니다 — "강수연 오정서 카드"처럼요)' };
       } else {
         // ② 이름이 아니면 ★브리핑과 같은 기준으로 묶음을 찾는다(상담 대기·만기 경과 등)
         const g = _resolveCardGroup(q, t, (req.body && req.body.lastMentioned) || []);
-        // ★③ 낱말로 못 맞추면 브리핑과 같은 두뇌에게 고르게 한다 (말↔카드 불일치 근본 해소)
-        //    날짜 계산(만기)은 규칙이 정확하므로 그대로 두고, 뜻을 읽어야 하는 것만 두뇌에 맡긴다.
-        if (!g.names.length && !/(만기|만료|경과|갱신|생일|기념일)/.test(q)) {
+        // ★③ 브리핑과 같은 두뇌에게 고르게 한다 (말↔카드 불일치 근본 해소)
+        //    실측: "상담 대기 4명"을 낱말로 찾으면 3명인데 브리핑은 4명이라 했다.
+        //    비고의 "연락 달라고 함" 같은 표현은 '상담'이라는 글자가 없어도 상담 대기다.
+        //    날짜 계산(만기·생일)은 규칙이 정확하니 그대로 두고, 뜻을 읽어야 하는 것만 두뇌에 맡긴다.
+        const _wantM = q.match(/(\d+)\s*명/);
+        const _want = _wantM ? Number(_wantM[1]) : 0;
+        const _isDateQ = /(만기|만료|경과|갱신|생일|기념일)/.test(q);
+        // 하나도 못 찾았거나, ★대표님이 말한 인원수와 안 맞으면 두뇌를 부른다
+        if (!_isDateQ && (!g.names.length || (_want && g.names.length !== _want))) {
           try {
-            const ai = await _resolveCardByLLM(q, t);
-            if (ai.length) { g.names = ai; g.label = g.label === '해당' ? '말씀하신' : g.label; g.how = '지니야가 비고 내용을 읽고 판단'; }
+            const ai = await _resolveCardByLLM(q, t, _want);
+            const better = ai.length && (!g.names.length
+              || (_want && Math.abs(ai.length - _want) < Math.abs(g.names.length - _want)));
+            if (better) { g.names = ai; g.label = (g.label === '해당' ? '말씀하신' : g.label); g.how = '지니야가 비고 내용을 읽고 판단'; }
           } catch (e) {}
         }
         if (g.names.length) {
@@ -1944,11 +1987,8 @@ async function orderHandler(req, res) {
       const nameM = q.match(/([가-힣]{2,4})님/);
       try { await memory.saveMemory({ type: '요청', subject: nameM ? nameM[1] : '', text: q }, ma); saved = { subject: nameM ? nameM[1] : '', text: q }; } catch (e) {}
     }
-    // ★E-4 홀로그램 카드 분리: 응답이 {text,cards} JSON이면 카드를 out.cards로 분리(프론트 렌더). 아니면 원문 텍스트 그대로(안전 폴백).
-    if (out && typeof out.text === 'string') {
-      const parsed = tryParseCards(out.text);
-      if (parsed) { out.text = parsed.text; out.cards = parsed.cards; }
-    }
+    // ★홀로그램 폐기 — JSON이 새어 나와도 화면엔 사람이 읽는 글만 나가게 한다.
+    if (out && typeof out.text === 'string') out.text = stripStrayJson(out.text);
     // ★이모지 0 최종 게이트: askClaude를 안 타는 응답(결재함·커넥터 등)까지 포함해 모든 지니야 text에서 이모지 제거(결정적).
     if (out && typeof out.text === 'string') out.text = stripEmoji(out.text);
     // ★2026-07-27 재진단: "그 4명 카드"가 안 되던 진짜 이유 —
