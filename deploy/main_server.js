@@ -2000,6 +2000,50 @@ app.get('/api/find/leads', async (req, res) => {
 const nightFind = require('./night_find');
 const showCards = require('./show_cards');            // 👀 "보여줘 비서" — 말→무엇을 보여줄지만 정함
 const jobKw = require('./job_keywords');              // 🗂️ 직업별 기본 검색어 표(표 하나 · 발송 0)
+// ═══ 🎭 어드민 직업 전환 — ★오상열 대표님 전용 체험 도구 (2026-07-27) ═══
+//   왜: 부트캠프에서 학원 원장·행정사·세무사를 가르치려면 ★그 직업 지니야를 먼저 써보셔야 한다.
+//   ★교육생에겐 아예 없다(VIP가 아니면 403). 자기 직업 고정.
+//   ★대표님 본래 설정은 안 건드린다 — 전환은 ★체험용 겉옷일 뿐,
+//     밤샘 발굴은 대표님 원래 직업(재무) 그대로 돈다(체험 때문에 실제 밤샘이 바뀌면 안 된다).
+//   ★발송 0 — 여기엔 보내는 코드가 없다.
+const _ADMIN_MODE = {};                                // { 이메일: 직업 } — 서버 메모리(체험용·개인정보 아님)
+function _isAdmin(req) { return String((sessionOf(req) || {}).email || '').toLowerCase() === VIP_EMAIL; }
+app.get('/api/admin/jobs', (req, res) => {
+  if (!sessionOf(req)) return res.status(401).json({ ok: false, error: '로그인이 필요해요' });
+  if (!_isAdmin(req)) return res.status(403).json({ ok: false, error: '대표님 전용 기능이에요' });
+  const me = String((sessionOf(req) || {}).email || '').toLowerCase();
+  res.json({ ok: true, 어드민: true, 지금직업: _ADMIN_MODE[me] || '', 내직업: '재무설계·보험',
+    직업목록: jobKw.목록(), 발송함: false });
+});
+app.post('/api/admin/job', (req, res) => {
+  if (!sessionOf(req)) return res.status(401).json({ ok: false, error: '로그인이 필요해요' });
+  if (!_isAdmin(req)) return res.status(403).json({ ok: false, error: '대표님 전용 기능이에요' });
+  const me = String((sessionOf(req) || {}).email || '').toLowerCase();
+  const j = String((req.body && req.body.직업) || '').trim();
+  if (!j) { delete _ADMIN_MODE[me]; console.log('[🎭직업전환] 원래 직업으로 복귀'); return res.json({ ok: true, 지금직업: '', 복귀: true }); }
+  _ADMIN_MODE[me] = j;
+  console.log(`[🎭직업전환] "${j}" 모드로 체험 — ★밤샘·발송은 그대로(체험 겉옷일 뿐)`);
+  res.json({ ok: true, 지금직업: j, 직업이름: jobKw.직업이름(j), 검색어: jobKw.기본검색어(j), 발송함: false });
+});
+// 🎭 그 직업으로 ★시험 발굴 — 기존 발굴 라우트는 손대지 않고, 밤샘 엔진을 1회 빌려 쓴다.
+app.post('/api/admin/tryfind', async (req, res) => {
+  if (!sessionOf(req)) return res.status(401).json({ ok: false, error: '로그인이 필요해요' });
+  if (!_isAdmin(req)) return res.status(403).json({ ok: false, error: '대표님 전용 기능이에요' });
+  const j = String((req.body && req.body.직업) || '').trim();
+  const kw = jobKw.기본검색어(j);
+  if (!kw.length) return res.json({ ok: false, error: `"${j}"는 검색어 표에 없어요 — 지어내지 않습니다.` });
+  try {
+    console.log(`[🎭직업전환] 시험 발굴 "${j}" · 검색어 ${kw.length}개 · ★저장 안 함·발송 안 함`);
+    const desk = await hunterDesk.collect({ 키워드: kw, 직업: j }, { max: 20 });
+    const leads = ((desk && desk.leads) || []).map((l) => ({
+      채널: String(l.channel || l.source || ''), 링크: String(l.sourceUrl || l.link || ''),
+      발췌: String(l.text || '').replace(/\s+/g, ' ').trim().slice(0, 120),
+      등급: String(l.grade || l.tier || ''), 점수: Number(l.score || 0) || 0, 판정: String(l.verdict || ''),
+    })).filter((x) => x.링크);
+    res.json({ ok: true, 직업: j, 검색어: kw, 건수: leads.length, 리드: leads.slice(0, 30),
+      저장함: false, 발송함: false, 안내: '체험용이라 저장하지 않습니다. 대표님 밤샘 설정도 그대로입니다.' });
+  } catch (e) { res.status(502).json({ ok: false, error: e.message, 발송함: false }); }
+});
 // 🩺 직업별 검색어 표 확인 — 로그인 없이. ★표만 보여준다(개인정보 0).
 app.get('/api/diag/jobkw', (req, res) => {
   const j = String(req.query.job || '');

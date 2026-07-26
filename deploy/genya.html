@@ -1416,11 +1416,117 @@ window.genyaShowCards=function(spec){
     var 종=spec.종류||'';
     if(종==='night_set') return genyaNight();
     if(종==='draft_leads') return genyaDraftLeads(spec);
+    if(종==='job_switch') return genyaJobSwitch();
+    if(종==='job_try') return genyaTryFind();
     if(종==='lead_count') return _showCount();
     if(종.indexOf('lead')===0) return _showLeads(spec);
     if(종.indexOf('sales')===0) return _showSales(spec);
   }catch(e){ try{ pushMsg('gen','보여드리려다 막혔어요 — 다시 말씀해 주세요.'); }catch(e2){} }
 };
+// ═══ 🎭 어드민 직업 전환 — ★대표님 전용 체험 도구 (2026-07-27) ═══
+//   ★교육생 화면엔 버튼조차 안 뜬다(서버가 403을 주면 아무것도 안 만든다).
+//   ★대표님 본래 설정은 안 바뀐다 — 전환은 ★체험용 겉옷이다. 밤샘은 재무 그대로 돈다.
+//   ★발송 0.
+window.genyaJobSwitch=function(){
+  var el=document.getElementById('jobBox');
+  if(!el){ el=document.createElement('div'); el.id='jobBox';
+    el.style.cssText='position:fixed;right:14px;top:14px;width:min(440px,calc(100vw - 28px));z-index:9250;'
+      +'background:#fff;border:1px solid #dbe2ea;border-radius:14px;box-shadow:0 12px 40px rgba(13,27,42,.22);font-family:inherit';
+    document.body.appendChild(el); }
+  el.style.display='block';
+  el.innerHTML='<div style="padding:14px">불러오는 중이에요…</div>';
+  fetch('/api/admin/jobs',{credentials:'include'}).then(function(r){ return r.json().then(function(j){ return {s:r.status,j:j}; }); })
+   .then(function(x){
+     if(x.s===403){ el.style.display='none'; try{ toast('대표님 전용 기능이에요'); }catch(e){} return; }
+     if(x.s===401){ el.innerHTML=_jobShell('<div style="font-size:12.5px;color:#8a6d1a">로그인이 필요해요.</div>'); return; }
+     var d=x.j||{}; if(!d.ok){ el.innerHTML=_jobShell('<div style="font-size:12.5px;color:#c0392b">'+_escOb(d.error||'')+'</div>'); return; }
+     var 지금=d.지금직업||'';
+     var 칩=(d.직업목록||[]).map(function(j){
+       var on=(j.이름===지금);
+       return '<button onclick="jobPick(\''+_escOb(j.이름).replace(/'/g,"")+'\')" style="padding:8px 11px;border:1px solid '
+         +(on?'var(--teal)':'#dbe2ea')+';background:'+(on?'var(--teal-l)':'#fff')+';color:'+(on?'var(--teal-d)':'#556')
+         +';border-radius:999px;font-size:12px;font-weight:'+(on?'800':'600')+';cursor:pointer;font-family:inherit;margin:0 5px 6px 0">'
+         +(on?'✓ ':'')+_escOb(j.이름)+'</button>'; }).join('');
+     el.innerHTML=_jobShell(
+       '<div style="font-size:11.5px;color:#556;margin-bottom:7px">부트캠프에서 가르치시려면 그 직업 지니야를 먼저 써보셔야 합니다.<br>클릭하면 그 직업 모드로 체험하실 수 있어요.</div>'
+       +'<div style="margin-bottom:4px">'+칩+'</div>'
+       +(지금?('<div style="margin-top:9px"><button onclick="jobPick(\'\')" style="width:100%;padding:9px;border:1px solid #dbe2ea;background:#fff;color:#556;border-radius:9px;font-weight:700;cursor:pointer;font-family:inherit;font-size:12.5px">↩ 재무설계(내 직업)로 돌아가기</button></div>'):'')
+       +'<div style="font-size:10.5px;color:#8a93a3;margin-top:10px;line-height:1.6">'
+        +'★체험용입니다. 대표님 <b>밤샘 발굴은 재무 그대로</b> 돌고, <b>저장·발송은 하지 않습니다.</b></div>');
+   }).catch(function(){ el.style.display='none'; });
+};
+function _jobShell(안){
+  return '<div style="display:flex;justify-content:space-between;align-items:center;padding:11px 13px;border-bottom:1px solid #eef1f5">'
+    +'<b style="font-size:13px;color:#0d1b2a">🎭 직업 전환 <span style="font-weight:500;color:#8a93a3">(대표님 전용)</span></b>'
+    +'<button onclick="jobClose()" style="border:none;background:none;font-size:18px;color:#8a93a3;cursor:pointer;font-family:inherit">×</button></div>'
+    +'<div style="padding:13px">'+안+'</div>';
+}
+window.jobClose=function(){ var el=document.getElementById('jobBox'); if(el) el.style.display='none'; };
+window.jobPick=function(직업){
+  fetch('/api/admin/job',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({직업:직업})})
+   .then(function(r){ return r.json(); }).then(function(d){
+     if(!d||!d.ok){ toast((d&&d.error)||'전환하지 못했어요'); return; }
+     window._JOB_MODE=d.지금직업||'';
+     _jobBanner();
+     try{ pushMsg('gen', renderMd(d.지금직업
+       ? ('🎭 **'+(d.직업이름||d.지금직업)+' 모드로 바꿨어요.**\n\n· 검색어: '+((d.검색어||[]).join(' · ')||'(표에 없어 직접 넣으셔야 합니다)')
+          +'\n\n**"이 직업으로 시험 발굴"**이라고 하시면 그 키워드로 한 번 찾아 보여드릴게요.\n\n★체험용이라 저장하지 않고, 대표님 밤샘 발굴은 **재무 그대로** 돕니다.')
+       : '↩ **재무설계(원래 직업)로 돌아왔어요.**')); }catch(e){}
+     genyaJobSwitch();
+   }).catch(function(){ toast('전환하지 못했어요'); });
+};
+// "지금 [학원 원장] 모드로 테스트 중" 띠 — 헷갈리지 않게
+function _jobBanner(){
+  var b=document.getElementById('jobBanner');
+  var m=window._JOB_MODE||'';
+  if(!m){ if(b) b.remove(); return; }
+  if(!b){ b=document.createElement('div'); b.id='jobBanner';
+    b.style.cssText='position:fixed;left:50%;transform:translateX(-50%);top:8px;z-index:9300;'
+      +'background:#7c3aed;color:#fff;padding:7px 15px;border-radius:999px;font-size:12.5px;font-weight:800;'
+      +'box-shadow:0 6px 20px rgba(124,58,237,.35);font-family:inherit;cursor:pointer';
+    b.onclick=function(){ try{ genyaJobSwitch(); }catch(e){} };
+    document.body.appendChild(b); }
+  b.textContent='🎭 지금 ['+m+'] 모드로 테스트 중 — 누르면 바꾸기';
+}
+// 🎭 그 직업으로 시험 발굴(어드민 전용) — 기존 발굴은 안 건드리고 밤샘 엔진을 1회 빌린다
+window.genyaTryFind=function(){
+  var m=window._JOB_MODE||'';
+  if(!m){ try{ pushMsg('gen','먼저 🎭 직업 전환에서 직업을 고르세요.'); }catch(e){} return; }
+  try{ pushMsg('gen', renderMd('🎭 **'+m+'** 키워드로 시험 발굴 중이에요… (저장 안 함·발송 안 함)')); }catch(e){}
+  fetch('/api/admin/tryfind',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({직업:m})})
+   .then(function(r){ return r.json(); }).then(function(d){
+     if(!d||!d.ok){ try{ pushMsg('gen','시험 발굴을 못 했어요 — '+_escOb((d&&d.error)||'')); }catch(e){} return; }
+     var by={}; (d.리드||[]).forEach(function(x){ by[x.채널]=(by[x.채널]||0)+1; });
+     var 카드=(d.리드||[]).slice(0,12).map(function(x){
+       return _card(_escOb(x.채널), [_줄('점수',x.점수), _줄('등급',_escOb(x.등급||'-')),
+         '<div style="font-size:11px;color:#556;margin-top:6px;line-height:1.5;max-height:60px;overflow:hidden">'+_escOb(x.발췌)+'</div>',
+         x.링크?('<a href="'+_escOb(x.링크)+'" target="_blank" rel="noopener" style="display:inline-block;margin-top:7px;font-size:11px;color:#0f766e;font-weight:700">원글 열기 ↗</a>'):''], '#dcd7f0'); });
+     _showBox('🎭 '+m+' 시험 발굴', (d.건수?('총 '+d.건수+'건 · 좌우로 넘겨 보세요'):''), 카드);
+     try{ pushMsg('gen', renderMd('🎭 **'+m+' 시험 발굴 — '+d.건수+'건**\n\n'
+       +(Object.keys(by).map(function(k){ return k+' '+by[k]; }).join(' · ')||'(0건)')
+       +'\n\n검색어: '+((d.검색어||[]).join(' · '))
+       +'\n\n★체험용이라 **저장하지 않았고**, 대표님 밤샘 설정도 그대로입니다. **보낸 것도 없습니다.**')); }catch(e){}
+   }).catch(function(){ try{ pushMsg('gen','시험 발굴을 못 했어요.'); }catch(e){} });
+};
+// ★어드민일 때만 🎭 버튼을 만든다(교육생 화면엔 아예 안 생긴다)
+(function(){ function 붙이기(){
+  if(document.getElementById('jobBtn')) return;
+  fetch('/api/admin/jobs',{credentials:'include'}).then(function(r){ return r.status===200?r.json():null; })
+   .then(function(d){
+     if(!d||!d.ok||!d.어드민) return;                 // ★교육생이면 여기서 끝 — 버튼 안 만듦
+     var b=document.createElement('button'); b.id='jobBtn'; b.textContent='🎭';
+     b.title='직업 전환(대표님 전용)';
+     b.onclick=function(){ try{ genyaJobSwitch(); }catch(e){} };
+     b.style.cssText='position:fixed;right:16px;top:146px;z-index:9150;width:42px;height:42px;border-radius:50%;'
+       +'border:1px solid #dbe2ea;background:#fff;box-shadow:0 4px 14px rgba(13,27,42,.16);cursor:pointer;font-size:19px;font-family:inherit';
+     document.body.appendChild(b);
+     window._JOB_MODE=d.지금직업||''; _jobBanner();
+   }).catch(function(){});
+}
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',붙이기); else setTimeout(붙이기,600);
+})();
 // ═══ ✍️ 대화로 답글 초안 만들기 → ★결재함까지만 (2026-07-27) ═══
 //   ★기존 [답글 초안] 버튼(findDraft)은 ★한 글자도 안 고친다. 그 버튼이 쓰는 ★같은 창구를 부른다.
 //   ★검수 통과분만 — 버튼과 똑같은 잠금(_findCanReply)을 그대로 쓴다.
