@@ -2591,8 +2591,10 @@ async function orderHandler(req, res) {
           : { kind: '📇 고객카드', text: `명단에서 ${_g.label || '해당'} 고객을 못 찾았어요. — ${_g.how || '조건에 맞는 분이 없습니다'}\n\n지어내지 않고 있는 그대로 말씀드립니다.` };
       } else {
         // 🔍💰 발굴·매출은 화면이 이미 갖고 있는 숫자로 그린다(서버가 개인정보를 들고 있지 않는다)
-        out = { kind: _showSpec.제목, action: 'show_cards', spec: _showSpec,
-          text: `${_showSpec.제목}을 띄울게요.` };
+        // ★2026-07-27 대표님 실사고: 서버가 "띄울게요"라고 ★약속부터 했는데 화면에 자료가 없어
+        //   "말만 하고 안 띄운" 꼴이 됐다. → 서버는 약속하지 않는다.
+        //   ★실제로 몇 장을 띄웠는지·없으면 없다고, ★화면이 자기가 본 것으로 말한다.
+        out = { kind: _showSpec.제목, action: 'show_cards', spec: _showSpec, text: '' };
       }
       console.log(`[👀보여줘] ${_showSpec.종류}${_showSpec.채널 ? '(' + _showSpec.채널 + ')' : ''} · q="${String(q).slice(0, 40)}" · ★조회·표시만(발송 아님)`);
     } else if (_isBriefAsk) {

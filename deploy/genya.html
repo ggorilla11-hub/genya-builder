@@ -1414,10 +1414,25 @@ window.genyaShowCards=function(spec){
   if(!spec) return;
   try{
     var 종=spec.종류||'';
+    if(종==='lead_count') return _showCount();
     if(종.indexOf('lead')===0) return _showLeads(spec);
     if(종.indexOf('sales')===0) return _showSales(spec);
   }catch(e){ try{ pushMsg('gen','보여드리려다 막혔어요 — 다시 말씀해 주세요.'); }catch(e2){} }
 };
+// 🔢 "총 몇 명?" — ★화면에 실제로 있는 숫자를 읽어 답한다(지어내기 0·서버에 안 보냄)
+function _showCount(){
+  var L=window._FIND||[];
+  if(!L.length){ try{ pushMsg('gen', renderMd('아직 발굴한 리드가 **없어요.** (0건)\n\n**"발굴 돌려"**라고 하시면 제가 지금 돌리고, 끝나면 채널별로 알려드릴게요.')); }catch(e){} return; }
+  var by={}; L.forEach(function(l){ var c=l.ch||'기타'; by[c]=(by[c]||0)+1; });
+  var 줄=Object.keys(by).sort(function(a,b){ return by[b]-by[a]; }).map(function(c){ return c+' '+by[c]; }).join(' · ');
+  var 통과=L.filter(function(l){ return l.review && /통과|고객/.test(String(l.review.verdict||'')); }).length;
+  var 제외=L.filter(function(l){ return l.review && !/통과|고객/.test(String(l.review.verdict||'')); }).length;
+  var 대기=L.filter(function(l){ return !l.review; }).length;
+  var s='지금 화면에 **총 '+L.length+'건** 있어요.\n\n'+줄
+    +'\n\n🛡️ 검수 — 통과 **'+통과+'건** · 제외 '+제외+'건'+(대기?(' · 아직 '+대기+'건 남음'):' · 다 끝남');
+  if(통과) s+='\n\n**"검수 통과 리드 보여줘"**라고 하시면 카드로 띄워드릴게요.';
+  try{ pushMsg('gen', renderMd(s)); }catch(e){}
+}
 function _showBox(제목, 안내, 카드들){
   var host=document.getElementById('showCardBox');
   if(!host){ host=document.createElement('div'); host.id='showCardBox';
@@ -1464,9 +1479,19 @@ function _showLeads(spec){
       l.link?('<a href="'+_escOb(l.link)+'" target="_blank" rel="noopener" style="display:inline-block;margin-top:7px;font-size:11px;color:#0f766e;font-weight:700">원글 열기 ↗</a>'):'',
     ], '#cfe8e1');
   });
-  _showBox(spec.제목+' <span style="font-weight:500;color:#8a93a3">'+L.length+'건 중 '+카드.length+'장</span>',
-    (L.length>카드.length?('점수 높은 순 '+카드.length+'장만 띄웠어요 · 좌우로 넘겨 보세요'):'좌우로 넘겨 보세요'), 카드);
-  try{ pushMsg('gen', renderMd('**'+spec.제목+' '+L.length+'건**'+(L.length?'\n\n점수 높은 순으로 '+카드.length+'장 띄웠어요. 답글은 [승인]하셔야 나갑니다.':''))); }catch(e){}
+  // ★조건에 맞는 게 0건이면 ★없다고 말한다("띄울게요" 하고 안 띄우는 일 금지)
+  if(!카드.length){
+    _showBox(spec.제목, '', []);
+    var 왜={lead_pass:'아직 검수를 통과한 리드가 없어요(검수가 도는 중일 수 있어요)',
+            lead_wait:'검수 대기 중인 리드가 없어요 — 다 끝났습니다',
+            lead_hot:'핫으로 잡힌 리드가 없어요',
+            lead_score:'그 점수 이상인 리드가 없어요',
+            lead_ch:'그 채널에서 나온 리드가 없어요'}[spec.종류]||'조건에 맞는 리드가 없어요';
+    try{ pushMsg('gen', renderMd('**'+왜+'.** (전체는 '+((window._FIND||[]).length)+'건 있어요)\n\n지어내지 않고 있는 그대로 말씀드립니다.')); }catch(e){}
+    return;
+  }
+  _showBox(spec.제목, (L.length>카드.length?('전체 '+L.length+'건 중 점수 높은 '+카드.length+'장 · 좌우로 넘겨 보세요'):(L.length+'건 · 좌우로 넘겨 보세요')), 카드);
+  try{ pushMsg('gen', renderMd('**'+spec.제목+' '+L.length+'건** — 점수 높은 순으로 '+카드.length+'장 띄웠어요.\n\n답글은 대표님이 [승인]하셔야 나갑니다.')); }catch(e){}
 }
 // 🌙 밤사이 발굴 — 서버에서 내 것만 가져온다
 function _showNight(spec){
