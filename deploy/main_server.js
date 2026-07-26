@@ -1486,6 +1486,10 @@ app.get('/api/diag/card', async (req, res) => {
     const t = await sheetsCrud.loadTable(null);
     const rows = (t && t.rows) || [];
     const keys = Object.keys(rows[0] || {});
+    // ★실제 대화가 쓰는 것과 같은 트리거 함수 — "말한 대로 실제로 도는지"를 여기서 확인한다
+    const cf = cardFlags(q);
+    const named = [];
+    for (const r of rows) { const n = _rowName(t, r); if (n && n.length >= 2 && q.indexOf(n) >= 0 && named.indexOf(n) < 0) named.push(n); }
     const g = _resolveCardGroup(q, t, []);
     // ★실제 대화와 똑같은 순서로 최종 이름을 만든다 — "진단은 되는데 실제는 안 됨"을 막는다
     const _wantM = q.match(/(\d+)\s*명/); const _want = _wantM ? Number(_wantM[1]) : 0;
@@ -1503,10 +1507,6 @@ app.get('/api/diag/card', async (req, res) => {
     const 행첨부 = 최종.filter((n) => rows.some((r) => _rowName(t, r) === n)).length;
     // 어떤 칸에 상담류 낱말이 들어 있는지(값이 아니라 ★칸 이름만)
     const 상담칸 = keys.filter((k) => rows.some((r) => /(상담|미팅|면담|방문|대기)/.test(String(r[k] || ''))));
-    // ★실제 대화가 쓰는 것과 같은 트리거 함수 — "말한 대로 실제로 도는지"를 여기서 확인한다
-    const cf = cardFlags(q);
-    const named = [];
-    for (const r of rows) { const n = _rowName(t, r); if (n && n.length >= 2 && q.indexOf(n) >= 0 && named.indexOf(n) < 0) named.push(n); }
     const route = cf.isCardClose ? '카드 닫기'
       : (!cf.isCardCmd ? '카드 아님(일반 대화로 감)'
         : (named.length >= 2 ? `카드 ${named.length}장(이름 여러 개)`
@@ -1517,6 +1517,8 @@ app.get('/api/diag/card', async (req, res) => {
       '★라우팅': route,
       트리거: { 카드명령: cf.isCardCmd, 닫기: cf.isCardClose, 묶음: cf.isGroupCard, 이름추출: cf.cardName },
       말속_명단이름_수: named.length,
+      '★행첨부': 행첨부,          // 카드로 실제 그려질 행 수 — 0이면 화면에 안 뜬다
+      최종_인원: 최종.length,
       시트연결: !!(t && t.id), 행수: rows.length, 컬럼: keys,
       이름컬럼_추정: keys.find((k) => /(고객명|성명|이름|name)/i.test(k)) || '(못 찾음)',
       상담류_낱말이_있는_칸: 상담칸,
