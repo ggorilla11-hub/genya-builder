@@ -1994,6 +1994,62 @@ app.get('/api/find/leads', async (req, res) => {
     res.status(502).json({ ok: false, error: e.message });
   }
 });
+// ═══ 🌙 밤샘 발굴 — 서버가 스스로 (대표님 PC 꺼두셔도 됩니다) ═══
+//   ★새 파일(night_find.js) + 새 라우트만. 기존 발굴 라우트·함수는 ★한 줄도 안 건드린다.
+//   ★여기서 하는 일은 발굴과 기록뿐 — 발송·답글·메일은 코드 자체가 없다(서버가 실수로도 못 보낸다).
+const nightFind = require('./night_find');
+app.get('/api/cron/find', async (req, res) => {
+  if (String(req.query.key || '') !== String(process.env.CRON_SECRET || '__nokey__')) {
+    return res.status(403).json({ ok: false, error: '예약 열쇠가 필요해요' });
+  }
+  try {
+    console.log('[🌙밤샘발굴] 시작 — 켜둔 대표들 순회 · ★발굴·기록만 (발송 안 함)');
+    const r = await nightFind.runAll({ collect: (a, b) => hunterDesk.collect(a, b), max: Number(req.query.max) || 30 });
+    console.log(`[🌙밤샘발굴] 끝 — 대표 ${r.대표수}명 · 새로 ${r.합계신규}건(핫 ${r.합계핫}) · ★발송 0`);
+    res.json(Object.assign({ ok: true }, r, {
+      안내: '이 창구는 발굴하고 적어두기만 합니다. 고객에게 나가는 것은 없습니다.' }));
+  } catch (e) { res.status(500).json({ ok: false, error: e.message, 발송함: false }); }
+});
+// 🌙 내 밤샘 발굴 켜기/끄기 — ★낮에 로그인한 상태로 켜두면, 밤엔 서버가 그 목록만 훑는다.
+//   담는 것은 지문(되돌릴 수 없음)·직업·키워드뿐. 이름·이메일은 담지 않는다.
+app.post('/api/night/profile', async (req, res) => {
+  const s = sessionOf(req);
+  if (!s) return res.status(401).json({ ok: false, error: '로그인이 필요해요' });
+  try {
+    const b = req.body || {};
+    const kw = Array.isArray(b.키워드) ? b.키워드 : String(b.키워드 || '').split(/[,\n]/);
+    const p = await nightFind.saveProfile(s.email, { 켜짐: !!b.켜짐, 직업: b.직업 || '', 키워드: kw });
+    console.log(`[🌙밤샘발굴] 프로필 ${p.켜짐 ? '켬' : '끔'} · 직업=${p.직업} · 키워드 ${p.키워드.length}개 (이메일은 안 담음)`);
+    res.json({ ok: true, 프로필: p, 안내: p.켜짐
+      ? '밤에 서버가 이 키워드로 발굴합니다. PC는 꺼두셔도 됩니다. ★발송은 하지 않습니다.'
+      : '밤샘 발굴을 껐어요.' });
+  } catch (e) { res.status(502).json({ ok: false, error: e.message }); }
+});
+app.get('/api/night/profile', async (req, res) => {
+  const s = sessionOf(req);
+  if (!s) return res.status(401).json({ ok: false, error: '로그인이 필요해요' });
+  try { res.json({ ok: true, 프로필: await nightFind.loadProfile(s.email) }); }
+  catch (e) { res.status(502).json({ ok: false, error: e.message }); }
+});
+// 🌙 밤사이 결과 보기 — ★로그인한 본인 것만(남의 리드는 안 나온다). 공개글 링크·발췌만.
+app.get('/api/night/find', async (req, res) => {
+  const s = sessionOf(req);
+  if (!s) return res.status(401).json({ ok: false, error: '로그인이 필요해요' });
+  try {
+    const runs = await nightFind.loadMine(s.email, Number(req.query.limit) || 12);
+    res.json({ ok: true, 회차수: runs.length, 요약: nightFind.summaryText(runs), 회차: runs, 발송함: false });
+  } catch (e) { res.status(502).json({ ok: false, error: e.message }); }
+});
+// 🩺 밤샘 진단 — 로그인 없이 "예약이 걸렸나"만. ★남의 건수도 리드도 안 준다.
+app.get('/api/diag/night', async (req, res) => {
+  try {
+    const on = await nightFind.listOn();
+    res.json({ ok: true, 예약열쇠설정됨: !!process.env.CRON_SECRET,
+      밤샘켠대표수: on.length,
+      직업들: on.map((p) => p.직업 || '(직업 미설정)'),
+      안내: '몇 분이 켜두셨는지와 직업만 보여드립니다. 건수·리드는 로그인 후 /api/night/find에서 본인 것만 보입니다.' });
+  } catch (e) { res.json({ ok: false, error: e.message, 안내: '아직 켜둔 대표가 없거나 보관함을 못 읽었어요.' }); }
+});
 // 🩺 발굴 진단 — "왜 발굴이 안 되나". ★숫자와 오류 문구만(리드 내용·개인정보 0노출).
 //   로그인 없이도 대표님이 바로 보실 수 있게 공개로 둔다.
 let _LAST_FIND = null;
