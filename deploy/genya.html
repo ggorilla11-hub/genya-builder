@@ -1531,7 +1531,12 @@ function startReview(){
        // 탈락(공급자)은 화면에서 조용히 뺀다 — 대표님이 실수로 답글 달 일이 없게
        window._FIND=(window._FIND||[]).filter(function(l){ return !(l.review&&l.review.verdict==='공급자'); });
        _RV.total=window._FIND.length+_RV.drop;
+       // ★2026-07-27 "답글이 0.1초 만에 사라짐" 사고:
+       //   검수가 뒤에서 돌며 목록을 다시 그리는 바람에, 열어둔 답글 초안이 통째로 날아갔다.
+       //   → 다시 그리기 전에 열려 있는 답글(편집한 내용까지)을 담아두고, 그린 뒤 되살린다.
+       _draftsSave();
        if(typeof window._RENDER_FIND==='function') window._RENDER_FIND();
+       _draftsRestore();
        _rvBar();
        setTimeout(step, 250);                    // 서버를 몰아치지 않게 살짝 쉰다
      })
@@ -1728,6 +1733,45 @@ function _findDraftLink(i){
   var url=(l?_findDiagFor(l).page.url:_findDiagBase());     // ★리드 성격에 맞춘 진단 링크
   return url+(url.indexOf('?')>=0?'&':'?')+'from='+encodeURIComponent(_tagId()+'_'+no);
 }
+// ═══ ✍️ 답글 초안 보존 (2026-07-27 "0.1초 만에 사라짐" 사고) ═══
+//   검수가 뒤에서 돌며 목록을 다시 그리는데, 그때 열어둔 답글이 통째로 날아갔다.
+//   ★리드 번호(i)는 공급자가 빠지면서 바뀌므로 절대 열쇠로 쓰면 안 된다 → 리드 고유 열쇠로 보관한다.
+//   ★브라우저 메모리에만 둔다(서버 저장 0).
+window._DRAFTS={};
+function _draftKey(l){ return String((l&&(l.link||l.text))||'').slice(0,80); }
+function _draftsSave(){
+  (window._FIND||[]).forEach(function(l,i){
+    var ta=document.getElementById('draftTa-'+i);
+    if(ta){ var k=_draftKey(l); if(k) window._DRAFTS[k]=Object.assign(window._DRAFTS[k]||{}, {text:ta.value}); }   // ★대표님이 고쳐 쓴 내용까지 보존
+  });
+}
+function _draftsRestore(){
+  (window._FIND||[]).forEach(function(l,i){
+    var k=_draftKey(l), d=k&&window._DRAFTS[k];
+    if(d&&d.text!=null){ var box=document.getElementById('draft-'+i); if(box&&!box.innerHTML) box.innerHTML=_draftHTML(i,l,d.text,d.diagKey); }
+  });
+}
+function _draftHTML(i,l,txt,diagKey){
+  var pick=_findDiagFor(l);
+  var selKey=diagKey||pick.page.key;
+  return '<div style="margin-top:8px;background:#f5f9f8;border:1px solid var(--teal-bd);border-radius:8px;padding:9px 10px">'
+    +'<div style="font-size:11px;color:var(--teal-d);font-weight:700;margin-bottom:5px">✍️ 지니야 답글 초안 (수정 가능 · 게시는 직접)</div>'
+    +'<div style="font-size:10.5px;color:#0f766e;background:#eef7f4;border:1px solid #cfe8e1;border-radius:6px;padding:5px 8px;margin-bottom:6px">🎣 미끼 <span style="color:#8a93a3">('+_escOb(pick.why)+')</span> '
+      +'<select id="diagSel-'+i+'" onchange="_findDiagSwap('+i+')" style="font-family:inherit;font-size:10.5px;border:1px solid #cfe8e1;border-radius:5px;padding:2px 4px;max-width:200px">'
+      +_PROSPECT_PAGES.map(function(p){ return '<option value="'+_escOb(p.key)+'"'+(p.key===selKey?' selected':'')+'>'+_escOb(p.name)+'</option>'; }).join('')+'</select></div>'
+    +'<textarea id="draftTa-'+i+'" oninput="_draftsSave()" style="width:100%;min-height:80px;font-size:12.5px;font-family:inherit;line-height:1.6;color:#0d1b2a;background:#fff;border:1px solid #dbe2ea;border-radius:6px;padding:8px;box-sizing:border-box;resize:vertical">'+_escOb(txt)+'</textarea>'
+    +'<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">'
+      +'<button id="draftCopy-'+i+'" onclick="findDraftCopy('+i+')" style="padding:6px 12px;border:none;background:var(--teal);color:#fff;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">📋 답글 복사</button>'
+      +(l.link?('<a href="'+_escOb(l.link)+'" target="_blank" rel="noopener" style="padding:6px 12px;border:1px solid #dbe2ea;background:#fff;color:#556;border-radius:8px;font-size:12px;text-decoration:none">↗ 바로가기</a>'):'')
+      +'<button onclick="findDraftClose('+i+')" style="padding:6px 10px;border:1px solid #e5e9ee;background:#fff;color:#8a93a3;border-radius:8px;font-size:12px;cursor:pointer;font-family:inherit">✕ 닫기</button>'
+    +'</div>'
+    +'<div style="font-size:10.5px;color:#c0392b;margin-top:6px">복사 → 바로가기 → 붙여넣기 → <b>직접 게시</b>. 지니야는 자동 게시 안 함(계정 안전).</div></div>';
+}
+function findDraftClose(i){
+  var l=(window._FIND||[])[i]; var k=l&&_draftKey(l);
+  if(k) delete window._DRAFTS[k];
+  var box=document.getElementById('draft-'+i); if(box) box.innerHTML='';
+}
 function findDraft(i){
   var l=(window._FIND||[])[i]; if(!l)return;
   var box=document.getElementById('draft-'+i); if(!box)return;
@@ -1736,20 +1780,22 @@ function findDraft(i){
    .then(function(r){return r.json();}).then(function(d){
      if(!d||!d.ok||!d.draft){ box.innerHTML='<div style="margin-top:8px;font-size:12px;color:#c0392b">초안 생성 실패 — <span onclick="findDraft('+i+')" style="text-decoration:underline;cursor:pointer">다시</span></div>'; return; }
      var txt=String(d.draft).replace('[링크]', _findDraftLink(i));
-     var pick=_findDiagFor(l);                                    // ★어떤 진단을 미끼로 골랐는지 보여준다
-     box.innerHTML='<div style="margin-top:8px;background:#f5f9f8;border:1px solid var(--teal-bd);border-radius:8px;padding:9px 10px">'
-       +'<div style="font-size:11px;color:var(--teal-d);font-weight:700;margin-bottom:5px">✍️ 지니야 답글 초안 (수정 가능 · 게시는 직접)</div>'
-       +'<div style="font-size:10.5px;color:#0f766e;background:#eef7f4;border:1px solid #cfe8e1;border-radius:6px;padding:5px 8px;margin-bottom:6px">🎣 미끼 <span style="color:#8a93a3">('+_escOb(pick.why)+')</span> '
-         +'<select id="diagSel-'+i+'" onchange="_findDiagSwap('+i+')" style="font-family:inherit;font-size:10.5px;border:1px solid #cfe8e1;border-radius:5px;padding:2px 4px;max-width:200px">'
-         +_PROSPECT_PAGES.map(function(p){ return '<option value="'+_escOb(p.key)+'"'+(p.key===pick.page.key?' selected':'')+'>'+_escOb(p.name)+'</option>'; }).join('')+'</select></div>'
-       +'<textarea id="draftTa-'+i+'" style="width:100%;min-height:80px;font-size:12.5px;font-family:inherit;line-height:1.6;color:#0d1b2a;background:#fff;border:1px solid #dbe2ea;border-radius:6px;padding:8px;box-sizing:border-box;resize:vertical">'+_escOb(txt)+'</textarea>'
-       +'<div style="display:flex;gap:6px;margin-top:6px"><button onclick="findDraftCopy('+i+')" style="padding:6px 12px;border:none;background:var(--teal);color:#fff;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">📋 답글 복사</button>'
-       +(l.link?('<a href="'+_escOb(l.link)+'" target="_blank" rel="noopener" style="padding:6px 12px;border:1px solid #dbe2ea;background:#fff;color:#556;border-radius:8px;font-size:12px;text-decoration:none">↗ 바로가기</a>'):'')+'</div>'
-       +'<div style="font-size:10.5px;color:#c0392b;margin-top:6px">복사 → 바로가기 → 붙여넣기 → <b>직접 게시</b>. 지니야는 자동 게시 안 함(계정 안전).</div></div>';
+     // ★보관부터 한다 — 검수가 뒤에서 화면을 다시 그려도 이 초안이 되살아난다
+     var k=_draftKey(l); if(k) window._DRAFTS[k]={text:txt, diagKey:_findDiagFor(l).page.key};
+     box.innerHTML=_draftHTML(i,l,txt,null);
    })
    .catch(function(){ box.innerHTML='<div style="margin-top:8px;font-size:12px;color:#c0392b">초안 생성 실패 — <span onclick="findDraft('+i+')" style="text-decoration:underline;cursor:pointer">다시</span></div>'; });
 }
-function findDraftCopy(i){ var el=document.getElementById('draftTa-'+i); var t=el?el.value:''; try{ navigator.clipboard.writeText(t).then(function(){ toast('답글 초안 복사됨 — 바로가기 후 직접 붙여넣어 게시하세요'); },function(){ toast('복사 실패'); }); }catch(e){ toast('복사 실패'); } }
+function findDraftCopy(i){
+  var el=document.getElementById('draftTa-'+i); var t=el?el.value:'';
+  var btn=document.getElementById('draftCopy-'+i);
+  var ok=function(){
+    toast('답글 복사됨 — [바로가기]로 가서 붙여넣고 직접 게시하세요');
+    if(btn){ btn.textContent='복사됨 ✅'; btn.style.background='#0f766e'; setTimeout(function(){ btn.textContent='📋 답글 복사'; btn.style.background='var(--teal)'; },2200); }
+  };
+  var ng=function(){ if(el){ el.select(); try{ document.execCommand('copy'); ok(); return; }catch(e){} } toast('복사 실패 — 글을 길게 눌러 직접 복사하세요'); };
+  try{ if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(ok,ng); else ng(); }catch(e){ ng(); }
+}
 // 미끼(진단페이지)를 바꾸면 초안 안의 링크만 갈아 끼운다 — 대표가 쓴 문장은 건드리지 않는다
 function _findDiagSwap(i){
   var sel=document.getElementById('diagSel-'+i), ta=document.getElementById('draftTa-'+i); if(!sel||!ta)return;
@@ -1759,6 +1805,9 @@ function _findDiagSwap(i){
   var old=_PROSPECT_PAGES.map(function(x){return x.url;}).filter(function(u){ return ta.value.indexOf(u)>=0; })[0];
   if(old){ ta.value=ta.value.replace(new RegExp(old.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\S*'), neu); }
   else { ta.value=ta.value+'\n'+neu; }
+  // 바꾼 내용도 보관 — 검수가 화면을 다시 그려도 그대로 살아난다
+  var l=(window._FIND||[])[i], k=l&&_draftKey(l);
+  if(k) window._DRAFTS[k]={text:ta.value, diagKey:p.key};
   toast('미끼를 '+p.name+'(으)로 바꿨어요');
 }
 function prospectRunFind(){
