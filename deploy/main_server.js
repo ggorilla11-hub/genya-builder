@@ -1350,7 +1350,12 @@ async function buildBrief(ma, req) {
 //   이제 /api/diag/card 로 물어보면 실제로 어느 분기가 켜지는지 그대로 나온다.
 function cardFlags(q, cardOpen) {
   q = String(q || '');
-  const isCardCmd = /(카드|스캔)/.test(q) && /(띄워|띄우|띄|보여|열어|열|뜨|스캔|해줘|해|줘)/.test(q);
+  // ★"최동욱 카드"처럼 동사 없이 짧게 말해도 알아듣는다(대표님은 그렇게 부르신다).
+  //   단 긴 문장에서 '카드'만 스쳐 지나가는 건 안 잡는다.
+  //   ★동사는 '카드' 바로 뒤에 있어야 한다. 문장 아무 데나 있는 '해'를 받으면
+  //     "정리해서 메일로 보내주세요 … 신용카드"까지 카드 명령으로 삼킨다(실제로 그랬다).
+  const isCardCmd = /(카드|스캔)\s*(을|를|좀|만|는)?\s*(띄워|띄우|띄|보여|열어|열|뜨|스캔|해줘|해|줘|주세요|부탁)/.test(q)
+    || (/(카드|스캔)\s*$/.test(q.trim()) && q.replace(/\s/g, '').length <= 16);
   // 닫기는 ★이름 검색보다 먼저 가로챈다("카드 없애"를 사람 이름으로 알아듣던 버그)
   const CLOSE = /(없애|없애줘|닫아|닫아|닫으|닫어|닫기|접어|접기|사라지|지워|지워줘|내려|내려줘|치워|치워줘|끄|꺼|그만\s*보여|안\s*보이게|숨겨|숨겨줘)/;
   // ★2026-07-27: "닫아"·"닫으라구"처럼 ★단독으로 말해도 알아듣게.
@@ -1363,13 +1368,18 @@ function cardFlags(q, cardOpen) {
     /(상담|미팅|면담|방문|대기)/.test(q) || /(만기|만료|경과|지난|임박)/.test(q) ||
     /(생일|기념일)/.test(q) || /(방금|아까|위에|그\s*\d+명|말한|언급)/.test(q) ||
     /\d+\s*명/.test(q));
+  // ★2026-07-27 로그로 확인된 버그: 이름추출="상담"
+  //   "상담 대기 주요건 3명에 대한 카드 띄워줘"에서 '상담'을 사람 이름으로 뽑았다.
+  //   "상담 대기"는 ★조건이지 이름이 아니다. 조건어는 이름 후보에서 아예 뺀다.
+  const NOT_NAME = /^(상담|대기|미팅|면담|방문|예정|요청|문의|만기|만료|경과|갱신|임박|생일|생신|기념|기념일|주요|주요건|중요|전체|모든|우리|오늘|내일|어제|이번|지난|다음|고객|명단|사람|사람들|번호|정보|연락|최근|신규|기존|목록|리스트|현황|상황|보고)$/;
   let cardName = '';
   if (isCardCmd) {
-    const c = q.replace(/고객님|고객|카드|스캔해줘|스캔해|스캔|띄워줘|띄워|띄우|보여줘|보여|열어줘|열어|해줘|줘|증권|서류|자료|파일|명단|이거|저거|화면|을|를|의|좀|씨|님/g, ' ').trim();
-    const m = c.match(/([가-힣]{2,4})/);
-    cardName = m ? m[1] : '';
+    const c = q.replace(/고객님|고객|카드|스캔해줘|스캔해|스캔|띄워줘|띄워|띄우|보여줘|보여|열어줘|열어|해줘|줘|증권|서류|자료|파일|명단|이거|저거|화면|에\s*대한|대한|을|를|의|좀|씨|님/g, ' ').trim();
+    // 후보를 여러 개 훑어 ★조건어가 아닌 첫 낱말만 이름으로 본다
+    const cands = c.match(/[가-힣]{2,4}/g) || [];
+    for (const w of cands) { if (!NOT_NAME.test(w)) { cardName = w; break; } }
   }
-  return { isCardCmd, isCardClose, isGroupCard, cardName };
+  return { isCardCmd, isCardClose, isGroupCard, cardName, notName: NOT_NAME.source };
 }
 
 /** 이 글에 나온 사람 중 ★명단에 실제로 있는 이름만 (지어내기 차단) */
@@ -1409,6 +1419,18 @@ function _resolveCardGroup(q, t, lastMentioned) {
     const past = /(지난|경과|넘긴|지나|끝난)/.test(q);
     const names = rows.filter((r) => _isExpired(r, past ? null : 30)).map((r) => _rowName(t, r)).filter(Boolean);
     return { names: names.slice(0, 12), label: past ? '만기 지난' : '만기 임박(30일 내)', how: past ? '만기일이 오늘보다 이전' : '만기일이 30일 이내' };
+  }
+  // ★생일·기념일 — 연도를 무시하고 오늘 기준으로 계산한다(브리핑 3번과 같은 기준)
+  if (/(생일|생신|기념일)/.test(q)) {
+    const cols = Object.keys(rows[0] || {}).filter((k) => /(생일|생년|기념일)/.test(k));
+    const 오늘만 = /(오늘|today)/.test(q);
+    const arr = [];
+    rows.forEach((r) => cols.forEach((k) => {
+      const d = _annivIn(r[k]);
+      if (d != null && (오늘만 ? d === 0 : d <= 30)) { const n = _rowName(t, r); if (n && arr.indexOf(n) < 0) arr.push(n); }
+    }));
+    return { names: arr.slice(0, 12), label: 오늘만 ? '오늘 생일·기념일' : '생일·기념일(30일 내)',
+      how: 오늘만 ? '생일·기념일이 오늘' : '생일·기념일이 30일 이내' };
   }
   // ② 그 외 묶음 — ★브리핑과 같이 "모든 칸"을 훑는다(명단에 '상담' 컬럼이 없어도 비고로 잡힌다)
   for (const g of _CARD_GROUPS) {
@@ -1465,8 +1487,20 @@ app.get('/api/diag/card', async (req, res) => {
     const rows = (t && t.rows) || [];
     const keys = Object.keys(rows[0] || {});
     const g = _resolveCardGroup(q, t, []);
+    // ★실제 대화와 똑같은 순서로 최종 이름을 만든다 — "진단은 되는데 실제는 안 됨"을 막는다
+    const _wantM = q.match(/(\d+)\s*명/); const _want = _wantM ? Number(_wantM[1]) : 0;
+    const _isDateQ = /(만기|만료|경과|갱신|생일|기념일)/.test(q);
     let ai = [];
-    if (String(req.query.ai || '') === '1' && !/(만기|만료|생일)/.test(q)) { try { ai = await _resolveCardByLLM(q, t); } catch (e) {} }
+    let 최종 = named.length ? named : g.names.slice();
+    if (!named.length && !_isDateQ && (!g.names.length || (_want && g.names.length !== _want))) {
+      try {
+        ai = await _resolveCardByLLM(q, t, _want);
+        const better = ai.length && (!g.names.length || (_want && Math.abs(ai.length - _want) < Math.abs(g.names.length - _want)));
+        if (better) 최종 = ai;
+      } catch (e) {}
+    }
+    // 카드로 실제 그려질 행이 몇 개 붙는가 (여기가 0이면 화면에 안 뜬다)
+    const 행첨부 = 최종.filter((n) => rows.some((r) => _rowName(t, r) === n)).length;
     // 어떤 칸에 상담류 낱말이 들어 있는지(값이 아니라 ★칸 이름만)
     const 상담칸 = keys.filter((k) => rows.some((r) => /(상담|미팅|면담|방문|대기)/.test(String(r[k] || ''))));
     // ★실제 대화가 쓰는 것과 같은 트리거 함수 — "말한 대로 실제로 도는지"를 여기서 확인한다
@@ -1879,7 +1913,7 @@ async function orderHandler(req, res) {
     if (_isBriefAsk) console.log(`[📊브리핑] 고정 틀로 응답 · q="${String(q).slice(0, 40)}"`);
     if (_isCardCmd || _isCardClose) {
       // ★대표님이 로그에서 바로 볼 수 있게 — 수문장 로그(match=false)는 "방금 올린 것" 인지용이라 카드와 무관하다.
-      console.log(`[📇카드] 트리거 ON · ${_isCardClose ? '닫기' : (_isGroupCard ? '묶음' : '이름')} · 이름추출="${_cardName}" · q="${String(q).slice(0, 40)}"`);
+      console.log(`[📇카드] 트리거 ON · ${_isCardClose ? '닫기' : (_isGroupCard ? '묶음(조건 — 이름검색 안 함)' : '이름')} · 이름추출="${_isGroupCard ? '(조건이라 안 뽑음)' : _cardName}" · q="${String(q).slice(0, 40)}"`);
     }
     // ⭐ 이벤트 만들기 명령: "결혼기념일 이벤트 만들어줘" → 대시보드 [＋ 이벤트 추가]와 똑같이 실행. Vapi FC 미사용(텍스트 신호만).
     //   ★트리거 3개 배타 구분: 카드(카드/스캔) · 결재(결재/발송/알림톡/승인) · 이벤트(이벤트+만들/추가/생성).
@@ -2027,9 +2061,11 @@ async function orderHandler(req, res) {
           if (n && n.length >= 2 && q.indexOf(n) >= 0 && _named.indexOf(n) < 0) _named.push(n);
         }
       }
-      // 이름이 명단 표기와 조금 달라도(띄어쓰기 등) 잡히게 — 한 명만 말했을 때의 기존 경로 유지
+      // ★2026-07-27 "상담 대기 3명 카드" → "명단에서 '상담' 못 찾음" 버그의 진짜 원인:
+      //   findByName은 ★모든 칸을 부분일치로 뒤진다. 비고에 "상담 예정"이 있으면 '상담'이 사람으로 잡혔다.
+      //   → 묶음(조건)으로 말한 경우엔 ★이름 검색을 아예 하지 않는다. "상담"은 조건이지 이름이 아니다.
       let hit = [];
-      if (!_named.length && _cardName && t && t.rows) { try { hit = sheetsCrud.findByName(t, _cardName); } catch (e) { hit = []; } }
+      if (!_named.length && !_isGroupCard && _cardName && t && t.rows) { try { hit = sheetsCrud.findByName(t, _cardName); } catch (e) { hit = []; } }
       // ★2026-07-27 "서버는 성공, 화면이 안 받음" 사고:
       //   서버는 서비스계정으로 명단을 읽어 찾았는데, 화면은 /api/roster/list(회원 OAuth)로 ★다시 조회했다.
       //   회원 구글 데이터 스코프가 없으면 그 조회만 실패해 카드가 안 떴다.
@@ -2049,10 +2085,10 @@ async function orderHandler(req, res) {
       } else if (_named.length === 1) {
         out = { kind: '📇 고객카드', action: 'open_card', customer: _named[0], rows: _rowsFor(_named),
           text: _named[0] + ' 고객 카드를 띄울게요.' };
-      } else if (hit.length) {
+      } else if (hit.length && !_isGroupCard) {
         const h0 = hit[0]; const o = {}; Object.keys(h0).forEach((k) => { if (k !== '_rowNum') o[k] = h0[k]; });
-        out = { kind: '📇 고객카드', action: 'open_card', customer: _cardName, rows: [o],
-          text: _cardName + ' 고객 카드를 띄울게요.' };
+        out = { kind: '📇 고객카드', action: 'open_card', customer: _rowName(t, h0) || _cardName, rows: [o],
+          text: (_rowName(t, h0) || _cardName) + ' 고객 카드를 띄울게요.' };
       } else if (!_isGroupCard && !_cardName) {
         // ★대상이 없으면 지어내지 않고 되묻는다 ("고객카드 띄워줘")
         out = { kind: '📇 고객카드', text: '누구 카드를 띄울까요? 이름을 말씀해 주세요. (여러 명도 됩니다 — "강수연 오정서 카드"처럼요)' };
