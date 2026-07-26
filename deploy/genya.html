@@ -1419,10 +1419,10 @@ function prospectCopy(i){ var p=_PROSPECT_PAGES[i]; if(!p)return; var link=_pros
 function _leadsBody(){
   return '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:10px;flex-wrap:wrap">'
      +'<div style="font-size:12px;color:#556;line-height:1.5">신청·결제 시트를 읽어 <b>실제 매출</b>을 보여드려요 · <span style="color:#c0392b">연락은 직접(자동발송 없음)</span></div>'
-     +'<div style="display:flex;gap:6px">'
-       +'<button onclick="inflowConnect()" style="padding:6px 10px;border:1px solid var(--teal);background:var(--teal-l);color:var(--teal-d);border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap">＋ 시트 연결</button>'
-       +'<button onclick="prospectLoadInflow(); prospectLoadLeads();" style="padding:6px 10px;border:1px solid #dbe2ea;background:#fff;border-radius:8px;font-size:12px;cursor:pointer;color:#556;font-family:inherit;white-space:nowrap">↻ 새로고침</button>'
-     +'</div></div>'
+     +'<button onclick="prospectLoadInflow(); prospectLoadLeads();" style="padding:6px 10px;border:1px solid #dbe2ea;background:#fff;border-radius:8px;font-size:12px;cursor:pointer;color:#556;font-family:inherit;white-space:nowrap">↻ 새로고침</button>'
+   +'</div>'
+   // ★연결한 시트 줄은 ★항상★ 보인다(조회가 실패해도, 시트가 0개여도)
+   +'<div id="inflowBar">'+_inflowBar()+'</div>'
    +'<div id="inflowBox">'+_leadsSkeleton()+'</div>'    // ★신청자 표(이름·연락처·과정·금액·신청일 + 합계)
    +'<div id="leadsList">'+_leadsSkeleton()+'</div>';   // 로딩상태(스켈레톤) 먼저
 }
@@ -1432,7 +1432,9 @@ function _leadsBody(){
 //   두 번째를 넣으면 첫 번째가 사라진 것처럼 보였다. → ★목록은 브라우저가 갖는다(서버 저장 0).
 var _INFLOW_KEY='genya_inflow_sheets';
 function inflowSheets(){ try{ var a=JSON.parse(localStorage.getItem(_INFLOW_KEY)||'[]'); return Array.isArray(a)?a:[]; }catch(e){ return []; } }
-function inflowSave(a){ try{ localStorage.setItem(_INFLOW_KEY, JSON.stringify((a||[]).slice(0,5))); }catch(e){} }
+function inflowSave(a){ try{ localStorage.setItem(_INFLOW_KEY, JSON.stringify((a||[]).slice(0,5))); }catch(e){} _inflowBarPaint(); }
+// 목록이 바뀌면 그 줄만 다시 그린다(표는 건드리지 않는다)
+function _inflowBarPaint(){ try{ var b=document.getElementById('inflowBar'); if(b) b.innerHTML=_inflowBar(); }catch(e){} }
 window.inflowConnect=function(){
   var cur=inflowSheets();
   var url=prompt('신청자 구글 시트 주소를 붙여넣으세요.\n\n지금 연결됨: '+(cur.length?cur.map(function(x){return x.title||x.tab;}).join(', '):'없음')
@@ -1452,6 +1454,36 @@ window.inflowConnect=function(){
      prospectLoadInflow(); prospectLoadLeads();
    })
    .catch(function(){ toast('연결 실패 — 잠시 뒤 다시 시도해 주세요'); });
+};
+// ★2026-07-27 "관리 UI가 안 보임": 시트를 연결한 뒤에만 나타나서 처음엔 아무것도 안 보였다.
+//   → ★항상 보이는 줄로 만든다. 무엇이 연결됐는지·어떻게 더하고 빼는지 한눈에.
+function _inflowBar(){
+  var ls=inflowSheets();
+  var chips = ls.length
+    ? ls.map(function(x,i){
+        return '<span style="display:inline-flex;align-items:center;gap:5px;background:#fff;border:1px solid #cfe8e1;border-radius:999px;padding:3px 6px 3px 10px;font-size:11.5px;color:#0d1b2a;max-width:220px">'
+          +'<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+_escOb(x.title||x.tab||'시트')+'</span>'
+          +'<span onclick="inflowRemove('+i+')" title="빼기" style="cursor:pointer;color:#b0b8c2;font-size:14px;width:18px;height:18px;line-height:17px;text-align:center;border-radius:50%;background:#f2f5f8">×</span></span>';
+      }).join(' ')
+    : '<span style="font-size:11.5px;color:#8a93a3">아직 연결한 시트가 없어요 — 기본 신청 시트만 보고 있어요</span>';
+  return '<div style="border:1px solid #e5e9ee;border-radius:10px;padding:8px 10px;margin-bottom:8px;background:#fafbfc">'
+    +'<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px">'
+      +'<b style="font-size:11.5px;color:#0d1b2a">🔗 연결한 신청 시트 <span style="color:#0f766e">'+ls.length+'개</span></b>'
+      +'<button onclick="inflowConnect()" style="padding:4px 10px;border:1px solid var(--teal);background:var(--teal-l);color:var(--teal-d);border-radius:999px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap">＋ 추가</button>'
+    +'</div>'
+    // ★0개일 때도 반드시 보인다 — 무엇이 없는지 알아야 다음 행동을 하신다
+    +'<div style="display:flex;gap:5px;flex-wrap:wrap">'+chips+'</div>'
+    +'<div style="font-size:10.5px;color:#8a93a3;margin-top:5px">'
+      +(ls.length?'×를 누르면 빠집니다 · 최대 5개 · 합산과 파일별을 함께 보여드려요'
+                 :'[＋ 추가]에 구글 시트 주소를 붙여넣으면 여기에 쌓입니다 (최대 5개)')
+    +'</div></div>';
+}
+// 칩의 × — 그 시트만 뺀다
+window.inflowRemove=function(i){
+  var ls=inflowSheets(); var t=ls[i]; if(!t) return;
+  inflowSave(ls.filter(function(x,k){ return k!==i; }));
+  toast('뺐어요 — '+(t.title||t.tab)+' (남은 '+(ls.length-1)+'개)');
+  prospectLoadInflow();
 };
 // ★파일별 매출 — 부트캠프·통합리드·연금진단 어디서 돈이 나는지 나눠 본다
 function _inflowFiles(files){
@@ -1492,8 +1524,9 @@ function prospectLoadInflow(){
    .then(function(r){ return r.json().then(function(j){ return {s:r.status,j:j}; }); })
    .then(function(x){
      var d=x.j;
+     _inflowBarPaint();                                               // ★연결 줄은 어떤 경우에도 유지
      if(x.s===401){ box.innerHTML=''; return; }                       // 로그인 안 됨 — 아래 기존 안내가 뜬다
-     if(!d||!d.ok){ box.innerHTML='<div style="font-size:11.5px;color:#8a6d1a;background:#fffdf5;border:1px solid #ecdca8;border-radius:8px;padding:8px 10px;margin-bottom:10px">📥 신청자 표를 못 불러왔어요 — '+_escOb((d&&d.error)||'오류')+'</div>'; return; }
+     if(!d||!d.ok){ box.innerHTML='<div style="font-size:11.5px;color:#8a6d1a;background:#fffdf5;border:1px solid #ecdca8;border-radius:8px;padding:8px 10px;margin-bottom:10px">📥 신청자 표를 못 불러왔어요 — '+_escOb((d&&d.error)||'오류')+'<div style="color:#8a93a3;margin-top:3px">위 [＋ 추가]로 다른 시트를 붙이거나, ×로 빼실 수 있어요.</div></div>'; return; }
      var rows=d.rows||[], sm=d.sum||{};
      window._SALES_STATS=sm;                    // ★브리핑 7번(매출)이 쓸 숫자 — 이름·연락처 없음
      var head='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">'
@@ -1506,9 +1539,8 @@ function prospectLoadInflow(){
        // ★신청만 하고 아직 결제 안 한 분 = 다음 매출
        +((sm.미결제)?('<div style="font-size:11.5px;color:#8a6d1a;background:#fffdf5;border:1px solid #ecdca8;border-radius:8px;padding:7px 10px;margin-bottom:8px">💰 신청 '+(sm.신청||0)+'명 중 <b>'+sm.미결제+'명이 아직 결제 전</b>이에요 — 여기가 다음 매출입니다.'
          +((sm.중복제외)?('<div style="color:#8a93a3;margin-top:3px">여러 시트에 겹친 '+sm.중복제외+'건은 한 번만 셌어요.</div>'):'')+'</div>'):'')
-       // ★파일별 — 어디서 매출이 나는지 한눈에
-       +_inflowFiles(d.files||sm.파일별||[])
-       +(d.custom?'<div style="font-size:10.5px;color:#0f766e;margin-bottom:6px">🔗 연결한 시트 '+((d.files||[]).length)+'개 · <span onclick="inflowConnect()" style="text-decoration:underline;cursor:pointer">＋ 추가</span> · <span onclick="inflowManage()" style="text-decoration:underline;cursor:pointer">관리</span></div>':'');
+       // ★파일별 — 어디서 매출이 나는지 한눈에 (연결 줄은 위에 항상 따로 있다)
+       +_inflowFiles(d.files||sm.파일별||[]);
      if(d.missing&&d.missing.length) head+='<div style="font-size:11px;color:#8a6d1a;background:#fffdf5;border:1px solid #ecdca8;border-radius:8px;padding:6px 9px;margin-bottom:8px">⚠️ 시트에 없는 항목: <b>'+d.missing.map(_escOb).join(', ')+'</b> — 그 칸은 비어서 나옵니다</div>';
      if(!rows.length){ box.innerHTML=head+'<div style="font-size:12px;color:#8a93a3;padding:6px 0 12px">아직 신청자가 없어요. (시트 '+_escOb(d.tab||'')+' · '+_escOb(d.권한||'')+')</div>'; return; }
      var tb='<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid #e5e9ee;border-radius:10px"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:460px">'
