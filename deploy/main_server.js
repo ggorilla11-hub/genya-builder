@@ -1013,6 +1013,53 @@ app.post('/api/prospect/sheet', async (req, res) => {
       : (/not found|404/i.test(e.message || '') ? '그 주소의 시트를 찾을 수 없어요' : e.message) });
   }
 });
+// ═══ 🤖 자율 실행 판정 — 한 곳에서만 정한다(실제 경로와 진단 창구가 같은 함수를 쓴다) ═══
+//   ★여기서 정하는 건 ★내부 동작뿐이다. 발송·결제·삭제는 이 함수가 아예 만들지 않는다.
+const _AR = {
+  findWord: /(발굴|리드\s*찾|고객\s*찾|잠재\s*고객)/,
+  runWord: /(돌려|돌리|실행|시작|가동|해줘|해라|해봐|하자|하라|한\s*번|다시|고고|찾아|긁어|모아)/,
+  // 조회·현황 질문은 브리핑에 양보한다("발굴 리드 현황 보고해" → 실행 아님)
+  askWord: /(현황|상황|보고|브리핑|리포트|결과|정리|몇\s*[건명]|건수|얼마|어때|왜|안\s*(보여|나와)|못\s*(보여|찾)|답글|초안|검수)/,
+  bare: /^\s*(지금|바로|좀)?\s*발굴\s*[!.]?\s*$/,
+  vague: /^\s*(발굴|리드)\s*(은|는|좀|말이야|어)?\s*[?？]?\s*$/,
+  openW: /(열어|열자|띄워|켜줘|켜|보여\s*줘|보자)/,
+  inflow: /(유입\s*전환|신청자\s*명단|결제\s*명단)/,
+  findTab: /(발굴\s*리드|리드\s*탭|발굴\s*창|발굴\s*화면)/,
+  refresh: /(새로\s*고침|리프레시|다시\s*불러)/,
+  ch: [[/유튜브|youtube/i, '📺 유튜브'], [/지식\s*i?n|지식인/i, '🟢 네이버 지식iN'],
+    [/다음\s*카페/i, '🟠 다음 카페'], [/네이버\s*카페|네카페/i, '🟩 네이버 카페'],
+    [/블로그/i, '🔵 네이버 블로그'], [/뉴스/i, '📰 네이버 뉴스'], [/구글|google/i, '🔎 구글 검색']],
+};
+function autoRunFlags(q, ctx) {
+  q = String(q || '');
+  const noBase = ctx && typeof ctx.noBase === 'boolean' ? ctx.noBase
+    : (!/(카드|스캔)/.test(q) && !/(결재|결제|발송|알림톡|승인)/.test(q) && !/이벤트/.test(q));
+  const briefAsk = !!(ctx && ctx.briefAsk);
+  const findRun = noBase && !briefAsk && _AR.findWord.test(q) && !_AR.askWord.test(q)
+    && (_AR.runWord.test(q) || _AR.bare.test(q));
+  // ★애매하면 되묻는다(무반응·회피 금지). 단 아주 좁게만 — 멀쩡한 질문을 가로채면 안 된다.
+  const findVague = noBase && !findRun && _AR.vague.test(q);
+  return {
+    findRun, findVague,
+    openInflow: noBase && !briefAsk && _AR.inflow.test(q) && _AR.openW.test(q),
+    openFind: noBase && !briefAsk && !findRun && _AR.findTab.test(q) && _AR.openW.test(q),
+    refresh: noBase && _AR.refresh.test(q),
+    channel: (_AR.ch.find(([re]) => re.test(q)) || [])[1] || '',
+  };
+}
+// 🩺 자율 실행 진단 — "이 말을 하면 지니야가 무엇을 하나". ★판정만 보여주고 아무것도 실행하지 않는다.
+//   개인정보·금액 0노출(문장 판정 결과뿐). 대표님이 로그인 없이도 확인하실 수 있게 공개로 둔다.
+app.get('/api/diag/autorun', (req, res) => {
+  const q = String(req.query.q || '발굴 돌려');
+  const f = autoRunFlags(q);
+  const 무엇 = f.findRun ? ('🔍 발굴 실행' + (f.channel ? ` (${f.channel} 위주)` : ' (전 채널)'))
+    : f.findVague ? '❓ 되묻기 — 전 채널인지 한 곳인지'
+    : f.openInflow ? '📥 유입 전환 열기' : f.openFind ? '🔍 발굴 리드 열기'
+    : f.refresh ? '🔄 새로고침' : '💬 대화로 답함(자율 실행 아님)';
+  res.json({ 물음: q, 지니야가하는일: 무엇, 자율실행인가: !!(f.findRun || f.openInflow || f.openFind || f.refresh),
+    발송하나: false, 판정: f,
+    안내: '★이 창구는 판정만 합니다 — 아무것도 실행하지 않습니다. 고객 발송은 어떤 말로도 일어나지 않고, 오직 화면 [승인] 버튼으로만 나갑니다.' });
+});
 function _pickCol(head, names) { for (const n of names) { const i = head.indexOf(n); if (i >= 0) return i; } return -1; }
 // ★브리핑 7번(매출)이 쓸 ★숫자만 잠깐 담아둔다 — 이름·연락처는 담지 않는다(개인정보 저장 0).
 //   화면이 [유입 전환]을 열면 채워지고, 브리핑이 그 숫자를 쓴다.
@@ -2407,23 +2454,11 @@ async function orderHandler(req, res) {
     //   [승인 필수] 고객에게 나가는 답글·카톡·문자·메일, 결제·계약·삭제
     //     → ★여기에 그런 action은 하나도 없다. 발송은 오직 [승인] 버튼 → /api/approval/act 뿐이고
     //       그 길은 humanApproval 하드가드가 지킨다(a853121·df11f5d). 이 엔진은 그 문을 열지 않는다.
-    const _reFindWord = /(발굴|리드\s*찾|고객\s*찾|잠재\s*고객)/;
-    const _reRunWord = /(돌려|돌리|실행|시작|가동|해줘|해라|해봐|하자|하라|한\s*번|다시|고고|찾아|긁어|모아)/;
-    // 조회·현황 질문은 브리핑에 양보한다("발굴 리드 현황 보고해" → 실행 아님)
-    const _reFindAsk = /(현황|상황|보고|브리핑|리포트|결과|정리|몇\s*[건명]|건수|얼마|어때|왜|안\s*(보여|나와)|못\s*(보여|찾)|답글|초안|검수)/;
-    const _isFindRun = _noBase && !_isBriefAsk && _reFindWord.test(q) && !_reFindAsk.test(q)
-      && (_reRunWord.test(q) || /^\s*(지금|바로|좀)?\s*발굴\s*[!.]?\s*$/.test(q));
-    // ★애매하면 되묻는다(무반응·회피 금지). 단 아주 좁게만 — 멀쩡한 질문을 가로채면 안 된다.
-    const _isFindVague = _noBase && !_isFindRun && /^\s*(발굴|리드)\s*(은|는|좀|말이야|어)?\s*[?？]?\s*$/.test(q);
-    const _FIND_CH = [[/유튜브|youtube/i, '📺 유튜브'], [/지식\s*i?n|지식인/i, '🟢 네이버 지식iN'],
-      [/다음\s*카페/i, '🟠 다음 카페'], [/네이버\s*카페|네카페/i, '🟩 네이버 카페'],
-      [/블로그/i, '🔵 네이버 블로그'], [/뉴스/i, '📰 네이버 뉴스'], [/구글|google/i, '🔎 구글 검색']];
-    const _findCh = (_FIND_CH.find(([re]) => re.test(q)) || [])[1] || '';
-    // 화면 동작 — 되돌릴 수 있다(데이터 무접촉)
-    const _reOpenW = /(열어|열자|띄워|켜줘|켜|보여\s*줘|보자)/;
-    const _isOpenInflow = _noBase && !_isBriefAsk && /(유입\s*전환|신청자\s*명단|결제\s*명단)/.test(q) && _reOpenW.test(q);
-    const _isOpenFind = _noBase && !_isBriefAsk && !_isFindRun && /(발굴\s*리드|리드\s*탭|발굴\s*창|발굴\s*화면)/.test(q) && _reOpenW.test(q);
-    const _isRefresh = _noBase && /(새로\s*고침|리프레시|다시\s*불러)/.test(q);
+    //   ★판정은 autoRunFlags() 한 곳에서만 한다 — 진단 창구(/api/diag/autorun)가 같은 함수를 쓰므로
+    //     "진단은 되는데 실제는 다르다"가 생길 수 없다(카드의 cardFlags와 같은 방식).
+    const _ar = autoRunFlags(q, { noBase: _noBase, briefAsk: _isBriefAsk });
+    const { findRun: _isFindRun, findVague: _isFindVague, openInflow: _isOpenInflow,
+      openFind: _isOpenFind, refresh: _isRefresh, channel: _findCh } = _ar;
     if (_isFindRun || _isFindVague || _isOpenInflow || _isOpenFind || _isRefresh) {
       console.log(`[🤖자율실행] ${_isFindRun ? '발굴 실행' + (_findCh ? `(${_findCh})` : '(전 채널)')
         : _isFindVague ? '발굴 되묻기' : _isOpenInflow ? '유입전환 열기' : _isOpenFind ? '발굴리드 열기' : '새로고침'}`
