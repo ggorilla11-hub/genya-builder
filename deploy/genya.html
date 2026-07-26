@@ -1554,6 +1554,44 @@ function _findReview(d){
   if(불가) s+='<div style="color:#8a6d1a;margin-top:4px">⚠️ '+불가+'건은 <b>검수를 못 했어요</b> — 답글 전에 내용을 직접 봐주세요</div>';
   return s+'</div>';
 }
+// ═══ 채널 타일 — 상단에서 채널을 고르고, 고른 채널의 리드만 세로로 편다 ═══
+//   250건이 한 줄로 늘어지면 못 본다. 채널을 눌러 그 채널만 본다.
+function _findSelCh(order){
+  var s=window._FIND_CH;
+  if(s && order.indexOf(s)>=0) return s;
+  // 처음엔 ★리드가 가장 많은 채널을 자동으로 연다(빈 화면부터 보이지 않게)
+  var best=order[0], n=-1;
+  order.forEach(function(c){ var k=((window._FIND||[]).filter(function(l){ return (l.ch||'기타')===c; })).length; if(k>n){ n=k; best=c; } });
+  window._FIND_CH=best; return best;
+}
+function findPickCh(c){ window._FIND_CH=c; if(typeof window._RENDER_FIND==='function') window._RENDER_FIND(); }
+// 그 채널의 상태 — 켜짐/꺼짐/오류를 타일에 한 글자로
+function _findChState(title,d){
+  var ro=((d&&d.desk&&d.desk.roster)||[]).filter(function(r){ return r.label===title; })[0];
+  if(ro && !ro.on) return {ic:'🔒', tip:ro.reason||'키 필요', bad:true};
+  var st=(d&&d.desk&&d.desk.stats)||{}, err='';
+  Object.keys(st).forEach(function(k){ if(st[k].채널===title && st[k].에러 && !err) err=st[k].에러; });
+  if(err) return {ic:'⚠️', tip:err, bad:true};
+  return {ic:'', tip:'', bad:false};
+}
+function _findTiles(order, byCh, d){
+  if(!order.length) return '';
+  var sel=_findSelCh(order);
+  var tiles=order.map(function(c){
+    var items=byCh[c]||[];
+    var pass=items.filter(function(x){ return x.l.review && x.l.review.verdict==='고객'; }).length;
+    var stt=_findChState(c,d);
+    var on=(c===sel);
+    var em=(c.match(/^\S+/)||[''])[0], nm=c.replace(/^\S+\s*/,'');
+    return '<div onclick="findPickCh(\''+c.replace(/'/g,"\\'")+'\')" title="'+_escOb(stt.tip)+'" style="flex:0 0 auto;min-width:104px;cursor:pointer;border:1px solid '+(on?'var(--teal)':'#e5e9ee')+';background:'+(on?'var(--teal-l)':'#fff')+';border-radius:11px;padding:9px 11px;text-align:center">'
+      +'<div style="font-size:17px;line-height:1.1">'+em+(stt.ic?('<span style="font-size:11px">'+stt.ic+'</span>'):'')+'</div>'
+      +'<div style="font-size:11px;font-weight:700;color:'+(on?'var(--teal-d)':'#556')+';margin-top:3px;white-space:nowrap">'+_escOb(nm)+'</div>'
+      +'<div style="font-size:12px;font-weight:800;color:'+(stt.bad?'#8a6d1a':(items.length?'#0d1b2a':'#a8b0ba'))+';margin-top:2px">'+(stt.bad&&!items.length?'—':(items.length+'건'))+'</div>'
+      +(pass?('<div style="font-size:10px;color:#0f766e;font-weight:700">✅ '+pass+'</div>'):'')
+      +'</div>';
+  }).join('');
+  return '<div style="display:flex;gap:7px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding:2px 0 10px">'+tiles+'</div>';
+}
 // 실제로 순회를 돈 채널 목록(성적표 기준) — 0건이어도 이름은 나와야 한다
 function _findRanChannels(d){
   var st=(d&&d.desk&&d.desk.stats)||{}, out=[];
@@ -1636,12 +1674,14 @@ function prospectLoadFind(){
        var _f2=(d&&d.filtered)||{};
        var h2=(_f2.홍보자제외?('<div style="font-size:11.5px;color:#0f766e;background:#f2f9f7;border:1px solid #cfe8e1;border-radius:8px;padding:7px 10px;margin-bottom:10px">🛡️ 규칙 필터가 홍보·경쟁자 글 <b>'+_f2.홍보자제외+'건</b>을 먼저 걸러냈어요</div>'):'');
        h2+='<div id="rvBar"></div>';                                  // ★검수 진행 상황이 실시간으로 들어갈 자리
-       h2+=_findRoster(d);
+       // ★채널을 상단 타일로 분류 — 250건이 세로로 쭉 늘어지지 않게(이벤트 배너 방식)
        var order=[], byCh={};
        (window._FIND||[]).forEach(function(l,i){ var c=l.ch||'기타'; if(!byCh[c]){ byCh[c]=[]; order.push(c); } byCh[c].push({l:l, gi:i}); });
        _findRanChannels(d).forEach(function(c){ if(!byCh[c]){ byCh[c]=[]; order.push(c); } });
+       (((d&&d.desk&&d.desk.roster)||[]).forEach(function(r){ if(!byCh[r.label]){ byCh[r.label]=[]; order.push(r.label); } }));
+       h2+=_findTiles(order, byCh, d);
        if(!order.length) h2+='<div style="font-size:12px;color:#8a93a3;padding:4px 0 10px">아직 없어요.</div>';
-       order.forEach(function(c){ h2+=_findChSection(c, byCh[c], d); });
+       else { var sel=_findSelCh(order); h2+=_findChSection(sel, byCh[sel]||[], d); }
        h2+=_findStats(d);
        bx.innerHTML=h2;
        _rvBar();

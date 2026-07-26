@@ -19,6 +19,33 @@ const SECRET_ENV = 'NAVER_CLIENT_SECRET';
 
 function creds() { return { id: process.env[ID_ENV], sec: process.env[SECRET_ENV] }; }
 
+// ★2026-07-27 "Rate limit exceeded" 사고 (블로그·뉴스가 통째로 실패)
+//   원인: 네이버 4채널(지식iN·카페·블로그·뉴스)이 ★키 한 세트를 공유하는데
+//         AI 8명이 동시에 나가면서 순간 속도를 넘겼다. 하루 한도(25,000)는 넉넉하다 — 초당 속도만 문제다.
+//   해법: 네이버로 나가는 모든 호출을 ★한 줄로 세우고 사이에 간격을 둔다.
+//         채널이 몇 개든, AI가 몇 명이든 네이버에는 한 번에 하나씩만 나간다.
+const GAP_MS = Number(process.env.NAVER_GAP_MS) || 300;   // 호출 사이 간격
+const RETRY = 2;                                          // 그래도 걸리면 쉬었다 다시
+let _chain = Promise.resolve();                           // 모든 네이버 호출이 이 줄에 선다
+const _sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** 네이버 호출 한 건을 줄 세워 보낸다(간격 + 속도제한 시 재시도) */
+function queued(fn) {
+  const run = _chain.then(async () => {
+    for (let t = 0; t <= RETRY; t++) {
+      const r = await fn();
+      // 속도 제한이면 조금 더 쉬었다 다시 — 실패로 버리지 않는다
+      if (r && r.errorCode && /rate|limit|429|과도/i.test(String(r.errorMessage || '') + r.errorCode)) {
+        if (t < RETRY) { await _sleep(GAP_MS * (t + 2) * 3); continue; }
+      }
+      return r;
+    }
+  });
+  // 다음 호출은 이 호출이 끝나고 GAP_MS 뒤에 (실패해도 줄은 계속 흐른다)
+  _chain = run.then(() => _sleep(GAP_MS), () => _sleep(GAP_MS));
+  return run;
+}
+
 function probe() {
   const { id, sec } = creds();
   if (!id || !sec) {
@@ -64,13 +91,19 @@ function makeNaverHunter(cfg) {
     const max = opts.max || 30;
     for (const kw of keywords(persona, opts.agent, cfg.fallbackKw)) {
       let j;
-      // ★타임아웃 필수 — 네이버가 매달리면 발굴 전체가 멈춘다(2026-07-27 사고)
+      // ★줄 세워 보낸다(속도 제한 방지) + ★타임아웃 필수(매달리면 발굴 전체가 멈춘다)
       try {
-        j = await C.fetchJson(`${API}?query=${encodeURIComponent(kw)}&display=20&sort=date`, {
+        j = await queued(() => C.fetchJson(`${API}?query=${encodeURIComponent(kw)}&display=20&sort=date`, {
           headers: { 'X-Naver-Client-Id': id, 'X-Naver-Client-Secret': sec },
-        });
+        }).catch((e) => ({ __thrown: e })));
+        if (j && j.__thrown) throw j.__thrown;
       } catch (e) { if (/응답 없음/.test(e.message)) throw e; continue; }
-      if (j && j.errorCode) throw new Error(`네이버 API: ${j.errorMessage || j.errorCode}`);
+      if (j && j.errorCode) {
+        // 사람이 읽는 말로 — "무엇을 해야 하나"까지
+        const rl = /rate|limit|429|과도/i.test(String(j.errorMessage || '') + j.errorCode);
+        throw new Error(rl ? '네이버가 잠깐 속도를 제한했어요 — 잠시 뒤 다시 눌러주세요'
+          : `네이버 API: ${j.errorMessage || j.errorCode}`);
+      }
       (j.items || []).forEach((it) => {
         const title = clean(it.title);
         const desc = clean(it.description);
