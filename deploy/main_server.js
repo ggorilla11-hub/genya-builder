@@ -1164,6 +1164,54 @@ function _isExpired(row, within) {
   }
   return false;
 }
+// ★2026-07-27 재진단으로 밝혀진 근본 원인:
+//   진짜 명단으로 확인해 보니 "상담 대기"를 낱말로 찾으면 3명인데 브리핑은 4명이라 했다.
+//   브리핑(LLM)은 비고의 ★뜻을 읽고 묶는데, 카드는 ★낱말을 찾는다.
+//   낱말 목록을 아무리 늘려도 둘이 똑같아질 수 없다.
+//   → 낱말로 못 맞추면 ★브리핑과 같은 두뇌에게 고르게 한다. 그래야 말과 카드가 일치한다.
+//   ★환각 차단: 두뇌가 뭐라 답하든 ★명단에 실제로 있는 이름만 통과시킨다.
+//   ★개인정보 최소: 판단에 필요한 칸(이름·비고·만기일·상품)만 보낸다. 연락처·주소·이메일은 안 보낸다.
+const _CARD_LLM_COLS = /(고객명|성명|이름|비고|메모|상태|만기|가입상품|상품|직업)/;
+async function _resolveCardByLLM(q, t) {
+  const rows = (t && t.rows) || [];
+  if (!rows.length) return [];
+  const keys = Object.keys(rows[0]).filter((k) => _CARD_LLM_COLS.test(k));
+  if (!keys.length) return [];
+  const lines = rows.map((r, i) => `${i}. ` + keys.map((k) => `${k}:${String(r[k] || '').slice(0, 40)}`).join(' / '));
+  const prompt = `아래는 고객 명단이다. 질문에 해당하는 사람의 번호만 골라라.
+
+질문: "${q}"
+
+[판단 규칙]
+· 비고 칸의 ★뜻을 읽어라. "상담 대기"는 '상담'이라는 글자가 없어도 상담을 기다리는 상황이면 해당한다.
+  예: "연락 달라고 함", "설계 요청", "검토 중", "회신 대기" → 상담 대기에 해당
+· 질문에 없는 사람을 넣지 마라. 애매하면 빼라.
+· 번호만 JSON 배열로. 설명 금지. 예: [0,3,7]
+
+[명단]
+${lines.join('\n')}`;
+  let raw = '';
+  try {
+    const r = await _anthropic.messages.create({
+      model: process.env.REVIEW_MODEL || 'claude-haiku-4-5-20251001',
+      max_tokens: 300, temperature: 0, messages: [{ role: 'user', content: prompt }],
+    });
+    raw = (r.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');
+  } catch (e) { return []; }
+  const a = raw.indexOf('['), b = raw.lastIndexOf(']');
+  if (a < 0 || b <= a) return [];
+  let idxs = [];
+  try { idxs = JSON.parse(raw.slice(a, b + 1)); } catch (e) { return []; }
+  const out = [];
+  for (const i of idxs) {
+    const r = rows[Number(i)];
+    if (!r) continue;                                   // ★없는 번호는 버린다(지어내기 차단)
+    const n = _rowName(t, r);
+    if (n && out.indexOf(n) < 0) out.push(n);
+  }
+  return out.slice(0, 12);
+}
+
 /** 이 글에 나온 사람 중 ★명단에 실제로 있는 이름만 (지어내기 차단) */
 async function _namesInText(text) {
   let t = null;
@@ -1236,6 +1284,8 @@ app.get('/api/diag/card', async (req, res) => {
     const rows = (t && t.rows) || [];
     const keys = Object.keys(rows[0] || {});
     const g = _resolveCardGroup(q, t, []);
+    let ai = [];
+    if (String(req.query.ai || '') === '1' && !/(만기|만료|생일)/.test(q)) { try { ai = await _resolveCardByLLM(q, t); } catch (e) {} }
     // 어떤 칸에 상담류 낱말이 들어 있는지(값이 아니라 ★칸 이름만)
     const 상담칸 = keys.filter((k) => rows.some((r) => /(상담|미팅|면담|방문|대기)/.test(String(r[k] || ''))));
     const out = {
@@ -1244,8 +1294,9 @@ app.get('/api/diag/card', async (req, res) => {
       이름컬럼_추정: keys.find((k) => /(고객명|성명|이름|name)/i.test(k)) || '(못 찾음)',
       상담류_낱말이_있는_칸: 상담칸,
       묶음판정: g.label, 찾은기준: g.how, 매칭건수: g.names.length,
+      두뇌판단_건수: ai.length,                      // ?ai=1 일 때만 — 낱말 대신 뜻으로 고른 결과
     };
-    if (me) out.매칭이름 = g.names;                 // 로그인한 본인에게만
+    if (me) { out.매칭이름 = g.names; out.두뇌판단_이름 = ai; }   // 로그인한 본인에게만
     else out.안내 = '이름은 로그인해야 보입니다(개인정보 보호). 지금은 건수만 표시.';
     res.json(out);
   } catch (e) { res.status(502).json({ ok: false, error: e.message }); }
@@ -1763,6 +1814,14 @@ async function orderHandler(req, res) {
       } else {
         // ② 이름이 아니면 ★브리핑과 같은 기준으로 묶음을 찾는다(상담 대기·만기 경과 등)
         const g = _resolveCardGroup(q, t, (req.body && req.body.lastMentioned) || []);
+        // ★③ 낱말로 못 맞추면 브리핑과 같은 두뇌에게 고르게 한다 (말↔카드 불일치 근본 해소)
+        //    날짜 계산(만기)은 규칙이 정확하므로 그대로 두고, 뜻을 읽어야 하는 것만 두뇌에 맡긴다.
+        if (!g.names.length && !/(만기|만료|경과|갱신|생일|기념일)/.test(q)) {
+          try {
+            const ai = await _resolveCardByLLM(q, t);
+            if (ai.length) { g.names = ai; g.label = g.label === '해당' ? '말씀하신' : g.label; g.how = '지니야가 비고 내용을 읽고 판단'; }
+          } catch (e) {}
+        }
         if (g.names.length) {
           out = { kind: '📇 고객카드', action: 'open_cards', customers: g.names, label: g.label,
             text: `${g.label} ${g.names.length}명 카드를 띄울게요 — ${g.names.join(' · ')}` };
