@@ -1744,8 +1744,17 @@ app.get('/api/diag/inflow', async (req, res) => {
         if (iAmt >= 0 && _wonNum(g(iAmt)) > 0) 금액있는행++;
         if (iPaid >= 0) { if (/^(y|예|완료|결제완료|o|입금|입금완료|성공|결제됨)$/i.test(g(iPaid))) 결제완료++; else 미결제++; }
       }
+      // ★"결제 0건"으로 나올 때 원인을 알려면 결제 칸에 ★어떤 말이 적혀 있는지 봐야 한다.
+      //   상태 낱말만 모은다 — 금액·이름·연락처는 절대 담지 않는다.
+      const 표기 = [];
+      if (iPaid >= 0) for (let r = 1; r < rows.length; r++) {
+        const v = String(((rows[r] || [])[iPaid]) || '').trim().slice(0, 12);
+        const key = v || '(빈칸)';
+        if (표기.indexOf(key) < 0 && 표기.length < 8) 표기.push(key);
+      }
       if (신청표) { 신청표탭++; 합_결제 += 결제완료; 합_미결제 += 미결제; }
       탭들.push({ 탭: want[k], 신청표인가: 신청표, 데이터행: Math.max(0, rows.length - 1), 컬럼: head,
+        결제칸표기: 표기,
         매출낼수있나: iAmt >= 0 && iPaid >= 0,
         있는칸: { 이름: iName >= 0, 연락처: iPhone >= 0, 과정: iCourse >= 0, 금액: iAmt >= 0,
           신청일: i(['신청일시', '신청일', '접수시각', '결제일', '등록일', '타임스탬프']) >= 0,
