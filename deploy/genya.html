@@ -1550,38 +1550,20 @@ window.genyaDraftLeads=function(spec){
   var 원함=(spec&&spec.개수)||대상.length;
   var 할것=대상.slice(0, Math.min(원함, _DRAFT_MAX));
   var 잘림=Math.min(원함,대상.length)-할것.length;
-  try{ pushMsg('gen', renderMd('✍️ 검수 통과 **'+대상.length+'건** 중 **'+할것.length+'건**의 초안을 만들어 결재함에 올릴게요. 잠시만요.'
-    +(잘림?('\n\n(한 번에 '+_DRAFT_MAX+'건까지만 만듭니다 — '+잘림+'건은 다음에 말씀해 주세요.)'):'')
-    +'\n\n**보내지는 않습니다.** 결재함에서 보시고 [승인]하셔야 나갑니다.')); }catch(e){}
-  var 성공=0, 실패=0, 순서=0;
+  // ★2026-07-27 대표님 정정: 결재함으로 보내지 말고 ★발굴 리드 그 자리에 뜨게.
+  //   → 이미 있는 개별 [답글 초안] 버튼(findDraft)을 ★순서대로 눌러주는 것뿐이다.
+  //     새 경로도, 결재함 경유도 없다. 하나씩 누르는 것과 결과가 똑같다.
+  try{ discoveryPanel('find'); }catch(e){}            // 초안이 뜰 자리를 열어둔다
+  try{ pushMsg('gen','✍️ 초안 '+할것.length+'건 만드는 중이에요…'+(잘림?(' (한 번에 '+_DRAFT_MAX+'건까지 · '+잘림+'건 남음)'):'')); }catch(e){}
+  var 순서=0;
   var 하나=function(){
     if(순서>=할것.length){
-      try{ pushMsg('gen', renderMd('✍️ **초안 '+성공+'건을 결재함에 올렸어요.**'+(실패?(' (실패 '+실패+'건)'):'')
-        +'\n\n결재함에서 확인하시고 **[승인]**을 누르셔야 나갑니다 — 지금 나간 것은 **하나도 없습니다.**'
-        +_apOpenBtnHtml())); }catch(e){}
-      try{ if(document.getElementById('apList')) apRender(); }catch(e){}
+      try{ pushMsg('gen','✍️ **초안 '+할것.length+'건 만들었어요.** 발굴 리드에서 각 글 아래에 있어요. 보내는 건 대표님이 직접 하십니다.'); }catch(e){}
       return;
     }
-    var x=할것[순서++], l=x.l;
-    // ★버튼이 쓰는 그 창구 그대로
-    fetch('/api/find/reply-draft',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({text:l.text,author:l.name,source:l.source,channel:l.ch,why:l.why,tier:l.tier,
-        quote:(l.review&&l.review.quote)||'',
-        name:(typeof _myName==='function'?_myName():''),cert:(typeof _myCert==='function'?_myCert():''),
-        link:(typeof _findDraftLink==='function'?_findDraftLink(x.i):(l.link||''))})})
-     .then(function(r){ return r.json(); })
-     .then(function(d){
-       var 초안=(d&&(d.draft||d.text||d.초안))||'';
-       if(!d||!d.ok||!초안){ 실패++; return 하나(); }
-       // ★결재함에 올리는 것까지만 — approval.create (발송 아님)
-       return fetch('/api/approval/create',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},
-         body:JSON.stringify({ 템플릿:초안, 요청내용:'발굴 답글 초안 — '+(l.ch||'')+' / '+String(l.text||'').slice(0,40),
-           채널:'both', criteria:{} })})
-        .then(function(r2){ return r2.json(); })
-        .then(function(c){ if(c&&c.ok) 성공++; else 실패++; 하나(); })
-        .catch(function(){ 실패++; 하나(); });
-     })
-     .catch(function(){ 실패++; 하나(); });
+    var x=할것[순서++];
+    try{ findDraft(x.i); }catch(e){}                   // ★기존 버튼과 똑같은 함수
+    setTimeout(하나, 900);                             // 한꺼번에 때리지 않는다
   };
   하나();
 };
@@ -4702,7 +4684,7 @@ window.sendMsg=function(){
      if(d && d.rows) { try{ _cacheCardRows(d.rows); }catch(e){} }                                                    // ★서버가 보내준 카드 내용을 먼저 받아둔다
      if(d && d.action==='open_card' && d.customer){ try{ openCustomerCard(d.customer); }catch(e){} }
      if(d && d.action==='open_cards' && d.customers){ try{ openCustomerCards(d.customers, d.label); }catch(e){} }   // 📇 묶음 카드(상담 대기·만기 등)
-     if(d && d.action==='close_card'){ try{ closeCustomerCards(d.customer); }catch(e){} }                            // 📇 카드 닫기(화면만·데이터 무접촉)
+     if(d && d.action==='close_card'){ try{ closeCustomerCards(d.customer); }catch(e){} try{ showCardsClose(); }catch(e){} }   // ★내가 띄운 카드 상자도 같이 닫는다                            // 📇 카드 닫기(화면만·데이터 무접촉)
      _rememberMentioned(d);                                                                                          // ★브리핑이 말한 이름을 기억 → "방금 말한 4명 카드"
      // ⭐ 말로 이벤트 만들기: 서버가 실제로 만든 경우에만 이 신호가 온다 → 대시보드를 열어 새 타일을 "짠" 하고 보여준다.
      if(d && d.action==='create_event' && d.eventName){ try{ _eventCreated(d.eventName, d.eventCount); }catch(e){} }
@@ -4783,7 +4765,7 @@ function _voiceExec(q){
       if(d.rows){ try{ _cacheCardRows(d.rows); }catch(e){} }
       if(d.action==='open_card'&&d.customer){ try{ openCustomerCard(d.customer); }catch(e){} }
       if(d.action==='open_cards'&&d.customers){ try{ openCustomerCards(d.customers, d.label); }catch(e){} }
-      if(d.action==='close_card'){ try{ closeCustomerCards(d.customer); }catch(e){} }
+      if(d.action==='close_card'){ try{ closeCustomerCards(d.customer); }catch(e){} try{ showCardsClose(); }catch(e){} }
       _rememberMentioned(d);
       if(d.action==='create_event'&&d.eventName){ try{ _eventCreated(d.eventName, d.eventCount); }catch(e){} }  // ⭐ 음성으로 만든 이벤트도 화면에 즉시
       if(d.action==='skill_gen'){ try{ skillGen(d.docType||'pdf'); }catch(e){} }                                 // 📄 음성으로도 문서 생성
