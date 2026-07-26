@@ -2764,7 +2764,10 @@ async function orderHandler(req, res) {
         const t = await sheetsCrud.loadTable(null);
         for (const r of ((t && t.rows) || [])) { const n = _rowName(t, r); if (n && n.length >= 2 && q.indexOf(n) >= 0) { who = n; break; } }
       } catch (e) {}
+      // ★2026-07-27 대표님 실측: "발굴 카드 닫아"라고 해도 발굴 팝업이 안 닫혔다.
+      //   무엇을 닫으라 하셨는지 화면에 알려준다(발굴·리드·핫이면 발굴 팝업까지).
       out = { kind: '📇 고객카드', action: 'close_card', customer: who,
+        발굴도: /(발굴|리드|핫|전부|다\s*닫|모두)/.test(q),
         text: who ? (who + ' 고객 카드를 닫았어요.') : '카드를 닫았어요.' };
     } else if (_isCardCmd) {
       let t = null;

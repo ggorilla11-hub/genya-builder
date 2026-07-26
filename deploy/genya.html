@@ -1423,6 +1423,53 @@ window.genyaShowCards=function(spec){
     if(종.indexOf('sales')===0) return _showSales(spec);
   }catch(e){ try{ pushMsg('gen','보여드리려다 막혔어요 — 다시 말씀해 주세요.'); }catch(e2){} }
 };
+// ═══ 🏠 로고 메뉴 — 홈페이지·온보딩·로그아웃 (2026-07-27) ═══
+//   ★기존 화면은 안 고친다. 로고(.brand)에 ★클릭만 붙이고, 메뉴는 새로 만든 요소다.
+//   ★로그아웃해도 밤샘 프로필은 그대로다(Firestore에 있고, 이 코드는 그걸 안 건드린다).
+window.genyaLogoMenu=function(ev){
+  if(ev){ try{ ev.stopPropagation(); }catch(e){} }
+  var m=document.getElementById('logoMenu');
+  if(m && m.style.display!=='none'){ m.style.display='none'; return; }   // 다시 누르면 닫힘
+  if(!m){ m=document.createElement('div'); m.id='logoMenu';
+    m.style.cssText='position:fixed;z-index:9400;background:#fff;border:1px solid #dbe2ea;border-radius:12px;'
+      +'box-shadow:0 10px 30px rgba(13,27,42,.2);padding:6px;min-width:186px;font-family:inherit';
+    m.onclick=function(e){ try{ e.stopPropagation(); }catch(x){} };
+    document.body.appendChild(m);
+    // 바깥을 누르면 닫힌다
+    document.addEventListener('click',function(){ var el=document.getElementById('logoMenu'); if(el) el.style.display='none'; });
+  }
+  var 항목=function(아이콘,글,설명,fn){
+    return '<div onclick="'+fn+'" style="padding:9px 11px;border-radius:9px;cursor:pointer;font-size:13px;color:#0d1b2a"'
+      +' onmouseover="this.style.background=\'#f2f5f8\'" onmouseout="this.style.background=\'\'">'
+      +'<b>'+아이콘+' '+글+'</b><div style="font-size:10.5px;color:#8a93a3;margin-top:1px">'+설명+'</div></div>'; };
+  m.innerHTML=항목('🏠','홈페이지','오원트 홈페이지로 이동','genyaGoHome()')
+    +항목('⚙️','온보딩','이름·직업 등 처음 설정 다시','genyaGoOnboard()')
+    +'<div style="height:1px;background:#eef1f5;margin:4px 6px"></div>'
+    +항목('🚪','로그아웃','이 기기에서 로그아웃','genyaLogout()');
+  // 로고 바로 아래에 붙인다
+  var b=document.querySelector('.brand');
+  var r=b?b.getBoundingClientRect():{left:14,bottom:52};
+  m.style.left=Math.max(8,r.left)+'px';
+  m.style.top=(r.bottom+8)+'px';
+  m.style.display='block';
+};
+window.genyaGoHome=function(){ try{ window.open('https://ohwant.net','_blank','noopener'); }catch(e){} var el=document.getElementById('logoMenu'); if(el) el.style.display='none'; };
+window.genyaGoOnboard=function(){ location.href='/?onboarding=1'; };
+window.genyaLogout=function(){
+  if(!confirm('로그아웃할까요?\n\n(밤샘 발굴 설정은 그대로 남습니다)')) return;
+  location.href='/logout';
+};
+// 로고에 클릭을 붙인다(기존 로고 HTML은 안 고친다)
+(function(){ function 붙이기(){
+  var b=document.querySelector('.brand'); if(!b || b.getAttribute('data-menu')==='1') return;
+  b.setAttribute('data-menu','1');
+  b.style.cursor='pointer';
+  b.title='메뉴 열기';
+  b.addEventListener('click', function(e){ genyaLogoMenu(e); });
+}
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',붙이기); else setTimeout(붙이기,300);
+  setTimeout(붙이기,1500);                            // 화면이 나중에 그려져도 붙게
+})();
 // ═══ 🎭 어드민 직업 전환 — ★대표님 전용 체험 도구 (2026-07-27) ═══
 //   ★교육생 화면엔 버튼조차 안 뜬다(서버가 403을 주면 아무것도 안 만든다).
 //   ★대표님 본래 설정은 안 바뀐다 — 전환은 ★체험용 겉옷이다. 밤샘은 재무 그대로 돈다.
@@ -4702,7 +4749,7 @@ window.sendMsg=function(){
      if(d && d.rows) { try{ _cacheCardRows(d.rows); }catch(e){} }                                                    // ★서버가 보내준 카드 내용을 먼저 받아둔다
      if(d && d.action==='open_card' && d.customer){ try{ openCustomerCard(d.customer); }catch(e){} }
      if(d && d.action==='open_cards' && d.customers){ try{ openCustomerCards(d.customers, d.label); }catch(e){} }   // 📇 묶음 카드(상담 대기·만기 등)
-     if(d && d.action==='close_card'){ try{ closeCustomerCards(d.customer); }catch(e){} try{ showCardsClose(); }catch(e){} }   // ★내가 띄운 카드 상자도 같이 닫는다                            // 📇 카드 닫기(화면만·데이터 무접촉)
+     if(d && d.action==='close_card'){ try{ closeCustomerCards(d.customer); }catch(e){} try{ showCardsClose(); }catch(e){} if(d.발굴도){ try{ closeDiscovery(); }catch(e){} } }   // ★고객카드+내 상자+(발굴이라 하시면)발굴 팝업까지                            // 📇 카드 닫기(화면만·데이터 무접촉)
      _rememberMentioned(d);                                                                                          // ★브리핑이 말한 이름을 기억 → "방금 말한 4명 카드"
      // ⭐ 말로 이벤트 만들기: 서버가 실제로 만든 경우에만 이 신호가 온다 → 대시보드를 열어 새 타일을 "짠" 하고 보여준다.
      if(d && d.action==='create_event' && d.eventName){ try{ _eventCreated(d.eventName, d.eventCount); }catch(e){} }
@@ -4783,7 +4830,7 @@ function _voiceExec(q){
       if(d.rows){ try{ _cacheCardRows(d.rows); }catch(e){} }
       if(d.action==='open_card'&&d.customer){ try{ openCustomerCard(d.customer); }catch(e){} }
       if(d.action==='open_cards'&&d.customers){ try{ openCustomerCards(d.customers, d.label); }catch(e){} }
-      if(d.action==='close_card'){ try{ closeCustomerCards(d.customer); }catch(e){} try{ showCardsClose(); }catch(e){} }
+      if(d.action==='close_card'){ try{ closeCustomerCards(d.customer); }catch(e){} try{ showCardsClose(); }catch(e){} if(d.발굴도){ try{ closeDiscovery(); }catch(e){} } }
       _rememberMentioned(d);
       if(d.action==='create_event'&&d.eventName){ try{ _eventCreated(d.eventName, d.eventCount); }catch(e){} }  // ⭐ 음성으로 만든 이벤트도 화면에 즉시
       if(d.action==='skill_gen'){ try{ skillGen(d.docType||'pdf'); }catch(e){} }                                 // 📄 음성으로도 문서 생성
