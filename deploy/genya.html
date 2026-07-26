@@ -1302,14 +1302,32 @@ var _PROSPECT_PAGES=[
 ];
 function _agentName(){ return String(CUR_NICK||'').replace(/님$/,'').trim(); }               // ★현재 로그인 설계사 이름
 function _prospectLink(url){ var a=_agentName(); return url+(a?('?agent='+encodeURIComponent(a)):''); }  // ★자기 이름 자동 첨부
-function discoveryPanel(){ window._ACTIVE_SKILL='client_discovery'; window._PTAB='deploy'; showModal(_prospectHTML()); }
-function prospectTab(which){ window._PTAB=which; document.getElementById('modalBox').innerHTML=_prospectHTML(); if(which==='leads'){ prospectLoadInflow(); prospectLoadLeads(); } if(which==='find') prospectLoadFind(); }
+// ★2026-07-27 단계 축소: 열면 곧바로 [🔍 발굴 리드]가 보인다(전엔 진단페이지 탭이 먼저였다).
+//   그리고 마지막 발굴 결과가 있으면 ★[지금 발굴]을 누르지 않아도 바로 뜬다(빈 화면 안 보이게).
+function discoveryPanel(tab){
+  window._ACTIVE_SKILL='client_discovery';
+  window._PTAB=tab||'find';
+  showModal(_prospectHTML());
+  if(window._PTAB==='find') _findAutoShow();
+  if(window._PTAB==='leads'){ prospectLoadInflow(); prospectLoadLeads(); }
+}
+function prospectTab(which){ window._PTAB=which; document.getElementById('modalBox').innerHTML=_prospectHTML(); if(which==='leads'){ prospectLoadInflow(); prospectLoadLeads(); } if(which==='find') _findAutoShow(); }
+// ★발굴 리드 자동 표시 — 이미 찾아둔 게 있으면 그걸 즉시 그리고(다시 안 부른다),
+//   없으면 그때만 실제로 발굴한다. 어느 경우에도 빈 화면을 안 보여준다.
+function _findAutoShow(){
+  if((window._FIND||[]).length && typeof window._RENDER_FIND==='function'){
+    window._RENDER_FIND();                       // 마지막 결과 즉시 표시(재조회 0)
+    if(!_RV.run) startReview();                  // 아직 검수 안 끝난 게 있으면 이어서
+    return;
+  }
+  prospectLoadFind();                            // 처음이면 자동으로 발굴 시작
+}
 function _prospectHTML(){
-  var tab=window._PTAB||'deploy';
+  var tab=window._PTAB||'find';   // ★기본은 발굴 리드(대표님 최우선)
   var tb=function(id,label){ var on=(tab===id); return '<button onclick="prospectTab(\''+id+'\')" style="flex:1;padding:9px 8px;border:none;background:none;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;color:'+(on?'var(--teal-d)':'#8a93a3')+';border-bottom:2px solid '+(on?'var(--teal)':'transparent')+'">'+label+'</button>'; };
   return '<div style="max-width:560px;padding:22px 24px">'
    +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px"><b style="font-size:16px;color:#0d1b2a">📡 고객발굴비서</b><span onclick="closeModal()" style="cursor:pointer;color:#8a93a3;font-size:20px">×</span></div>'
-   +'<div style="display:flex;margin-bottom:14px;border-bottom:1px solid #e5e9ee;overflow-x:auto">'+tb('deploy','📤 진단페이지')+tb('find','🔍 발굴 리드')+tb('leads','📥 진단 유입')+'</div>'
+   +'<div style="display:flex;margin-bottom:14px;border-bottom:1px solid #e5e9ee;overflow-x:auto">'+tb('find','🔍 발굴 리드')+tb('leads','📥 진단 유입')+tb('deploy','📤 진단페이지')+'</div>'
    +'<div id="prospectBody">'+(tab==='deploy'?_deployBody():(tab==='find'?_findBody():_leadsBody()))+'</div></div>';
 }
 // ── 탭1: 진단페이지 배포 (카드 2개 · 데스크톱 나란히 / 모바일 세로) ──
@@ -1427,7 +1445,8 @@ function _leadsNotReady(){ return '<div style="text-align:center;padding:28px 16
 // ── 탭: 발굴 리드 (유튜브·네이버 = server.js 발굴엔진 재사용 / 크몽 준비중) ──
 function _findBody(){
   return '<div style="font-size:12px;color:#556;line-height:1.5;margin-bottom:8px">공개 채널에서 지니야가 찾은 잠재고객이에요. <span style="color:#c0392b">연락·답글은 설계사 직접</span>(자동댓글 없음).</div>'
-   +'<div style="display:flex;gap:6px;margin-bottom:10px"><button onclick="prospectRunFind()" id="findRunBtn" style="flex:1;padding:8px;border:1px solid var(--teal);background:var(--teal-l);color:var(--teal-d);border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">🔍 지금 발굴</button><button onclick="prospectLoadFind()" style="padding:8px 12px;border:1px solid #dbe2ea;background:#fff;border-radius:8px;font-size:12px;cursor:pointer;color:#556;font-family:inherit">↻ 새로고침</button></div>'
+   // ★자동으로 뜨므로 이 버튼은 "새로 찾기"용이다(누르지 않아도 리드가 보인다)
+   +'<div style="display:flex;gap:6px;margin-bottom:10px"><button onclick="prospectRunFind()" id="findRunBtn" style="flex:1;padding:8px;border:1px solid var(--teal);background:var(--teal-l);color:var(--teal-d);border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">🔄 새로 발굴하기</button></div>'
    +'<div id="findList">'+_leadsSkeleton()+'</div>';
 }
 function _findTier(t){ var s=String(t||''); if(/핫|hot|🔥/i.test(s)) return '<span style="font-size:10px;color:#fff;background:#e0533d;border-radius:999px;padding:1px 7px">🔥핫</span>'; if(/웜|warm|🌤/i.test(s)) return '<span style="font-size:10px;color:#8a6d0f;background:#fbeec2;border-radius:999px;padding:1px 7px">🌤웜</span>'; return ''; }
@@ -1704,7 +1723,7 @@ function prospectLoadFind(){
    .then(function(d){
      clearTimeout(_to);
      // ★버튼을 반드시 되돌린다 — 결과가 떠도 "발굴 중…"에 멈춰 있으면 대표님은 안 끝난 줄 아신다
-     var _b=document.getElementById('findRunBtn'); if(_b){ _b.textContent='🔍 지금 발굴'; _b.disabled=false; }
+     var _b=document.getElementById('findRunBtn'); if(_b){ _b.textContent='🔄 새로 발굴하기'; _b.disabled=false; }
      if(d&&d.timedOut) toast('오래 걸려 일부만 가져왔어요 — 다시 누르면 나머지가 나올 수 있어요');
      // ★키가 없으면 "곧 켜집니다" 같은 얼버무림 대신 뭘 발급해야 하는지 그대로 보여준다
      if(d&&d.needsKey){ box.innerHTML='<div style="padding:22px 14px"><div style="font-size:30px;text-align:center">🔑</div><div style="font-size:13px;font-weight:700;color:#556;margin-top:8px;text-align:center">채널이 모두 꺼져 있어요</div>'
@@ -1753,7 +1772,7 @@ function prospectLoadFind(){
      box.innerHTML=aborted
        ? '<div style="text-align:center;padding:26px 16px"><div style="font-size:30px">⏱️</div><div style="font-size:13px;font-weight:700;color:#c0392b;margin-top:8px">발굴이 너무 오래 걸려 중단했어요</div><div style="font-size:11.5px;color:#8a93a3;margin-top:6px;line-height:1.6">채널 한 곳이 응답을 안 하는 경우예요.<br>잠시 뒤 다시 눌러주세요.</div><button onclick="prospectLoadFind()" style="margin-top:12px;padding:9px 18px;border:1px solid var(--teal);background:var(--teal-l);color:var(--teal-d);border-radius:10px;font-weight:700;cursor:pointer;font-size:13px;font-family:inherit">↻ 다시 시도</button></div>'
        : _findError();
-     var b=document.getElementById('findRunBtn'); if(b){ b.textContent='🔍 지금 발굴'; b.disabled=false; }
+     var b=document.getElementById('findRunBtn'); if(b){ b.textContent='🔄 새로 발굴하기'; b.disabled=false; }
    });
 }
 // ── 답글 초안(LLM) — 원 댓글 읽고 맞춤 초안 → 편집 textarea + 복사. ★게시는 설계사 직접(자동 0) ──
@@ -2246,21 +2265,11 @@ function closePop(){ document.getElementById('popBack').classList.remove('on'); 
 // ★삭제됨(2026-07-26): openRosterUpload() / rosterFileChosen() — 대시보드 전용 파일 선택창이었다.
 //   명단 업로드 입구를 [명단·연결] 하나로 단일화하면서 제거했다. 여기서 파일을 다시 받으면 이원화가 되살아난다.
 //   ※ [명단·연결]의 업로드는 유일한 입구이므로 그대로 유지된다 — 절대 건드리지 말 것.
-// ★발굴 카드 팝업 — 가짜 예시(김민수 등) 금지. 실제 발굴 리드(window._FIND) 있으면 표시, 없으면 빈 안내+[지금 발굴].
-function findPop(){
-  var leads=(window._FIND||[]);
-  var head='<div class="pop-h f"><div class="pic"><svg viewBox="0 0 24 24" fill="none">'+ICON.search+'</svg></div><div class="pt"><b>고객 발굴</b><span>실제 발굴 리드만 표시(예시 없음)</span></div><div class="px" onclick="closePop()"><svg viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></div></div>';
-  var body, foot;
-  if(!leads.length){
-    body='<div class="pop-list">'+_schedMsg('🔍','아직 발굴 전이에요','[지금 발굴]을 누르면 유튜브·네이버에서 실제 잠재고객을 찾아드려요.')+'</div>';
-    foot='<div class="pop-foot"><button class="fb" onclick="closePop(); if(typeof discoveryPanel===\'function\'){discoveryPanel();}">🔍 지금 발굴</button><div class="pop-src"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3l7 4v6c0 4-3 6.5-7 8-4-1.5-7-4-7-8V7l7-4z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>유튜브·네이버 공개 댓글</div></div>';
-  } else {
-    body='<div class="pop-list">'+leads.slice(0,10).map(function(l){ var hot=/핫|hot|🔥/i.test(l.tier||''); return '<div class="pop-item"><span class="di pi-f"></span><div class="it"><b>'+_sEsc(l.name||'')+'</b><span>'+_sEsc(String(l.sub||l.text||'').slice(0,60))+'</span></div><span class="tag'+(hot?' hot':'')+'">'+_sEsc(l.source||'')+'</span></div>'; }).join('')+'</div>';
-    foot='<div class="pop-foot"><button class="fb" onclick="closePop(); if(typeof discoveryPanel===\'function\'){discoveryPanel();}">발굴 상세 열기</button><div class="pop-src">실제 리드 '+leads.length+'명</div></div>';
-  }
-  document.getElementById('popBox').innerHTML=head+body+foot;
-  document.getElementById('popBack').classList.add('on');
-}
+// ★2026-07-27 단계 축소: 대시보드 발굴을 누르면 ★요약 팝업을 거치지 않고 곧바로 발굴 리드 화면으로 간다.
+//   전: 대시보드 클릭 → 요약 팝업 → [발굴 상세 열기] → 발굴 리드 탭 → [지금 발굴] (4단계)
+//   후: 대시보드 클릭 → 발굴 리드 화면(리드 자동 표시) (1단계)
+//   ★옛 요약 팝업(_findPopOld)은 통째로 삭제했다 — 사족이고, 남겨두면 언젠가 다시 살아난다.
+function findPop(){ discoveryPanel(); }
 
 // ===== 📅 오늘 약속 — 구글 캘린더 실데이터(server.js /calendar/today · 서비스계정 읽기전용) =====
 function _schedTime(iso){ if(!iso) return '종일'; if(String(iso).length<=10) return '종일'; try{ var d=new Date(iso); var h=d.getHours(),m=d.getMinutes(); return (h<10?'0':'')+h+':'+(m<10?'0':'')+m; }catch(e){ return ''; } }
