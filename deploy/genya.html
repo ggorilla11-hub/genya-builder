@@ -1371,21 +1371,40 @@ function prospectTab(which){ window._PTAB=which; _discRender(); if(which==='lead
 //   ★[지금 발굴] 버튼과 ★똑같은 prospectLoadFind()를 탄다. 새 경로를 만들지 않으니 발굴·검수·답글이 안 깨진다.
 //   ★"저는 버튼을 못 눌러요"는 이제 없다 — 회사 안에서 끝나는 되돌릴 수 있는 일이라 대표님 말이 곧 승인이다.
 //   ★고객에게 나가는 발송은 여기 없다. 그건 지금도 앞으로도 [승인] 버튼뿐이다.
+//   ★★2026-07-27 회귀 사고에서 배운 것: 보고를 받자고 prospectLoadFind 안을 고쳤다가 발굴이 깨졌다.
+//     → 이제 그 함수는 ★한 글자도 건드리지 않는다. 부르고, ★밖에서 지켜본다.
+//       끝났는지는 그 함수가 자연히 바꾸는 것(window._FIND 새 배열 / 오류 화면)으로 알아낸다.
 window.genyaRunFind=function(ch){
   try{ discoveryPanel('find'); }catch(e){}          // 발굴 창이 있어야 결과가 담긴다
-  var p=null;
-  try{ p=prospectLoadFind(); }catch(e){}
-  var 보고=function(){
-    try{
+  var 전참조=window._FIND;                           // ★성공하면 이 함수가 _FIND에 ★새 배열을 넣는다
+  try{ prospectLoadFind(); }                        // ← 버튼과 똑같은 호출. 그게 전부다.
+  catch(e){ try{ pushMsg('gen','발굴을 시작하지 못했어요 — 발굴 창의 [🔄 새로 발굴하기]를 눌러주세요.'); }catch(e2){} return; }
+  var t0=Date.now();
+  var 시계=setInterval(function(){
+    var b=document.getElementById('findList');
+    var h=(b&&b.innerHTML)||'';
+    var 끝났나='', 이유='';
+    if(window._FIND!==전참조 && Object.prototype.toString.call(window._FIND)==='[object Array]') 끝났나='성공';
+    else if(h.indexOf('발굴 결과를 불러오지 못했어요')>=0) { 끝났나='실패'; 이유=''; }
+    else if(h.indexOf('너무 오래 걸려 중단했어요')>=0) { 끝났나='실패'; 이유='너무 오래 걸려 중단했어요'; }
+    else if(h.indexOf('채널이 모두 꺼져 있어요')>=0) { 끝났나='실패'; 이유='발굴 채널이 모두 꺼져 있어요 — API 키가 필요합니다'; }
+    else if(Date.now()-t0>80000) { 끝났나='실패'; 이유='80초가 지나도 끝나지 않았어요'; }
+    if(!끝났나) return;
+    clearInterval(시계);
+    if(끝났나==='성공'){
       // 채널을 지목하셨으면 그 타일을 골라 드린다(없으면 그대로 둔다 — 없는 걸 있다고 하지 않는다)
-      if(ch && (window._FIND||[]).some(function(l){ return (l.ch||'')===ch; })){
-        try{ findPickCh(ch); }catch(e){}
-      }
-      pushMsg('gen', renderMd(_findReport(ch)));
-    }catch(e){}
-  };
-  if(p && p.then) p.then(보고, function(){ try{ pushMsg('gen','발굴이 끝까지 못 갔어요 — 발굴 창의 [↻ 다시 시도]를 눌러주세요.'); }catch(e){} });
-  else setTimeout(보고, 9000);                       // 혹시 promise가 아니어도 보고는 한다(무반응 금지)
+      if(ch && (window._FIND||[]).some(function(l){ return (l.ch||'')===ch; })){ try{ findPickCh(ch); }catch(e){} }
+      try{ pushMsg('gen', renderMd(_findReport(ch,''))); }catch(e){}
+      return;
+    }
+    // ★실패는 "0건"이 아니다. 왜 못 돌았는지 알아보고 말한다(가장 흔한 원인 = 재배포로 로그인 풀림).
+    if(이유){ try{ pushMsg('gen', renderMd(_findReport(ch,이유))); }catch(e){} return; }
+    fetch('/api/boot',{credentials:'include'}).then(function(r){ return r.json(); }).then(function(b){
+      try{ pushMsg('gen', renderMd(_findReport(ch, (b&&b.loggedIn)
+        ? '발굴 서버가 응답하지 않았어요 — 잠시 뒤 다시 말씀해 주세요'
+        : '로그인이 풀렸어요 — 새로고침해서 구글로 다시 로그인해 주세요 (서버가 다시 켜지면 로그인이 풀립니다)'))); }catch(e){}
+    }).catch(function(){ try{ pushMsg('gen', renderMd(_findReport(ch,'발굴 서버에 닿지 못했어요'))); }catch(e){} });
+  }, 700);
 };
 // 🔄 새로고침 — 지금 보고 계신 것을 다시 불러온다(데이터 무접촉·되돌릴 수 있음)
 window.genyaRefresh=function(){
@@ -1401,15 +1420,14 @@ window.genyaRefresh=function(){
   }catch(e){ try{ pushMsg('gen','다시 불러오지 못했어요 — 화면의 새로고침 버튼을 눌러주세요.'); }catch(e2){} }
 };
 // 실행 결과를 비서답게 정리 — ★있는 그대로. 없는 숫자는 지어내지 않는다.
-function _findReport(ch){
+function _findReport(ch, 실패이유){
   var L=window._FIND||[];
   // ★★못 돈 것과 0건은 전혀 다른 말이다. 실패를 "0건"이라 하면 대표님이 헛짚으신다.
-  if(window._FIND_ERR) return '**발굴을 돌리지 못했어요** — '+window._FIND_ERR+'\n\n(0건이 아니라 아예 못 돈 겁니다. 위 문제를 풀고 "발굴 돌려" 다시 말씀해 주세요.)';
+  if(실패이유) return '**발굴을 돌리지 못했어요** — '+실패이유+'\n\n(0건이 아니라 아예 못 돈 겁니다. 위 문제를 풀고 "발굴 돌려" 다시 말씀해 주세요.)';
   if(!L.length) return '발굴을 돌렸는데 **이번엔 새로 잡힌 글이 없었어요.** 검색어에 걸린 게 없거나 채널이 잠깐 막혔을 수 있어요. 잠시 뒤 "발굴 돌려" 다시 말씀해 주세요.';
   var by={}; L.forEach(function(l){ var c=l.ch||'기타'; by[c]=(by[c]||0)+1; });
   var 줄=Object.keys(by).sort(function(a,b){ return by[b]-by[a]; }).map(function(c){ return c+' '+by[c]; }).join(' · ');
   var s='**발굴 완료 — 총 '+L.length+'건**\n\n'+줄;
-  if(window._FIND_WARN) s+='\n\n⚠️ '+window._FIND_WARN+' — 다시 말씀하시면 나머지가 나올 수 있어요.';
   // 검수는 뒤에서 돈다. 끝나지도 않았는데 "핫 리드 N건"이라고 하지 않는다.
   try{
     var 남=Math.max(0,(_RV.total||0)-(_RV.done||0));
@@ -1940,18 +1958,17 @@ function prospectLoadFind(){
   // ★화면도 무한히 기다리지 않는다 — 서버가 침묵해도 60초 뒤엔 이유를 말해준다(2026-07-27 사고)
   var _ac=(typeof AbortController!=='undefined')?new AbortController():null;
   var _to=setTimeout(function(){ try{ if(_ac)_ac.abort(); }catch(e){} },60000);
-  // ★return — "발굴 돌려"로 부른 쪽이 언제 끝났는지 알아야 대화에 보고할 수 있다(버튼 동작은 그대로).
-  return fetch('/api/find/leads', _ac?{signal:_ac.signal}:{})
-   .then(function(r){ if(!r.ok){ var _e=new Error('http'); _e.status=r.status; throw _e; } return r.json(); })
+  // ★2026-07-27 원형 복구: 자율 실행 때문에 이 함수를 손댔다가 발굴이 깨졌다.
+  //   이 함수는 [지금 발굴]·[새로 발굴하기]·탭 자동로드가 쓰는 실무 핵심이라 ★건드리지 않는다.
+  //   자율 실행("발굴 돌려")은 이 함수를 ★호출만 하고, 끝났는지는 밖에서 지켜본다(genyaRunFind).
+  fetch('/api/find/leads', _ac?{signal:_ac.signal}:{}).then(function(r){ if(!r.ok) throw 0; return r.json(); })
    .then(function(d){
      clearTimeout(_to);
-     window._FIND_ERR=''; window._FIND_WARN=(d&&d.timedOut)?'오래 걸려 일부만 가져왔어요':'';   // ★왜 0건인지 구분용
      // ★버튼을 반드시 되돌린다 — 결과가 떠도 "발굴 중…"에 멈춰 있으면 대표님은 안 끝난 줄 아신다
      var _b=document.getElementById('findRunBtn'); if(_b){ _b.textContent='🔄 새로 발굴하기'; _b.disabled=false; }
      if(d&&d.timedOut) toast('오래 걸려 일부만 가져왔어요 — 다시 누르면 나머지가 나올 수 있어요');
      // ★키가 없으면 "곧 켜집니다" 같은 얼버무림 대신 뭘 발급해야 하는지 그대로 보여준다
-     if(d&&d.needsKey){ window._FIND_ERR='채널이 모두 꺼져 있어요 — '+String(d.message||'API 키가 필요합니다').slice(0,120);
-       box.innerHTML='<div style="padding:22px 14px"><div style="font-size:30px;text-align:center">🔑</div><div style="font-size:13px;font-weight:700;color:#556;margin-top:8px;text-align:center">채널이 모두 꺼져 있어요</div>'
+     if(d&&d.needsKey){ box.innerHTML='<div style="padding:22px 14px"><div style="font-size:30px;text-align:center">🔑</div><div style="font-size:13px;font-weight:700;color:#556;margin-top:8px;text-align:center">채널이 모두 꺼져 있어요</div>'
        +'<div style="font-size:11.5px;color:#8a6d1a;background:#fffdf5;border:1px solid #ecdca8;border-radius:8px;padding:8px 10px;margin-top:10px;line-height:1.7">'+_escOb(d.message||'API 키 미설정').split(' · ').map(_escOb).join('<br>')+'</div></div>'; _setKpi('kpiFind','키 필요'); return; }
      var yt=(d.youtube||[]).map(function(l){ return {icon:'📺', name:l.author, sub:l.videoTitle, text:l.text, link:l.link, tier:l.tier, source:'유튜브', ch:'📺 유튜브', verdict:l.verdict, why:l.why}; });
      // 뼈대 기자(네이버 지식iN·카페·블로그·뉴스·구글) — 점수·발굴 서명을 함께 보여준다
@@ -1994,10 +2011,6 @@ function prospectLoadFind(){
    .catch(function(e){                                               // ③ 에러 — 멈춘 채로 두지 않는다
      clearTimeout(_to);
      var aborted=(e&&(e.name==='AbortError'));
-     // ★왜 못 돌았는지 남긴다 — 실패를 "0건"으로 둔갑시키면 안 된다(2026-07-27 실측에서 잡힘)
-     window._FIND_ERR = aborted ? '너무 오래 걸려 중단했어요'
-       : ((e&&e.status===401) ? '로그인이 풀렸어요 — 구글로 다시 로그인해 주세요'
-       : ((e&&e.status) ? ('발굴 서버가 '+e.status+'로 응답했어요') : '발굴 서버에 닿지 못했어요'));
      box.innerHTML=aborted
        ? '<div style="text-align:center;padding:26px 16px"><div style="font-size:30px">⏱️</div><div style="font-size:13px;font-weight:700;color:#c0392b;margin-top:8px">발굴이 너무 오래 걸려 중단했어요</div><div style="font-size:11.5px;color:#8a93a3;margin-top:6px;line-height:1.6">채널 한 곳이 응답을 안 하는 경우예요.<br>잠시 뒤 다시 눌러주세요.</div><button onclick="prospectLoadFind()" style="margin-top:12px;padding:9px 18px;border:1px solid var(--teal);background:var(--teal-l);color:var(--teal-d);border-radius:10px;font-weight:700;cursor:pointer;font-size:13px;font-family:inherit">↻ 다시 시도</button></div>'
        : _findError();
@@ -2196,7 +2209,28 @@ function prospectRunFind(){
   prospectLoadFind();   // 자기 서버가 그때그때 남의 유튜브를 검색해 리드 반환
 }
 function _findEmpty(){ return '<div style="text-align:center;padding:28px 16px"><div style="font-size:32px">🔍</div><div style="font-size:13px;font-weight:700;color:#556;margin-top:8px">아직 발굴된 리드가 없어요</div><div style="font-size:11.5px;color:#8a93a3;margin-top:6px;line-height:1.6">[🔍 지금 발굴]을 눌러 유튜브·네이버에서<br>잠재고객을 찾아보세요.</div></div>'; }
-function _findError(){ return '<div style="text-align:center;padding:26px 16px"><div style="font-size:30px">⚠️</div><div style="font-size:13px;font-weight:700;color:#c0392b;margin-top:8px">발굴 결과를 불러오지 못했어요</div><button onclick="prospectLoadFind()" style="margin-top:12px;padding:9px 18px;border:1px solid var(--teal);background:var(--teal-l);color:var(--teal-d);border-radius:10px;font-weight:700;cursor:pointer;font-size:13px;font-family:inherit">↻ 다시 시도</button></div>'; }
+// ★2026-07-27 대표님 실사고: 이 화면이 떠도 "불러오지 못했어요"라고만 해서 원인을 못 찾으셨다.
+//   가장 흔한 원인은 ★재배포로 로그인이 풀린 것이다(세션이 서버 메모리라 서버가 다시 뜨면 사라진다).
+//   → 화면을 띄운 뒤 실제로 로그인 상태를 확인해 ★무엇을 하시면 되는지 그 자리에 적는다.
+function _findError(){
+  setTimeout(_findErrWhy, 0);
+  return '<div style="text-align:center;padding:26px 16px"><div style="font-size:30px">⚠️</div><div style="font-size:13px;font-weight:700;color:#c0392b;margin-top:8px">발굴 결과를 불러오지 못했어요</div>'
+    +'<div id="findErrWhy" style="font-size:11.5px;color:#8a93a3;margin-top:8px;line-height:1.7">원인을 확인하는 중이에요…</div>'
+    +'<button onclick="prospectLoadFind()" style="margin-top:12px;padding:9px 18px;border:1px solid var(--teal);background:var(--teal-l);color:var(--teal-d);border-radius:10px;font-weight:700;cursor:pointer;font-size:13px;font-family:inherit">↻ 다시 시도</button></div>'; }
+function _findErrWhy(){
+  var el=document.getElementById('findErrWhy'); if(!el) return;
+  fetch('/api/boot',{credentials:'include'}).then(function(r){ return r.json(); }).then(function(b){
+    var e2=document.getElementById('findErrWhy'); if(!e2) return;
+    if(!b || !b.loggedIn){
+      e2.innerHTML='<b style="color:#c0392b">로그인이 풀렸어요.</b><br>서버가 다시 켜지면(배포·재시작) 로그인이 풀립니다.<br>아래 버튼으로 다시 로그인하신 뒤 발굴을 눌러주세요.'
+        +'<div style="margin-top:9px"><button onclick="location.reload()" style="padding:8px 16px;border:1px solid #cfd6de;background:#fff;border-radius:9px;font-weight:700;cursor:pointer;font-size:12px;font-family:inherit">🔑 다시 로그인</button></div>';
+    } else {
+      e2.innerHTML='로그인은 되어 있어요 — 발굴 서버가 제때 응답하지 않았습니다.<br>잠시 뒤 [↻ 다시 시도]를 눌러주세요.';
+    }
+  }).catch(function(){
+    var e3=document.getElementById('findErrWhy'); if(e3) e3.textContent='연결 상태를 확인하지 못했어요 — 인터넷을 확인하고 다시 시도해 주세요.';
+  });
+}
 // ===== 📊 관리-2: 오늘 이벤트 대시보드 (있는 데이터 기반·결정적·초안 승인용) =====
 // ★입구는 명단 하나(2026-07-26): 대시보드는 파일을 받지 않는다. 명단(재료창고)을 읽어 이벤트만 발행하는 읽기 전용 화면.
 //   예전엔 여기서 _MGMTFILE(브라우저에 올린 엑셀)을 요구해서, 시트에 명단이 있어도 파일을 또 올려야 했다(이원화).
