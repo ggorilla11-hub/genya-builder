@@ -1618,12 +1618,24 @@ window.genyaDraftLeads=function(spec){
   // ★2026-07-27 대표님 정정: 결재함으로 보내지 말고 ★발굴 리드 그 자리에 뜨게.
   //   → 이미 있는 개별 [답글 초안] 버튼(findDraft)을 ★순서대로 눌러주는 것뿐이다.
   //     새 경로도, 결재함 경유도 없다. 하나씩 누르는 것과 결과가 똑같다.
-  try{ discoveryPanel('find'); }catch(e){}            // 초안이 뜰 자리를 열어둔다
+  // ★발굴 창이 이미 열려 있으면 다시 열지 않는다(다시 열면 발굴을 새로 돌려 화면이 갈아엎힌다)
+  var _p=document.getElementById('discPanel');
+  if(!(_p && _p.style.display!=='none')){ try{ discoveryPanel('find'); }catch(e){} }
+  // ★2026-07-27 실측 사고: 만들지도 않고 "만들었어요"라고 말했다.
+  //   → 초안이 실제로 붙었는지 ★세어서, 센 만큼만 말한다.
+  var _센다=function(){ var p=document.getElementById('discPanel'); return p?p.querySelectorAll('textarea').length:0; };
+  var 전=_센다();
   try{ pushMsg('gen','✍️ 초안 '+할것.length+'건 만드는 중이에요…'+(잘림?(' (한 번에 '+_DRAFT_MAX+'건까지 · '+잘림+'건 남음)'):'')); }catch(e){}
   var 순서=0;
   var 하나=function(){
     if(순서>=할것.length){
-      try{ pushMsg('gen','✍️ **초안 '+할것.length+'건 만들었어요.** 발굴 리드에서 각 글 아래에 있어요. 보내는 건 대표님이 직접 하십니다.'); }catch(e){}
+      setTimeout(function(){
+        var 생김=Math.max(0,_센다()-전);
+        try{
+          if(생김) pushMsg('gen','✍️ **초안 '+생김+'건 만들었어요.** 발굴 리드에서 각 글 아래에 있어요 — 복사해서 원글에 붙이시면 됩니다.');
+          else pushMsg('gen', renderMd('**초안이 안 만들어졌어요.** 발굴 리드 목록이 화면에 떠 있어야 그 자리에 붙습니다.\n\n**[🔍 발굴 리드]**를 열어 목록이 보이는지 확인하시고 다시 말씀해 주세요.\n\n(만들지도 않고 만들었다고 말하지 않습니다.)'));
+        }catch(e){}
+      }, 1200);
       return;
     }
     var x=할것[순서++];
