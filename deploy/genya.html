@@ -1367,6 +1367,59 @@ function discoveryPanel(tab){
 function prospectTab(which){ window._PTAB=which; _discRender(); if(which==='leads'){ prospectLoadInflow(); prospectLoadLeads(); } if(which==='find') _findAutoShow(); }
 // ★발굴 리드 자동 표시 — 이미 찾아둔 게 있으면 그걸 즉시 그리고(다시 안 부른다),
 //   없으면 그때만 실제로 발굴한다. 어느 경우에도 빈 화면을 안 보여준다.
+// ═══ 🤖 자율 실행 — "발굴 돌려" 한마디로 지니야가 직접 돌린다 (2026-07-27) ═══
+//   ★[지금 발굴] 버튼과 ★똑같은 prospectLoadFind()를 탄다. 새 경로를 만들지 않으니 발굴·검수·답글이 안 깨진다.
+//   ★"저는 버튼을 못 눌러요"는 이제 없다 — 회사 안에서 끝나는 되돌릴 수 있는 일이라 대표님 말이 곧 승인이다.
+//   ★고객에게 나가는 발송은 여기 없다. 그건 지금도 앞으로도 [승인] 버튼뿐이다.
+window.genyaRunFind=function(ch){
+  try{ discoveryPanel('find'); }catch(e){}          // 발굴 창이 있어야 결과가 담긴다
+  var p=null;
+  try{ p=prospectLoadFind(); }catch(e){}
+  var 보고=function(){
+    try{
+      // 채널을 지목하셨으면 그 타일을 골라 드린다(없으면 그대로 둔다 — 없는 걸 있다고 하지 않는다)
+      if(ch && (window._FIND||[]).some(function(l){ return (l.ch||'')===ch; })){
+        try{ findPickCh(ch); }catch(e){}
+      }
+      pushMsg('gen', renderMd(_findReport(ch)));
+    }catch(e){}
+  };
+  if(p && p.then) p.then(보고, function(){ try{ pushMsg('gen','발굴이 끝까지 못 갔어요 — 발굴 창의 [↻ 다시 시도]를 눌러주세요.'); }catch(e){} });
+  else setTimeout(보고, 9000);                       // 혹시 promise가 아니어도 보고는 한다(무반응 금지)
+};
+// 🔄 새로고침 — 지금 보고 계신 것을 다시 불러온다(데이터 무접촉·되돌릴 수 있음)
+window.genyaRefresh=function(){
+  var el=document.getElementById('discPanel');
+  var 열림=!!(el && el.style.display!=='none');
+  if(!열림){ try{ pushMsg('gen','다시 불러올 화면이 열려 있지 않아요 — "발굴 리드 열어" 또는 "유입 전환 열어"라고 말씀해 주세요.'); }catch(e){} return; }
+  var t=window._PTAB||'find';
+  try{
+    if(t==='leads'){ prospectLoadInflow(); prospectLoadLeads(); pushMsg('gen','📥 유입 전환을 다시 불러왔어요.'); }
+    else { var p=prospectLoadFind();
+      if(p&&p.then) p.then(function(){ try{ pushMsg('gen', renderMd(_findReport(''))); }catch(e){} });
+      else pushMsg('gen','🔍 발굴을 다시 돌리는 중이에요.'); }
+  }catch(e){ try{ pushMsg('gen','다시 불러오지 못했어요 — 화면의 새로고침 버튼을 눌러주세요.'); }catch(e2){} }
+};
+// 실행 결과를 비서답게 정리 — ★있는 그대로. 없는 숫자는 지어내지 않는다.
+function _findReport(ch){
+  var L=window._FIND||[];
+  if(!L.length) return '발굴을 돌렸는데 **이번엔 새로 잡힌 글이 없었어요.** 검색어에 걸린 게 없거나 채널이 잠깐 막혔을 수 있어요. 잠시 뒤 "발굴 돌려" 다시 말씀해 주세요.';
+  var by={}; L.forEach(function(l){ var c=l.ch||'기타'; by[c]=(by[c]||0)+1; });
+  var 줄=Object.keys(by).sort(function(a,b){ return by[b]-by[a]; }).map(function(c){ return c+' '+by[c]; }).join(' · ');
+  var s='**발굴 완료 — 총 '+L.length+'건**\n\n'+줄;
+  // 검수는 뒤에서 돈다. 끝나지도 않았는데 "핫 리드 N건"이라고 하지 않는다.
+  try{
+    var 남=Math.max(0,(_RV.total||0)-(_RV.done||0));
+    if(_RV.pass||_RV.drop||남){
+      s+='\n\n🛡️ 검수 '+(남?('진행 중 — 통과 '+_RV.pass+' · 제외 '+_RV.drop+' · 남은 '+남+'건')
+                          :('완료 — 통과 **'+_RV.pass+'건** · 경쟁자·홍보 제외 '+_RV.drop+'건'));
+      if(남) s+='\n(검수를 통과한 건에서만 답글 초안을 열 수 있어요.)';
+    }
+  }catch(e){}
+  if(ch) s+='\n\n'+ch+' 타일을 열어뒀어요.';
+  s+='\n\n답글은 제가 초안까지만 씁니다 — **보내는 건 대표님이 [승인]을 누르셔야** 나갑니다.';
+  return s;
+}
 function _findAutoShow(){
   if((window._FIND||[]).length && typeof window._RENDER_FIND==='function'){
     window._RENDER_FIND();                       // 마지막 결과 즉시 표시(재조회 0)
@@ -1884,7 +1937,8 @@ function prospectLoadFind(){
   // ★화면도 무한히 기다리지 않는다 — 서버가 침묵해도 60초 뒤엔 이유를 말해준다(2026-07-27 사고)
   var _ac=(typeof AbortController!=='undefined')?new AbortController():null;
   var _to=setTimeout(function(){ try{ if(_ac)_ac.abort(); }catch(e){} },60000);
-  fetch('/api/find/leads', _ac?{signal:_ac.signal}:{}).then(function(r){ if(!r.ok) throw 0; return r.json(); })
+  // ★return — "발굴 돌려"로 부른 쪽이 언제 끝났는지 알아야 대화에 보고할 수 있다(버튼 동작은 그대로).
+  return fetch('/api/find/leads', _ac?{signal:_ac.signal}:{}).then(function(r){ if(!r.ok) throw 0; return r.json(); })
    .then(function(d){
      clearTimeout(_to);
      // ★버튼을 반드시 되돌린다 — 결과가 떠도 "발굴 중…"에 멈춰 있으면 대표님은 안 끝난 줄 아신다
@@ -4221,6 +4275,10 @@ window.sendMsg=function(){
      // 📣⏰ 좌측 비서를 말로 부르기 — 기존 패널·스킬을 그대로 연다
      if(d && d.action==='open_promo'){ try{ genyaPromo(d.topic||''); }catch(e){} }
      if(d && d.action==='open_reminder'){ try{ genyaReminder(d.body||''); }catch(e){} }
+     // 🤖 자율 실행 — 내부 동작은 말씀하시면 지니야가 직접 한다(발송은 여기 없다)
+     if(d && d.action==='run_find'){ try{ genyaRunFind(d.channel||''); }catch(e){} }
+     if(d && d.action==='open_tab'){ try{ discoveryPanel(d.tab||'find'); }catch(e){} }
+     if(d && d.action==='refresh'){ try{ genyaRefresh(); }catch(e){} }
      // ★pending 구분: sheetCRUD 쓰기(action+sig)=승인·반영 UI(완료 표현 금지) / 결재함=모달 알림
      if(d && d.pending){
        if(d.pending.action && d.pending.sig){ renderSheetWriteApprove(d.pending); }
@@ -4294,6 +4352,9 @@ function _voiceExec(q){
       if(d.action==='proposal'){ try{ genyaProposal(); }catch(e){} }                                             // 📑 음성으로 맞춤 제안서
       if(d.action==='open_promo'){ try{ genyaPromo(d.topic||''); }catch(e){} }                                   // 📣 음성으로 홍보 원고
       if(d.action==='open_reminder'){ try{ genyaReminder(d.body||''); }catch(e){} }                              // ⏰ 음성으로 리마인더
+      if(d.action==='run_find'){ try{ genyaRunFind(d.channel||''); }catch(e){} }                                 // 🤖 음성으로 "발굴 돌려"
+      if(d.action==='open_tab'){ try{ discoveryPanel(d.tab||'find'); }catch(e){} }
+      if(d.action==='refresh'){ try{ genyaRefresh(); }catch(e){} }
     }).catch(function(){ try{ pushMsg('gen','결재 처리 중 오류가 났어요. 잠시 후 다시 말씀해 주세요.'); }catch(e){} });
 }
 // ===== 📅 일정관리 비서 — 구글 캘린더 실데이터만(가짜·하드코딩 0). 오늘/이번주/이번달 전환 =====
