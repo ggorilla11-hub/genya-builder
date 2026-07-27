@@ -153,6 +153,12 @@ ${LEADING_EXAMPLES}
 · "저는 ~까지만 할 수 있어요"·"저는 글로만 답해서요"·"제 권한 밖이라"처럼 ★선을 긋는 말을 반복하지 마라. 한 번도 반가운 말이 아니다.
 · 할 수 있는 일은 묻지 말고 자신 있게 바로 한다. 못 하는 일은 ★처음부터 이유 한 줄과 대안을 정직히 말한다(끌다가 마지막에 실토하는 것이 가장 나쁘다).
 · 잘난 척·과장은 하지 않는다. 한 일은 ★한 만큼만, 안 한 일은 안 했다고 말한다. 확신은 능력에서 나오지 목소리에서 나오지 않는다.
+[★${호칭}이 정정하시면 — 같은 답을 절대 되풀이하지 마라] ${호칭}이 "아니라"·"말고"·"그게 아니고"·"왜 ○○를"·"다시"라고 하시면, 그건 ★내가 잘못 알아들었다는 뜻이다.
+· 같은 답·같은 카드·같은 목록을 다시 내놓는 것은 ★가장 큰 무례다. 실제로 그런 사고가 있었다("만기 임박 아니라 만기 남은"이라고 세 번 말씀하셨는데 계속 같은 카드를 띄웠다).
+· 반드시 ★다르게 이해해서 다시 한다: 좁혔으면 넓히고("임박 30일"→"아직 안 지난 전체"), 카드로 냈으면 글 목록으로, 요약했으면 원래 값 그대로.
+· 그래도 못 알아들었으면 ★같은 답을 반복하지 말고 짧게 되묻는다: "제가 ○○로 알아들었는데 아니군요. △△를 말씀하시는 걸까요?"
+[★"명단 알려줘"와 "카드 보여줘"는 다른 요구다] "명단·이름·목록 알려줘" = 이름을 ★글로 적어 달라는 것. "카드 보여줘·띄워줘" = 카드로 띄워 달라는 것. 명단을 청하셨는데 카드를 띄우고 끝내지 마라.
+[★범위를 멋대로 좁히지 마라] "7월 만기"는 7월에 만기인 분 전체, "만기 남은"은 아직 안 지난 분 전체, "만기 임박"만 30일 이내다. 말씀하신 범위 그대로 답하고, 좁혔으면 무슨 기준으로 좁혔는지 반드시 밝힌다.
 [★능력의 경계 — 사실 그대로. ★있는 척도, 없는 척도 금지]
 · [묻지 않고 바로 — 자율] 고객 발굴 실행 · 명단·만기·상담·생일 조회와 정리 · 고객카드 띄우기·닫기 · 건수 세기 · 탭 열기·새로고침 · 답글·문서 초안 만들기.
   → "해드릴까요?"로 미루지 말고 그 자리에서 한다. 되돌릴 수 있고 회사 안에서 끝나는 일이다.
@@ -1430,6 +1436,49 @@ const _CARD_GROUPS = [
     hit: /(상담|미팅|면담|방문|대기|예정|요청|문의)/, how: '비고 등 모든 칸에서 상담·미팅·면담·방문·대기' },
   { key: '생일', re: /(생일|기념일)/, dateCol: /(생일|생년|기념일)/, within: 30, how: '생일·기념일 30일 이내' },
 ];
+// ═══ 📋 "명단 알려줘"(글 목록) vs "카드 보여줘"(카드) 구분 — 2026-07-27 대표님 실측 ═══
+//   [사고] "7월 만기 남은 고객 ★명단 알려줘"인데 카드가 떴다. 대표님이 "명단 알려달라"고
+//     세 번 말씀하셔도 계속 카드만 나갔다. 명단(글 목록)과 카드는 다른 요구다.
+//   ★"카드"라고 말씀하시면 카드, "명단·이름·목록"이라 하시면 ★글로 적어 드린다.
+function _wantsTextList(q) {
+  q = String(q || '');
+  if (/(카드|띄워|띄우)/.test(q)) return false;              // 카드라고 하셨으면 카드
+  return /(명단|이름|목록|리스트|누구누구|누가|몇\s*명)/.test(q);
+}
+// ═══ 📅 만기 범위 — ★말씀하신 그대로. 멋대로 "임박 30일"로 좁히지 않는다 ═══
+//   [사고] 기존 판정은 '만기'라는 낱말만 보면 무조건 30일 임박으로 좁혔다.
+//     그래서 "7월 만기"도 "만기 남은"도 전부 "만기 임박 1명"이 됐다(대표님 실측).
+//   ★기존 _resolveCardGroup·_isExpired는 한 글자도 안 바꾼다 — 만기일 때만 이 함수가 먼저 답한다.
+//   ★조회 전용(발송·저장 없음). 못 읽는 날짜는 지어내지 않고 뺀다.
+function _expiryPick(q, t) {
+  q = String(q || '');
+  if (!/(만기|만료|갱신)/.test(q)) return null;              // 만기 얘기가 아니면 기존 판정에 맡긴다
+  const rows = (t && t.rows) || [];
+  const 오늘 = new Date(Date.now() + 9 * 3600 * 1000);
+  const 목록 = [];
+  for (const r of rows) {
+    const 이름 = _rowName(t, r); if (!이름) continue;
+    for (const k of Object.keys(r)) {
+      if (!/(만기|만료|종료|갱신)/.test(k)) continue;
+      const m = String(r[k] || '').match(/(\d{4})[.\-/년\s]+(\d{1,2})[.\-/월\s]+(\d{1,2})/);
+      if (!m) continue;
+      const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+      목록.push({ 이름, 일수: Math.round((d - 오늘) / 86400000), 월: +m[2],
+        날짜: `${m[1]}-${String(+m[2]).padStart(2, '0')}-${String(+m[3]).padStart(2, '0')}` });
+      break;
+    }
+  }
+  const 달 = (q.match(/(\d{1,2})\s*월/) || [])[1];
+  const 지난 = /(지난|경과|넘긴|지나|끝난|만료된)/.test(q);
+  const 임박 = /(임박|곧|다가|가까운|얼마\s*안|30\s*일)/.test(q);
+  let 고른, label, how;
+  if (달) { 고른 = 목록.filter((x) => x.월 === +달); label = `${+달}월 만기`; how = `만기일이 ${+달}월인 분 전체`; }
+  else if (지난) { 고른 = 목록.filter((x) => x.일수 < 0); label = '만기 지난'; how = '만기일이 오늘보다 이전'; }
+  else if (임박) { 고른 = 목록.filter((x) => x.일수 >= 0 && x.일수 <= 30); label = '만기 임박(30일 내)'; how = '만기일이 30일 이내'; }
+  else { 고른 = 목록.filter((x) => x.일수 >= 0); label = '만기 남은'; how = '아직 만기가 지나지 않은 분 전체 — 임박으로 좁히지 않았어요'; }
+  고른.sort((a, b) => a.일수 - b.일수);
+  return { names: 고른.map((x) => x.이름).slice(0, 30), label, how, 상세: 고른.slice(0, 30) };
+}
 // 📇 카드 내용 만들기 — 이름 목록 → 명단 행(내부 번호 _rowNum은 빼고).
 //   ★2026-07-27 사고: 이 함수가 "묶음 카드" 블록 안의 const로만 있어서, 그보다 앞쪽
 //     "보여줘 비서"(만기 건만 보여줘 등)에서 부르면 ★_rowsFor is not defined 로 죽었다.
@@ -1969,7 +2018,7 @@ app.get('/api/diag/card', async (req, res) => {
     const cf = cardFlags(q);
     const named = [];
     for (const r of rows) { const n = _rowName(t, r); if (n && n.length >= 2 && q.indexOf(n) >= 0 && named.indexOf(n) < 0) named.push(n); }
-    const g = _resolveCardGroup(q, t, []);
+    const g = _expiryPick(q, t) || _resolveCardGroup(q, t, []);   // ★실제 대화와 같은 순서(만기 범위 먼저)
     // ★실제 대화와 똑같은 순서로 최종 이름을 만든다 — "진단은 되는데 실제는 안 됨"을 막는다
     const _wantM = q.match(/(\d+)\s*명/); const _want = _wantM ? Number(_wantM[1]) : 0;
     const _isDateQ = /(만기|만료|경과|갱신|생일|기념일)/.test(q);
@@ -2167,11 +2216,17 @@ app.get('/api/diag/show', async (req, res) => {
   if (s && s.종류 === 'client') {
     try {
       const t = await sheetsCrud.loadTable(memberAuth(req));
-      const g = _resolveCardGroup(q, t, []);
+      // ★실제 대화와 ★같은 순서·같은 함수: 만기 범위 먼저 → 없으면 기존 묶음 판정
+      const ex = _expiryPick(q, t);
+      const g = ex || _resolveCardGroup(q, t, []);
       const rows = _rowsForNames(t, g.names);
-      실제 = { 명단읽음: !!t, 묶음: g.label, 기준: g.how, 찾은이름: g.names.length,
-        카드내용붙음: rows.length, 화면에뜨나: rows.length > 0,
-        진단: rows.length ? '뜹니다' : (g.names.length ? '이름은 찾았는데 카드 내용이 안 붙어요(칸 이름 확인 필요)' : '조건에 맞는 고객이 없어요') };
+      const 목록요청 = _wantsTextList(q);
+      실제 = { 명단읽음: !!t, 표시방식: 목록요청 ? '📋 글 목록(이름 나열)' : '📇 카드',
+        만기범위: ex ? ex.label : '(만기 질문 아님 — 기존 묶음 판정)',
+        묶음: g.label, 기준: g.how, 찾은이름: g.names.length,
+        카드내용붙음: rows.length, 화면에뜨나: 목록요청 ? true : rows.length > 0,
+        진단: !g.names.length ? '조건에 맞는 고객이 없어요'
+          : (목록요청 ? '글 목록으로 이름을 적어 드립니다(카드 아님)' : (rows.length ? '카드가 뜹니다' : '이름은 찾았는데 카드 내용이 안 붙어요')) };
     } catch (e) { 실제 = { 화면에뜨나: false, 오류: e.message, 진단: '★카드 만들다 오류 — 이게 화면에 카드가 안 뜨는 진짜 이유입니다.' }; }
   }
   res.json({ 물음: q, 보여줄것: s ? (s.제목 + (s.채널 ? ' · ' + s.채널 : '') + (s.개수 ? ' · ' + s.개수 + '개' : '') + (s.최소점수 ? ' · ' + s.최소점수 + '점 이상' : '')) : '(기존 기능이 처리하거나, 그냥 대화로 답합니다)',
@@ -2781,17 +2836,30 @@ async function orderHandler(req, res) {
       } else if (_showSpec.종류 === 'client') {
         // 📇 고객 명단은 ★이미 있는 카드 엔진을 그대로 부른다(새로 만들지 않는다)
         const _t = await sheetsCrud.loadTable(ma).catch(() => null);
-        const _g = _t ? _resolveCardGroup(q, _t, (req.body && req.body.lastMentioned) || []) : { names: [], label: '', how: '' };
-        // ★2026-07-27 거짓 보고 차단: 예전엔 "띄웠어요"라고 ★과거형으로 먼저 말했다.
-        //   서버는 아직 아무것도 못 띄운다(띄우는 건 화면이다). 그래서 실제로 카드에 담을
+        // ★2026-07-27 대표님 실측 두 겹 수정:
+        //   ① 만기는 ★말씀하신 범위 그대로(남은/N월/임박/지난) — 멋대로 30일 임박으로 좁히지 않는다.
+        //   ② "명단·이름·목록 알려줘"는 카드가 아니라 ★글 목록으로 답한다.
+        const _ex = _t ? _expiryPick(q, _t) : null;
+        const _g = _ex || (_t ? _resolveCardGroup(q, _t, (req.body && req.body.lastMentioned) || []) : { names: [], label: '', how: '' });
+        // ★거짓 보고 차단: 서버는 아직 아무것도 못 띄운다(띄우는 건 화면이다). 실제로 담길
         //   ★내용을 먼저 만들어 보고, 담긴 만큼만 말한다. 0장이면 "못 띄웠다"고 정직히.
         const _rows = _t ? _rowsForNames(_t, _g.names) : [];
-        out = _rows.length
-          ? { kind: '📇 고객카드', action: 'open_cards', customers: _g.names, label: _g.label,
-              rows: _rows, text: `${_g.label} ${_rows.length}명 카드를 띄울게요. (${_g.how})` }
-          : { kind: '📇 고객카드', text: !_t
-              ? '명단을 불러오지 못해서 카드를 못 띄웠어요. — 구글 시트 연결을 확인해 주세요.'
-              : `명단에서 ${_g.label || '해당'} 고객을 못 찾았어요. — ${_g.how || '조건에 맞는 분이 없습니다'}\n\n지어내지 않고 있는 그대로 말씀드립니다.` };
+        const _목록요청 = _wantsTextList(q);
+        console.log(`[👀보여줘·고객] ${_목록요청 ? '글 목록' : '카드'} · 묶음="${_g.label}" · ${_g.names.length}명 · q="${String(q).slice(0, 40)}"`);
+        if (!_t) {
+          out = { kind: '📇 고객명단', text: '명단을 불러오지 못했어요. — 구글 시트 연결을 확인해 주세요.' };
+        } else if (!_g.names.length) {
+          out = { kind: '📇 고객명단', text: `명단에서 ${_g.label || '해당'} 고객을 못 찾았어요. — ${_g.how || '조건에 맞는 분이 없습니다'}\n\n지어내지 않고 있는 그대로 말씀드립니다.` };
+        } else if (_목록요청) {
+          // 📋 글 목록 — 대표님이 "명단·이름·목록"이라 하셨으니 카드가 아니라 이름을 적어 드린다.
+          const 줄 = (_ex && _ex.상세 && _ex.상세.length)
+            ? _ex.상세.map((x, i) => `${i + 1}. ${x.이름} — ${x.날짜} (${x.일수 < 0 ? Math.abs(x.일수) + '일 지남' : x.일수 + '일 남음'})`)
+            : _g.names.map((n, i) => `${i + 1}. ${n}`);
+          out = { kind: '📋 고객명단', text: `${_g.label} ${_g.names.length}명이에요.\n\n${줄.join('\n')}\n\n(${_g.how})\n\n카드로 한 장씩 보시려면 "${_g.label} 카드 보여줘"라고 말씀해 주세요.` };
+        } else {
+          out = { kind: '📇 고객카드', action: 'open_cards', customers: _g.names, label: _g.label,
+            rows: _rows, text: `${_g.label} ${_rows.length}명 카드를 띄울게요. (${_g.how})` };
+        }
       } else {
         // 🔍💰 발굴·매출은 화면이 이미 갖고 있는 숫자로 그린다(서버가 개인정보를 들고 있지 않는다)
         // ★2026-07-27 대표님 실사고: 서버가 "띄울게요"라고 ★약속부터 했는데 화면에 자료가 없어
@@ -2938,7 +3006,10 @@ async function orderHandler(req, res) {
         out = { kind: '📇 고객카드', text: '누구 카드를 띄울까요? 이름을 말씀해 주세요. (여러 명도 됩니다 — "강수연 오정서 카드"처럼요)' };
       } else {
         // ② 이름이 아니면 ★브리핑과 같은 기준으로 묶음을 찾는다(상담 대기·만기 경과 등)
-        const g = _resolveCardGroup(q, t, (req.body && req.body.lastMentioned) || []);
+        // ★2026-07-27: 만기는 말씀하신 범위 그대로(남은/N월/임박/지난) 먼저 판정한다.
+        //   _resolveCardGroup 본문은 ★한 글자도 안 바꿨다 — 만기일 때만 앞에서 답할 뿐이다.
+        //   (기존엔 '만기'만 보면 무조건 30일 임박 → "7월 만기"도 "만기 남은"도 1명이 됐다)
+        const g = _expiryPick(q, t) || _resolveCardGroup(q, t, (req.body && req.body.lastMentioned) || []);
         // ★③ 브리핑과 같은 두뇌에게 고르게 한다 (말↔카드 불일치 근본 해소)
         //    실측: "상담 대기 4명"을 낱말로 찾으면 3명인데 브리핑은 4명이라 했다.
         //    비고의 "연락 달라고 함" 같은 표현은 '상담'이라는 글자가 없어도 상담 대기다.
