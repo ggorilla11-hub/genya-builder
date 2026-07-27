@@ -48,6 +48,20 @@ function 로컬확인() {
   확인('★캘린더: 진단창구가 영속 권한까지 보여줌',
     /영속저장_캘린더권한/.test(src), '"왜 안 되나"를 대표님이 직접 볼 수 있어야 함');
 
+  // ── 2-2) 캘린더가 대화 두뇌에 전달되나 (2026-07-27 사고: 서버는 읽는데 대화가 "없다"고 함) ──
+  확인('★캘린더: 대화 두뇌 주입(_calCtx) 존재', !!떼어오기('_calCtx'), '발굴 _findCtx와 같은 방식');
+  확인('★캘린더: 일반 대화 경로에 실제로 붙어 있음',
+    /genyaPersona\(job, \{ email: uid \}\) \+ calCtx/.test(src), '만들어만 두고 안 붙이면 소용없다');
+  const rg = 떼어오기('_schedRange');
+  if (rg) {
+    const f = new Function(rg + '\nreturn _schedRange;')();
+    확인('캘린더: 범위 판정(오늘/이번 주/내일)',
+      f('오늘 일정?') === 'today' && f('이번 주 일정?') === 'week' && f('내일 일정?') === 'tomorrow');
+  } else 확인('캘린더: 범위 판정', false, '_schedRange 없음');
+  확인('캘린더: 일정 분기도 같은 범위 함수를 씀', /const _rg = _schedRange\(q\)/.test(src), '진단과 실제가 달라지면 안 됨');
+  확인('★캘린더: "오늘 일정?"이 일정 분기로 감(의문사 없어도)', /_reSchedWord\.test\(q\)/.test(src),
+    '의문사 없으면 일반 대화로 새던 사고');
+
   // ── 3) 카드 (명단·여러 명·만기) ──
   const rowsFor = 떼어오기('_rowsForNames'), rowName = 떼어오기('_rowName');
   확인('카드: _rowsForNames가 모듈 최상위에 있음', !!rowsFor, '블록 안 const면 _rowsFor is not defined 재발');

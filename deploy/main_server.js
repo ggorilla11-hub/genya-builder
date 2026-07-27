@@ -1137,6 +1137,37 @@ function _findCtx(req) {
   const 줄 = Object.keys(ch).map((k) => `${k} ${ch[k]}`).join(' · ');
   return `\n[지금 화면의 발굴 결과 — 실제 값이다. 물으면 ★이 숫자로 답한다. "화면에서 못 읽는다"고 말하지 마라]\n`
     + `총 ${f.total}건${줄 ? ' · ' + 줄 : ''} · 검수 통과 ${f.pass || 0} · 제외 ${f.drop || 0} · 대기 ${f.wait || 0}\n`;
+}
+// 📅 언제를 물으셨나 — 실제 일정 분기와 ★같은 함수를 쓴다(진단과 실제가 다를 수 없게)
+function _schedRange(q) {
+  q = String(q || '');
+  return /지난\s*주|저번\s*주/.test(q) ? 'lastweek' : (/내일|명일/.test(q) ? 'tomorrow'
+    : (/이번\s*달|이달|한\s*달/.test(q) ? 'month' : (/다음\s*주/.test(q) ? 'nextweek'
+      : (/이번\s*주|금주|주간/.test(q) ? 'week' : (/어제/.test(q) ? 'yesterday' : 'today')))));
+}
+// ═══ 📅 캘린더를 ★대화 두뇌에 넣는다 (2026-07-27 대표님 지시) ═══
+//   [사고] 서버는 캘린더를 완벽히 읽는데(진단창구로 확인), 대화 지니야는 "일정 없어요"라고 했다.
+//     일정 전용 분기로 안 간 말("오늘 일정?"처럼 짧은 말)은 그냥 대화로 흘러가, 두뇌가 캘린더를 못 봤다.
+//   → 발굴 숫자를 두뇌에 넣어 고친 것(_findCtx)과 ★똑같은 방식으로 캘린더도 넣는다.
+//   ★실제 조회값만 넣는다(지어내기 0). ★시간 관련 말일 때만 조회한다(매 대화 호출 안 함).
+const _reCalCtx = /(일정|스케줄|약속|미팅|캘린더|오늘|내일|모레|어제|이번\s*주|지난\s*주|다음\s*주|이번\s*달|주말)/;
+async function _calCtx(ma, req, q) {
+  if (!ma || !_reCalCtx.test(String(q || ''))) return '';
+  try {
+    const c = await _readCalendar(ma, req, _schedRange(q));
+    if (!c) return '';
+    const 라벨 = c.rangeLabel || '오늘';
+    if (!c.count) {
+      return `\n[${라벨} 일정 — ★실제 구글 캘린더 조회 결과: 0건]\n`
+        + `${c.account || '로그인 계정'}의 캘린더 ${c.calendarCount || 0}개를 실제로 확인했고 ${라벨} 일정은 없다.\n`
+        + `★"캘린더를 못 읽는다/연결이 안 됐다"고 말하지 마라 — 읽었고 0건인 것이다. 없는 일정을 지어내지도 마라.\n`;
+    }
+    const 줄 = (c.events || []).slice(0, 20)
+      .map((e) => '· ' + (c.from !== c.to && e.day ? String(e.day).slice(5) + ' ' : '') + e.time + ' ' + e.title).join('\n');
+    return `\n[${라벨} 일정 — ★실제 구글 캘린더 조회 결과다. 물으면 ★이 값 그대로 답한다]\n`
+      + `${라벨} ${c.count}건\n${줄}\n`
+      + `★"캘린더 정보가 없다/안 들어와 있다/연결이 필요하다"고 절대 말하지 마라 — 위가 실제로 읽은 값이다.\n`;
+  } catch (e) { return ''; }   // 실패하면 조용히 비운다(지어내지 않는다)
 }function _pickCol(head, names) { for (const n of names) { const i = head.indexOf(n); if (i >= 0) return i; } return -1; }
 // ★브리핑 7번(매출)이 쓸 ★숫자만 잠깐 담아둔다 — 이름·연락처는 담지 않는다(개인정보 저장 0).
 //   화면이 [유입 전환]을 열면 채워지고, 브리핑이 그 숫자를 쓴다.
@@ -2799,8 +2830,14 @@ async function orderHandler(req, res) {
     const _reSched = /(일정|스케줄|약속|미팅|상담)/, _reWhen = /(오늘|내일|모레|어제|이번\s*주|지난\s*주|저번\s*주|다음\s*주|이번\s*달|금주|주말)/;
     const _reAskW = /(뭐|무엇|뭣|누구|알려|보여|있어|있나|확인|어때|어떻게\s*되|정리)/;
     const _reBook = /(잡아|잡을|예약|비워)/, _reNotSched = /(명단|고객\s*(목록|전체)|만기|생일|리드|발굴)/;
+    //   ★2026-07-27 대표님 실측: "오늘 일정?"은 의문사(뭐·알려·있어…)가 없어서 트리거가 안 켜졌다.
+    //     그래서 일정 분기로 못 가고 일반 대화로 새 "일정 없어요"라는 엉뚱한 답이 나갔다.
+    //     → '일정·스케줄'이라고 ★명시하고 짧게 말씀하시면 의문사 없이도 조회로 본다(기존 판정은 그대로 두고 OR로 추가).
+    const _reSchedWord = /(일정|스케줄)/;
     const _isSchedAsk = !/(카드|스캔)/.test(q) && !/이벤트/.test(q) && !/(결재|결제|발송|알림톡|승인)/.test(q)
-      && !_reBook.test(q) && !_reNotSched.test(q) && (_reSched.test(q) || _reWhen.test(q)) && _reAskW.test(q);
+      && !_reBook.test(q) && !_reNotSched.test(q)
+      && (((_reSched.test(q) || _reWhen.test(q)) && _reAskW.test(q))
+        || (_reSchedWord.test(q) && q.replace(/\s/g, '').length <= 20));
     // 📣 홍보 글 / ⏰ 리마인더 — 좌측 비서를 말로도 부르게(배선 빈 칸 채우기). 스킬은 이미 있고 호출 경로만 없었다.
     //   ★배타(단위테스트 22/22 고정): '알림톡'은 결재라 알림 뒤에 톡을 배제하고,
     //     문서 낱말이 있으면 문서에 양보한다("홍보용 제안서 만들어줘" → 문서).
@@ -2915,9 +2952,7 @@ async function orderHandler(req, res) {
         out = { kind: '📄 문서', action: 'skill_gen', docType: _dt, text: `${_dn}를 만들게요. 잠시만요.` };
       }
     } else if (_isSchedAsk) {
-      const _rg = /지난\s*주|저번\s*주/.test(q) ? 'lastweek' : (/내일|명일/.test(q) ? 'tomorrow'
-        : (/이번\s*달|이달|한\s*달/.test(q) ? 'month' : (/다음\s*주/.test(q) ? 'nextweek'
-        : (/이번\s*주|금주|주간/.test(q) ? 'week' : (/어제/.test(q) ? 'yesterday' : 'today')))));
+      const _rg = _schedRange(q);   // ★대화 두뇌 주입(_calCtx)과 ★같은 함수 — 범위가 어긋날 수 없다
       if (!canData) {
         out = { kind: '📅 일정', text: '일정을 보려면 구글 캘린더 연결이 필요해요. 우측 상단 [명단·연결]에서 연결해 주세요.' };
       } else {
@@ -3166,7 +3201,9 @@ async function orderHandler(req, res) {
       // ★🛡️ 수문장: 이 방에서 방금 일어난 일(명단 업로드·시트·발송 등)을 매 대화에 주입 → "방금 뭐 했지"를 지니야가 자동 인지.
       let recentEvents = '';
       if (uid && personalMem.configured()) { try { recentEvents = await personalMem.recallRecentEvents({ ownerId: uid, limit: 5 }); } catch (e) {} }
-      const sysP = genyaPersona(job, { email: uid })
+      // 📅 ★캘린더를 대화 두뇌에 주입 — "오늘 일정?"이 일반 대화로 새도 실제 값으로 답하게(2026-07-27)
+      const calCtx = await _calCtx(ma, req, q);
+      const sysP = genyaPersona(job, { email: uid }) + calCtx
         + (recentEvents ? ('\n[지금 이 방에서 최근 일어난 일 — 실제 발생] 아래는 이 지니야 화면에서 실제로 일어난 이벤트다. "방금 올린/만든/한 것"을 물으면 이걸 근거로 인지하고 답한다(안 보인다고 하지 마라). 단 파일 속 개별 세부(고객별 값)는 실제 분석 결과가 있을 때만 말한다.\n' + recentEvents) : '')
         + (memCtx ? ('\n[' + memWho + ' 기억] 아래는 ' + memWho + '의 과거 대화·자료 요약이다. 관련되면 근거로 활용하되 없는 값은 지어내지 마라.\n' + memCtx) : '');
       const text = await askClaude(sysP, hist.concat([{ role: 'user', content: q }]), 8192, { admin: _admin, webSearch: true });
