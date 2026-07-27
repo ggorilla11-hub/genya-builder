@@ -567,11 +567,16 @@ app.use(async (req, res, next) => {
           if (p.rt) _sess.tokens = { refresh_token: p.rt };
           // ★Task A 세션 안정성: 쿠키에 rt가 없지만 이메일이 있으면 durable(Firestore)에서 커넥터 복원.
           //   → 쿠키 유실·좁아짐·타기기·키회전에도, 한 번이라도 [구글 연결]한 이메일이면 재로그인 즉시 커넥터 자동 유지.
-          if (!_sess.tokens && _sess.email) {
+          // ★2026-07-27 캘린더 사고 수정: 예전엔 "토큰이 없을 때만" durable을 읽었다.
+          //   그런데 쿠키에 토큰은 있고 ★권한(scope)만 좁은 경우가 있다(로그인은 openid·email·profile만 받는다).
+          //   그러면 캘린더·시트·드라이브가 통째로 막힌다("어제 되던 캘린더가 오늘 안 됨"의 원인).
+          //   → 토큰이 없거나 ★데이터 권한이 없으면 durable(Firestore)에서 보강한다. 이메일 기반이라 본인 것만 온다.
+          const _hasData = /calendar|spreadsheets|\/drive/.test(_sess.scope || '');
+          if ((!_sess.tokens || !_hasData) && _sess.email) {
             try {
               const _dur = await loadMemberToken(_sess.email);
               if (_dur && _dur.refresh_token) {
-                _sess.tokens = { refresh_token: _dur.refresh_token };
+                if (!_sess.tokens) _sess.tokens = { refresh_token: _dur.refresh_token };
                 if ((_dur.scope || '').split(' ').length > (_sess.scope || '').split(' ').length) _sess.scope = _dur.scope;
               }
             } catch (e) {}
@@ -1315,7 +1320,21 @@ app.get('/api/diag/calendar', async (req, res) => {
   const out = { 로그인: !!s, 이메일: s ? s.email : null, provider: s ? s.provider : null,
                 구글토큰있음: !!(s && s.tokens), 승인스코프: (s && (s.scope || (s.tokens && s.tokens.scope))) || '',
                 캘린더스코프: hasDataScope(req) && /calendar/.test((s && (s.scope || (s.tokens && s.tokens.scope))) || '') };
-  if (!s || !s.tokens) { out.진단 = '구글 데이터 연결 안 됨 — 캘린더 [연결하기] 필요'; return res.json(out); }
+  // ★2026-07-27 회귀 사고: 토큰은 있는데 ★권한(scope)만 좁아 캘린더가 통째로 막혔다.
+  //   영속 저장소(Firestore)에 넓은 권한이 남아 있는지까지 봐야 원인이 드러난다.
+  if (s && s.email) {
+    try { const _d = await loadMemberToken(s.email);
+      out.영속저장_토큰있음 = !!(_d && _d.refresh_token);
+      out.영속저장_캘린더권한 = !!(_d && /calendar/.test(_d.scope || ''));
+    } catch (e) { out.영속저장_확인실패 = e.message; }
+  }
+  if (!s || !s.tokens) { out.진단 = '구글 데이터 연결 안 됨 — 캘린더 [연결하기] 필요'; out.연결링크 = '/auth/google/connect?scope=calendar'; return res.json(out); }
+  if (!out.캘린더스코프) {
+    out.진단 = out.영속저장_캘린더권한
+      ? '★토큰은 있는데 이번 세션 권한만 좁습니다 — 다시 로그인하면 영속 저장된 캘린더 권한으로 복구됩니다.'
+      : '캘린더 권한이 없습니다 — [구글 연결]로 캘린더 권한을 주세요.';
+    out.연결링크 = '/auth/google/connect?scope=calendar';
+  }
   try {
     const ma = memberAuth(req);
     const cal = google.calendar({ version: 'v3', auth: ma });
@@ -4160,9 +4179,20 @@ app.get('/auth/google/callback', async (req, res) => {
     // ★Task A 재로그인 커넥터 유지 — 3중 복원: ①메모리/쿠키 세션(_old) ②이메일 기반 durable(Firestore).
     //   로그인은 rt를 재발급하지 않으므로, 한 번이라도 [구글 연결]한 이메일이면 어느 기기·재배포·쿠키유실이어도 자동 복원.
     if (!tok.refresh_token && _old && _old.tokens && _old.tokens.refresh_token) tok.refresh_token = _old.tokens.refresh_token;
+    // ★2026-07-27 캘린더 사고 수정: 예전엔 "토큰이 없을 때만" durable을 읽었다.
+    //   로그아웃을 진짜로 지워지게 고친 뒤(계정 격리), 재로그인하면 물려받을 이전 세션이 없다.
+    //   그때 구글이 토큰을 새로 주면 durable을 아예 안 읽어서 ★권한이 openid·email·profile만 남고
+    //   캘린더·시트·드라이브가 통째로 막혔다. → ★토큰 유무와 상관없이 durable 권한을 읽어 넓은 쪽을 쓴다.
+    //   durable은 ★이메일 기반이라 본인 것만 온다 — 계정 격리는 그대로다.
     let _durScope = '';
-    if (!tok.refresh_token && ui.data.email) {
-      try { const _dur = await loadMemberToken(ui.data.email); if (_dur && _dur.refresh_token) { tok.refresh_token = _dur.refresh_token; _durScope = _dur.scope || ''; } } catch (e) {}
+    if (ui.data.email) {
+      try {
+        const _dur = await loadMemberToken(ui.data.email);
+        if (_dur) {
+          if (!tok.refresh_token && _dur.refresh_token) tok.refresh_token = _dur.refresh_token;
+          _durScope = _dur.scope || '';
+        }
+      } catch (e) {}
     }
     const newScope = tokens.scope || '';
     const oldScope = (_old && _old.scope) || '';
