@@ -307,6 +307,22 @@ async function loadMemberToken(email) {
     return { refresh_token: rt, scope: (f.scope && f.scope.stringValue) || '' };
   } catch (e) { return null; }
 }
+// ★완전 해제 전용(/logout?full=1): 이 이메일의 영속 토큰 문서 삭제 = 구글 연결까지 끊기.
+//   기본 로그아웃은 이걸 부르지 않는다 → 같은 분이 다시 로그인하면 커넥터 배지 그대로(재방문 유지 원칙).
+//   베스트에포트(SA 권한 없으면 0건 — 실패해도 로그아웃 자체는 이미 완료).
+async function deleteMemberTokens(email) {
+  if (!email) return 0;
+  const fs = _tokFs();
+  const r = await fs.projects.databases.documents.runQuery({ parent: _tokDB, requestBody: { structuredQuery: {
+    from: [{ collectionId: TOKEN_COLL }],
+    where: { fieldFilter: { field: { fieldPath: 'email' }, op: 'EQUAL', value: { stringValue: String(email).toLowerCase() } } },
+    limit: 50,
+  } } });
+  const names = (r.data || []).filter((x) => x.document && x.document.name).map((x) => x.document.name);
+  let n = 0;
+  for (const name of names) { try { await fs.projects.databases.documents.delete({ name }); n++; } catch (e) {} }
+  return n;
+}
 
 // ═══ 📱 회원 솔라피 키 서버 암호화 저장 (Firestore · AES-256-GCM · TOKEN_ENC_KEY 재사용) ═══
 //   ★비용원칙: 문자 비용=회원 자비. ★시트 평문 저장 금지(공유/링크 유출 시 남이 회원 계정으로 발송=요금폭탄) → 서버 암호화.
@@ -576,6 +592,32 @@ const sessions = new Map();
 function oaClient() { return new google.auth.OAuth2(OA_ID, OA_SECRET, OA_REDIRECT); }
 function sidOf(req) { if (req && req._sid) return req._sid; const m = /(?:^|;\s*)genya_sid=([^;]+)/.exec(req.headers.cookie || ''); return m && m[1]; } // ★req._sid: 복원 미들웨어가 이번 요청에 재발급한 sid를 같은 요청에서 즉시 반영(첫 요청부터 uid 유효)
 function sessionOf(req) { const s = sidOf(req); return s && sessions.get(s); }
+// ═══ 🚪 완전 로그아웃 도구 (2026-07-27 긴급수정) ═══
+//   [사고] 예전 /logout은 genya_sid만 지우고 genya_rt(1년 암호화 쿠키)를 남겼다.
+//     → 다음 요청에서 위 복원 미들웨어가 genya_rt로 대표님 세션을 되살림 → /login이 /로 튕김
+//     → 같은 브라우저에서 교육생이 자기 계정으로 로그인 자체를 못 했다.
+//   [원칙] 로그인 유지 ≠ 로그아웃 불가. 평소엔 genya_rt 1년 유지(재방문 유지 그대로),
+//     로그아웃할 때만 확실히 지운다.
+const _COOKIE_SEC = () => (process.env.RENDER ? '; Secure' : '');
+const _COOKIE_GONE = 'Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT';
+function _cookieSid(req) { const m = /(?:^|;\s*)genya_sid=([^;]+)/.exec((req && req.headers && req.headers.cookie) || ''); return m && m[1]; }
+// 쿠키에 남은 genya_rt의 주인 이메일(계정 오염 판별용). 못 읽으면 ''.
+function _rtCookieEmail(req) {
+  try { const m = /(?:^|;\s*)genya_rt=([^;]+)/.exec((req && req.headers && req.headers.cookie) || ''); if (!m) return '';
+    const p = JSON.parse(_dec(decodeURIComponent(m[1])) || '{}'); return String((p && p.email) || '').toLowerCase(); } catch (e) { return ''; }
+}
+// ★세션·쿠키 완전 삭제: 서버 세션(쿠키 sid + 이번 요청에 재발급된 sid) + genya_sid + genya_rt.
+//   setHeader(=append 아님)라서, 복원 미들웨어가 방금 붙였을 수 있는 재발급 쿠키까지 덮어쓴다.
+function killSession(req, res) {
+  const a = _cookieSid(req), b = req && req._sid;
+  if (a) sessions.delete(a);
+  if (b && b !== a) sessions.delete(b);
+  if (req) req._sid = null;
+  res.setHeader('Set-Cookie', [
+    `genya_sid=; HttpOnly; Path=/; SameSite=Lax; ${_COOKIE_GONE}${_COOKIE_SEC()}`,
+    `genya_rt=; HttpOnly; Path=/; SameSite=Lax; ${_COOKIE_GONE}${_COOKIE_SEC()}`,
+  ]);
+}
 // ★핵심: 로그인했으면 회원 구글 OAuth 클라이언트(회원 토큰), 아니면 null → 각 함수가 SA로 폴백
 //   카카오 로그인 세션은 구글 토큰이 없어(s.tokens 없음) → null → 데이터 기능엔 구글 연결 필요(정직).
 function memberAuth(req) { const s = sessionOf(req); if (!s || !s.tokens) return null; const c = oaClient(); c.setCredentials(s.tokens); return c; }
@@ -3880,6 +3922,9 @@ app.get('/api/usage', (req, res) => {
 // ── 🔑 OAuth 로그인 라우트 ──
 function loginPage(body) { return `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><body style="font-family:Pretendard,'맑은 고딕',sans-serif;max-width:520px;margin:60px auto;padding:0 18px;color:#1a1f28;text-align:center;">${body}</body>`; }
 app.get('/login', (req, res) => {
+  // ★?switch=1 : 이 브라우저에 남의 로그인이 남아 있어도 강제로 로그인 화면(교육생 구제).
+  //   로그인 화면은 세션이 있으면 /로 튕기므로, 갈아탈 통로가 하나는 있어야 한다.
+  if (String(req.query.switch || '') === '1') killSession(req, res);
   const s = sessionOf(req);
   if (s) return res.redirect('/');
   const warnG = OA_CONFIGURED ? '' : '<div style="background:#FBF0DC;color:#8a4d18;padding:10px;border-radius:10px;margin-bottom:10px;font-size:13px;">⚠️ 구글 OAuth 미설정</div>';
@@ -3940,7 +3985,15 @@ app.get('/auth/google/callback', async (req, res) => {
     // ★로그인이 기존 연결을 지우지 않게: refresh_token은 이번에 없으면(로그인은 재동의 안 함)
     //   기존 세션 것을 유지. scope도 이번 것이 더 좁으면(로그인=3개) 기존 것을 유지.
     //   include_granted_scopes=true라 정상적으론 넓게 오지만, 안전하게 넓은 쪽을 택한다.
-    const _old = sessionOf(req);
+    // ★2026-07-27 계정 오염 차단(긴급): 이전 세션은 "같은 이메일"일 때만 물려받는다.
+    //   예전엔 대표님 세션이 남아 있는 브라우저에서 교육생이 로그인하면, 교육생 세션에
+    //   대표님 refresh_token·scope가 그대로 들어가 대표님 캘린더·시트가 열렸다(회원 격리 붕괴).
+    const _newEmail = String(ui.data.email || '').toLowerCase();
+    const _prevSess = sessionOf(req);
+    const _sameUser = !!(_prevSess && String(_prevSess.email || '').toLowerCase() === _newEmail);
+    const _old = _sameUser ? _prevSess : null;
+    // 다른 계정으로 갈아타는 경우: 서버 메모리에 남은 이전 사람 세션을 먼저 정리
+    if (!_sameUser) { const _prevSid = sidOf(req); if (_prevSid) sessions.delete(_prevSid); req._sid = null; }
     const tok = Object.assign({}, tokens);
     // ★Task A 재로그인 커넥터 유지 — 3중 복원: ①메모리/쿠키 세션(_old) ②이메일 기반 durable(Firestore).
     //   로그인은 rt를 재발급하지 않으므로, 한 번이라도 [구글 연결]한 이메일이면 어느 기기·재배포·쿠키유실이어도 자동 복원.
@@ -3971,11 +4024,31 @@ app.get('/auth/google/callback', async (req, res) => {
         if (enc) cookies.push(`genya_rt=${encodeURIComponent(enc)}; HttpOnly; Path=/; SameSite=Lax; Max-Age=31536000${_sec}`);
       } catch (e) {}
     }
+    // ★새 genya_rt를 못 쓴 경우(이메일 없음·암호화키 없음)엔 남의 옛 genya_rt를 반드시 지운다.
+    //   안 지우면 복원 미들웨어가 이 브라우저를 다시 이전 사람 계정으로 되돌린다.
+    if (!cookies.some((c) => c.startsWith('genya_rt=') && !c.startsWith('genya_rt=;')) && _rtCookieEmail(req))
+      cookies.push(`genya_rt=; HttpOnly; Path=/; SameSite=Lax; ${_COOKIE_GONE}${_sec}`);
     res.setHeader('Set-Cookie', cookies);
+    console.log('[🔑login] ' + (_newEmail || '(이메일없음)') + (_sameUser ? ' · 같은 계정 재로그인(연결 유지)' : ' · 새 계정(이전 세션 정리됨)'));
     res.redirect(isConnect ? ('/?connected=1&screen=' + encodeURIComponent(returnTo)) : '/'); // 데이터 연결이면 원래 화면으로 복귀
   } catch (e) { res.status(500).send('로그인 오류: ' + e.message); }
 });
-app.get('/logout', (req, res) => { const s = sidOf(req); if (s) sessions.delete(s); res.setHeader('Set-Cookie', 'genya_sid=; Path=/; Max-Age=0'); res.redirect('/login'); });
+// ── 🚪 로그아웃 = 진짜 로그아웃 (2026-07-27 긴급수정) ──
+//   서버 세션 + genya_sid + genya_rt(1년 쿠키) 전부 삭제 → 대표님 계정으로 되돌아가지 않는다.
+//   ?full=1 이면 구글 연결(영속 토큰)까지 해제. 기본은 유지 = 같은 분 재로그인 시 커넥터 그대로.
+app.get('/logout', async (req, res) => {
+  const s = sessionOf(req);
+  const email = String((s && s.email) || _rtCookieEmail(req) || '').toLowerCase();
+  const full = String(req.query.full || '') === '1';
+  killSession(req, res);
+  let removed = 0;
+  if (full && email) { try { removed = await deleteMemberTokens(email); } catch (e) { console.warn('[🚪logout full] 영속토큰 삭제 실패(로그아웃은 완료):', e.message); } }
+  console.log('[🚪logout] ' + (email || '(익명)') + ' · 세션+genya_sid+genya_rt 삭제' + (full ? ' · 구글연결 해제 ' + removed + '건' : ''));
+  res.redirect('/login');
+});
+// ★교육생 구제 통로: 남의 로그인이 남은 브라우저에서도 바로 내 계정으로.
+//   완전 로그아웃 → 구글 계정 선택창(prompt=select_account).
+app.get('/switch', (req, res) => { killSession(req, res); res.redirect(OA_CONFIGURED ? '/auth/google' : '/login'); });
 app.get('/me', (req, res) => { const s = sessionOf(req); res.json(s ? { ok: true, email: s.email, name: s.name, provider: s.provider, hasGoogleData: !!s.tokens, hasData: hasDataScope(req), scopes: (s.scope || (s.tokens && s.tokens.scope) || '') } : { ok: false }); });
 
 // 🔌 커넥터 실측 연결상태 — ★"토큰 있으니 연결됨"(거짓말) 금지. 실제 API 1회 호출 200 = 연결됨.
@@ -4068,8 +4141,16 @@ app.get('/auth/kakao/callback', async (req, res) => {
     const name = (u.properties && u.properties.nickname) || '카카오 회원';
     // 3) 세션 (★구글 토큰 없음 → 데이터 기능은 구글 연결 필요). 토큰만 메모리·회원 격리·저장0
     const s = crypto.randomBytes(16).toString('hex');
+    // ★계정 오염 차단(2026-07-27): 다른 사람 세션이 남아 있으면 먼저 정리
+    const _prevK = sessionOf(req);
+    if (_prevK && String(_prevK.email || '').toLowerCase() !== String(email || '').toLowerCase()) { const _psid = sidOf(req); if (_psid) sessions.delete(_psid); req._sid = null; }
     sessions.set(s, { email, name, provider: 'kakao' }); // s.tokens(구글) 없음
-    res.setHeader('Set-Cookie', `genya_sid=${s}; HttpOnly; Path=/; SameSite=Lax; Max-Age=31536000${process.env.RENDER ? '; Secure' : ''}`); // ★영속(1년)
+    const _secK = process.env.RENDER ? '; Secure' : '';
+    const kcookies = [`genya_sid=${s}; HttpOnly; Path=/; SameSite=Lax; Max-Age=31536000${_secK}`]; // ★영속(1년)
+    // ★남의 genya_rt(구글 1년 쿠키)가 남아 있으면 삭제 — 안 지우면 서버 재시작 뒤
+    //   복원 미들웨어가 이 브라우저를 그 사람 계정으로 되돌린다.
+    { const re = _rtCookieEmail(req); if (re && re !== String(email || '').toLowerCase()) kcookies.push(`genya_rt=; HttpOnly; Path=/; SameSite=Lax; ${_COOKIE_GONE}${_secK}`); }
+    res.setHeader('Set-Cookie', kcookies);
     res.redirect('/');
   } catch (e) { res.status(500).send('카카오 로그인 오류: ' + e.message); }
 });

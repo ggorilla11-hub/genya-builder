@@ -1463,6 +1463,13 @@ window.genyaGoOnboard=function(){
 };
 window.genyaLogout=function(){
   if(!confirm('로그아웃할까요?\n\n(밤샘 발굴 설정은 그대로 남습니다)')) return;
+  // ★2026-07-27 긴급: 이 브라우저에 남는 "내 신원 흔적"도 함께 지운다.
+  //   안 지우면 같은 PC에서 다음 사람이 로그인해도 앞사람 이름·직업이 화면·답글에 섞인다
+  //   (genya_realname·genya_nick·genya_job·genya_onboarded·genya_state 등).
+  //   ★서버 데이터·밤샘 발굴 프로필(Firestore)은 여기서 안 건드린다 — 브라우저 저장분만.
+  try{ var 지울것=[]; for(var i=0;i<localStorage.length;i++){ var k=localStorage.key(i); if(k&&k.indexOf('genya_')===0) 지울것.push(k); }
+       지울것.forEach(function(k){ try{ localStorage.removeItem(k); }catch(e){} }); }catch(e){}
+  try{ sessionStorage.clear(); }catch(e){}
   location.href='/logout';
 };
 // 로고에 클릭을 붙인다(기존 로고 HTML은 안 고친다)
