@@ -1429,6 +1429,24 @@ function _rowsForNames(t, names) {
   }
   return out;
 }
+// 📇 (추가) "강수연 오정서 보여줘"처럼 '카드'라는 낱말 없이 ★이름만 부르는 말 판정.
+//   ★단일 소스: 실제 대화와 진단창구(/api/diag/card)가 ★이 함수 하나를 같이 쓴다.
+//   명단에 ★실제로 있는 이름만 돌려준다(없으면 빈 배열 → 평소대로 대화). 조회·표시 전용.
+function _nameShowNamesOf(q, t, lastMentioned) {
+  q = String(q || '');
+  const showVerb = /(보여|띄워|띄우|열어|불러|보자)/.test(q) && q.replace(/\s/g, '').length <= 30;
+  const pron = /^(둘\s*다|셋\s*다|모두|전부|양쪽|둘|셋)$/.test(q.trim());   // "둘다" — 방금 말한 사람들
+  const 제외 = /(발굴|리드|매출|일정|캘린더|결재|발송|초안|이벤트|제안서|비교표|명단\s*전체|전체\s*명단)/.test(q);
+  if (제외 || (!showVerb && !pron)) return [];
+  const rows = (t && t.rows) || [];
+  const out = [];
+  if (showVerb) {
+    for (const r of rows) { const n = _rowName(t, r); if (n && n.length >= 2 && q.indexOf(n) >= 0 && out.indexOf(n) < 0) out.push(n); }
+  } else {
+    for (const n of (lastMentioned || [])) { if (rows.some((r) => _rowName(t, r) === n) && out.indexOf(n) < 0) out.push(n); }
+  }
+  return out;
+}
 function _rowName(t, row) {
   // 이름 칸을 찾는다. 못 찾으면 사람 이름처럼 생긴 첫 값을 쓴다(하드코딩 없음)
   const keys = Object.keys(row || {});
@@ -1954,10 +1972,12 @@ app.get('/api/diag/card', async (req, res) => {
     // ★2026-07-27: 실제 대화가 쓰는 것과 ★똑같은 함수(_rowsForNames)로 센다.
     //   비슷하게 흉내낸 계산은 "진단은 되는데 실제는 안 됨"을 만든다(_rowsFor 사고가 그랬다).
     const 행첨부 = _rowsForNames(t, 최종).length;
+    // ★(추가) '카드'라는 낱말 없이 이름만 말한 요청 — 실제 대화와 같은 함수로 판정해 보여준다.
+    const 이름만말한카드 = cf.isCardCmd || cf.isCardClose ? [] : _nameShowNamesOf(q, t, []);
     // 어떤 칸에 상담류 낱말이 들어 있는지(값이 아니라 ★칸 이름만)
     const 상담칸 = keys.filter((k) => rows.some((r) => /(상담|미팅|면담|방문|대기)/.test(String(r[k] || ''))));
     const route = cf.isCardClose ? '카드 닫기'
-      : (!cf.isCardCmd ? '카드 아님(일반 대화로 감)'
+      : (!cf.isCardCmd ? (이름만말한카드.length ? `카드 ${이름만말한카드.length}장(이름만 말함 — 추가 분기)` : '카드 아님(일반 대화로 감)')
         : (named.length >= 2 ? `카드 ${named.length}장(이름 여러 개)`
           : (named.length === 1 ? '카드 1장(이름)'
             : (cf.isGroupCard ? '묶음 카드' : (cf.cardName ? '이름 검색' : '되묻기(대상 없음)')))));
@@ -1966,6 +1986,7 @@ app.get('/api/diag/card', async (req, res) => {
       '★라우팅': route,
       트리거: { 카드명령: cf.isCardCmd, 닫기: cf.isCardClose, 묶음: cf.isGroupCard, 이름추출: cf.cardName },
       말속_명단이름_수: named.length,
+      이름만말한카드_인원: 이름만말한카드.length,   // '카드'란 낱말 없이 "○○ ○○ 보여줘"로 부른 경우
       '★행첨부': 행첨부,          // 카드로 실제 그려질 행 수 — 0이면 화면에 안 뜬다
       최종_인원: 최종.length,
       시트연결: !!(t && t.id), 행수: rows.length, 컬럼: keys,
@@ -2640,6 +2661,21 @@ async function orderHandler(req, res) {
       && !/(추가|수정|삭제|등록|변경|바꿔|고쳐|지워|빼|입력)/.test(q)
       && !/(발송|결재|승인|알림톡|초안)/.test(q);
     if (_isBriefAsk) console.log(`[📊브리핑] 범위=${briefScope(q).k} · 고정 틀로 응답 · q="${String(q).slice(0, 40)}"`);
+    // ═══ 📇 (추가) "강수연 오정서 보여줘" — '카드'라는 낱말 없이 이름만 부르는 말 ═══
+    //   ★2026-07-27 대표님 실측: 이런 말은 카드 트리거가 안 켜져 ★일반 대화로 샜다.
+    //     그래서 지니야가 "카드 띄웠습니다"라고 ★말만 하고 화면엔 아무것도 없었다.
+    //   ★기존 카드 트리거(cardFlags)와 묶음 카드 블록은 한 글자도 안 바꾼다 — 그게 꺼졌을 때만 본다.
+    //   ★지어내기 방지: 명단에 ★실제로 있는 이름일 때만 카드로 보낸다(없으면 평소대로 대화).
+    //   ★조회·표시만. 발송 경로 없음.
+    let _isNameShow = false, _nameShowNames = [], _nameShowTable = null;
+    // 값비싼 명단 읽기를 아무 말에나 하지 않도록, 기존 트리거가 꺼졌을 때만 본다.
+    if (!_isCardCmd && !_isCardClose && !_isBriefAsk && /(보여|띄워|띄우|열어|불러|보자|둘|셋|모두|전부|양쪽)/.test(q)) {
+      try { _nameShowTable = await sheetsCrud.loadTable(null); } catch (e) { _nameShowTable = null; }
+      // ★진단창구와 ★같은 함수로 판정한다("진단은 되는데 실제는 안 됨" 방지)
+      _nameShowNames = _nameShowNamesOf(q, _nameShowTable, (req.body && req.body.lastMentioned) || []);
+      _isNameShow = _nameShowNames.length > 0;
+      if (_isNameShow) console.log(`[📇카드+] 이름만 말한 카드 요청 · ${_nameShowNames.length}명 · q="${String(q).slice(0, 40)}" · ★조회만`);
+    }
     if (_isCardCmd || _isCardClose) {
       // ★대표님이 로그에서 바로 볼 수 있게 — 수문장 로그(match=false)는 "방금 올린 것" 인지용이라 카드와 무관하다.
       console.log(`[📇카드] 트리거 ON · ${_isCardClose ? '닫기' : (_isGroupCard ? '묶음(조건 — 이름검색 안 함)' : '이름')} · 이름추출="${_isGroupCard ? '(조건이라 안 뽑음)' : _cardName}" · q="${String(q).slice(0, 40)}"`);
@@ -2916,6 +2952,17 @@ async function orderHandler(req, res) {
           out = { kind: '📇 고객카드', text: `${g.label}에 해당하는 고객이 명단에 없어요.` + (g.how ? ` (${g.how} 기준으로 찾았어요)` : '') };
         }
       }
+    } else if (_isNameShow) {
+      // 📇 (추가) 이름만 말한 카드 요청 — 위 카드 블록은 그대로 두고 여기서 답한다.
+      //   ★거짓 보고 차단: 카드에 담길 내용을 ★먼저 만들어 보고, 담긴 만큼만 말한다.
+      const _r = _rowsForNames(_nameShowTable, _nameShowNames);
+      out = _r.length >= 2
+        ? { kind: '📇 고객카드', action: 'open_cards', customers: _nameShowNames.slice(0, 12), label: '말씀하신', rows: _r,
+            text: `${_r.length}명 카드를 띄울게요 — ${_nameShowNames.slice(0, 12).join(' · ')}` }
+        : _r.length === 1
+          ? { kind: '📇 고객카드', action: 'open_card', customer: _nameShowNames[0], rows: _r,
+              text: _nameShowNames[0] + ' 고객 카드를 띄울게요.' }
+          : { kind: '📇 고객카드', text: '명단에서 그분 정보를 못 찾아 카드를 못 띄웠어요.' };
     } else if (_gateEvents) {
       // 🛡️ 이 방 이벤트 인지 응답(LLM + 수문장 컨텍스트) — 엄마2 Phase6-3 수문장(무접촉 병합)
       const job = String((req.body && req.body.job) || req.query.job || '');
