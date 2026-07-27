@@ -61,6 +61,10 @@ function 로컬확인() {
   확인('캘린더: 일정 분기도 같은 범위 함수를 씀', /const _rg = _schedRange\(q\)/.test(src), '진단과 실제가 달라지면 안 됨');
   확인('★캘린더: "오늘 일정?"이 일정 분기로 감(의문사 없어도)', /_reSchedWord\.test\(q\)/.test(src),
     '의문사 없으면 일반 대화로 새던 사고');
+  확인('★캘린더: 진단창구가 ★대화가 쓰는 함수도 돌려 본다',
+    /_readCalendar\(ma, req, 'today'\)[\s\S]{0,300}out\.대화가_보는_오늘/.test(src)
+    && /out\.두뇌주입/.test(src) && /_calCtx\(ma, req, '오늘 일정'\)/.test(src),
+    'CLAUDE.md 6-7 — 진단이 "된다"는데 대화는 안 되는 일이 없게');
 
   // ── 3) 카드 (명단·여러 명·만기) ──
   const rowsFor = 떼어오기('_rowsForNames'), rowName = 떼어오기('_rowName');

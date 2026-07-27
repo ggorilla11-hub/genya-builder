@@ -1401,6 +1401,20 @@ app.get('/api/diag/calendar', async (req, res) => {
     out.진단 = 합계 > 0
       ? '✅ 오늘 일정 읽힘(합계 ' + 합계 + ') — 어느 캘린더인지 캘린더별_오늘 참고. 화면이 0이면 화면 반영 문제.'
       : (out.최근7일_primary.length > 0 ? '⚠️ 오늘은 0인데 최근7일엔 있음 → 시간대/범위' : (cals.length <= 1 ? '⚠️ 캘린더 1개뿐 → 다른 구글계정 로그인 의심' : '⚠️ 모든 캘린더 오늘 0 → 진짜 오늘 일정 없음 or 다른 계정'));
+    // ═══ ★2026-07-27: 진단과 실제가 다를 수 없게 (CLAUDE.md 6-7) ═══
+    //   위 합계는 ★이 진단창구가 자체적으로 순회한 값이다. 대화 지니야는 _readCalendar를 쓴다.
+    //   둘이 다르면 "진단은 되는데 대화는 안 됨"이 생긴다 → ★대화가 쓰는 바로 그 함수도 여기서 돌려 보여준다.
+    try {
+      const _real = await _readCalendar(ma, req, 'today');
+      out.대화가_보는_오늘 = _real ? { 건수: _real.count, 캘린더수: _real.calendarCount, 범위: _real.rangeLabel } : null;
+      const _ctx = await _calCtx(ma, req, '오늘 일정');
+      out.두뇌주입 = _ctx ? { 들어감: true, 글자수: _ctx.length, 미리보기: _ctx.slice(0, 220) } : { 들어감: false };
+      if (_real && _real.count !== 합계) {
+        out['★불일치'] = `진단 순회 ${합계}건 vs 대화가 보는 값 ${_real.count}건 — 여기가 원인입니다.`;
+      } else if (_real && !_ctx) {
+        out['★불일치'] = '캘린더는 읽히는데 두뇌 주입이 비었습니다 — 주입 경로가 원인입니다.';
+      }
+    } catch (e) { out.대화경로_확인실패 = e.message; }
     res.json(out);
   } catch (e) { out.에러 = e.message; out.진단 = isScopeError(e) ? '캘린더 스코프 없음 — 재연결 필요' : '캘린더 호출 실패'; res.json(out); }
 });
