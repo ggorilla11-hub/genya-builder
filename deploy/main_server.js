@@ -1416,6 +1416,19 @@ const _CARD_GROUPS = [
     hit: /(상담|미팅|면담|방문|대기|예정|요청|문의)/, how: '비고 등 모든 칸에서 상담·미팅·면담·방문·대기' },
   { key: '생일', re: /(생일|기념일)/, dateCol: /(생일|생년|기념일)/, within: 30, how: '생일·기념일 30일 이내' },
 ];
+// 📇 카드 내용 만들기 — 이름 목록 → 명단 행(내부 번호 _rowNum은 빼고).
+//   ★2026-07-27 사고: 이 함수가 "묶음 카드" 블록 안의 const로만 있어서, 그보다 앞쪽
+//     "보여줘 비서"(만기 건만 보여줘 등)에서 부르면 ★_rowsFor is not defined 로 죽었다.
+//     → 한 곳(모듈 최상위)에 두고 양쪽이 ★같은 함수를 쓴다. 진단창구도 이걸 탄다.
+//   ★조회·표시 전용. 발송·저장 없음(읽기만).
+function _rowsForNames(t, names) {
+  const out = [];
+  for (const n of (names || [])) {
+    const r = (((t && t.rows) || []).find((x) => _rowName(t, x) === n));
+    if (r) { const o = {}; Object.keys(r).forEach((k) => { if (k !== '_rowNum') o[k] = r[k]; }); out.push(o); }
+  }
+  return out;
+}
 function _rowName(t, row) {
   // 이름 칸을 찾는다. 못 찾으면 사람 이름처럼 생긴 첫 값을 쓴다(하드코딩 없음)
   const keys = Object.keys(row || {});
@@ -1938,7 +1951,9 @@ app.get('/api/diag/card', async (req, res) => {
       } catch (e) {}
     }
     // 카드로 실제 그려질 행이 몇 개 붙는가 (여기가 0이면 화면에 안 뜬다)
-    const 행첨부 = 최종.filter((n) => rows.some((r) => _rowName(t, r) === n)).length;
+    // ★2026-07-27: 실제 대화가 쓰는 것과 ★똑같은 함수(_rowsForNames)로 센다.
+    //   비슷하게 흉내낸 계산은 "진단은 되는데 실제는 안 됨"을 만든다(_rowsFor 사고가 그랬다).
+    const 행첨부 = _rowsForNames(t, 최종).length;
     // 어떤 칸에 상담류 낱말이 들어 있는지(값이 아니라 ★칸 이름만)
     const 상담칸 = keys.filter((k) => rows.some((r) => /(상담|미팅|면담|방문|대기)/.test(String(r[k] || ''))));
     const route = cf.isCardClose ? '카드 닫기'
@@ -2107,11 +2122,25 @@ app.get('/api/diag/jobkw', (req, res) => {
     안내: j && !jobKw.기본검색어(j).length ? '표에 없는 직업이에요 — 검색어를 직접 넣어주시면 그걸 씁니다(지어내지 않습니다).' : '' });
 });
 // 🩺 보여줘 진단 — "이 말을 하면 무엇이 뜨나". ★판정만·아무것도 실행하지 않는다.
-app.get('/api/diag/show', (req, res) => {
+app.get('/api/diag/show', async (req, res) => {
   const q = String(req.query.q || '핫 리드 보여줘');
   const s = showCards.parse(q);
+  // ★2026-07-27: 예전엔 "무엇을 보여줄지" 판정만 했다. 그래서 판정은 멀쩡한데 실제로 카드를 만드는
+  //   단계에서 죽어도(_rowsFor is not defined) 진단은 "된다"고 답했다 — 진단이 거짓말한 것이다.
+  //   → 고객카드는 ★실제 경로와 같은 함수로 카드 내용까지 만들어 본다(읽기만·발송 0).
+  let 실제 = null;
+  if (s && s.종류 === 'client') {
+    try {
+      const t = await sheetsCrud.loadTable(memberAuth(req));
+      const g = _resolveCardGroup(q, t, []);
+      const rows = _rowsForNames(t, g.names);
+      실제 = { 명단읽음: !!t, 묶음: g.label, 기준: g.how, 찾은이름: g.names.length,
+        카드내용붙음: rows.length, 화면에뜨나: rows.length > 0,
+        진단: rows.length ? '뜹니다' : (g.names.length ? '이름은 찾았는데 카드 내용이 안 붙어요(칸 이름 확인 필요)' : '조건에 맞는 고객이 없어요') };
+    } catch (e) { 실제 = { 화면에뜨나: false, 오류: e.message, 진단: '★카드 만들다 오류 — 이게 화면에 카드가 안 뜨는 진짜 이유입니다.' }; }
+  }
   res.json({ 물음: q, 보여줄것: s ? (s.제목 + (s.채널 ? ' · ' + s.채널 : '') + (s.개수 ? ' · ' + s.개수 + '개' : '') + (s.최소점수 ? ' · ' + s.최소점수 + '점 이상' : '')) : '(기존 기능이 처리하거나, 그냥 대화로 답합니다)',
-    판정: s, 발송하나: false, 안내: '판정만 합니다 — 아무것도 실행하지 않고, 발송은 어떤 말로도 일어나지 않습니다.' });
+    판정: s, 실제실행: 실제, 발송하나: false, 안내: '조회만 합니다 — 발송은 어떤 말로도 일어나지 않습니다.' });
 });
 app.get('/api/cron/find', async (req, res) => {
   if (String(req.query.key || '') !== String(process.env.CRON_SECRET || '__nokey__')) {
@@ -2703,10 +2732,16 @@ async function orderHandler(req, res) {
         // 📇 고객 명단은 ★이미 있는 카드 엔진을 그대로 부른다(새로 만들지 않는다)
         const _t = await sheetsCrud.loadTable(ma).catch(() => null);
         const _g = _t ? _resolveCardGroup(q, _t, (req.body && req.body.lastMentioned) || []) : { names: [], label: '', how: '' };
-        out = _g.names.length
+        // ★2026-07-27 거짓 보고 차단: 예전엔 "띄웠어요"라고 ★과거형으로 먼저 말했다.
+        //   서버는 아직 아무것도 못 띄운다(띄우는 건 화면이다). 그래서 실제로 카드에 담을
+        //   ★내용을 먼저 만들어 보고, 담긴 만큼만 말한다. 0장이면 "못 띄웠다"고 정직히.
+        const _rows = _t ? _rowsForNames(_t, _g.names) : [];
+        out = _rows.length
           ? { kind: '📇 고객카드', action: 'open_cards', customers: _g.names, label: _g.label,
-              rows: _rowsFor(_g.names), text: `${_g.label} ${_g.names.length}명을 카드로 띄웠어요. (${_g.how})` }
-          : { kind: '📇 고객카드', text: `명단에서 ${_g.label || '해당'} 고객을 못 찾았어요. — ${_g.how || '조건에 맞는 분이 없습니다'}\n\n지어내지 않고 있는 그대로 말씀드립니다.` };
+              rows: _rows, text: `${_g.label} ${_rows.length}명 카드를 띄울게요. (${_g.how})` }
+          : { kind: '📇 고객카드', text: !_t
+              ? '명단을 불러오지 못해서 카드를 못 띄웠어요. — 구글 시트 연결을 확인해 주세요.'
+              : `명단에서 ${_g.label || '해당'} 고객을 못 찾았어요. — ${_g.how || '조건에 맞는 분이 없습니다'}\n\n지어내지 않고 있는 그대로 말씀드립니다.` };
       } else {
         // 🔍💰 발굴·매출은 화면이 이미 갖고 있는 숫자로 그린다(서버가 개인정보를 들고 있지 않는다)
         // ★2026-07-27 대표님 실사고: 서버가 "띄울게요"라고 ★약속부터 했는데 화면에 자료가 없어
@@ -2834,14 +2869,9 @@ async function orderHandler(req, res) {
       //   서버는 서비스계정으로 명단을 읽어 찾았는데, 화면은 /api/roster/list(회원 OAuth)로 ★다시 조회했다.
       //   회원 구글 데이터 스코프가 없으면 그 조회만 실패해 카드가 안 떴다.
       //   → 서버가 찾은 카드 내용을 ★응답에 직접 실어 보낸다. 화면은 다시 조회하지 않는다.
-      const _rowsFor = (names) => {
-        const out2 = [];
-        for (const n of names) {
-          const r = ((t && t.rows) || []).find((x) => _rowName(t, x) === n);
-          if (r) { const o = {}; Object.keys(r).forEach((k) => { if (k !== '_rowNum') o[k] = r[k]; }); out2.push(o); }
-        }
-        return out2;
-      };
+      //   ★2026-07-27: 본체를 모듈 최상위 _rowsForNames로 옮겼다(앞쪽 "보여줘 비서"도 같은 함수를
+      //     쓰게 — is not defined 사고의 근본 수정). 아래 호출부는 한 줄도 바뀌지 않는다.
+      const _rowsFor = (names) => _rowsForNames(t, names);
       if (_named.length >= 2) {
         out = { kind: '📇 고객카드', action: 'open_cards', customers: _named.slice(0, 12), label: '말씀하신',
           rows: _rowsFor(_named.slice(0, 12)),

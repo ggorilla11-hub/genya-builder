@@ -4778,8 +4778,9 @@ window.sendMsg=function(){
      if(reply) pushMsg('gen', renderMd(reply));
      // ★고객카드 띄우기 명령 신호(자비스): 명단·연결 드로어 열고 해당 고객 카드(ghRowDetail) 자동 표시
      if(d && d.rows) { try{ _cacheCardRows(d.rows); }catch(e){} }                                                    // ★서버가 보내준 카드 내용을 먼저 받아둔다
-     if(d && d.action==='open_card' && d.customer){ try{ openCustomerCard(d.customer); }catch(e){} }
-     if(d && d.action==='open_cards' && d.customers){ try{ openCustomerCards(d.customers, d.label); }catch(e){} }   // 📇 묶음 카드(상담 대기·만기 등)
+     // ★거짓 보고 차단: 조용히 삼키지 않고 ★실제로 떴는지 확인해서 말한다(_카드확인)
+     if(d && d.action==='open_card' && d.customer){ window._CARD_MISS=0; _카드확인(function(){ openCustomerCard(d.customer); }, 1); }
+     if(d && d.action==='open_cards' && d.customers){ window._CARD_MISS=0; _카드확인(function(){ openCustomerCards(d.customers, d.label); }, (d.customers||[]).length); }   // 📇 묶음 카드(상담 대기·만기 등)
      if(d && d.action==='close_card'){ try{ closeCustomerCards(d.customer); }catch(e){} try{ showCardsClose(); }catch(e){} if(d.발굴도){ try{ closeDiscovery(); }catch(e){} } }   // ★고객카드+내 상자+(발굴이라 하시면)발굴 팝업까지                            // 📇 카드 닫기(화면만·데이터 무접촉)
      _rememberMentioned(d);                                                                                          // ★브리핑이 말한 이름을 기억 → "방금 말한 4명 카드"
      // ⭐ 말로 이벤트 만들기: 서버가 실제로 만든 경우에만 이 신호가 온다 → 대시보드를 열어 새 타일을 "짠" 하고 보여준다.
@@ -4859,8 +4860,8 @@ function _voiceExec(q){
       if(d.text) pushMsg('gen', renderMd(d.text)); // 서버가 실제로 올렸을 때만 "결재함에 올렸어요"라고 답함(approval.create 결과)
       if(d.pending){ try{ pushMsg('gen', _apOpenBtnHtml()); }catch(e){} try{ if(document.getElementById('apList')) apRender(); }catch(e){} } // 실제 등록됨(서버 pending) → 열기 버튼 + 열려있는 결재함 즉시 갱신
       if(d.rows){ try{ _cacheCardRows(d.rows); }catch(e){} }
-      if(d.action==='open_card'&&d.customer){ try{ openCustomerCard(d.customer); }catch(e){} }
-      if(d.action==='open_cards'&&d.customers){ try{ openCustomerCards(d.customers, d.label); }catch(e){} }
+      if(d.action==='open_card'&&d.customer){ window._CARD_MISS=0; _카드확인(function(){ openCustomerCard(d.customer); }, 1); }
+      if(d.action==='open_cards'&&d.customers){ window._CARD_MISS=0; _카드확인(function(){ openCustomerCards(d.customers, d.label); }, (d.customers||[]).length); }
       if(d.action==='close_card'){ try{ closeCustomerCards(d.customer); }catch(e){} try{ showCardsClose(); }catch(e){} if(d.발굴도){ try{ closeDiscovery(); }catch(e){} } }
       _rememberMentioned(d);
       if(d.action==='create_event'&&d.eventName){ try{ _eventCreated(d.eventName, d.eventCount); }catch(e){} }  // ⭐ 음성으로 만든 이벤트도 화면에 즉시
@@ -4973,6 +4974,30 @@ function _cacheCardRows(rows){
     nm=String(nm).trim(); if(nm) window._CARD_ROWS[nm]=r;
   });
 }
+// ═══ ★2026-07-27 거짓 보고 차단 — "띄웠습니다" 말만 하고 안 뜨던 것 ═══
+//   예전엔 카드 그리기를 try{...}catch(e){} 로 ★조용히 삼켰다. 그래서 서버가 죽어도(_rowsFor 오류)
+//   지니야는 "카드 띄웠습니다"라고 말했고, 대표님이 "안 떴어" 하고 나서야 인정했다.
+//   → 이제 ★실제로 떴는지 화면(DOM)으로 확인하고, 안 떴으면 안 떴다고 먼저 말한다.
+//   ★화면 확인만 한다 — 명단·데이터는 손대지 않는다.
+window._카드확인=function(그리기, 기대수){
+  var 오류='';
+  try{ 그리기(); }catch(e){ 오류=(e&&e.message)||String(e); }
+  var 시도=0;
+  (function 확인(){
+    var host=document.getElementById('jarvisCard');
+    var 떴다=!!(host && host.style.display!=='none' && (host.innerHTML||'').length>30);
+    if(떴다){
+      // 실제로 뜬 장수를 세어, 말한 숫자와 다르면 사실대로 고쳐 말한다
+      var 실제=(window._CARDS&&window._CARDS.length)||1;
+      if(기대수 && 실제!==기대수){ try{ pushMsg('gen','말씀드린 것과 달리 실제로 뜬 카드는 '+실제+'장이에요. (세어 보고 사실대로 알려드립니다)'); }catch(e){} }
+      return;
+    }
+    if(시도++<15) return setTimeout(확인,150);   // 명단을 불러오는 중일 수 있어 기다린다
+    // 카드 그리는 쪽이 이미 "못 찾았어요"라고 정직히 말했으면 두 번 말하지 않는다
+    if(window._CARD_MISS && (Date.now()-window._CARD_MISS)<8000) return;
+    try{ pushMsg('gen','카드를 못 띄웠어요 — '+(오류?('오류예요: '+오류):'화면에 카드가 뜨지 않았습니다')+'.\n\n(말만 하고 안 띄우지 않으려고, 실제로 떴는지 확인해서 알려드립니다.)'); }catch(e){}
+  })();
+};
 function openCustomerCard(name){
   if(!name) return;
   // ① 서버가 보내준 내용이 있으면 그걸로 즉시 그린다(가장 확실한 경로)
@@ -4997,8 +5022,8 @@ function openCustomerCard(name){
       var h=find(map);
       if(h){ _jarvisShow(h); return; }
     }
-    try{ pushMsg('gen','명단에서 "'+name+'" 고객을 못 찾았어요.'); }catch(e){}
-  }).catch(function(){ try{ pushMsg('gen','명단을 불러오지 못했어요.'); }catch(e){} });
+    try{ window._CARD_MISS=Date.now(); pushMsg('gen','명단에서 "'+name+'" 고객을 못 찾았어요.'); }catch(e){}
+  }).catch(function(){ try{ window._CARD_MISS=Date.now(); pushMsg('gen','명단을 불러오지 못했어요.'); }catch(e){} });
 }
 // ═══ 📇 묶음 카드 — "상담 대기 4명 카드 보여줘" ═══
 //   ★2026-07-27: 브리핑은 "상담 대기 4명"이라 묶는데 카드는 '상담'이란 이름을 찾다 실패했다.
