@@ -609,7 +609,10 @@ const OA_REDIRECT = _envRedirect || (_isLocalDev ? `http://localhost:${process.e
 // ★"확인 안 된 앱" 경고 제거: 로그인은 openid·email·profile만(민감 스코프 없음 → 경고 안 뜸).
 //   캘린더·시트·드라이브(민감)는 그 기능 쓸 때 /auth/google/connect 로 별도 동의(incremental).
 const LOGIN_SCOPES = ['openid', 'email', 'profile'];
-const DATA_SCOPES = ['https://www.googleapis.com/auth/calendar.readonly', 'https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive.readonly', 'https://www.googleapis.com/auth/drive.file'];
+// ★2026-07-27 대표님 승인: 캘린더 쓰기(calendar.events) 포함 — "내일 3시 상담 등록해줘"가 되게.
+//   ★gmail.send는 여기 ★넣지 않는다 — 구글이 '제한 등급'으로 봐서 로그인·전체연결에 넣으면
+//     "확인 안 된 앱" 경고가 부활하고 사용자 수 제한이 걸린다. 메일은 [구글 연결 → 지메일]에서만 받는다.
+const DATA_SCOPES = ['https://www.googleapis.com/auth/calendar.readonly', 'https://www.googleapis.com/auth/calendar.events', 'https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive.readonly', 'https://www.googleapis.com/auth/drive.file'];
 const OA_SCOPES = LOGIN_SCOPES;
 const OA_CONFIGURED = !!(OA_ID && OA_SECRET);
 // ★회원 간 격리: 세션ID → {email, tokens}. 서버 메모리에만(디스크·DB 0, 회원 데이터 저장 0=토큰뿐)
@@ -1144,6 +1147,45 @@ function _schedRange(q) {
   return /지난\s*주|저번\s*주/.test(q) ? 'lastweek' : (/내일|명일/.test(q) ? 'tomorrow'
     : (/이번\s*달|이달|한\s*달/.test(q) ? 'month' : (/다음\s*주/.test(q) ? 'nextweek'
       : (/이번\s*주|금주|주간/.test(q) ? 'week' : (/어제/.test(q) ? 'yesterday' : 'today')))));
+}
+// ═══ 📅 일정 등록 말 읽기 — "내일 3시 상담 일정 등록해줘" (2026-07-27 대표님 승인) ═══
+//   ★자율 실행: 내 캘린더에 넣는 일이라 되돌릴 수 있다(지우면 그만) → 묻지 않고 바로 한다.
+//   ★밖으로 나가는 것 0: 참석자(attendees)를 ★아예 만들지 않는다 → 초대 메일이 나갈 수 없다.
+//   ★시간을 못 잡으면 지어내지 않고 null을 돌려준다(그러면 되묻는다).
+function _parseNewEvent(q) {
+  q = String(q || '');
+  if (!/(등록|잡아|잡아줘|넣어|추가|만들어|예약)/.test(q)) return null;          // 등록 의도가 있어야
+  if (!/(일정|스케줄|약속|미팅|상담|회의|미용실|병원|점심|저녁)/.test(q) && !/\d\s*시/.test(q)) return null;
+  if (/(메일|이메일|문자|카톡|알림톡|발송|보내)/.test(q)) return null;            // ★발송 말은 절대 여기로 안 온다
+  const kst = new Date(Date.now() + 9 * 3600e3);
+  let off = 0;
+  if (/모레/.test(q)) off = 2; else if (/내일|명일/.test(q)) off = 1;
+  const md = q.match(/(\d{1,2})\s*월\s*(\d{1,2})\s*일/);
+  const base = md ? new Date(Date.UTC(kst.getUTCFullYear(), +md[1] - 1, +md[2]))
+    : new Date(Date.UTC(kst.getUTCFullYear(), kst.getUTCMonth(), kst.getUTCDate() + off));
+  let hh = null, mm = 0;
+  const t24 = q.match(/(\d{1,2})\s*:\s*(\d{2})/);
+  const tm = q.match(/(오전|오후|아침|점심|저녁|밤)?\s*(\d{1,2})\s*시\s*(반)?\s*((\d{1,2})\s*분)?/);
+  if (t24) { hh = +t24[1]; mm = +t24[2]; }
+  else if (tm) {
+    hh = +tm[2]; mm = tm[3] ? 30 : (+(tm[5] || 0));
+    const 때 = tm[1] || '';
+    if (/오후|저녁|밤/.test(때) && hh < 12) hh += 12;
+    else if (/점심/.test(때) && hh < 12) hh += 12;
+    else if (/오전|아침/.test(때) && hh === 12) hh = 0;
+    else if (!때 && hh >= 1 && hh <= 7) hh += 12;   // "3시"는 업무 관행상 오후로 본다
+  }
+  if (hh == null || hh > 23 || mm > 59) return null;                             // 시간을 못 잡으면 되묻는다
+  const 시작 = new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth(), base.getUTCDate(), hh, mm) - 9 * 3600e3);
+  let 제목 = q.replace(/(오늘|내일|모레|명일)/g, ' ')
+    .replace(/\d{1,2}\s*월\s*\d{1,2}\s*일/g, ' ').replace(/\d{1,2}\s*:\s*\d{2}/g, ' ')
+    .replace(/(오전|오후|아침|점심|저녁|밤)?\s*\d{1,2}\s*시(\s*반)?(\s*\d{1,2}\s*분)?/g, ' ')
+    .replace(/(일정|스케줄)?\s*(등록해줘|등록해|등록|잡아줘|잡아|넣어줘|넣어|추가해줘|추가해|추가|만들어줘|만들어|예약해줘|예약|해줘|좀|에)/g, ' ')
+    .replace(/\s+/g, ' ').trim();
+  if (!제목 || 제목.length < 2) 제목 = '일정';
+  const kstStr = new Date(시작.getTime() + 9 * 3600e3).toISOString();
+  return { start: 시작, title: 제목,
+    표시: `${kstStr.slice(5, 10).replace('-', '월 ')}일 ${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}` };
 }
 // ═══ 📅 캘린더를 ★대화 두뇌에 넣는다 (2026-07-27 대표님 지시) ═══
 //   [사고] 서버는 캘린더를 완벽히 읽는데(진단창구로 확인), 대화 지니야는 "일정 없어요"라고 했다.
@@ -2847,6 +2889,9 @@ async function orderHandler(req, res) {
     //   ★2026-07-27 대표님 실측: "오늘 일정?"은 의문사(뭐·알려·있어…)가 없어서 트리거가 안 켜졌다.
     //     그래서 일정 분기로 못 가고 일반 대화로 새 "일정 없어요"라는 엉뚱한 답이 나갔다.
     //     → '일정·스케줄'이라고 ★명시하고 짧게 말씀하시면 의문사 없이도 조회로 본다(기존 판정은 그대로 두고 OR로 추가).
+    // 📅 일정 ★등록★ 말인가(조회와 다르다) — 시간을 못 잡으면 null이라 아래 조회·대화로 넘어간다
+    const _newEvt = _parseNewEvent(q);
+    if (_newEvt) console.log(`[📅일정등록 감지] "${_newEvt.title}" ${_newEvt.표시} · q="${String(q).slice(0, 40)}" · ★발송 아님(내 캘린더)`);
     const _reSchedWord = /(일정|스케줄)/;
     const _isSchedAsk = !/(카드|스캔)/.test(q) && !/이벤트/.test(q) && !/(결재|결제|발송|알림톡|승인)/.test(q)
       && !_reBook.test(q) && !_reNotSched.test(q)
@@ -2964,6 +3009,36 @@ async function orderHandler(req, res) {
           : (/상담\s*보고서|보고서|워드|doc/i.test(q) ? 'doc' : 'pdf'));
         const _dn = { pdf: '안내문(PDF)', excel: '비교표(엑셀)', ppt: '세미나 자료(PPT)', doc: '상담 보고서(워드)' }[_dt];
         out = { kind: '📄 문서', action: 'skill_gen', docType: _dt, text: `${_dn}를 만들게요. 잠시만요.` };
+      }
+    } else if (_newEvt) {
+      // 📅 일정 등록 — ★자율 실행(대표님 승인 2026-07-27). 내 캘린더에 넣는 일이라 되돌릴 수 있다.
+      //   ★밖으로 나가는 것 0: attendees 없음 + sendUpdates:'none' → 초대 메일이 나갈 수 없다.
+      //   ★거짓 완료 금지: 구글이 실제로 만들어 준 id가 있을 때만 "등록했다"고 말한다.
+      if (!canData) {
+        out = { kind: '📅 일정 등록', text: '일정을 넣으려면 구글 캘린더 연결이 필요해요. 우측 상단 [명단·연결]에서 캘린더를 연결해 주세요.' };
+      } else {
+        try {
+          const _end = new Date(_newEvt.start.getTime() + 3600e3);   // 기본 1시간
+          const _ins = await google.calendar({ version: 'v3', auth: ma }).events.insert({
+            calendarId: 'primary',
+            sendUpdates: 'none',                                     // ★초대 메일 절대 안 나감
+            requestBody: {                                           // ★attendees 없음 — 참석자를 아예 안 만든다
+              summary: _newEvt.title,
+              start: { dateTime: _newEvt.start.toISOString(), timeZone: 'Asia/Seoul' },
+              end: { dateTime: _end.toISOString(), timeZone: 'Asia/Seoul' },
+            },
+          });
+          if (_ins && _ins.data && _ins.data.id) {
+            console.log(`[📅일정등록] "${_newEvt.title}" ${_newEvt.표시} · id=${_ins.data.id} · ★초대 발송 0`);
+            out = { kind: '📅 일정 등록', text: `${_newEvt.표시}에 "${_newEvt.title}" 등록했어요.\n\n(제 캘린더 초대는 아무에게도 안 보냈어요. 지우거나 바꾸시려면 말씀해 주세요.)` };
+          } else {
+            out = { kind: '📅 일정 등록', text: '캘린더에 넣지 못했어요. 잠시 후 다시 말씀해 주세요.' };
+          }
+        } catch (e) {
+          out = isScopeError(e)
+            ? { kind: '📅 일정 등록', text: '일정을 넣을 권한이 아직 없어요. 우측 상단 [명단·연결]에서 캘린더를 다시 연결해 주시면(쓰기 권한 포함) 바로 넣어드릴게요.' }
+            : { kind: '📅 일정 등록', text: '캘린더에 넣다가 막혔어요 — ' + e.message };
+        }
       }
     } else if (_isSchedAsk) {
       const _rg = _schedRange(q);   // ★대화 두뇌 주입(_calCtx)과 ★같은 함수 — 범위가 어긋날 수 없다
@@ -4188,7 +4263,10 @@ app.get('/auth/google', (req, res) => {
 // ★데이터 연결(캘린더·시트·드라이브) — 그 기능 실제로 쓸 때만 별도 동의(incremental). 여기서만 민감 스코프 요청.
 // ★작업A2: 도구별 최소권한 스코프(incremental 누적). scope 파라미터 없으면 기존 일괄(하위호환)
 const CONNECT_SCOPES = {
-  calendar: ['https://www.googleapis.com/auth/calendar.readonly'],
+  // ★2026-07-27 대표님 승인: 캘린더 쓰기 추가(일정 등록). calendar.events = 내 일정 읽기+쓰기.
+  //   ★참석자 초대는 코드에서 아예 안 만든다(아래 등록 코드에 attendees 없음 · sendUpdates:'none')
+  //     → 권한이 생겨도 ★밖으로 나가는 메일은 0이다.
+  calendar: ['https://www.googleapis.com/auth/calendar.readonly', 'https://www.googleapis.com/auth/calendar.events'],
   sheets: ['https://www.googleapis.com/auth/spreadsheets'],
   drive: ['https://www.googleapis.com/auth/drive.file'],
   gmail: ['https://www.googleapis.com/auth/gmail.readonly', 'https://www.googleapis.com/auth/gmail.compose', 'https://www.googleapis.com/auth/gmail.send'],

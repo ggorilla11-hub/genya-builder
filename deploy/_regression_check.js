@@ -66,6 +66,27 @@ function 로컬확인() {
     && /out\.두뇌주입/.test(src) && /_calCtx\(ma, req, '오늘 일정'\)/.test(src),
     'CLAUDE.md 6-7 — 진단이 "된다"는데 대화는 안 되는 일이 없게');
 
+  // ── 2-3) 캘린더 쓰기 · Gmail 발송 권한 (2026-07-27 추가) ──
+  확인('캘린더 쓰기: calendar.events 권한이 연결에 포함', /auth\/calendar\.events/.test(src));
+  확인('캘린더 쓰기: 일정 등록 코드(events.insert) 있음', /events\.insert/.test(src));
+  확인('★캘린더 쓰기: 초대 메일 안 나감(sendUpdates none)', /sendUpdates: 'none'/.test(src),
+    '권한이 생겨도 밖으로 나가는 메일은 0이어야 함');
+  확인('★캘린더 쓰기: 참석자(attendees)를 아예 안 만듦', !/attendees\s*:/.test(src),
+    'attendees가 생기면 구글이 초대 메일을 보낸다');
+  확인('★Gmail: send 권한은 [연결] 버튼에만(로그인·전체연결에 없음)',
+    !/DATA_SCOPES[^;]*gmail/.test(src) && !/LOGIN_SCOPES\s*=\s*\[[^\]]*gmail/.test(src),
+    '로그인에 넣으면 "확인 안 된 앱" 경고 부활');
+  확인('★Gmail: 발송은 결재함 승인 경로에만 연결', /approval\.init\([^)]*sendGmail: _sendGmailFor/.test(src),
+    '자동 발송 0 — 승인 버튼만');
+  const 일정파서 = 떼어오기('_parseNewEvent');
+  if (일정파서) {
+    const f = new Function(일정파서 + '\nreturn _parseNewEvent;')();
+    확인('일정 등록: "내일 3시 상담 일정 등록해줘" 읽음', !!f('내일 3시 상담 일정 등록해줘'));
+    확인('★일정 등록: 발송 말은 절대 안 받음',
+      !f('김철수님께 메일 보내줘') && !f('내일 3시 문자 보내줘'), '발송이 캘린더로 새면 안 됨');
+    확인('일정 등록: 시간 없으면 지어내지 않음', !f('일정 잡아줘'), '시간 모르면 되묻는다');
+  } else 확인('일정 등록 파서', false, '_parseNewEvent 없음');
+
   // ── 3) 카드 (명단·여러 명·만기) ──
   const rowsFor = 떼어오기('_rowsForNames'), rowName = 떼어오기('_rowName');
   확인('카드: _rowsForNames가 모듈 최상위에 있음', !!rowsFor, '블록 안 const면 _rowsFor is not defined 재발');
