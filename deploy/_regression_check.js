@@ -165,8 +165,14 @@ function 로컬확인() {
       '미리보기 샘플·실패목록 둘 다 마스킹');
     확인('★캠페인: 발송 라우트가 이중 채널 요구',
       /x-human-approval[\s\S]{0,200}b\.humanApproval === true/.test(src), '헤더+본문 둘 다');
-    확인('★캠페인: 기존 발송 함수 재사용(안전모드 자동 적용)',
-      /campaign\.init\(\{ sendSms: _sendSmsFor/.test(src), '따로 만들면 안전모드를 안 탄다');
+    // ★2026-07-29 바로잡음: 예전 이 검사는 "기존 발송 함수를 쓰니 안전모드가 자동 적용된다"고 적혀 있었다.
+    //   ★사실이 아니었다 — _sendSmsFor는 safeRecipient를 타지 않는다(결재함 경로에서만 쓰인다).
+    //   그래서 캠페인은 보호받지 못했고, 지금은 ★_campaignLive 게이트가 그 역할을 한다.
+    확인('캠페인: 발송은 기존 솔라피 함수를 쓴다(회원 키·비용 원칙)',
+      /campaign\.init\(\{ sendSms: _sendSmsFor/.test(src));
+    확인('★캠페인 보호는 _campaignLive 게이트가 한다(결재함 안전모드가 아님)',
+      /_campaignLive/.test(src) && !/approval\.safeRecipient\('sms'[\s\S]{0,120}out\.안전모드/.test(src),
+      '화면 표시와 실제 발송이 같은 판정을 쓰게 통일');
     // 화면(UI) — 독립 페이지 · 기존 화면 무접촉
     const chtml = fs.readFileSync(path.join(__dirname, 'campaign.html'), 'utf8');
     확인('캠페인 화면: 페이지 라우트 + 로그인 게이트',
@@ -198,9 +204,21 @@ function 로컬확인() {
     확인('★통합: 기존 이메일 발송 그대로', /'이메일 발송','Gmail로 발송 \(승인 후\)','shareEmail\(\)'/.test(ghtml));
     확인('★통합: 기존 링크 복사 그대로', /'링크 복사','진단·공유 URL','shareCopyLink\(\)'/.test(ghtml));
     확인('통합: 카톡은 준비 중 안내로만(발송 경로 안 엶)', /'💬 카톡','준비 중 \(다음 단계\)','shareKakao\(\)'/.test(ghtml));
-    확인('★안전모드: 실제 발송 함수로 판정해 화면에 전달',
-      /approval\.safeRecipient\('sms'[\s\S]{0,120}out\.안전모드/.test(src), '화면이 지어내지 않게');
-    확인('★안전모드: 화면에 배너 있음', /안전모드띠/.test(chtml) && /대표님 번호로만 나갑니다/.test(chtml));
+    확인('★안전모드: 화면 표시가 실제 게이트와 같은 판정을 쓴다',
+      /out\.실발송열림 = _campaignLive\(req\)/.test(src) && /out\.안전모드 = !out\.실발송열림/.test(src),
+      '화면이 지어내지 않게 — 표시와 실제가 같은 함수');
+    // 🔒 실발송 게이트(2026-07-29) — ★대표님만. 교육생 실수로 고객에게 나가는 것을 막는다.
+    확인('★실발송 게이트: 대표님 계정만(_campaignLive)', /function _campaignLive\(req\)[\s\S]{0,200}email === VIP_EMAIL/.test(src));
+    확인('★발송 라우트에 게이트 걸림', /if \(!_campaignLive\(req\)\)[\s\S]{0,300}차단: '안전모드'/.test(src));
+    확인('★예약 라우트에도 게이트 걸림',
+      (src.match(/if \(!_campaignLive\(req\)\)/g) || []).length >= 2, '발송·예약 둘 다');
+    확인('★결재함 하드가드(22블록)는 무접촉',
+      /function safeRecipient\(channel, to\)/.test(fs.readFileSync(path.join(__dirname, 'approval_skill.js'), 'utf8')),
+      'approval_skill은 한 글자도 안 건드림');
+    확인('★파일 대상이면 시트 조회 안 함(시트 없어도 동작)',
+      (src.match(/const t = _직접 \? null : await sheetsCrud\.loadTable\(ma\)/g) || []).length >= 2,
+      '시트 실패로 미리보기가 죽던 결함');
+    확인('★안전모드: 화면에 배너 있음', /안전모드띠/.test(chtml) && /소량 테스트\(본인 번호 1통\)까지만/.test(chtml));
     // 📎 파일 업로드(2026-07-28) — 4000명 대량 · ★서버 저장 0
     const 올린것 = [{ 번호: '010-1111-2222' }, { 번호: '01011112222' }, { 번호: '' }, { 번호: 'abc' }, { 번호: '02-123-4567' }];
     const pv = camp.미리보기(null, { 본문: '안내', 광고: false, 직접대상: 올린것 });

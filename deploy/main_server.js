@@ -3969,22 +3969,38 @@ approval.init({ anthropic: _anthropic, model: MODEL_DEEP, getMemberSheet: findOr
 // ═══ 📣 캠페인(명단 일괄) 발송 — 2026-07-28 대표님 승인 · 독립 모듈(기존 코드 무접촉·호출만) ═══
 //   ★발송 함수는 기존 것을 그대로 쓴다 → 안전모드·화이트리스트가 자동으로 걸린다.
 campaign.init({ sendSms: _sendSmsFor, sendGmail: _sendGmailFor });
+// ═══ 🔒 캠페인 실발송 게이트 (2026-07-29 대표님 승인) ═══
+//   ★대표님(VIP_EMAIL) 계정만 실고객 대량 발송이 열린다. 교육생은 소량 테스트(본인 번호 1통)까지만.
+//   [왜 여기서 하나] 결재함의 안전모드(approval.safeRecipient)는 ★결재함 경로에서만 동작한다.
+//     캠페인은 _sendSmsFor를 직접 쓰므로 그 보호를 받지 못했다 → 캠페인 자체 게이트를 둔다.
+//     ★approval_skill(발송 하드가드 22블록)은 한 글자도 건드리지 않는다.
+//   ★교육생 개별 해제는 지금 하지 않는다(대표님 지시). 나중에 별도로 연다.
+function _campaignLive(req) {
+  const email = String((sessionOf(req) || {}).email || '').toLowerCase();
+  return !!email && email === VIP_EMAIL;
+}
 // ① 미리보기 — ★발송 0. 대상 수·내용·비용·법규 점검만.
 app.post('/api/campaign/preview', async (req, res) => {
   const ma = gateGoogle(req, res); if (!ma) return;
   try {
     const b = req.body || {};
-    const t = await sheetsCrud.loadTable(ma);
+    // ★2026-07-29: 파일 업로드 대상이면 ★시트를 조회하지 않는다.
+    //   예전엔 무조건 시트를 먼저 읽어, 시트가 없거나 실패하면 파일만 쓰시는데도 미리보기가 통째로 죽었다.
+    const _직접 = Array.isArray(b.직접대상) && b.직접대상.length ? b.직접대상 : null;
+    const t = _직접 ? null : await sheetsCrud.loadTable(ma);
     // 조건(만기·생일 등)으로 고르실 땐 ★대화·카드와 같은 함수로 대상을 정한다(기준이 갈리지 않게)
     let names = null, label = '';
-    if (b.조건) {
+    if (b.조건 && t) {
       const g = _expiryPick(b.조건, t) || _resolveCardGroup(b.조건, t, []);
       names = g.names; label = g.label;
     }
     const out = campaign.미리보기(t, { 본문: b.본문, 광고: !!b.광고, 수신거부: b.수신거부, names, label,
       직접대상: Array.isArray(b.직접대상) ? b.직접대상 : null });   // 📎 업로드 파일 대상(서버 저장 0)
-    // 🔒 안전모드 정직 표시 — ★실제 발송이 쓰는 바로 그 함수로 판정한다(화면이 지어내지 않게)
-    try { const _s = approval.safeRecipient('sms', '01000000000'); out.안전모드 = !!(_s && _s.safeMode); } catch (e) { out.안전모드 = true; }
+    // 🔒 실발송 열림/안전모드 — ★2026-07-29 대표님 승인: ★대표님 계정만 실고객 발송.
+    //   [바로잡음] 예전엔 approval.safeRecipient로 표시했는데, 캠페인 발송은 그 함수를 ★타지 않는다
+    //     (결재함 경로에서만 쓰인다). 화면 표시와 실제가 달랐다 → 아래 캠페인 자체 게이트로 통일.
+    out.실발송열림 = _campaignLive(req);
+    out.안전모드 = !out.실발송열림;
     console.log(`[📣캠페인 미리보기] 대상 ${out.대상수}명 · 광고=${out.광고} · ★발송 0 · ${(sessionOf(req) || {}).email || ''}`);
     res.json(out);
   } catch (e) { if (scopeGate(e, res, 'sheets')) return; res.status(500).json({ ok: false, error: e.message }); }
@@ -4113,11 +4129,18 @@ app.post('/api/campaign/schedule', async (req, res) => {
     console.log('[🔒감사·캠페인예약]', _seoul().today, _seoul().now, '· 요청자=' + who, '· 결과=★차단:버튼아님');
     return res.status(403).json({ ok: false, 예약함: false, error: '예약도 화면 [승인] 버튼으로만 걸 수 있어요.' });
   }
+  // 🔒 실발송 게이트 — 예약도 결국 고객에게 나가므로 ★대표님 계정만
+  if (!_campaignLive(req)) {
+    console.log('[🔒감사·캠페인예약]', _seoul().today, _seoul().now, '· 요청자=' + who, '· 결과=★차단:안전모드(대표님 계정 아님)');
+    return res.json({ ok: false, 예약함: false, 차단: '안전모드',
+      error: '지금은 대표님 계정에서만 실제 고객 발송·예약이 열려 있어요. 이 계정은 소량 테스트(본인 번호 1통)까지만 가능합니다.' });
+  }
   try {
     ma._email = who;
-    const t = await sheetsCrud.loadTable(ma);
+    const _직접 = Array.isArray(b.직접대상) && b.직접대상.length ? b.직접대상 : null;
+    const t = _직접 ? null : await sheetsCrud.loadTable(ma);   // ★파일 대상이면 시트 조회 안 함
     let names = null, label = '';
-    if (b.조건) { const g = _expiryPick(b.조건, t) || _resolveCardGroup(b.조건, t, []); names = g.names; label = g.label; }
+    if (b.조건 && t) { const g = _expiryPick(b.조건, t) || _resolveCardGroup(b.조건, t, []); names = g.names; label = g.label; }
     const prep = campaign.예약준비({ table: t, names, label, 본문: b.본문, 광고: !!b.광고, 수신거부: b.수신거부,
       직접대상: Array.isArray(b.직접대상) ? b.직접대상 : null,
       예약시각: b.예약시각, humanApproval: true, tested: !!b.tested, confirmedCount: b.confirmedCount });
@@ -4168,11 +4191,18 @@ app.post('/api/campaign/send', async (req, res) => {
     console.log('[🔒감사·캠페인]', _seoul().today, _seoul().now, '· 요청자=' + who, '· 결과=★차단:버튼아님');
     return res.status(403).json({ ok: false, 발송함: false, error: '대량 발송은 화면 [승인] 버튼으로만 나갑니다.' });
   }
+  // 🔒 실발송 게이트 — ★대표님 계정만. 교육생 실수로 고객에게 대량 발송되는 것을 막는다.
+  if (!_campaignLive(req)) {
+    console.log('[🔒감사·캠페인]', _seoul().today, _seoul().now, '· 요청자=' + who, '· 결과=★차단:안전모드(대표님 계정 아님)');
+    return res.json({ ok: false, 발송함: false, 차단: '안전모드',
+      error: '지금은 대표님 계정에서만 실제 고객 발송이 열려 있어요. 이 계정은 소량 테스트(본인 번호 1통)까지만 가능합니다.' });
+  }
   try {
     ma._email = who;
-    const t = await sheetsCrud.loadTable(ma);
+    const _직접 = Array.isArray(b.직접대상) && b.직접대상.length ? b.직접대상 : null;
+    const t = _직접 ? null : await sheetsCrud.loadTable(ma);   // ★파일 대상이면 시트 조회 안 함
     let names = null, label = '';
-    if (b.조건) { const g = _expiryPick(b.조건, t) || _resolveCardGroup(b.조건, t, []); names = g.names; label = g.label; }
+    if (b.조건 && t) { const g = _expiryPick(b.조건, t) || _resolveCardGroup(b.조건, t, []); names = g.names; label = g.label; }
     const r = await campaign.발송(ma, { table: t, names, label, 본문: b.본문, 광고: !!b.광고, 수신거부: b.수신거부,
       직접대상: Array.isArray(b.직접대상) ? b.직접대상 : null,      // 📎 업로드 파일 대상(서버 저장 0)
       humanApproval: true, tested: !!b.tested, confirmedCount: b.confirmedCount });
