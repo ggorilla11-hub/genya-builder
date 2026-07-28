@@ -3588,6 +3588,14 @@ function openClaim(){
   _claimForm=null; _claimProofs=[];
   showModal(_bizShell('🧾','보상비서','보험사 양식 + 고객 증빙 → 회사 양식에 맞는 보상청구서류를 정리해요',
     '<div style="background:#fff7ed;border:1px solid #f0e0c8;border-radius:9px;padding:9px 11px;font-size:11px;color:#8a6d1a;margin-bottom:12px;line-height:1.6">⚖️ <b>지니야는 서류 작성·정리·안내</b>까지만 도와요. 손해액 산정·보상 적정성 판단은 하지 않아요(보험업법). 최종 검토·제출은 설계사·고객 몫이에요.</div>'
+    /* ★보상비서 1단계(추가) — 명단 고객 → 삼성화재 청구서 자동 입력. 기존 ①②③④ 흐름 무접촉. */
+    +'<div style="border:1.5px solid var(--teal-bd);border-radius:10px;padding:12px;margin-bottom:14px;background:#f5f9f8">'
+    +'<div style="font-size:12px;font-weight:700;color:#0f766e;margin-bottom:2px">🩹 명단에서 골라 청구서 자동 입력 <span style="background:#0f766e;color:#fff;border-radius:5px;padding:1px 5px;font-size:9.5px;margin-left:4px">삼성화재</span></div>'
+    +'<div style="font-size:10.5px;color:#8a93a3;margin-bottom:8px">고객 이름만 넣으면 명단에 있는 정보로 청구서 절반이 채워져요. 없는 정보는 지어내지 않고 <b style="color:#c0392b">빈칸</b>으로 남겨요.</div>'
+    +'<div style="display:flex;gap:6px"><input id="claimSheetName" placeholder="고객 이름 (예: 김철수)" style="flex:1;border:1px solid #d5dde6;border-radius:8px;padding:9px 11px;font-size:12.5px;font-family:inherit" onkeydown="if(event.key===\'Enter\')claimSheetFill()">'
+    +'<button onclick="claimSheetFill()" id="claimSheetBtn" style="background:var(--teal);color:#fff;border:none;border-radius:8px;padding:9px 16px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap">자동 입력 →</button></div>'
+    +'<div style="font-size:10.5px;color:#98a4b2;margin-top:6px">🔒 만든 청구서는 서버에 저장하지 않아요(제로 저장). 화면을 닫으면 사라져요.</div>'
+    +'<div id="claimSheetOut" style="margin-top:10px"></div></div>'
     +'<div style="border:1px solid #e2e8ef;border-radius:10px;padding:12px;margin-bottom:10px"><div style="font-size:12px;font-weight:700;color:#0d1b2a;margin-bottom:6px">① 보험사 보상청구 양식 <span style="color:#8a93a3;font-weight:400">(회사별 기본틀)</span></div>'
     +'<button onclick="claimPick(\'form\')" style="background:#eef2f6;border:1px solid #d5dde6;border-radius:8px;padding:8px 14px;font-size:12px;cursor:pointer;font-family:inherit">📄 양식 업로드</button><span id="claimFormName" style="font-size:11.5px;color:#8a93a3;margin-left:8px">아직 없음</span></div>'
     +'<div style="border:1px solid #e2e8ef;border-radius:10px;padding:12px;margin-bottom:10px"><div style="font-size:12px;font-weight:700;color:#0d1b2a;margin-bottom:6px">② 고객 증빙자료 <span style="color:#8a93a3;font-weight:400">(진단서·영수증 등 · 여러 장)</span></div>'
@@ -3596,6 +3604,124 @@ function openClaim(){
     +'<button onclick="claimBuild()" id="claimBuildBtn" style="width:100%;background:var(--teal);color:#fff;border:none;border-radius:9px;padding:11px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">③ 지니야가 보상청구서류 정리 →</button>'
     +'<div id="claimOut" style="margin-top:12px"></div>'
     +'<input type="file" id="claimFile" style="display:none" accept="image/*,.pdf">'));
+}
+// ── 🩹 보상비서 1단계: 명단 고객 → 삼성화재 청구서 자동 입력 (독립 · 기존 claimBuild 흐름 무접촉) ──
+//   ★제로 저장: PDF는 서버 디스크에 안 남는다(응답 스트림). 화면 값도 window 변수 하나(이름)뿐.
+//   ★지어내기 0: 서버가 준 status('filled'/'need'/'hand')를 그대로 보여준다. 화면에서 값을 만들지 않는다.
+// ★_claimExtras = 대화로 넣은 ★민감정보(주민번호·진단명·병원·사고일). 이 화면 메모리에만 산다.
+//   서버에 저장하지 않고, 명단 시트에도 안 간다. 화면을 새로고침하면 사라진다(대표님 결정 A안).
+var _claimSheetName=null, _claimExtras={};
+function claimSheetFill(){
+  var nm=(document.getElementById('claimSheetName')||{}).value||'';
+  nm=String(nm).trim();
+  var out=document.getElementById('claimSheetOut'), btn=document.getElementById('claimSheetBtn');
+  if(!nm){ toast('고객 이름을 넣어주세요'); return; }
+  _claimExtras={};   // 다른 고객으로 바꾸면 앞사람 민감정보는 즉시 버린다
+  btn.disabled=true; btn.textContent='찾는 중…'; out.innerHTML='';
+  fetch('/api/claim/fill?name='+encodeURIComponent(nm),{credentials:'same-origin'})
+    .then(function(r){return r.json();}).then(function(d){
+      btn.disabled=false; btn.textContent='자동 입력 →';
+      if(d&&d.needsConnect){ out.innerHTML='<div style="font-size:12px;color:#8a6d1a;background:#fff7ed;border:1px solid #f0e0c8;border-radius:8px;padding:9px">'+_sEsc(d.message||'고객명단 연결이 필요해요')+'</div>'; return; }
+      if(!d||!d.ok){
+        var extra=(d&&d.candidates&&d.candidates.length)?('<div style="font-size:11.5px;color:#33475a;margin-top:5px">찾은 분: '+_sEsc(d.candidates.join(', '))+'</div>'):'';
+        out.innerHTML='<div style="font-size:12px;color:#c0392b;background:#fdf3f2;border:1px solid #f3d6d2;border-radius:8px;padding:9px">'+_sEsc((d&&d.error)||'불러오지 못했어요')+extra+'</div>'; return;
+      }
+      _claimSheetName=d.고객명;
+      out.innerHTML=_claimSheetRender(d);
+    }).catch(function(){ btn.disabled=false; btn.textContent='자동 입력 →'; out.innerHTML='<div style="font-size:12px;color:#c0392b">불러오기 오류 — 잠시 후 다시</div>'; });
+}
+function _claimSheetRender(d, msg){
+  var t=d.통계||{};
+  var h='<div style="border:1px solid var(--teal-bd);border-radius:10px;background:#fff;overflow:hidden">'
+    +'<div style="background:#0d1b2a;color:#fff;padding:9px 11px;font-size:12px;font-weight:700">'+_sEsc(d.고객명)+' 님 · 보험금 청구서 초안</div>';
+  if(d.notFound){
+    h+='<div style="background:#fff7ed;border-bottom:1px solid #f0e0c8;padding:8px 11px;font-size:11.5px;color:#8a6d1a">⚠ 이 이름은 <b>명단에 없어요</b>. 틀만 만들었으니 아래에서 알려주시면 채울게요.'
+      +((d.near&&d.near.length)?' <span style="color:#33475a">(명단에 있는 비슷한 이름: '+_sEsc(d.near.join(', '))+')</span>':'')+'</div>';
+  }
+  h+='<div style="padding:8px 11px;font-size:11.5px;color:#33475a;background:#f5f9f8;border-bottom:1px solid #e2e8ef">'
+    +'✅ 채움 <b style="color:#0f766e">'+(t.자동입력||0)+'칸</b> · ☐ 부족 <b style="color:#c0392b">'+(t.입력필요||0)+'칸</b> · ✍ 직접 기재 <b>'+(t.직접기재||0)+'칸</b> <span style="color:#98a4b2">(전체 '+(t.전체||0)+'칸)</span></div>'
+    +'<div style="max-height:270px;overflow:auto;padding:4px 0">';
+  (d.sections||[]).forEach(function(s){
+    h+='<div style="font-size:11px;font-weight:700;color:#0f766e;padding:7px 11px 3px">'+s.no+'. '+_sEsc(s.title)+'</div>';
+    (s.fields||[]).forEach(function(f){
+      var v, c, tag='';
+      if(f.status==='filled'){ v=_sEsc(f.value); c='#1a1c1e'; if(f.from==='said'){ c='#1d4ed8'; tag='<span style="background:#e8efff;color:#1d4ed8;border-radius:4px;padding:0 4px;font-size:9.5px;margin-left:5px">방금 입력</span>'; } }
+      else if(f.status==='hand'){ v='(직접 기재)'; c='#8a93a3'; }
+      else { v='☐ 입력 필요'; c='#c0392b'; }
+      h+='<div style="display:flex;padding:4px 11px;font-size:11.5px;border-bottom:1px solid #f2f5f8">'
+        +'<span style="width:108px;flex:none;color:#5a6b7c">'+_sEsc(f.label)+'</span>'
+        +'<span style="color:'+c+';word-break:break-all">'+v+tag+'</span>'
+        +(f.status!=='filled'&&f.why?'<span style="margin-left:auto;color:#b6bfc9;font-size:10px;flex:none;padding-left:8px">'+_sEsc(f.why)+'</span>':'')
+        +'</div>';
+    });
+  });
+  h+='</div>';
+  // ── 【2】 지니야가 먼저 부족분을 말한다 + 【3】 말/텍스트로 채우기 ──
+  h+='<div style="background:#f5f9f8;border-top:1px solid #e2e8ef;padding:10px 11px">'
+    +'<div style="font-size:11.5px;color:#0d1b2a;line-height:1.65;white-space:pre-wrap">'+_sEsc(msg||d.안내문||'')+'</div>'
+    +'<div style="display:flex;gap:6px;margin-top:8px">'
+    +'<input id="claimSayBox" placeholder="예: 계좌 국민 123-456 · 진단명 급성충수염" style="flex:1;border:1px solid #d5dde6;border-radius:8px;padding:8px 10px;font-size:12px;font-family:inherit" onkeydown="if(event.key===\'Enter\')claimSay(0)">'
+    +'<button onclick="claimSayMic()" id="claimMicBtn" title="말로 입력" style="background:#fff;border:1px solid #d5dde6;border-radius:8px;padding:8px 11px;font-size:13px;cursor:pointer;font-family:inherit">🎤</button>'
+    +'<button onclick="claimSay(0)" id="claimSayBtn" style="background:#0d1b2a;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">채우기</button>'
+    +'</div>'
+    +'<div style="font-size:10.5px;color:#98a4b2;margin-top:5px">🔒 계좌·이메일·직업은 <b>명단에 저장</b>돼 다음에도 자동으로 채워져요. 주민번호·진단명·병원은 <b>이 청구서에만</b> 쓰고 저장하지 않아요.</div>'
+    +'<div id="claimSayOut" style="margin-top:7px"></div></div>';
+  h+='<div style="font-size:11px;color:#8a6d1a;background:#fff7ed;border-top:1px solid #f0e0c8;padding:9px 11px;line-height:1.6">📋 지니야가 채운 <b>초안</b>이에요. <b>제출 전 반드시 검토</b>하세요.</div>'
+    +'<div style="display:flex;gap:6px;padding:10px 11px">'
+    +'<button onclick="claimSheetPdf(0)" style="flex:1;background:#eef2f6;border:1px solid #d5dde6;border-radius:8px;padding:9px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">👁 PDF 미리보기</button>'
+    +'<button onclick="claimSheetPdf(1)" style="flex:1;background:var(--teal);color:#fff;border:none;border-radius:8px;padding:9px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">⬇ PDF 다운로드</button>'
+    +'</div></div>';
+  return h;
+}
+// 말/텍스트로 부족분 입력 → 명단 저장 + 청구서 반영 동시. over=1이면 "덮어쓰기 승인"
+function claimSay(over){
+  var box=document.getElementById('claimSayBox'); var txt=box?String(box.value||'').trim():'';
+  if(!txt){ toast('무엇을 채울지 말씀해 주세요'); return; }
+  var btn=document.getElementById('claimSayBtn'), out=document.getElementById('claimSayOut');
+  btn.disabled=true; btn.textContent='…';
+  fetch('/api/claim/say',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({name:_claimSheetName, text:txt, extras:_claimExtras, overwrite:!!over})})
+    .then(function(r){return r.json();}).then(function(d){
+      btn.disabled=false; btn.textContent='채우기';
+      if(!d||!d.ok){ out.innerHTML='<div style="font-size:11.5px;color:#c0392b;background:#fdf3f2;border:1px solid #f3d6d2;border-radius:7px;padding:8px">'+_sEsc((d&&d.error)||'못 채웠어요')+'</div>'; return; }
+      if(d.extras) _claimExtras=d.extras;         // ★민감정보는 화면 메모리에만 보관
+      var host=document.getElementById('claimSheetOut');
+      if(host&&d.claim){ host.innerHTML=_claimSheetRender(d.claim, d.message||d.claim.안내문); }
+      // 덮어쓰기 확인이 필요하면 버튼으로 되묻는다(자율로 지우지 않는다)
+      if(d.needsConfirm&&d.needsConfirm.length){
+        var o2=document.getElementById('claimSayOut');
+        if(o2){ o2.innerHTML='<div style="font-size:11.5px;color:#8a6d1a;background:#fff7ed;border:1px solid #f0e0c8;border-radius:7px;padding:8px">'
+          +_sEsc(d.needsConfirm.map(function(c){return c.항목+': "'+c.기존값+'" → "'+c.새값+'"';}).join(' · '))
+          +'<button onclick="claimSayConfirm()" style="margin-left:8px;background:#0d1b2a;color:#fff;border:none;border-radius:6px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">바꿔 저장</button></div>';
+          var nb=document.getElementById('claimSayBox'); if(nb) nb.value=txt; window._claimLastSay=txt; }
+      }
+    }).catch(function(){ btn.disabled=false; btn.textContent='채우기'; out.innerHTML='<div style="font-size:11.5px;color:#c0392b">오류 — 잠시 후 다시</div>'; });
+}
+function claimSayConfirm(){ var b=document.getElementById('claimSayBox'); if(b&&window._claimLastSay) b.value=window._claimLastSay; claimSay(1); }
+// 🎤 말로 입력 — 브라우저 자체 음성인식(서버로 음성 안 보냄). 안 되는 브라우저면 정직히 안내.
+function claimSayMic(){
+  var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR){ toast('이 브라우저는 음성 입력이 안 돼요 — 크롬에서 되거나, 그냥 타이핑하셔도 돼요'); return; }
+  var btn=document.getElementById('claimMicBtn'); var rec=new SR();
+  rec.lang='ko-KR'; rec.interimResults=false; rec.maxAlternatives=1;
+  rec.onstart=function(){ if(btn){ btn.textContent='🔴'; btn.style.background='#fdf3f2'; } };
+  rec.onresult=function(e){ var b=document.getElementById('claimSayBox'); if(b){ b.value=(e.results[0][0].transcript||''); claimSay(0); } };
+  rec.onerror=function(){ toast('잘 못 들었어요 — 다시 말씀해 주시거나 타이핑해 주세요'); };
+  rec.onend=function(){ if(btn){ btn.textContent='🎤'; btn.style.background='#fff'; } };
+  try{ rec.start(); }catch(e){ toast('음성 입력을 시작하지 못했어요'); }
+}
+// PDF — ★POST로 보낸다. 민감정보를 주소창에 실으면 브라우저 기록·접속로그에 남기 때문.
+function claimSheetPdf(dl){
+  if(!_claimSheetName){ toast('먼저 고객을 불러와 주세요'); return; }
+  fetch('/api/claim/pdf',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({name:_claimSheetName, extras:_claimExtras, dl:dl?'1':'0'})})
+    .then(function(r){ if(!r.ok) throw new Error('pdf'); return r.blob(); })
+    .then(function(b){
+      var u=URL.createObjectURL(b);
+      if(dl){ var a=document.createElement('a'); a.href=u; a.download='삼성화재_보험금청구서_'+_claimSheetName+'.pdf'; document.body.appendChild(a); a.click(); a.remove(); }
+      else { window.open(u,'_blank'); }
+      setTimeout(function(){ URL.revokeObjectURL(u); }, 60000);   // 다 쓰면 브라우저 메모리에서도 지운다
+    }).catch(function(){ toast('PDF를 만들지 못했어요 — 잠시 후 다시'); });
 }
 function claimPick(kind){ var f=document.getElementById('claimFile'); if(!f)return; f.multiple=(kind==='proof'); f.onchange=function(){ claimFiles(kind, this); }; f.click(); }
 function claimFiles(kind, inp){

@@ -28,6 +28,7 @@ const approval = require('./approval_skill');                 // 🗂️ Step 2-
 const campaign = require('./campaign_skill');                 // 📣 캠페인(명단 일괄) 발송(독립 모듈 · 승인 버튼만 · 기존 발송함수 재사용)
 const rosterImport = require('./roster_import');              // 📇 Step 2-F · 명단 업로드→회원 시트 저장(독립 모듈)
 const customEvents = require('./custom_events');              // ⭐ 대표가 직접 정의하는 이벤트(독립 모듈·기본 6개 무접촉)
+const claimForm = require('./claim_form_skill');              // 🩹 보상비서 1단계 · 삼성화재 청구서 자동 입력(독립 모듈 · 제로 저장 · 기존 기능 무접촉)
 const _openai = new (require('openai'))({ apiKey: process.env.OPENAI_API_KEY });
 // ★워크스페이스 대화 = Anthropic Claude Sonnet 5(대표 지시). 온보딩·OCR·약관·문자초안은 OpenAI 유지.
 //   대표가 준 'claude-sonnet-4-6-20250514'는 존재하지 않는 ID → 최신 Sonnet인 claude-sonnet-5로. 날짜접미사 금지.
@@ -2712,6 +2713,137 @@ app.get('/api/manage/roster-dashboard', async (req, res) => {
     res.json({ ok: true, source: 'sheet', ...r, metrics: (r.metrics || []).concat(customs) });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
+
+// ═══════════════════════════════════════════════════════════════
+// 🩹 보상비서 1단계 — 삼성화재 보험금 청구서 자동 입력 (독립 모듈 claim_form_skill · 추가만)
+// ═══════════════════════════════════════════════════════════════
+// 무엇을·왜: 명단에서 고객 1명을 고르면 청구서의 "명단으로 채울 수 있는 칸"이 미리 채워진다.
+//   나머지(주민번호·진단명·질병분류기호·병원·사고일)는 ★지어내지 않고 "증빙에서 입력 필요"로 남긴다.
+//
+// ★★제로 저장(회사 존폐 원칙 · main_server.js:2584의 경고 그대로 지킴)
+//   · PDF를 SKILL_OUT(/files)에 절대 쓰지 않는다 → 메모리 Buffer로 만들어 응답으로만 흘려보낸다.
+//   · 응답이 끝나면 서버에 아무것도 남지 않는다(디스크 0 · 캐시 금지 헤더).
+//   · 시트는 읽기만 한다(쓰기 0). 로그에 고객 값(이름·계좌·연락처)을 찍지 않는다.
+// ★기존 22블록 무접촉 — 발굴·캠페인·발송 하드가드·결재함 어느 것도 건드리지 않는다.
+
+// (1) 미리보기 — 어떤 칸이 채워졌고 어떤 칸이 비었는지 정직하게 보여준다
+app.get('/api/claim/fill', async (req, res) => {
+  try {
+    const ma = gateGoogle(req, res); if (!ma) return;
+    const name = String(req.query.name || '').trim();
+    if (!name) return res.json({ ok: false, error: '어느 고객 청구서인가요? 예: "김철수 청구서 만들어"' });
+    let table;
+    try { table = await sheetsCrud.loadTable(ma); }
+    catch (e) {
+      if (isScopeError(e)) return res.json({ ok: true, needsConnect: true, message: '고객명단 시트를 보려면 구글 시트·드라이브 연결이 필요해요' });
+      throw e;
+    }
+    const r = claimForm.buildClaim(table, name);
+    console.log(`[🩹청구서] 미리보기 ${r.ok ? '생성' : '실패'}`); // ★고객 값은 로그에 안 남긴다(이름조차)
+    res.json(r);
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// (2) 【3】 말/텍스트로 부족분 입력 → 명단 저장 + 청구서 반영 "동시"
+//   ★자율/승인 경계(CLAUDE.md 6-4): 시트 쓰기는 되돌릴 수 있으므로 ★빈칸 채우기는 자율(바로 반영).
+//     단 이미 값이 있는 칸을 ★덮어쓰는 것은 되묻는다(원래 값이 사라지므로).
+//   ★민감정보(주민번호·진단명·질병분류기호·병원·사고일)는 시트에 쓰지 않는다 — 응답으로만 돌려주고
+//     화면 메모리에서만 산다(대표님 결정 2026-07-29 A안). 서버 어디에도 안 남는다.
+//   ★발송 코드 없음.
+app.post('/api/claim/say', async (req, res) => {
+  try {
+    const ma = gateGoogle(req, res); if (!ma) return;
+    const b = req.body || {};
+    const name = String(b.name || '').trim();
+    const text = String(b.text || '').trim();
+    const extras = (b.extras && typeof b.extras === 'object') ? Object.assign({}, b.extras) : {};
+    if (!name) return res.json({ ok: false, error: '어느 고객인지 알려주세요' });
+    if (!text) return res.json({ ok: false, error: '무엇을 채울지 말씀해 주세요. 예: "계좌 국민 123-456"' });
+
+    const parsed = claimForm.parseSay(text);
+    if (parsed.unknown) {
+      return res.json({ ok: false, unknown: true,
+        error: '무슨 항목인지 못 알아들었어요. 이렇게 말씀해 주세요 — "계좌 국민 123-456" · "주민번호 900101-1234567" · "진단명 급성충수염" · "사고일 2026년 5월 3일"' });
+    }
+
+    let table;
+    try { table = await sheetsCrud.loadTable(ma); }
+    catch (e) {
+      if (isScopeError(e)) return res.json({ ok: true, needsConnect: true, message: '고객명단 시트를 보려면 구글 시트·드라이브 연결이 필요해요' });
+      throw e;
+    }
+    const before = claimForm.buildClaim(table, name, extras);
+    if (!before.ok) return res.json(before);
+
+    // ★어디에 넣을지는 순수 함수 planSay가 정한다(시험으로 검증됨). 여기선 그 계획을 실행만 한다.
+    const row = (table.rows || []).find((r) => r._rowNum === before.rowNum) || {};
+    const plan = claimForm.planSay(parsed.fields, before, row);
+    const saved = [], claimOnly = [], failed = [];
+    let needsConfirm = plan.needsConfirm;
+
+    // ① 청구서에만 쓸 것(민감정보 등) — 시트 접근 자체를 하지 않는다
+    plan.toClaim.forEach((c) => { extras[c.label] = c.value; claimOnly.push({ 항목: c.label, 사유: c.사유 }); });
+    plan.same.forEach((s) => saved.push({ 항목: s.label, 컬럼: s.column, 값: s.value, 결과: '이미 같은 값' }));
+
+    // ② 덮어쓰기 승인이 떨어졌으면 확인 대기분도 저장 대상으로 옮긴다
+    let 저장할것 = plan.toSheet.slice();
+    if (b.overwrite && needsConfirm.length) {
+      needsConfirm.forEach((c) => 저장할것.push({ label: c.항목, value: c.새값, column: c.컬럼, op: c.컬럼 ? 'update' : 'add_column_set', before: c.기존값 }));
+      needsConfirm = [];
+    }
+
+    // ③ 실제 시트 반영 — 컬럼이 없으면 맨 끝에 새로 만들고 기록(기존 컬럼 위치·순서 무접촉)
+    for (const s of 저장할것) {
+      const action = { op: s.op, name: before.고객명, rowNum: before.rowNum, column: s.column, value: s.value, ts: Date.now() };
+      if (s.op === 'update') action.before = s.before || '';
+      const r = await sheetsCrud.commit(ma, action, sheetsCrud.signAction(action), {});
+      if (r && r.ok) saved.push({ 항목: s.label, 컬럼: s.column, 값: s.value, 결과: s.op === 'update' ? '저장' : '항목 새로 만들고 저장' });
+      else { failed.push({ 항목: s.label, 사유: (r && r.message) || '시트 반영 실패' }); extras[s.label] = s.value; } // ★실패를 성공으로 안 꾸민다. 청구서엔 반영하되 실패라고 말한다.
+    }
+
+    const after = claimForm.buildClaim(await sheetsCrud.loadTable(ma), name, extras);
+    // ── 확인 문구 (지시 ③) — 실제로 한 것만 말한다 ──
+    const parts = [];
+    if (saved.length) parts.push(`${saved.map((s) => s.값).join(' ')}(으)로 명단에 저장하고 청구서에 반영했어요.`);
+    if (claimOnly.length) parts.push(`${claimOnly.map((c) => c.항목).join('·')}은(는) 청구서에만 쓰고 명단엔 저장하지 않았어요(민감정보).`);
+    if (failed.length) parts.push(`${failed.map((f) => f.항목 + '(' + f.사유 + ')').join(', ')} — 명단 저장은 실패해서 청구서에만 반영했어요.`);
+    if (needsConfirm.length) parts.push(`${needsConfirm.map((c) => `${c.항목}은 이미 "${c.기존값}"이 있어요 → "${c.새값}"으로 바꿀까요?`).join(' ')}`);
+
+    console.log(`[🩹청구서] 대화입력 — 시트저장 ${saved.length} · 청구서만 ${claimOnly.length} · 확인대기 ${needsConfirm.length} · 실패 ${failed.length}`); // ★값은 로그에 안 남긴다
+    res.json({ ok: true, saved, claimOnly, needsConfirm, failed, extras, message: parts.join(' '), claim: after });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// (3) PDF — ★메모리 Buffer 그대로 응답. 서버 디스크에 쓰지 않는다.
+//   ★POST로 받는 이유: 대화로 넣은 민감정보(extras)를 URL에 실으면 브라우저 기록·서버 접속로그에 남는다.
+//     본문으로 받아 메모리에서만 쓰고 버린다. (GET은 명단 값만으로 만드는 경우용 — 그대로 유지)
+async function _claimPdfHandler(req, res) {
+  try {
+    const ma = gateGoogle(req, res); if (!ma) return;
+    const src = (req.method === 'POST' ? (req.body || {}) : (req.query || {}));
+    const name = String(src.name || '').trim();
+    const extras = (src.extras && typeof src.extras === 'object') ? src.extras : {};
+    if (!name) return res.status(400).json({ ok: false, error: '고객 이름이 필요해요' });
+    let table;
+    try { table = await sheetsCrud.loadTable(ma); }
+    catch (e) {
+      if (isScopeError(e)) return res.json({ ok: true, needsConnect: true, message: '고객명단 시트를 보려면 구글 시트·드라이브 연결이 필요해요' });
+      throw e;
+    }
+    const r = claimForm.buildClaim(table, name, extras);
+    if (!r.ok) return res.status(404).json(r);
+    const buf = await claimForm.renderClaimPdf(r);           // ★Buffer — 파일 저장 없음
+    const fname = `삼성화재_보험금청구서_${r.고객명}.pdf`;
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private'); // 개인정보 캐시 금지
+    res.setHeader('Content-Disposition',
+      `${String(src.dl) === '1' ? 'attachment' : 'inline'}; filename="claim.pdf"; filename*=UTF-8''${encodeURIComponent(fname)}`);
+    console.log(`[🩹청구서] PDF 생성 ${buf.length}B (서버 저장 0)`);
+    res.send(buf);                                            // 응답 후 메모리에서 소멸
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+}
+app.get('/api/claim/pdf', _claimPdfHandler);
+app.post('/api/claim/pdf', _claimPdfHandler);
 
 // ── 🧠 MEM 하이브리드C: 설계요약 Firestore(genya_mem) 저장/검색 (주민번호·전화 마스킹 · userId 격리 · SA=moneya-72fe6) ──
 //   ★제로 인그레스: 검색용 요약만 저장(원본·개인정보 서버 X). 저장 실패는 대화·분석을 막지 않는다(fire-and-forget).
