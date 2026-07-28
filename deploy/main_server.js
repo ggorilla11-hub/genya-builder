@@ -29,6 +29,7 @@ const campaign = require('./campaign_skill');                 // 📣 캠페인(
 const rosterImport = require('./roster_import');              // 📇 Step 2-F · 명단 업로드→회원 시트 저장(독립 모듈)
 const customEvents = require('./custom_events');              // ⭐ 대표가 직접 정의하는 이벤트(독립 모듈·기본 6개 무접촉)
 const claimForm = require('./claim_form_skill');              // 🩹 보상비서 1단계 · 삼성화재 청구서 자동 입력(독립 모듈 · 제로 저장 · 기존 기능 무접촉)
+const claimDocs = require('./claim_docs_skill');              // 🩹 보상비서 2단계 · 필요 서류 안내(독립 모듈 · 순수함수 · 발송 0 · 금액산정 0)
 const _openai = new (require('openai'))({ apiKey: process.env.OPENAI_API_KEY });
 // ★워크스페이스 대화 = Anthropic Claude Sonnet 5(대표 지시). 온보딩·OCR·약관·문자초안은 OpenAI 유지.
 //   대표가 준 'claude-sonnet-4-6-20250514'는 존재하지 않는 ID → 최신 Sonnet인 claude-sonnet-5로. 날짜접미사 금지.
@@ -2844,6 +2845,28 @@ async function _claimPdfHandler(req, res) {
 }
 app.get('/api/claim/pdf', _claimPdfHandler);
 app.post('/api/claim/pdf', _claimPdfHandler);
+
+// ═══════════════════════════════════════════════════════════════
+// 🩹 보상비서 2단계 — 필요 서류 안내 (독립 모듈 claim_docs_skill · 추가만)
+// ═══════════════════════════════════════════════════════════════
+// 무엇을·왜: "김철수 무릎수술로 입원했어. 삼성화재 실손." 한 줄이면
+//   사고유형·담보를 읽어 필요 서류를 안내하고, 고객에게 보낼 안내문까지 만들어 준다.
+//   설계사가 매번 헷갈리던 것을 지니야가 딱 알려준다.
+//
+// ★법적 안전(회장님 지시): "서류 안내(정보 제공)"일 뿐 — 보험금 산정·청구 대리가 아니다.
+//   모듈이 결과에 법적 문구를 ★강제로 붙인다(여기서 지울 수 없다).
+// ★금지 4가지: 금액 산정 0 · 지어내기 0(표에 없으면 "확인 필요") · ★발송 0 · 기존 기능 무접촉.
+// ★제로 인그레스: 시트도 서버 상태도 읽지 않는다(순수 함수). 저장 0 · 고객 값 로그 0.
+// ★구글 연결 불필요 — 개인 데이터를 안 보므로 로그인만 확인한다(불필요한 연결 요구 방지).
+app.post('/api/claim/docs', (req, res) => {
+  try {
+    if (!sessionOf(req)) return res.status(401).json({ ok: false, error: '로그인이 필요해요' });
+    const text = String((req.body || {}).text || '').trim();
+    const r = claimDocs.guide(text);
+    console.log(`[🩹서류안내] ${r.ok ? '안내 생성' : '되물음'}`); // ★고객 값은 로그에 안 남긴다(이름조차)
+    res.json(r);
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
 
 // ── 🧠 MEM 하이브리드C: 설계요약 Firestore(genya_mem) 저장/검색 (주민번호·전화 마스킹 · userId 격리 · SA=moneya-72fe6) ──
 //   ★제로 인그레스: 검색용 요약만 저장(원본·개인정보 서버 X). 저장 실패는 대화·분석을 막지 않는다(fire-and-forget).
