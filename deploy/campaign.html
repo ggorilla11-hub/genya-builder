@@ -58,13 +58,30 @@
 </head>
 <body>
 <div class="wrap">
-  <header>
+  <!-- ★공유·발송 팝업 안에 들어갈 땐(?embed=1) 자체 헤더를 숨긴다 — 팝업이 이미 제목을 갖고 있다 -->
+  <header id="자체머리">
     <h1>📣 캠페인 발송</h1>
     <p>명단 전체 또는 조건에 맞는 분들께 같은 내용을 한 번에 — 대표님 승인 후에만 나갑니다</p>
   </header>
+  <script>
+    if (/[?&]embed=1/.test(location.search)) {
+      document.documentElement.style.background = 'transparent';
+      var _h = document.getElementById('자체머리'); if (_h) _h.style.display = 'none';
+      document.body.style.background = 'transparent';
+      var _w = document.querySelector('.wrap'); if (_w) _w.style.padding = '4px 12px 30px';
+    }
+  </script>
 
   <div class="안내띠">
     <b>순서대로만 열립니다.</b> ① 미리보기(한 통도 안 나감) → ② 소량 테스트(대표님 번호 1통) → ③ 건수 확인 → ④ 승인 발송
+  </div>
+  <!-- 🔒 안전모드 배너 — 서버가 ★실제 발송 함수로 판정한 값만 표시한다(지어내지 않음) -->
+  <div id="안전모드띠" class="막음" style="display:none;margin-bottom:14px">
+    🔒 <b>지금 안전모드입니다 — 승인하셔도 대표님 번호로만 나갑니다.</b>
+    <span class="작게" style="display:block;margin-top:4px;color:inherit">실고객 발송은 대표님이 따로 열어주셔야 시작됩니다.</span>
+  </div>
+  <div id="라이브띠" class="경고" style="display:none;margin-bottom:14px">
+    ⚠️ <b>실고객 발송이 열려 있습니다.</b> 승인하시면 명단의 실제 고객에게 나갑니다.
   </div>
 
   <!-- ① 대상·내용 -->
@@ -180,6 +197,11 @@ $('미리보기버튼').onclick = async function () {
   var d = await 보내기('/api/campaign/preview', b, false);
   this.disabled = false;
   if (!d || d.ok === false) { 글('미리보기결과', '<div class="막음">' + ((d && d.error) || '미리보기 실패') + '</div>'); return; }
+  // 🔒 안전모드 — 서버가 실제 발송 함수로 판정한 값 그대로 표시
+  if (d.안전모드 !== undefined) {
+    $('안전모드띠').style.display = d.안전모드 ? 'block' : 'none';
+    $('라이브띠').style.display = d.안전모드 ? 'none' : 'block';
+  }
   상태.대상수 = d.대상수; 상태.본문 = b.본문; 상태.광고 = b.광고; 상태.수신거부 = b.수신거부; 상태.조건 = b.조건;
   상태.테스트함 = false; $('테스트버튼').disabled = d.대상수 === 0;
   $('발송칸').style.display = 'none'; $('발송안내').style.display = 'block';

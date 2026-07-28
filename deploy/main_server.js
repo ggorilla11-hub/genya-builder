@@ -3982,6 +3982,8 @@ app.post('/api/campaign/preview', async (req, res) => {
       names = g.names; label = g.label;
     }
     const out = campaign.미리보기(t, { 본문: b.본문, 광고: !!b.광고, 수신거부: b.수신거부, names, label });
+    // 🔒 안전모드 정직 표시 — ★실제 발송이 쓰는 바로 그 함수로 판정한다(화면이 지어내지 않게)
+    try { const _s = approval.safeRecipient('sms', '01000000000'); out.안전모드 = !!(_s && _s.safeMode); } catch (e) { out.안전모드 = true; }
     console.log(`[📣캠페인 미리보기] 대상 ${out.대상수}명 · 광고=${out.광고} · ★발송 0 · ${(sessionOf(req) || {}).email || ''}`);
     res.json(out);
   } catch (e) { if (scopeGate(e, res, 'sheets')) return; res.status(500).json({ ok: false, error: e.message }); }

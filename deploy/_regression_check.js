@@ -189,6 +189,19 @@ function 로컬확인() {
       /^\(광고\)/.test(법.본문) && !/무료수신거부/.test(법.본문), 법.본문.slice(0, 30));
     const 법2 = camp.법규적용('안내드립니다', true, '080-123-4567');
     확인('캠페인: 직접 입력이면 그 번호로 문구 붙음', /무료수신거부 080-123-4567/.test(법2.본문));
+    // 공유·발송 통합(2026-07-28) — ★기존 3개 항목이 그대로 살아 있어야 한다
+    const ghtml = fs.readFileSync(path.join(__dirname, 'genya.html'), 'utf8');
+    확인('통합: 공유·발송에 캠페인 항목 있음', /캠페인 발송 \(명단 전체\)'[\s\S]{0,80}openCampaign\(\)/.test(ghtml));
+    확인('통합: 캠페인이 공유·발송 안에서 열림(별도 페이지 아님)',
+      /function openCampaign\(\)[\s\S]{0,400}iframe src="\/campaign\?embed=1"/.test(ghtml));
+    확인('★통합: 기존 단건 문자 그대로', /'문자\(SMS\)로 보내기','솔라피로 발송 \(승인 후\)','shareSms\(\)'/.test(ghtml));
+    확인('★통합: 기존 이메일 발송 그대로', /'이메일 발송','Gmail로 발송 \(승인 후\)','shareEmail\(\)'/.test(ghtml));
+    확인('★통합: 기존 링크 복사 그대로', /'링크 복사','진단·공유 URL','shareCopyLink\(\)'/.test(ghtml));
+    확인('통합: 카톡은 준비 중 안내로만(발송 경로 안 엶)', /'💬 카톡','준비 중 \(다음 단계\)','shareKakao\(\)'/.test(ghtml));
+    확인('★안전모드: 실제 발송 함수로 판정해 화면에 전달',
+      /approval\.safeRecipient\('sms'[\s\S]{0,120}out\.안전모드/.test(src), '화면이 지어내지 않게');
+    확인('★안전모드: 화면에 배너 있음', /안전모드띠/.test(chtml) && /대표님 번호로만 나갑니다/.test(chtml));
+    확인('캠페인 화면: 팝업 안에서는 자체 머리글 숨김(embed)', /embed=1/.test(chtml) && /자체머리/.test(chtml));
   } catch (e) { 확인('캠페인 모듈', false, e.message); }
 
   // ── 8) 22블록 핵심 함수 생존 ──

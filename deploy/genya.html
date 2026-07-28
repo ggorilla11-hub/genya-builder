@@ -4234,10 +4234,25 @@ function openShare(){
     '<div class="pop-h s"><div class="pic"><svg viewBox="0 0 24 24" fill="none"><path d="M8 12l8-5m-8 5l8 5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><circle cx="18" cy="6" r="2.3" stroke="currentColor" stroke-width="1.6"/><circle cx="6" cy="12" r="2.3" stroke="currentColor" stroke-width="1.6"/><circle cx="18" cy="18" r="2.3" stroke="currentColor" stroke-width="1.6"/></svg></div><div class="pt"><b>공유 · 발송</b><span>고객에게 바로 보내요 (승인 후)</span></div><div class="px" onclick="closeModal()"><svg viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></div></div>'+
     '<div class="pop-list">'+
       // ★카카오톡 항목은 메뉴에서 뺐다(2026-07-26). 카톡은 서버 게이트를 안 타는 로컬 발송기 경로라 2막에서 정식으로 다시 붙인다.
-      [['문자(SMS)로 보내기','솔라피로 발송 (승인 후)','shareSms()'],['링크 복사','진단·공유 URL','shareCopyLink()'],['이메일 발송','Gmail로 발송 (승인 후)','shareEmail()']].map((x,i)=>
+      // ★2026-07-28 대표님 지시: 캠페인(명단 전체 일괄)을 여기로 통합. 기존 3개 항목은 글자·동작 그대로다(추가만).
+      //   카톡은 준비 중 안내(shareKakao)로 다시 노출 — 실제 발송 경로는 열지 않는다.
+      [['문자(SMS)로 보내기','솔라피로 발송 (승인 후)','shareSms()'],
+       ['📢 캠페인 발송 (명단 전체)','조건별 일괄 · 미리보기 → 테스트 → 승인','openCampaign()'],
+       ['이메일 발송','Gmail로 발송 (승인 후)','shareEmail()'],
+       ['링크 복사','진단·공유 URL','shareCopyLink()'],
+       ['💬 카톡','준비 중 (다음 단계)','shareKakao()']].map((x,i)=>
         '<div class="pop-item" style="cursor:pointer" onclick="'+x[2]+'"><span class="di pi-s"></span><div class="it"><b>'+x[0]+'</b><span>'+x[1]+'</span></div><span class="tag" style="background:var(--gold-l);color:var(--gold-d)">발송</span></div>').join('')+
     '</div>'+
     '<div class="pop-foot"><div class="pop-src"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3l7 3v6c0 4-3 6.5-7 8-4-1.5-7-4-7-8V6l7-3z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>모든 발송은 반드시 사람 승인 후에만 실행됩니다</div></div>');
+}
+// 📢 캠페인 발송 — ★공유·발송 안에서 연다(별도 페이지로 튕기지 않는다).
+//   ★캠페인 화면(/campaign)을 그대로 품는다 → 4단계·안전장치·안전모드 표시가 ★하나도 안 바뀐다.
+//   ★/campaign 주소도 그대로 살아 있어 직접 열 수도 있다.
+function openCampaign(){
+  showModal('<div class="pop-h s"><div class="pic">📢</div>'
+    +'<div class="pt"><b>캠페인 발송 · 명단 전체</b><span>미리보기 → 소량 테스트 → 승인 (승인 없이는 한 통도 안 나갑니다)</span></div>'
+    +'<div class="px" onclick="closeModal()"><svg viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></div></div>'
+    +'<iframe src="/campaign?embed=1" title="캠페인 발송" style="width:100%;height:70vh;border:0;display:block;background:#f7f5f0"></iframe>');
 }
 // ★2026-07-26: 카톡 보내기 폼은 비활성화했다(메뉴에서도 뺐다).
 //   예전 폼은 dashSendApprove()를 빌려 썼는데, 그 함수는 없어지고 카드의 [✅ 승인]으로 대체됐다.
