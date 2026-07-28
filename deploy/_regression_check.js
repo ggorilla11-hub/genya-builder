@@ -193,7 +193,7 @@ function 로컬확인() {
     const ghtml = fs.readFileSync(path.join(__dirname, 'genya.html'), 'utf8');
     확인('통합: 공유·발송에 캠페인 항목 있음', /캠페인 발송 \(명단 전체\)'[\s\S]{0,80}openCampaign\(\)/.test(ghtml));
     확인('통합: 캠페인이 공유·발송 안에서 열림(별도 페이지 아님)',
-      /function openCampaign\(\)[\s\S]{0,400}iframe src="\/campaign\?embed=1"/.test(ghtml));
+      /function openCampaign\(\)[\s\S]{0,600}iframe src="\/campaign\?embed=1/.test(ghtml));
     확인('★통합: 기존 단건 문자 그대로', /'문자\(SMS\)로 보내기','솔라피로 발송 \(승인 후\)','shareSms\(\)'/.test(ghtml));
     확인('★통합: 기존 이메일 발송 그대로', /'이메일 발송','Gmail로 발송 \(승인 후\)','shareEmail\(\)'/.test(ghtml));
     확인('★통합: 기존 링크 복사 그대로', /'링크 복사','진단·공유 URL','shareCopyLink\(\)'/.test(ghtml));
@@ -230,6 +230,21 @@ function 로컬확인() {
       '보낼 수 있는 ' + 아닌것.대상.length + '명 · 형식오류 ' + 아닌것.형식오류);
     확인('★오류 이유를 샘플로 보여준다', Array.isArray(아닌것.오류샘플) && 아닌것.오류샘플.length > 0,
       (아닌것.오류샘플 || []).join(' · ') + ' (원문 마스킹)');
+    // ★2026-07-29 대표님 실측 사고: 순번 열(머리글 "번호")을 전화번호로 읽어 1253줄이 전부 오류
+    확인('★파일: 머리글이 아니라 ★실제 값으로 전화번호 열을 고른다',
+      /최다유효/.test(src) && !/findIndex\(\(h\) => \/\(연락처\|휴대폰\|핸드폰\|전화\|번호\|폰/.test(src),
+      '머리글 "번호"(순번)를 전화번호로 오인하던 사고');
+    확인('★파일: 전화번호 열이 없으면 정직하게 실패(머리글까지 보여줌)',
+      /전화번호가 들어있는 열을 찾지 못했어요[\s\S]{0,120}본머리글/.test(src));
+    확인('파일: 한글 CSV(EUC-KR) 깨짐 자동 복구', /iconv-lite'\)\.decode\(buf, 'cp949'\)/.test(src),
+      '한국 엑셀 CSV 기본 인코딩 — 이름이 깨진 채 발송되던 것');
+    확인('★파일 0명이면 미리보기도 0명(명단으로 몰래 안 넘어감)',
+      /대상'\)\.value === '__파일__' && !\(상태\.직접대상/.test(chtml), '파일 0명인데 명단 12명 보여주던 불일치');
+    확인('★소량 테스트는 야간에도 열린다(본인 1통)',
+      /const chk = 점검\(최종본문, false\)/.test(csrc) && !/if \(\(d\.막음 \|\| \[\]\)\.length\) \$\('테스트버튼'\)\.disabled = true/.test(chtml),
+      '밤에 준비해 낮에 예약하는 흐름을 막던 것');
+    확인('캠페인 iframe 캐시 버스터(예약 칸 안 보이던 것)',
+      /campaign\?embed=1&v='\+Date\.now\(\)/.test(ghtml));
     확인('★캠페인 화면 캐시 방지(배포해도 옛 화면 보이던 것)',
       /campaign', '\/캠페인'\][\s\S]{0,400}no-cache, no-store/.test(src), '예약 칸이 안 보이던 원인');
     확인('★미리보기 간소화: 샘플 1건만', pv.샘플.length === 1);

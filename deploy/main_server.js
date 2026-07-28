@@ -4003,7 +4003,16 @@ app.post('/api/campaign/parse-file', async (req, res) => {
     const 이름 = String(b.filename || '');
     let rows = [];
     if (/\.(csv|txt)$/i.test(이름)) {
-      const 줄들 = buf.toString('utf8').split(/\r?\n/).filter((x) => x.trim());
+      // ★한국 엑셀이 "CSV(쉼표로 분리)"로 저장하면 EUC-KR(CP949)이다.
+      //   UTF-8로만 읽으면 ★이름이 깨져 "○○○님" 대신 깨진 글자가 발송된다.
+      //   → 깨짐 문자가 많으면 CP949로 다시 읽는다. (번호는 ASCII라 원래 정상)
+      let 글 = buf.toString('utf8').replace(/^﻿/, '');
+      const 깨짐 = (글.match(/�/g) || []).length;
+      if (깨짐 > 0) {
+        try { 글 = require('iconv-lite').decode(buf, 'cp949'); console.log(`[📣캠페인 파일] EUC-KR로 다시 읽음(깨짐 ${깨짐}자)`); }
+        catch (e) { console.warn('[📣캠페인 파일] EUC-KR 변환기 없음 — 번호는 정상, 이름만 깨질 수 있음'); }
+      }
+      const 줄들 = 글.split(/\r?\n/).filter((x) => x.trim());
       rows = 줄들.map((L) => L.split(/[,\t;]/).map((c) => c.replace(/^"|"$/g, '').trim()));
     } else {
       const XLSX = require('xlsx');
@@ -4012,24 +4021,41 @@ app.post('/api/campaign/parse-file', async (req, res) => {
       rows = XLSX.utils.sheet_to_json(sh, { header: 1, raw: false, defval: '' });
     }
     if (!rows.length) return res.json({ ok: false, error: '읽을 내용이 없어요.' });
-    // 어느 칸이 번호·이름인지 찾는다(머리글이 없어도 값 모양으로 찾는다)
+    // ═══ 전화번호 열 찾기 — ★2026-07-29 대표님 실측 사고 수정 ═══
+    //   [사고] 1253줄 파일이 전부 "형식 오류"였고 오류 예가 "1·2·3"이었다.
+    //     = ★순번 열을 전화번호로 읽었다. 머리글이 "번호"면 내 정규식 /번호/에 걸렸기 때문이다.
+    //   [수정] ★머리글을 믿지 않는다. ★실제 값이 휴대폰 번호인 열을 1순위로 고른다.
+    //     머리글은 동점일 때만 참고한다. 순번(1,2,3)은 유효 번호가 0이라 절대 안 뽑힌다.
     const 머리 = (rows[0] || []).map((x) => String(x || ''));
-    let 번호칸 = 머리.findIndex((h) => /(연락처|휴대폰|핸드폰|전화|번호|폰|mobile|phone|tel)/i.test(h));
-    let 이름칸 = 머리.findIndex((h) => /(고객명|성명|이름|name)/i.test(h));
-    const 머리있음 = 번호칸 >= 0 || 이름칸 >= 0;
-    if (번호칸 < 0) {   // 머리글이 없으면 실제 값이 전화번호처럼 생긴 칸을 고른다
-      const 표본 = rows.slice(0, 30);
-      let 최고 = -1, 최다 = 0;
-      const 칸수 = Math.max.apply(null, 표본.map((r) => (r || []).length).concat([0]));
-      for (let c = 0; c < 칸수; c++) {
-        let n = 0;
-        표본.forEach((r) => { const v = String((r || [])[c] || '').replace(/[^0-9]/g, ''); if (v.length >= 10 && v.length <= 11 && v.startsWith('01')) n++; });
-        if (n > 최다) { 최다 = n; 최고 = c; }
-      }
-      번호칸 = 최고;
-    }
-    if (번호칸 < 0) return res.json({ ok: false, error: '전화번호 칸을 찾지 못했어요. 번호가 들어있는 열이 있는지 확인해 주세요.' });
+    const 머리있음 = 머리.some((h) => /(연락처|휴대폰|핸드폰|전화|번호|폰|이름|성명|고객|mobile|phone|tel|name)/i.test(h));
     const 시작 = 머리있음 ? 1 : 0;
+    const 표본 = rows.slice(시작, 시작 + 80);
+    const 칸수 = Math.max.apply(null, rows.slice(0, 80).map((r) => (r || []).length).concat([0]));
+    let 번호칸 = -1, 최다유효 = 0;
+    for (let c = 0; c < 칸수; c++) {
+      let 유효 = 0;
+      표본.forEach((r) => {
+        const v = String((r || [])[c] == null ? '' : (r || [])[c]).trim();
+        if (!v) return;
+        let s = v.replace(/^['"`\s]+/, '').replace(/[^\d+]/g, '');
+        if (/^\+?82/.test(s)) s = '0' + s.replace(/^\+?82/, '');
+        s = s.replace(/\D/g, '');
+        if (s.length === 10 && /^1[016789]/.test(s)) s = '0' + s;
+        if (/^01[016789]\d{7,8}$/.test(s)) 유효++;
+      });
+      // 동점이면 머리글이 전화번호다운 칸을 택한다(순번 뜻의 "번호"는 제외)
+      const 머리점수 = /(연락처|휴대폰|핸드폰|전화|폰|mobile|phone|tel)/i.test(머리[c] || '') ? 1 : 0;
+      if (유효 > 최다유효 || (유효 === 최다유효 && 유효 > 0 && 머리점수 && 번호칸 >= 0
+        && !/(연락처|휴대폰|핸드폰|전화|폰|mobile|phone|tel)/i.test(머리[번호칸] || ''))) { 최다유효 = 유효; 번호칸 = c; }
+    }
+    if (번호칸 < 0 || 최다유효 === 0) {
+      // ★정직하게: 무엇을 봤는지 알려준다(지어내지 않는다)
+      return res.json({ ok: false,
+        error: '전화번호가 들어있는 열을 찾지 못했어요. 휴대폰 번호(010…)가 있는 열이 있는지 확인해 주세요.',
+        본머리글: 머리.slice(0, 12), 읽은줄: rows.length - 시작 });
+    }
+    let 이름칸 = 머리있음 ? 머리.findIndex((h) => /(고객명|성명|이름|name)/i.test(h)) : -1;
+    if (이름칸 === 번호칸) 이름칸 = -1;
     const 목록 = [];
     for (let i = 시작; i < rows.length; i++) {
       const r = rows[i] || [];
@@ -4037,7 +4063,7 @@ app.post('/api/campaign/parse-file', async (req, res) => {
     }
     // ★여기서 검증·중복제거까지 해서 "몇 명인지"를 정직하게 돌려준다(발송은 안 한다)
     const sel = campaign.대상고르기(null, { 직접대상: 목록, label: 이름 || '업로드한 파일' });
-    console.log(`[📣캠페인 파일] ${이름} · 읽은 줄 ${목록.length} · 보낼 수 있는 ${sel.대상.length}명 · ★서버 저장 0`);
+    console.log(`[📣캠페인 파일] ${이름} · 읽은 줄 ${목록.length} · 번호열=${번호칸}("${머리[번호칸] || '(머리글없음)'}") · 보낼 수 있는 ${sel.대상.length}명 · ★서버 저장 0`);
     res.json({ ok: true, 파일명: 이름, 읽은줄: 목록.length, 대상수: sel.대상.length,
       빈칸: sel.연락처없음, 형식오류: sel.형식오류, 중복제거: sel.중복제거, 오류샘플: sel.오류샘플 || [],
       대상: sel.대상,                                   // ★화면 메모리로만 돌아간다 — 서버에 저장하지 않음
