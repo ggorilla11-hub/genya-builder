@@ -4303,6 +4303,11 @@ app.get(['/privacy', '/privacy.html', '/개인정보처리방침'], (req, res) =
 app.get('/crud-test', (req, res) => res.sendFile(path.join(__dirname, 'crud_test.html'))); // 🗂️ Step 2-B 로컬 실측 콘솔(로컬 전용)
 app.get('/approval-test', (req, res) => res.sendFile(path.join(__dirname, 'approval_test.html'))); // 🗂️ Step 2-C 결재함 로컬 실측 콘솔
 app.get('/approval', (req, res) => res.sendFile(path.join(__dirname, 'approval.html'))); // 🗂️ Step 2-C 결재함 정식 페이지(Task B · genya.html 무접촉 독립 · ASCII 정식주소)
+// 📣 캠페인 발송 화면 — ★독립 페이지(genya.html 무접촉). 로그인해야 열린다.
+app.get(['/campaign', '/캠페인'], (req, res) => {
+  if (!sessionOf(req)) return res.redirect('/login');
+  res.sendFile(path.join(__dirname, 'campaign.html'));
+});
 // 🗂️ 한글 주소 /결재함: 이 Express 버전은 유니코드 리터럴 라우트를 매칭 못 함(기존 /이용약관·/개인정보처리방침도 동일 404) → path-to-regexp 우회, 디코드 후 직접 매핑. /결재함만 가로채고 나머진 통과.
 app.use((req, res, next) => { let p; try { p = decodeURIComponent(req.path); } catch (e) { p = req.path; } if (p === '/결재함') return res.sendFile(path.join(__dirname, 'approval.html')); next(); });
 app.get(['/terms', '/terms.html', '/이용약관'], (req, res) => res.sendFile(path.join(__dirname, 'terms.html')));

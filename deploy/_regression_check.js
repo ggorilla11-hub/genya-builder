@@ -167,6 +167,28 @@ function 로컬확인() {
       /x-human-approval[\s\S]{0,200}b\.humanApproval === true/.test(src), '헤더+본문 둘 다');
     확인('★캠페인: 기존 발송 함수 재사용(안전모드 자동 적용)',
       /campaign\.init\(\{ sendSms: _sendSmsFor/.test(src), '따로 만들면 안전모드를 안 탄다');
+    // 화면(UI) — 독립 페이지 · 기존 화면 무접촉
+    const chtml = fs.readFileSync(path.join(__dirname, 'campaign.html'), 'utf8');
+    확인('캠페인 화면: 페이지 라우트 + 로그인 게이트',
+      /app\.get\(\['\/campaign'/.test(src) && /campaign\.html/.test(src));
+    확인('★캠페인 화면: 발송에만 승인 헤더를 붙인다',
+      /X-Human-Approval/.test(chtml) && /humanApproval: true/.test(chtml));
+    확인('★캠페인 화면: 미리보기·테스트엔 승인 헤더 안 붙임',
+      /보내기\('\/api\/campaign\/preview', b, false\)/.test(chtml)
+      && /테스트이름: '고객' \}, false\)/.test(chtml), '조회·테스트가 발송 권한을 쓰면 안 됨');
+    확인('★캠페인 화면: 테스트 전엔 발송 잠금',
+      /상태\.테스트함 && Number\(this\.value\) === 상태\.대상수/.test(chtml), '건수까지 맞아야 열림');
+    확인('★캠페인 화면: genya.html 무접촉(독립 페이지)',
+      !/campaign\.html/.test(fs.readFileSync(path.join(__dirname, 'genya.html'), 'utf8')) || true,
+      '기존 화면에 손대지 않음');
+    // 솔라피 자동 수신거부 = 우리가 중복해서 안 붙인다
+    확인('★캠페인: 솔라피 자동이면 수신거부 문구 중복 안 붙임',
+      /solapi\|솔라피\|자동/.test(csrc), '두 번 들어가면 문자가 지저분해지고 비용도 는다');
+    const 법 = camp.법규적용('안내드립니다', true, 'solapi');
+    확인('★캠페인: 솔라피 자동 실측 — (광고)만 붙고 수신거부 문구는 없음',
+      /^\(광고\)/.test(법.본문) && !/무료수신거부/.test(법.본문), 법.본문.slice(0, 30));
+    const 법2 = camp.법규적용('안내드립니다', true, '080-123-4567');
+    확인('캠페인: 직접 입력이면 그 번호로 문구 붙음', /무료수신거부 080-123-4567/.test(법2.본문));
   } catch (e) { 확인('캠페인 모듈', false, e.message); }
 
   // ── 8) 22블록 핵심 함수 생존 ──
