@@ -89,13 +89,20 @@
     <h2><span class="단계">1</span> 누구에게 · 무엇을</h2>
     <label>대상</label>
     <select id="대상">
-      <option value="">명단 전체</option>
+      <option value="">명단 전체 (연결된 시트)</option>
       <option value="만기 남은">만기 남은 분</option>
       <option value="만기 임박">만기 임박(30일 내)</option>
       <option value="만기 지난">만기 지난 분</option>
       <option value="생일">생일·기념일 다가오는 분</option>
       <option value="상담 대기">상담 대기</option>
+      <option value="__파일__">📎 파일 업로드 (엑셀·CSV)</option>
     </select>
+    <div id="파일칸" style="display:none;margin-top:9px">
+      <input type="file" id="파일" accept=".xlsx,.xls,.csv,.txt" style="width:100%;padding:9px;border:1px dashed var(--선);border-radius:8px;background:#fffdf8">
+      <div class="작게" style="margin-top:5px">전화번호가 들어있는 열이 있으면 됩니다(머리글 없어도 찾아냅니다). 4000명 같은 대량도 괜찮아요.
+        <b>파일은 서버에 저장하지 않습니다</b> — 창을 닫으면 사라집니다.</div>
+      <div id="파일결과" class="결과"></div>
+    </div>
     <label>보낼 내용 <span class="작게">— <code>#{고객명}</code>이라 쓰면 각자 이름이 들어갑니다 · 그대로 두셔도 됩니다</span></label>
     <textarea id="본문">(광고) 안녕하세요. 오상열 CFP입니다.
 
@@ -164,7 +171,7 @@ https://genya-bootcamp.netlify.app/?v=2</textarea>
 </div>
 
 <script>
-var 상태 = { 대상수: 0, 테스트함: false, 본문: '', 광고: false, 수신거부: '', 조건: '' };
+var 상태 = { 대상수: 0, 테스트함: false, 본문: '', 광고: false, 수신거부: '', 조건: '', 직접대상: null };
 var $ = function (id) { return document.getElementById(id); };
 function 글(el, html) { $(el).innerHTML = html; }
 
@@ -177,10 +184,39 @@ $('수신거부방식').addEventListener('change', function () {
     : '솔라피가 무료수신거부 문구를 자동으로 붙입니다 — 지니야는 중복해서 넣지 않습니다.';
 });
 
+// 📎 파일 업로드 — 브라우저에서 읽어 서버로 보내 번호만 뽑는다(★서버 저장 0)
+$('대상').addEventListener('change', function () {
+  var 파일모드 = this.value === '__파일__';
+  $('파일칸').style.display = 파일모드 ? 'block' : 'none';
+  if (!파일모드) { 상태.직접대상 = null; 글('파일결과', ''); }
+});
+$('파일').addEventListener('change', function () {
+  var f = this.files && this.files[0]; if (!f) return;
+  글('파일결과', '<div class="작게">읽는 중… (' + Math.round(f.size / 1024) + 'KB)</div>');
+  var fr = new FileReader();
+  fr.onload = async function () {
+    var d = await 보내기('/api/campaign/parse-file', { filename: f.name, data: String(fr.result) }, false);
+    if (!d || !d.ok) { 상태.직접대상 = null; 글('파일결과', '<div class="막음">' + ((d && d.error) || '파일을 읽지 못했어요') + '</div>'); return; }
+    상태.직접대상 = d.대상;                       // ★이 창의 메모리에만 있다
+    var h = '<div class="좋음"><b>' + d.대상수 + '명</b> 보낼 수 있어요 <span class="작게">(' + d.파일명 + ' · ' + d.읽은줄 + '줄 읽음)</span>';
+    var 뺀것 = [];
+    if (d.중복제거 > 0) 뺀것.push('중복 ' + d.중복제거 + '건');
+    if (d.빈칸 > 0) 뺀것.push('빈 번호 ' + d.빈칸 + '건');
+    if (d.형식오류 > 0) 뺀것.push('형식 오류 ' + d.형식오류 + '건');
+    if (뺀것.length) h += '<br><span class="작게">제외: ' + 뺀것.join(' · ') + '</span>';
+    h += '<br><span class="작게">' + d.안내 + '</span></div>';
+    글('파일결과', h);
+  };
+  fr.readAsDataURL(f);
+});
+
 function 본문모으기() {
   // ★수신거부: 'solapi'면 서버가 문구를 안 붙인다(솔라피가 붙이므로 중복 방지)
   var 거부 = $('수신거부방식').value === '직접' ? $('수신거부번호').value.trim() : 'solapi';
-  return { 본문: $('본문').value, 광고: $('광고').checked, 수신거부: 거부, 조건: $('대상').value };
+  var 조건 = $('대상').value;
+  var 몸통 = { 본문: $('본문').value, 광고: $('광고').checked, 수신거부: 거부, 조건: 조건 === '__파일__' ? '' : 조건 };
+  if (조건 === '__파일__' && 상태.직접대상) 몸통.직접대상 = 상태.직접대상;   // 📎 업로드 대상
+  return 몸통;
 }
 async function 보내기(주소, 몸통, 승인) {
   var h = { 'Content-Type': 'application/json' };
@@ -203,22 +239,27 @@ $('미리보기버튼').onclick = async function () {
     $('라이브띠').style.display = d.안전모드 ? 'none' : 'block';
   }
   상태.대상수 = d.대상수; 상태.본문 = b.본문; 상태.광고 = b.광고; 상태.수신거부 = b.수신거부; 상태.조건 = b.조건;
+  상태.직접대상 = b.직접대상 || null;   // 📎 업로드 대상이면 발송 때 함께 보낸다
   상태.테스트함 = false; $('테스트버튼').disabled = d.대상수 === 0;
   $('발송칸').style.display = 'none'; $('발송안내').style.display = 'block';
 
-  var h = '<div style="text-align:center;margin:6px 0 2px"><span class="수">' + d.대상수 + '</span>명 <span class="작게">(' + d.라벨 + ')</span></div>';
-  h += '<div class="작게" style="text-align:center">명단 ' + d.명단행수 + '행 중 · 연락처 없는 분 ' + d.연락처없음 + '명 제외 · 중복 번호 제거됨</div>';
-  h += '<div class="좋음">예상 비용: ' + d.비용.종류 + ' ' + d.비용.건수 + '건 × ' + d.비용.단가 + '원 ≈ <b>' + d.비용.예상원.toLocaleString() + '원</b>'
-     + '<br><span class="작게">문자 요금은 대표님 솔라피 계정에서 차감됩니다. 정확한 단가는 계약에 따라 다를 수 있어요.</span></div>';
-  if (d.법규자동적용 && d.법규자동적용.length) h += '<div class="좋음">법규 자동 적용: ' + d.법규자동적용.join(' · ') + '</div>';
-  (d.경고 || []).forEach(function (w) { h += '<div class="경고">' + w + '</div>'; });
-  (d.막음 || []).forEach(function (w) { h += '<div class="막음">' + w + '</div>'; });
+  // ★2026-07-28 간소화: 대상 수 + 샘플 1건 + 예상 비용. 그 외는 필요할 때만.
+  var h = '<div style="text-align:center;margin:8px 0 2px"><span class="수">' + d.대상수 + '</span>명'
+        + ' <span class="작게">· ' + d.라벨 + '</span></div>';
+  h += '<div class="좋음" style="text-align:center">예상 비용 <b>' + d.비용.예상원.toLocaleString() + '원</b>'
+     + ' <span class="작게">(' + d.비용.종류 + ' ' + d.비용.단가 + '원 × ' + d.비용.건수 + '건 · 대표님 솔라피 계정에서 차감)</span></div>';
   if (d.샘플 && d.샘플.length) {
-    h += '<div class="샘플"><b>이렇게 나갑니다</b>';
-    d.샘플.forEach(function (s) { h += '<div style="margin-top:6px">→ ' + s.받는사람 + ' (' + s.번호 + ')<br><span style="color:#6b7a8d">' + s.내용.replace(/</g, '&lt;').replace(/\n/g, '<br>') + '</span></div>'; });
-    h += '</div>';
+    var s = d.샘플[0];
+    h += '<div class="샘플"><b>이렇게 나갑니다</b> <span class="작게">— ' + s.받는사람 + ' (' + s.번호 + ') 예시</span>'
+       + '<div style="margin-top:6px;color:#6b7a8d">' + s.내용.replace(/</g, '&lt;').replace(/\n/g, '<br>') + '</div></div>';
   }
-  h += '<div class="작게" style="margin-top:8px">' + d.안내 + '</div>';
+  if (d.법규자동적용 && d.법규자동적용.length) h += '<div class="작게" style="margin-top:6px">자동 적용: ' + d.법규자동적용.join(' · ') + '</div>';
+  var 뺀것 = [];
+  if (d.연락처없음 > 0) 뺀것.push('연락처 없음 ' + d.연락처없음 + '건');
+  if (d.형식오류 > 0) 뺀것.push('형식 오류 ' + d.형식오류 + '건');
+  if (d.중복제거 > 0) 뺀것.push('중복 ' + d.중복제거 + '건');
+  if (뺀것.length) h += '<div class="작게">제외: ' + 뺀것.join(' · ') + '</div>';
+  (d.막음 || []).forEach(function (w) { h += '<div class="막음">' + w + '</div>'; });
   글('미리보기결과', h);
   if ((d.막음 || []).length) $('테스트버튼').disabled = true;
 };
@@ -244,10 +285,12 @@ $('건수확인').addEventListener('input', function () {
 $('발송버튼').onclick = async function () {
   if (!confirm(상태.대상수 + '명에게 실제로 발송합니다.\n되돌릴 수 없습니다. 진행할까요?')) return;
   this.disabled = true; 글('발송결과', '<div class="작게">발송 중… 창을 닫지 마세요.</div>');
-  var d = await 보내기('/api/campaign/send', {
+  var 몸통 = {
     본문: 상태.본문, 광고: 상태.광고, 수신거부: 상태.수신거부, 조건: 상태.조건,
     humanApproval: true, tested: true, confirmedCount: 상태.대상수,   // ★이중 채널 중 하나 + 전제 조건
-  }, true);
+  };
+  if (상태.직접대상) 몸통.직접대상 = 상태.직접대상;                     // 📎 업로드 파일 대상
+  var d = await 보내기('/api/campaign/send', 몸통, true);
   if (!d || d.ok === false) { 글('발송결과', '<div class="막음">발송하지 못했어요 — ' + ((d && d.error) || '') + '</div>'); this.disabled = false; return; }
   var h = '<div class="좋음"><b>' + d.대상수 + '명 중 ' + d.성공 + '건 성공 · ' + d.실패 + '건 실패</b> (' + d.걸린초 + '초)<br><span class="작게">실제로 센 숫자입니다.</span></div>';
   if (d.실패목록 && d.실패목록.length) {

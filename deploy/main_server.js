@@ -3981,12 +3981,68 @@ app.post('/api/campaign/preview', async (req, res) => {
       const g = _expiryPick(b.조건, t) || _resolveCardGroup(b.조건, t, []);
       names = g.names; label = g.label;
     }
-    const out = campaign.미리보기(t, { 본문: b.본문, 광고: !!b.광고, 수신거부: b.수신거부, names, label });
+    const out = campaign.미리보기(t, { 본문: b.본문, 광고: !!b.광고, 수신거부: b.수신거부, names, label,
+      직접대상: Array.isArray(b.직접대상) ? b.직접대상 : null });   // 📎 업로드 파일 대상(서버 저장 0)
     // 🔒 안전모드 정직 표시 — ★실제 발송이 쓰는 바로 그 함수로 판정한다(화면이 지어내지 않게)
     try { const _s = approval.safeRecipient('sms', '01000000000'); out.안전모드 = !!(_s && _s.safeMode); } catch (e) { out.안전모드 = true; }
     console.log(`[📣캠페인 미리보기] 대상 ${out.대상수}명 · 광고=${out.광고} · ★발송 0 · ${(sessionOf(req) || {}).email || ''}`);
     res.json(out);
   } catch (e) { if (scopeGate(e, res, 'sheets')) return; res.status(500).json({ ok: false, error: e.message }); }
+});
+// ①-2 파일 업로드 파싱 — 엑셀·CSV에서 ★번호·이름만 뽑아 돌려준다.
+//   ★서버 저장 0: 파일도, 번호도 디스크·DB에 남기지 않는다(메모리에서 파싱하고 즉시 버린다).
+//   ★발송 아님 — 읽기만 한다.
+app.post('/api/campaign/parse-file', async (req, res) => {
+  if (!sessionOf(req)) return res.status(401).json({ ok: false, error: '로그인이 필요해요' });
+  try {
+    const b = req.body || {};
+    const b64 = String(b.data || '').replace(/^data:[^,]+,/, '');
+    if (!b64) return res.json({ ok: false, error: '파일 내용이 비어 있어요.' });
+    const buf = Buffer.from(b64, 'base64');
+    if (buf.length > 12 * 1024 * 1024) return res.json({ ok: false, error: '파일이 너무 커요(12MB 초과).' });
+    const 이름 = String(b.filename || '');
+    let rows = [];
+    if (/\.(csv|txt)$/i.test(이름)) {
+      const 줄들 = buf.toString('utf8').split(/\r?\n/).filter((x) => x.trim());
+      rows = 줄들.map((L) => L.split(/[,\t;]/).map((c) => c.replace(/^"|"$/g, '').trim()));
+    } else {
+      const XLSX = require('xlsx');
+      const wb = XLSX.read(buf, { type: 'buffer' });
+      const sh = wb.Sheets[wb.SheetNames[0]];
+      rows = XLSX.utils.sheet_to_json(sh, { header: 1, raw: false, defval: '' });
+    }
+    if (!rows.length) return res.json({ ok: false, error: '읽을 내용이 없어요.' });
+    // 어느 칸이 번호·이름인지 찾는다(머리글이 없어도 값 모양으로 찾는다)
+    const 머리 = (rows[0] || []).map((x) => String(x || ''));
+    let 번호칸 = 머리.findIndex((h) => /(연락처|휴대폰|핸드폰|전화|번호|폰|mobile|phone|tel)/i.test(h));
+    let 이름칸 = 머리.findIndex((h) => /(고객명|성명|이름|name)/i.test(h));
+    const 머리있음 = 번호칸 >= 0 || 이름칸 >= 0;
+    if (번호칸 < 0) {   // 머리글이 없으면 실제 값이 전화번호처럼 생긴 칸을 고른다
+      const 표본 = rows.slice(0, 30);
+      let 최고 = -1, 최다 = 0;
+      const 칸수 = Math.max.apply(null, 표본.map((r) => (r || []).length).concat([0]));
+      for (let c = 0; c < 칸수; c++) {
+        let n = 0;
+        표본.forEach((r) => { const v = String((r || [])[c] || '').replace(/[^0-9]/g, ''); if (v.length >= 10 && v.length <= 11 && v.startsWith('01')) n++; });
+        if (n > 최다) { 최다 = n; 최고 = c; }
+      }
+      번호칸 = 최고;
+    }
+    if (번호칸 < 0) return res.json({ ok: false, error: '전화번호 칸을 찾지 못했어요. 번호가 들어있는 열이 있는지 확인해 주세요.' });
+    const 시작 = 머리있음 ? 1 : 0;
+    const 목록 = [];
+    for (let i = 시작; i < rows.length; i++) {
+      const r = rows[i] || [];
+      목록.push({ 번호: String(r[번호칸] || ''), 이름: 이름칸 >= 0 ? String(r[이름칸] || '') : '' });
+    }
+    // ★여기서 검증·중복제거까지 해서 "몇 명인지"를 정직하게 돌려준다(발송은 안 한다)
+    const sel = campaign.대상고르기(null, { 직접대상: 목록, label: 이름 || '업로드한 파일' });
+    console.log(`[📣캠페인 파일] ${이름} · 읽은 줄 ${목록.length} · 보낼 수 있는 ${sel.대상.length}명 · ★서버 저장 0`);
+    res.json({ ok: true, 파일명: 이름, 읽은줄: 목록.length, 대상수: sel.대상.length,
+      빈칸: sel.연락처없음, 형식오류: sel.형식오류, 중복제거: sel.중복제거,
+      대상: sel.대상,                                   // ★화면 메모리로만 돌아간다 — 서버에 저장하지 않음
+      안내: '파일은 서버에 저장하지 않았어요. 이 창을 닫으면 사라집니다.' });
+  } catch (e) { res.status(500).json({ ok: false, error: '파일을 읽지 못했어요 — ' + e.message }); }
 });
 // ② 소량 테스트 — 대표님 번호로 1통만(전체 발송의 전제 조건)
 app.post('/api/campaign/test', async (req, res) => {
@@ -4015,6 +4071,7 @@ app.post('/api/campaign/send', async (req, res) => {
     let names = null, label = '';
     if (b.조건) { const g = _expiryPick(b.조건, t) || _resolveCardGroup(b.조건, t, []); names = g.names; label = g.label; }
     const r = await campaign.발송(ma, { table: t, names, label, 본문: b.본문, 광고: !!b.광고, 수신거부: b.수신거부,
+      직접대상: Array.isArray(b.직접대상) ? b.직접대상 : null,      // 📎 업로드 파일 대상(서버 저장 0)
       humanApproval: true, tested: !!b.tested, confirmedCount: b.confirmedCount });
     console.log('[🔒감사·캠페인]', _seoul().today, _seoul().now, '· 요청자=' + who,
       '· 대상=' + (r.대상수 || 0), '· 성공=' + (r.성공 || 0), '· 실패=' + (r.실패 || 0), '· 차단=' + (r.차단 || '없음'));

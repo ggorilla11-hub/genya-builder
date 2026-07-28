@@ -52,6 +52,28 @@ function _이름(row) {
 function 대상고르기(table, opts) {
   const rows = (table && table.rows) || [];
   const o = opts || {};
+  // ★파일 업로드로 받은 번호 목록 (2026-07-28 추가)
+  //   ★서버 저장 0 — 이 요청에서만 쓰고 버린다. 파일 자체도 서버에 남기지 않는다.
+  //   중복·빈 번호·형식 오류를 ★세어서 알려준다(지어내지 않는다).
+  if (Array.isArray(o.직접대상) && o.직접대상.length) {
+    const 대상 = [], 본 = new Set();
+    let 형식오류 = 0, 빈칸 = 0;
+    for (const x of o.직접대상) {
+      const raw = (x && x.번호 !== undefined) ? x.번호 : x;
+      const 원문 = String(raw == null ? '' : raw).trim();
+      // ★정직한 분류: 진짜 ★빈 칸과, 값은 있는데 ★번호가 아닌 것(abc·02-xxx)을 갈라 센다.
+      //   합쳐서 "빈 번호"라고 하면 대표님께 사실과 다르게 보고하는 것이 된다.
+      if (!원문) { 빈칸++; continue; }
+      const p = _정규화(원문);
+      if (!(p.length >= 10 && p.length <= 11 && p.startsWith('01'))) { 형식오류++; continue; }
+      if (본.has(p)) continue;                      // 중복 제거(같은 분께 두 번 안 감)
+      본.add(p);
+      대상.push({ 번호: p, 이름: (x && x.이름) || '고객' });
+    }
+    return { 대상, 전체: o.직접대상.length, 연락처없음: 빈칸, 형식오류,
+      중복제거: o.직접대상.length - 빈칸 - 형식오류 - 대상.length,
+      라벨: o.label || '업로드한 파일' };
+  }
   let 골라진 = rows, 라벨 = '명단 전체';
   if (Array.isArray(o.names) && o.names.length) {
     const set = new Set(o.names);
@@ -127,11 +149,13 @@ function 미리보기(table, opts) {
   const { 본문: 최종본문, 붙임 } = 법규적용(o.본문, !!o.광고, o.수신거부);
   const chk = 점검(최종본문, !!o.광고);
   const cost = 비용(최종본문, sel.대상.length);
-  const 샘플 = sel.대상.slice(0, 3).map((p) => ({ 받는사람: p.이름, 번호: _마스크(p.번호), 내용: 내용만들기(최종본문, p) }));
+  // ★2026-07-28 대표님 지시: 미리보기는 간결하게 — 샘플은 ★1건만(한 명 예시로 충분).
+  const 샘플 = sel.대상.slice(0, 1).map((p) => ({ 받는사람: p.이름, 번호: _마스크(p.번호), 내용: 내용만들기(최종본문, p) }));
   return {
     ok: true, 발송함: false,                      // ★여기서는 절대 안 보낸다
     대상수: sel.대상.length, 라벨: sel.라벨,
     명단행수: sel.전체, 연락처없음: sel.연락처없음,
+    형식오류: sel.형식오류 || 0, 중복제거: sel.중복제거 || 0,
     본문: 최종본문, 광고: !!o.광고, 법규자동적용: 붙임,
     비용: cost, 경고: chk.경고, 막음: chk.막음,
     샘플, 배치: { 크기: 배치크기, 회차: Math.ceil(sel.대상.length / 배치크기) },
