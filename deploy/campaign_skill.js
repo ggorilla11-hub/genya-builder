@@ -231,4 +231,43 @@ async function 발송(ma, opts) {
     안내: `${sel.대상.length}명 중 ${결과.성공}건 성공 · ${결과.실패}건 실패. 실제로 센 숫자입니다.` };
 }
 
-module.exports = { init, 대상고르기, 미리보기, 테스트발송, 발송, 법규적용, 점검, 비용, 내용만들기, _마스크 };
+/**
+ * ④ 예약 발송 준비 — 2026-07-28 대표님 지시.
+ *   ★실제 예약은 솔라피가 들고 있는다(우리 서버는 번호를 저장하지 않는다 → 개인정보 서버 저장 0).
+ *   ★즉시 발송과 ★똑같은 하드가드를 탄다: 승인 버튼 · 소량 테스트 · 건수 재확인 · 법규.
+ *   ★광고성이면 예약 시각이 야간(21~08시)이어도 거부한다 — 그때 실제로 나가기 때문이다.
+ *   @returns {{ok, messages, 대상수, 표시, error, 차단}}  messages는 호출부가 솔라피로 넘긴다.
+ */
+function 예약준비(opts) {
+  const o = opts || {};
+  if (o.humanApproval !== true) {
+    return { ok: false, 차단: '승인버튼아님', error: '예약도 화면 [승인] 버튼으로만 걸 수 있어요. 말이나 글로는 걸리지 않습니다.' };
+  }
+  if (!o.tested) {
+    return { ok: false, 차단: '테스트안함', error: '먼저 대표님 번호로 소량 테스트를 해주세요. 테스트 없이 예약은 막고 있습니다.' };
+  }
+  // 예약 시각 — 화면이 +09:00 오프셋을 붙여 보낸다(서버가 UTC라도 어긋나지 않게)
+  const when = new Date(String(o.예약시각 || ''));
+  if (!o.예약시각 || isNaN(when.getTime())) return { ok: false, 차단: '시각오류', error: '예약 시각을 정확히 골라주세요.' };
+  if (when.getTime() <= Date.now() + 60000) return { ok: false, 차단: '지난시각', error: '지금보다 최소 1분 뒤로 잡아주세요.' };
+  const kst = new Date(when.getTime() + 9 * 3600e3);
+  const 시 = kst.getUTCHours();
+  if (o.광고 && (시 >= 야간시작 || 시 < 야간끝)) {
+    return { ok: false, 차단: '야간광고',
+      error: `예약하신 시각이 ${시}시예요. 광고 문자는 야간(${야간시작}시~${야간끝}시)에 보낼 수 없습니다(정보통신망법). 낮 시간으로 잡아주세요.` };
+  }
+  const sel = 대상고르기(o.table, o);
+  const { 본문: 최종본문 } = 법규적용(o.본문, !!o.광고, o.수신거부);
+  const chk = 점검(최종본문, false);            // ★지금 시각 야간 검사는 안 한다 — 예약은 위에서 ★예약 시각으로 검사했다
+  if (chk.막음.length) return { ok: false, 차단: '법규·내용', error: chk.막음.join(' ') };
+  if (!sel.대상.length) return { ok: false, 차단: '대상0', error: '보낼 대상이 없어요.' };
+  if (sel.대상.length >= 10 && o.confirmedCount !== sel.대상.length) {
+    return { ok: false, 차단: '건수재확인', 대상수: sel.대상.length,
+      error: `정말 ${sel.대상.length}명 전원에게 예약할까요? 확인을 위해 이 숫자를 그대로 다시 보내주세요.` };
+  }
+  const messages = sel.대상.map((p) => ({ to: p.번호, text: 내용만들기(최종본문, p) }));
+  const 표시 = `${kst.toISOString().slice(0, 10)} ${String(시).padStart(2, '0')}:${String(kst.getUTCMinutes()).padStart(2, '0')}`;
+  return { ok: true, messages, 대상수: sel.대상.length, 표시, 예약ISO: when.toISOString() };
+}
+
+module.exports = { init, 대상고르기, 미리보기, 테스트발송, 발송, 예약준비, 법규적용, 점검, 비용, 내용만들기, _마스크 };

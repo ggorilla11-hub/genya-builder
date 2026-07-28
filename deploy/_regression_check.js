@@ -213,6 +213,30 @@ function 로컬확인() {
       !/parse-file[\s\S]{0,2000}(writeFile|saveMemberToken|createDocument)/.test(src), '메모리에서 파싱하고 버린다');
     확인('업로드: 화면에 파일 선택 있음', /id="파일"/.test(chtml) && /파일 업로드 \(엑셀·CSV\)/.test(chtml));
     확인('★업로드 대상도 발송 하드가드를 그대로 탄다', /직접대상: Array\.isArray\(b\.직접대상\)/.test(src), '승인·테스트·건수 확인 동일');
+    // 📅 예약 발송(2026-07-28) — 즉시 발송과 ★똑같은 하드가드 + 예약 시각 야간 검사
+    const 내일 = (h) => { const d = new Date(Date.now() + 86400000 + 9 * 3600e3); return d.toISOString().slice(0, 10) + 'T' + String(h).padStart(2, '0') + ':00:00+09:00'; };
+    const t2 = { rows: [{ 고객명: '가', 연락처: '01011112222' }, { 고객명: '나', 연락처: '01033334444' }] };
+    확인('★예약: 승인 버튼 없으면 거부',
+      camp.예약준비({ table: t2, 본문: '안내', 예약시각: 내일(13), tested: true, confirmedCount: 2 }).차단 === '승인버튼아님');
+    확인('★예약: 소량 테스트 안 하면 거부',
+      camp.예약준비({ table: t2, 본문: '안내', 예약시각: 내일(13), humanApproval: true, confirmedCount: 2 }).차단 === '테스트안함');
+    확인('★예약: 광고 야간(22시) 차단',
+      camp.예약준비({ table: t2, 본문: '안내', 광고: true, 예약시각: 내일(22), humanApproval: true, tested: true, confirmedCount: 2 }).차단 === '야간광고',
+      '예약은 그 시각에 실제로 나가므로 예약 시각으로 검사해야 함');
+    확인('★예약: 광고 새벽(6시) 차단',
+      camp.예약준비({ table: t2, 본문: '안내', 광고: true, 예약시각: 내일(6), humanApproval: true, tested: true, confirmedCount: 2 }).차단 === '야간광고');
+    확인('예약: 지난 시각 거부',
+      camp.예약준비({ table: t2, 본문: '안내', 예약시각: '2020-01-01T13:00:00+09:00', humanApproval: true, tested: true, confirmedCount: 2 }).차단 === '지난시각');
+    const 예약ok = camp.예약준비({ table: t2, 본문: '#{고객명}님', 광고: true, 예약시각: 내일(13), humanApproval: true, tested: true, confirmedCount: 2, 수신거부: 'solapi' });
+    확인('★예약: 낮 시각은 정상 준비', 예약ok.ok === true && 예약ok.messages.length === 2, 예약ok.표시);
+    확인('예약: 솔라피 예약 API 사용(서버에 번호 저장 안 함)',
+      /scheduledDate: 예약ISO/.test(src) && /send-many\/detail/.test(src), '솔라피가 예약을 들고 있는다');
+    확인('★예약: 라우트도 이중 채널 요구',
+      /campaign\/schedule'[\s\S]{0,600}x-human-approval[\s\S]{0,200}b\.humanApproval === true/.test(src));
+    확인('예약: 취소 라우트 있음', /campaign\/schedule\/cancel/.test(src) && /_cancelScheduledSms/.test(src));
+    확인('★예약 취소: 실패를 성공으로 안 꾸밈', /취소됨: false/.test(src), '취소된 척 금지');
+    확인('예약: 화면에 지금/예약 선택 + 취소 버튼',
+      /id="언제"/.test(chtml) && /예약취소/.test(chtml) && /\+09:00/.test(chtml), '한국시간 오프셋을 붙여 보냄');
     확인('캠페인 화면: 팝업 안에서는 자체 머리글 숨김(embed)', /embed=1/.test(chtml) && /자체머리/.test(chtml));
   } catch (e) { 확인('캠페인 모듈', false, e.message); }
 

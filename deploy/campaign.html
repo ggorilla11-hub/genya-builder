@@ -158,7 +158,16 @@ https://genya-bootcamp.netlify.app/?v=2</textarea>
     <div id="발송안내" class="작게">먼저 미리보기와 소량 테스트를 마쳐 주세요.</div>
     <div id="발송칸" style="display:none">
       <div class="막음" style="background:#fdecea">이 버튼을 누르면 <b id="확인수">0</b>명에게 <b>실제로</b> 나갑니다. 되돌릴 수 없습니다.</div>
-      <label>확인을 위해 대상 인원수를 그대로 입력해 주세요</label>
+      <label>언제 보낼까요</label>
+      <div class="row">
+        <select id="언제" style="flex:0 0 auto;min-width:130px">
+          <option value="now">지금 발송</option>
+          <option value="later">예약 발송</option>
+        </select>
+        <input type="datetime-local" id="예약시각" style="display:none">
+      </div>
+      <div class="작게" id="예약안내" style="display:none;margin-top:5px">광고성 문자는 밤 9시~아침 8시로는 예약할 수 없어요(정보통신망법). 예약 후에도 취소할 수 있습니다.</div>
+      <label style="margin-top:11px">확인을 위해 대상 인원수를 그대로 입력해 주세요</label>
       <div class="row">
         <input type="text" id="건수확인" placeholder="예: 13">
         <button class="b3" id="발송버튼" disabled>승인하고 발송</button>
@@ -282,16 +291,36 @@ $('테스트버튼').onclick = async function () {
 $('건수확인').addEventListener('input', function () {
   $('발송버튼').disabled = !(상태.테스트함 && Number(this.value) === 상태.대상수 && 상태.대상수 > 0);
 });
+// 📅 지금 / 예약 선택
+$('언제').addEventListener('change', function () {
+  var 예약 = this.value === 'later';
+  $('예약시각').style.display = 예약 ? 'block' : 'none';
+  $('예약안내').style.display = 예약 ? 'block' : 'none';
+  $('발송버튼').textContent = 예약 ? '승인하고 예약' : '승인하고 발송';
+});
 $('발송버튼').onclick = async function () {
-  if (!confirm(상태.대상수 + '명에게 실제로 발송합니다.\n되돌릴 수 없습니다. 진행할까요?')) return;
-  this.disabled = true; 글('발송결과', '<div class="작게">발송 중… 창을 닫지 마세요.</div>');
+  var 예약모드 = $('언제').value === 'later';
+  var 예약값 = $('예약시각').value;
+  if (예약모드 && !예약값) { 글('발송결과', '<div class="막음">예약할 날짜·시간을 골라주세요.</div>'); return; }
+  if (!confirm(상태.대상수 + '명에게 ' + (예약모드 ? ('\n' + 예약값.replace('T', ' ') + ' 에 발송을 예약합니다.') : '지금 실제로 발송합니다.\n되돌릴 수 없습니다.') + '\n진행할까요?')) return;
+  this.disabled = true; 글('발송결과', '<div class="작게">' + (예약모드 ? '예약 거는 중…' : '발송 중… 창을 닫지 마세요.') + '</div>');
   var 몸통 = {
     본문: 상태.본문, 광고: 상태.광고, 수신거부: 상태.수신거부, 조건: 상태.조건,
     humanApproval: true, tested: true, confirmedCount: 상태.대상수,   // ★이중 채널 중 하나 + 전제 조건
   };
   if (상태.직접대상) 몸통.직접대상 = 상태.직접대상;                     // 📎 업로드 파일 대상
-  var d = await 보내기('/api/campaign/send', 몸통, true);
-  if (!d || d.ok === false) { 글('발송결과', '<div class="막음">발송하지 못했어요 — ' + ((d && d.error) || '') + '</div>'); this.disabled = false; return; }
+  if (예약모드) 몸통.예약시각 = 예약값 + ':00+09:00';                    // ★한국시간 오프셋을 붙여 보낸다(서버가 UTC라도 안 어긋나게)
+
+  var d = await 보내기(예약모드 ? '/api/campaign/schedule' : '/api/campaign/send', 몸통, true);
+  if (!d || d.ok === false) { 글('발송결과', '<div class="막음">' + (예약모드 ? '예약하지 못했어요' : '발송하지 못했어요') + ' — ' + ((d && d.error) || '') + '</div>'); this.disabled = false; return; }
+  if (예약모드) {
+    상태.예약그룹 = d.groupId;
+    글('발송결과', '<div class="좋음"><b>📅 ' + d.표시 + '에 ' + d.예약수 + '명 발송이 예약됐어요.</b>'
+      + (d.실패 ? '<br><span class="작게">예약 실패 ' + d.실패 + '건</span>' : '')
+      + '<br><span class="작게">그 전까지는 아래에서 취소할 수 있어요.</span>'
+      + '<div style="margin-top:9px"><button class="b2" onclick="예약취소()">이 예약 취소하기</button></div></div>');
+    this.disabled = false; return;
+  }
   var h = '<div class="좋음"><b>' + d.대상수 + '명 중 ' + d.성공 + '건 성공 · ' + d.실패 + '건 실패</b> (' + d.걸린초 + '초)<br><span class="작게">실제로 센 숫자입니다.</span></div>';
   if (d.실패목록 && d.실패목록.length) {
     h += '<div class="샘플"><b>실패 목록</b> <span class="작게">(재발송에 쓰세요)</span><table><tr><th>이름</th><th>번호</th><th>사유</th></tr>';
@@ -299,6 +328,15 @@ $('발송버튼').onclick = async function () {
     h += '</table></div>';
   }
   글('발송결과', h);
+};
+
+// 📅 예약 취소 — ★취소된 척 하지 않는다. 서버가 실패하면 실패라고 말한다.
+window.예약취소 = async function () {
+  if (!상태.예약그룹) { 글('발송결과', '<div class="막음">취소할 예약을 찾지 못했어요.</div>'); return; }
+  if (!confirm('예약을 취소할까요?')) return;
+  var d = await 보내기('/api/campaign/schedule/cancel', { groupId: 상태.예약그룹 }, false);
+  if (d && d.취소됨) { 상태.예약그룹 = null; 글('발송결과', '<div class="좋음">' + d.안내 + '</div>'); }
+  else 글('발송결과', '<div class="막음">취소하지 못했어요 — ' + ((d && d.error) || '') + '</div>');
 };
 </script>
 </body>

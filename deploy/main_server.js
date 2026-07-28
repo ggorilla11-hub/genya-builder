@@ -4044,6 +4044,83 @@ app.post('/api/campaign/parse-file', async (req, res) => {
       안내: '파일은 서버에 저장하지 않았어요. 이 창을 닫으면 사라집니다.' });
   } catch (e) { res.status(500).json({ ok: false, error: '파일을 읽지 못했어요 — ' + e.message }); }
 });
+// 📅 솔라피 예약 발송(회원 키) — ★지정 시각에 솔라피가 보낸다. 우리 서버는 번호를 저장하지 않는다.
+async function _scheduleCampaignSms(ma, 메시지들, 예약ISO) {
+  const { apiKey, apiSecret, from } = await _resolveSolapi(ma && ma._email);
+  if (!apiKey || !apiSecret) return { ok: false, error: '문자 발송을 위해 솔라피 키를 등록해주세요 (지니야 설정 → 문자 연결).' };
+  if (!from) return { ok: false, error: '문자 발송을 위해 솔라피 발신번호를 등록해주세요.' };
+  const date = new Date().toISOString(); const salt = crypto.randomBytes(32).toString('hex');
+  const signature = crypto.createHmac('sha256', apiSecret).update(date + salt).digest('hex');
+  const auth = `HMAC-SHA256 apiKey=${apiKey}, date=${date}, salt=${salt}, signature=${signature}`;
+  const messages = 메시지들.map((m) => ({ to: m.to, from, text: m.text }));
+  const r = await fetch('https://api.solapi.com/messages/v4/send-many/detail', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: auth },
+    body: JSON.stringify({ messages, scheduledDate: 예약ISO }),
+  });
+  const out = await r.json().catch(() => ({}));
+  const gid = out && (out.groupId || (out.groupInfo && out.groupInfo.groupId));
+  const 실패 = (out && Array.isArray(out.failedMessageList)) ? out.failedMessageList.length : 0;
+  if (r.ok && gid) return { ok: true, groupId: gid, 예약수: messages.length - 실패, 실패 };
+  return { ok: false, error: (out && (out.errorMessage || out.statusMessage || out.message)) || ('솔라피 오류(HTTP ' + r.status + ')') };
+}
+// 📅 예약 취소 — 솔라피 그룹 예약 해제. ★실패하면 정직히 알린다(취소된 척 안 함).
+async function _cancelScheduledSms(ma, groupId) {
+  const { apiKey, apiSecret } = await _resolveSolapi(ma && ma._email);
+  if (!apiKey || !apiSecret) return { ok: false, error: '솔라피 키가 없어요.' };
+  const date = new Date().toISOString(); const salt = crypto.randomBytes(32).toString('hex');
+  const signature = crypto.createHmac('sha256', apiSecret).update(date + salt).digest('hex');
+  const auth = `HMAC-SHA256 apiKey=${apiKey}, date=${date}, salt=${salt}, signature=${signature}`;
+  const r = await fetch(`https://api.solapi.com/messages/v4/groups/${encodeURIComponent(groupId)}/schedule`, {
+    method: 'DELETE', headers: { Authorization: auth },
+  });
+  const out = await r.json().catch(() => ({}));
+  if (r.ok) return { ok: true, out };
+  return { ok: false, error: (out && (out.errorMessage || out.statusMessage || out.message)) || ('취소 실패(HTTP ' + r.status + ')') };
+}
+// ④ 예약 발송 — ★[승인] 버튼만. 즉시 발송과 똑같은 이중 채널·하드가드.
+app.post('/api/campaign/schedule', async (req, res) => {
+  const ma = gateGoogle(req, res); if (!ma) return;
+  const b = req.body || {};
+  const _hdr = String(req.headers['x-human-approval'] || '') === '1';
+  const who = (sessionOf(req) || {}).email || '(unknown)';
+  if (!(_hdr && b.humanApproval === true)) {
+    console.log('[🔒감사·캠페인예약]', _seoul().today, _seoul().now, '· 요청자=' + who, '· 결과=★차단:버튼아님');
+    return res.status(403).json({ ok: false, 예약함: false, error: '예약도 화면 [승인] 버튼으로만 걸 수 있어요.' });
+  }
+  try {
+    ma._email = who;
+    const t = await sheetsCrud.loadTable(ma);
+    let names = null, label = '';
+    if (b.조건) { const g = _expiryPick(b.조건, t) || _resolveCardGroup(b.조건, t, []); names = g.names; label = g.label; }
+    const prep = campaign.예약준비({ table: t, names, label, 본문: b.본문, 광고: !!b.광고, 수신거부: b.수신거부,
+      직접대상: Array.isArray(b.직접대상) ? b.직접대상 : null,
+      예약시각: b.예약시각, humanApproval: true, tested: !!b.tested, confirmedCount: b.confirmedCount });
+    if (!prep.ok) {
+      console.log('[🔒감사·캠페인예약]', _seoul().today, _seoul().now, '· 요청자=' + who, '· 차단=' + prep.차단);
+      return res.json({ ok: false, 예약함: false, 차단: prep.차단, 대상수: prep.대상수, error: prep.error });
+    }
+    const r = await _scheduleCampaignSms(ma, prep.messages, prep.예약ISO);
+    console.log('[🔒감사·캠페인예약]', _seoul().today, _seoul().now, '· 요청자=' + who,
+      '· 대상=' + prep.대상수, '· 예약=' + prep.표시, '· 결과=' + (r.ok ? '성공(' + r.groupId + ')' : '실패:' + r.error));
+    if (!r.ok) return res.json({ ok: false, 예약함: false, error: r.error });
+    res.json({ ok: true, 예약함: true, groupId: r.groupId, 대상수: prep.대상수, 예약수: r.예약수, 실패: r.실패,
+      표시: prep.표시, 안내: `${prep.표시}에 ${r.예약수}명 발송이 예약됐어요. 그 전까지는 취소할 수 있습니다.` });
+  } catch (e) { res.status(500).json({ ok: false, 예약함: false, error: e.message }); }
+});
+// ④-2 예약 취소
+app.post('/api/campaign/schedule/cancel', async (req, res) => {
+  const ma = gateGoogle(req, res); if (!ma) return;
+  const who = (sessionOf(req) || {}).email || '(unknown)';
+  try {
+    ma._email = who;
+    const gid = String((req.body || {}).groupId || '');
+    if (!gid) return res.json({ ok: false, error: '취소할 예약을 찾지 못했어요.' });
+    const r = await _cancelScheduledSms(ma, gid);
+    console.log('[🔒감사·캠페인예약취소]', _seoul().today, _seoul().now, '· 요청자=' + who, '· id=' + gid, '· 결과=' + (r.ok ? '취소됨' : '실패:' + r.error));
+    res.json(r.ok ? { ok: true, 취소됨: true, 안내: '예약을 취소했어요. 발송되지 않습니다.' }
+      : { ok: false, 취소됨: false, error: r.error + ' — 솔라피 콘솔에서도 취소하실 수 있어요.' });
+  } catch (e) { res.status(500).json({ ok: false, 취소됨: false, error: e.message }); }
+});
 // ② 소량 테스트 — 대표님 번호로 1통만(전체 발송의 전제 조건)
 app.post('/api/campaign/test', async (req, res) => {
   const ma = gateGoogle(req, res); if (!ma) return;
