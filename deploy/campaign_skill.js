@@ -27,7 +27,22 @@ let _deps = { sendSms: null, sendGmail: null };
 function init(deps) { _deps = Object.assign(_deps, deps || {}); }
 
 const _마스크 = (p) => { const s = String(p || '').replace(/[^0-9]/g, ''); return s.length < 7 ? '***' : s.slice(0, 3) + '****' + s.slice(-4); };
-const _정규화 = (p) => String(p || '').replace(/[^0-9]/g, '');
+// ★2026-07-29 대표님 실측: 고객 엑셀 12줄이 "형식 오류 11건"으로 통째로 버려졌다.
+//   원인 — 엑셀이 전화번호를 ★숫자로 저장하면 앞의 0이 사라진다(01011112222 → 1011112222).
+//   국가번호(+82)·작은따옴표·공백·하이픈도 실제 파일에 흔하다.
+//   ★정상 번호를 형식 오류로 버리지 않는다. 넓게 받아 하나의 표준형(01xxxxxxxxx)으로 만든다.
+const _정규화 = (p) => {
+  let s = String(p == null ? '' : p).trim();
+  s = s.replace(/^['"`\s]+/, '');            // 엑셀 텍스트 강제용 앞 따옴표
+  s = s.replace(/[^\d+]/g, '');              // 하이픈·공백·점·괄호 제거(숫자와 +만)
+  if (/^\+?82/.test(s)) s = '0' + s.replace(/^\+?82/, '');   // +82 10 … → 010 …
+  s = s.replace(/\D/g, '');
+  if (s.length === 10 && /^1[016789]/.test(s)) s = '0' + s;  // ★엑셀이 날린 앞 0을 되살린다
+  return s;
+};
+const _휴대폰 = (s) => /^01[016789]\d{7,8}$/.test(String(s || ''));
+// 왜 오류인지 대표님이 보실 수 있게 — ★원문을 마스킹해 보여준다(개인정보 노출 없이 원인 파악)
+const _원문마스크 = (v) => { const s = String(v == null ? '' : v).trim(); return s.length <= 4 ? s : s.slice(0, 3) + '****' + s.slice(-2); };
 function _kst() { const d = new Date(Date.now() + 9 * 3600e3); return { 시: d.getUTCHours(), 날짜: d.toISOString().slice(0, 10) }; }
 
 /** 명단 행에서 연락처·이름 뽑기 (칸 이름이 제각각이라 넓게 본다) */
@@ -35,7 +50,7 @@ function _연락처(row) {
   for (const k of Object.keys(row || {})) {
     if (!/(연락처|휴대폰|핸드폰|전화|번호|폰|mobile|phone)/i.test(k)) continue;
     const v = _정규화(row[k]);
-    if (v.length >= 10 && v.length <= 11 && v.startsWith('01')) return v;
+    if (_휴대폰(v)) return v;                       // ★시트 명단도 같은 정규화를 쓴다(기준이 갈리지 않게)
   }
   return '';
 }
@@ -58,6 +73,7 @@ function 대상고르기(table, opts) {
   if (Array.isArray(o.직접대상) && o.직접대상.length) {
     const 대상 = [], 본 = new Set();
     let 형식오류 = 0, 빈칸 = 0;
+    const 오류샘플 = [];
     for (const x of o.직접대상) {
       const raw = (x && x.번호 !== undefined) ? x.번호 : x;
       const 원문 = String(raw == null ? '' : raw).trim();
@@ -65,12 +81,16 @@ function 대상고르기(table, opts) {
       //   합쳐서 "빈 번호"라고 하면 대표님께 사실과 다르게 보고하는 것이 된다.
       if (!원문) { 빈칸++; continue; }
       const p = _정규화(원문);
-      if (!(p.length >= 10 && p.length <= 11 && p.startsWith('01'))) { 형식오류++; continue; }
+      if (!_휴대폰(p)) {
+        형식오류++;
+        if (오류샘플.length < 3) 오류샘플.push(_원문마스크(원문));   // ★왜 오류인지 보시라고
+        continue;
+      }
       if (본.has(p)) continue;                      // 중복 제거(같은 분께 두 번 안 감)
       본.add(p);
       대상.push({ 번호: p, 이름: (x && x.이름) || '고객' });
     }
-    return { 대상, 전체: o.직접대상.length, 연락처없음: 빈칸, 형식오류,
+    return { 대상, 전체: o.직접대상.length, 연락처없음: 빈칸, 형식오류, 오류샘플,
       중복제거: o.직접대상.length - 빈칸 - 형식오류 - 대상.length,
       라벨: o.label || '업로드한 파일' };
   }

@@ -213,6 +213,8 @@ $('파일').addEventListener('change', function () {
     if (d.빈칸 > 0) 뺀것.push('빈 번호 ' + d.빈칸 + '건');
     if (d.형식오류 > 0) 뺀것.push('형식 오류 ' + d.형식오류 + '건');
     if (뺀것.length) h += '<br><span class="작게">제외: ' + 뺀것.join(' · ') + '</span>';
+    // ★왜 오류인지 보여준다 — 대표님이 파일을 고치실 수 있게(원문은 마스킹)
+    if (d.오류샘플 && d.오류샘플.length) h += '<br><span class="작게">오류 예: ' + d.오류샘플.join(' · ') + ' — 휴대폰 번호가 아닌 값이에요(유선번호·글자 등)</span>';
     h += '<br><span class="작게">' + d.안내 + '</span></div>';
     글('파일결과', h);
   };

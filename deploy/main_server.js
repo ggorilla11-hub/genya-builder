@@ -4039,7 +4039,7 @@ app.post('/api/campaign/parse-file', async (req, res) => {
     const sel = campaign.대상고르기(null, { 직접대상: 목록, label: 이름 || '업로드한 파일' });
     console.log(`[📣캠페인 파일] ${이름} · 읽은 줄 ${목록.length} · 보낼 수 있는 ${sel.대상.length}명 · ★서버 저장 0`);
     res.json({ ok: true, 파일명: 이름, 읽은줄: 목록.length, 대상수: sel.대상.length,
-      빈칸: sel.연락처없음, 형식오류: sel.형식오류, 중복제거: sel.중복제거,
+      빈칸: sel.연락처없음, 형식오류: sel.형식오류, 중복제거: sel.중복제거, 오류샘플: sel.오류샘플 || [],
       대상: sel.대상,                                   // ★화면 메모리로만 돌아간다 — 서버에 저장하지 않음
       안내: '파일은 서버에 저장하지 않았어요. 이 창을 닫으면 사라집니다.' });
   } catch (e) { res.status(500).json({ ok: false, error: '파일을 읽지 못했어요 — ' + e.message }); }
@@ -4442,6 +4442,10 @@ app.get('/approval', (req, res) => res.sendFile(path.join(__dirname, 'approval.h
 // 📣 캠페인 발송 화면 — ★독립 페이지(genya.html 무접촉). 로그인해야 열린다.
 app.get(['/campaign', '/캠페인'], (req, res) => {
   if (!sessionOf(req)) return res.redirect('/login');
+  // ★2026-07-29 대표님 실측: 예약 칸을 배포했는데 화면에 안 보였다 → ★브라우저가 옛 파일을 캐시한 것.
+  //   기존 화면(genya.html)은 no-store를 쓰는데 여기만 빠져 있었다. 이제 항상 새 화면을 받는다.
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
   res.sendFile(path.join(__dirname, 'campaign.html'));
 });
 // 🗂️ 한글 주소 /결재함: 이 Express 버전은 유니코드 리터럴 라우트를 매칭 못 함(기존 /이용약관·/개인정보처리방침도 동일 404) → path-to-regexp 우회, 디코드 후 직접 매핑. /결재함만 가로채고 나머진 통과.
