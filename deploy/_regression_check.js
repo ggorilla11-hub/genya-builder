@@ -145,6 +145,30 @@ function 로컬확인() {
   확인('★발송: 승인 라우트만이 유일 경로', 있나(/api\/approval\/act/));
   확인('★발송: humanApproval 가드 살아있음', 있나(/humanApproval/));
 
+  // ── 7-2) 📣 캠페인(명단 일괄) 발송 — ★되돌릴 수 없는 실발송이라 가장 엄하게 ──
+  try {
+    const camp = require('./campaign_skill');
+    let 보냄 = 0;
+    camp.init({ sendSms: async () => { 보냄++; return { ok: true, sent: true }; } });
+    const t = { rows: [{ 고객명: '가', 연락처: '01011112222' }, { 고객명: '나', 연락처: '01033334444' }] };
+    보냄 = 0; camp.미리보기(t, { 본문: '안내', 광고: false });
+    확인('★캠페인: 미리보기는 한 통도 안 보냄', 보냄 === 0);
+    (async () => {})();  // 아래 동기 확인만(비동기는 별도 시험 파일에서 21/21 확인)
+    확인('★캠페인: 승인 버튼 하드가드 코드 있음', /humanApproval !== true/.test(fs.readFileSync(path.join(__dirname, 'campaign_skill.js'), 'utf8')));
+    const csrc = fs.readFileSync(path.join(__dirname, 'campaign_skill.js'), 'utf8');
+    확인('★캠페인: 소량 테스트 안 하면 거부', /차단: '테스트안함'/.test(csrc));
+    확인('★캠페인: 대량 건수 재확인', /차단: '건수재확인'/.test(csrc));
+    확인('★캠페인: 광고 법규 자동((광고)·수신거부)', /\(광고\)/.test(csrc) && /무료수신거부/.test(csrc));
+    확인('★캠페인: 야간 광고 차단', /야간시작|야간끝/.test(csrc));
+    확인('★캠페인: 번호 마스킹(개인정보)',
+      /번호: _마스크\(p\.번호\)/.test(csrc) && /번호: _마스크\(사람\.번호\)/.test(csrc),
+      '미리보기 샘플·실패목록 둘 다 마스킹');
+    확인('★캠페인: 발송 라우트가 이중 채널 요구',
+      /x-human-approval[\s\S]{0,200}b\.humanApproval === true/.test(src), '헤더+본문 둘 다');
+    확인('★캠페인: 기존 발송 함수 재사용(안전모드 자동 적용)',
+      /campaign\.init\(\{ sendSms: _sendSmsFor/.test(src), '따로 만들면 안전모드를 안 탄다');
+  } catch (e) { 확인('캠페인 모듈', false, e.message); }
+
   // ── 8) 22블록 핵심 함수 생존 ──
   for (const fn of ['cardFlags', '_resolveCardGroup', '_isExpired', '_rowName'])
     확인('22블록: ' + fn + ' 함수 살아있음', !!떼어오기(fn));

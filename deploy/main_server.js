@@ -25,6 +25,7 @@ const genyaMem = require('./genya_mem_module');               // 🧠 MEM 하이
 const personalMem = require('./personal_memory');             // 🧠 개인화 벡터 메모리(v4.0 Step2-A · Pinecone 대표·고객 이중 네임스페이스). PINECONE_API_KEY 없으면 no-op.
 const sheetsCrud = require('./sheets_crud_skill');            // 🗂️ Step 2-B · 시트 자연어 CRUD(독립 모듈 · 하이브리드 라우터 무접촉)
 const approval = require('./approval_skill');                 // 🗂️ Step 2-C · 결재함 백엔드(독립 모듈 · 라우터 무접촉)
+const campaign = require('./campaign_skill');                 // 📣 캠페인(명단 일괄) 발송(독립 모듈 · 승인 버튼만 · 기존 발송함수 재사용)
 const rosterImport = require('./roster_import');              // 📇 Step 2-F · 명단 업로드→회원 시트 저장(독립 모듈)
 const customEvents = require('./custom_events');              // ⭐ 대표가 직접 정의하는 이벤트(독립 모듈·기본 6개 무접촉)
 const _openai = new (require('openai'))({ apiKey: process.env.OPENAI_API_KEY });
@@ -3965,6 +3966,59 @@ async function _sendGmailFor(ma, to, subject, text) {
   } catch (e) { return { ok: false, sent: false, error: e.message }; }
 }
 approval.init({ anthropic: _anthropic, model: MODEL_DEEP, getMemberSheet: findOrCreateMemberSheet, ensureTab, sendSms: _sendSmsFor, sendGmail: _sendGmailFor });
+// ═══ 📣 캠페인(명단 일괄) 발송 — 2026-07-28 대표님 승인 · 독립 모듈(기존 코드 무접촉·호출만) ═══
+//   ★발송 함수는 기존 것을 그대로 쓴다 → 안전모드·화이트리스트가 자동으로 걸린다.
+campaign.init({ sendSms: _sendSmsFor, sendGmail: _sendGmailFor });
+// ① 미리보기 — ★발송 0. 대상 수·내용·비용·법규 점검만.
+app.post('/api/campaign/preview', async (req, res) => {
+  const ma = gateGoogle(req, res); if (!ma) return;
+  try {
+    const b = req.body || {};
+    const t = await sheetsCrud.loadTable(ma);
+    // 조건(만기·생일 등)으로 고르실 땐 ★대화·카드와 같은 함수로 대상을 정한다(기준이 갈리지 않게)
+    let names = null, label = '';
+    if (b.조건) {
+      const g = _expiryPick(b.조건, t) || _resolveCardGroup(b.조건, t, []);
+      names = g.names; label = g.label;
+    }
+    const out = campaign.미리보기(t, { 본문: b.본문, 광고: !!b.광고, 수신거부: b.수신거부, names, label });
+    console.log(`[📣캠페인 미리보기] 대상 ${out.대상수}명 · 광고=${out.광고} · ★발송 0 · ${(sessionOf(req) || {}).email || ''}`);
+    res.json(out);
+  } catch (e) { if (scopeGate(e, res, 'sheets')) return; res.status(500).json({ ok: false, error: e.message }); }
+});
+// ② 소량 테스트 — 대표님 번호로 1통만(전체 발송의 전제 조건)
+app.post('/api/campaign/test', async (req, res) => {
+  const ma = gateGoogle(req, res); if (!ma) return;
+  try {
+    const b = req.body || {};
+    ma._email = (sessionOf(req) || {}).email || '';
+    const r = await campaign.테스트발송(ma, { 본문: b.본문, 광고: !!b.광고, 수신거부: b.수신거부, 테스트번호: b.테스트번호, 테스트이름: b.테스트이름 });
+    console.log(`[📣캠페인 테스트] ${r.받는번호 || ''} · 성공=${!!r.발송함} · 1통만`);
+    res.json(r);
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+// ③ 실제 캠페인 발송 — ★[승인] 버튼만. 이중 채널(헤더 + 본문) 둘 다 있어야 통과.
+app.post('/api/campaign/send', async (req, res) => {
+  const ma = gateGoogle(req, res); if (!ma) return;
+  const b = req.body || {};
+  const _hdr = String(req.headers['x-human-approval'] || '') === '1';
+  const who = (sessionOf(req) || {}).email || '(unknown)';
+  if (!(_hdr && b.humanApproval === true)) {
+    console.log('[🔒감사·캠페인]', _seoul().today, _seoul().now, '· 요청자=' + who, '· 결과=★차단:버튼아님');
+    return res.status(403).json({ ok: false, 발송함: false, error: '대량 발송은 화면 [승인] 버튼으로만 나갑니다.' });
+  }
+  try {
+    ma._email = who;
+    const t = await sheetsCrud.loadTable(ma);
+    let names = null, label = '';
+    if (b.조건) { const g = _expiryPick(b.조건, t) || _resolveCardGroup(b.조건, t, []); names = g.names; label = g.label; }
+    const r = await campaign.발송(ma, { table: t, names, label, 본문: b.본문, 광고: !!b.광고, 수신거부: b.수신거부,
+      humanApproval: true, tested: !!b.tested, confirmedCount: b.confirmedCount });
+    console.log('[🔒감사·캠페인]', _seoul().today, _seoul().now, '· 요청자=' + who,
+      '· 대상=' + (r.대상수 || 0), '· 성공=' + (r.성공 || 0), '· 실패=' + (r.실패 || 0), '· 차단=' + (r.차단 || '없음'));
+    res.json(r);
+  } catch (e) { res.status(500).json({ ok: false, 발송함: false, error: e.message }); }
+});
 
 app.post('/api/approval/create', async (req, res) => { try { const ma = gateGoogle(req, res); if (!ma) return; ma._email = (sessionOf(req) || {}).email || ''; await _attachPrefs(ma); res.json(await approval.create(ma, req.body || {})); } catch (e) { res.status(500).json({ ok: false, error: e.message }); } });
 app.get('/api/approval/list', async (req, res) => { try { const ma = gateGoogle(req, res); if (!ma) return; res.json(await approval.list(ma, { status: req.query.status })); } catch (e) { res.status(500).json({ ok: false, error: e.message }); } });
