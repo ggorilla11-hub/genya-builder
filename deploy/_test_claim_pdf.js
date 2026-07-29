@@ -104,6 +104,27 @@ console.log('\n━━━ 5. 4개 섹션이 다 나오는가 ━━━');
   .forEach(([라벨, 값]) => T(`${라벨}`, () => has(텍스트, 값)));
 T('빈칸 표시("증빙에서 입력 필요")도 한글로 나온다', () => has(텍스트, '증빙에서입력필요'));
 
+console.log('\n━━━ 5-2. ★폰트가 진짜 PDF 안에 박혔는가 (글자 추출로는 알 수 없는 것) ━━━');
+// ★2026-07-29 회장님 지적: pdf-parse가 "글자 읽힘"이라 해도 ★화면 렌더링은 깨질 수 있다.
+//   글자 추출은 ToUnicode 표만 보므로, 폰트가 안 박혀도 통과할 수 있다.
+//   → PDF 구조를 직접 뒤져서 "글자꼴이 실제로 들어있는지"를 확인한다.
+T('★NanumGothic 이 PDF에 임베드돼 있다', () => {
+  const s = buf.toString('latin1');
+  const names = s.match(/[A-Z]{6}\+[A-Za-z0-9\-]+/g) || [];
+  ok(names.some((n) => /NanumGothic/i.test(n)), '임베드된 폰트: ' + (names.join(', ') || '★없음'));
+});
+T('★FontFile2 — 트루타입 글자꼴이 실제로 파일에 삽입됐다', () => {
+  ok(/FontFile2/.test(buf.toString('latin1')), '글자꼴이 안 들어있음 → 뷰어에서 깨진다');
+});
+T('★CIDFontType2 — 한글용 CID 인코딩으로 들어갔다', () => {
+  ok(/CIDFontType2/.test(buf.toString('latin1')), '한글 CID 인코딩이 아님');
+});
+T('★본문이 기본폰트(Helvetica)로 떨어지지 않았다', () => {
+  const s = buf.toString('latin1');
+  const helv = (s.match(/BaseFont\s*\/Helvetica/g) || []).length;
+  ok(helv === 0, 'Helvetica가 ' + helv + '곳 쓰임 — 그 자리 한글은 깨진다');
+});
+
 console.log('\n━━━ 6. 깨진 글자가 섞여 있지 않은가 ━━━');
 T('★한글 자모가 깨진 라틴 문자로 바뀌지 않았다', () => {
   // 깨질 때 나타나는 전형적 문자들(¼ Õ Ø ® Á 등)이 본문에 섞이면 실패
