@@ -17,7 +17,7 @@ const express = require('express');
 const { google } = require('googleapis');
 const { PDFParse } = require('pdf-parse');
 // ★3대 창고 모듈을 한 줄씩 "꽂음"
-const { askYakgwan } = require('./yakgwan_module');           // 📄 약관창고
+const { askYakgwan, 약관질문인가 } = require('./yakgwan_module');  // 📄 약관창고(공용) · 약관질문인가=대화 두뇌가 창고를 부를지 판단
 const skills = require('./skills_index');                 // 🛠️ 스킬창고
 const connectors = require('./connectors_index');     // 🔌 커넥터창고
 const memory = require('./memory_module');                   // 🧠 기억 엔진(회원 시트)
@@ -3454,7 +3454,12 @@ async function orderHandler(req, res) {
         console.log('[🗂️sheetCRUD] runChat 응답 · reply="' + String((rc && rc.reply) || '(빈)').replace(/\n/g, ' ').slice(0, 180) + '" · pending=' + !!(rc && rc.pending));
         out = { kind: '🗂️ 고객명단', text: rc.reply || '무엇을 도와드릴까요?', pending: rc.pending || null, engine: MODEL_DEEP };
       }
-    } else if (/약관|무보험|대물|자기신체|자동차상해|담보|보장.*(뭐|무엇|차이)/.test(q)) {
+    } else if (약관질문인가(q)) {
+      // ★2026-07-29 수정: 예전 조건은 ★자동차보험 시절 낱말만 봤다.
+      //   /약관|무보험|대물|자기신체|자동차상해|담보|보장.*(뭐|무엇|차이)/
+      //   그래서 "현대해상 암진단비 면책기간은?"이 여기 안 걸려 일반 대화로 새 나갔고,
+      //   창고에 현대해상 약관이 26종·163,353개나 있는데 ★"약관을 올려달라"고 답했다(대표님 실측).
+      //   → 판별을 공용 모듈(yakgwan_search)로 옮겼다. 창고가 넓어지면 그 파일만 고치면 된다.
       const r = await askYakgwan(q); out = { kind: '📄 약관창고', text: r.answer, sources: r.sources }; // 공통 지식(구글 불필요)
     } else if (/만기|명단|자산가|고객.*(정리|목록|누구)/.test(q)) {
       if (!canData) { out = needConnect; } else { const s = await connectors.sheet(ma); out = { kind: '🔌 시트 커넥터', text: `7월 만기 ${s.july만기.length}명 · 임박순 ${s.임박순.join(' → ')}\n자산가: ${s.자산가.join(', ')}` }; }
