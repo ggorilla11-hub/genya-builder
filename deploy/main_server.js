@@ -1013,6 +1013,14 @@ app.post('/api/promo/expand', async (req, res) => {
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
+// ═══ 📣 홍보마케팅비서 2단계 — 카피 1건 → 원고 12종 (독립 모듈 · CLAUDE.md 6-2 ⑦) ═══
+//   위의 /api/promo/draft·expand 는 교육생이 쓰는 중이라 한 글자도 안 건드린다.
+//   새 기능은 /api/promo2/* 로 따로 낸다. 이 파일이 바뀌는 건 아래 3줄뿐이다.
+const promoSkill = require('./promo_skill');
+promoSkill.init({ anthropic: _anthropic, model: WS_CHAT_MODEL, sessionOf });
+app.use('/api/promo2', promoSkill.router);
+app.use('/api/promo', promoSkill.router);   // 같은 라우터를 이 이름으로도 연다. 위의 draft·expand가 먼저 등록돼 있어 그대로 이긴다(무접촉).
+
 // ═══ 📥 진단 유입 — 진단·상담 신청자를 표로 (이름·연락처·과정·금액·신청일 + 합계) ═══
 //   ★기존 공개 주소(jenya /api/prospect/leads)에 금액·연락처를 실으면 인터넷에 그대로 노출된다.
 //     그래서 로그인 게이트가 있는 여기에 새로 만든다.

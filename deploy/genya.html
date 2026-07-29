@@ -3487,9 +3487,204 @@ function whRender(){
     h+='</tbody></table><div class="note">📗 이 목록은 <b>시트 「한줄카피」 탭</b>이 원본이에요. 시트에서 고치면 여기 그대로 반영돼요.</div>';
     v.innerHTML=h; return;
   }
+  if(WH_T===2){ v.innerHTML=_wh2Html(); return; }
+  if(WH_T===3){ v.innerHTML=_wh3Html(); return; }
+  if(WH_T===4){ v.innerHTML=_wh4Html(); return; }
   var nm={2:['📝 원고','카피 하나를 채널별 원고 5종으로 자동 변환'],3:['🎬 콘텐츠','원고를 쇼츠·카드뉴스·오디오로 자동 제작 + 퀄리티 게이트'],4:['🚀 발행·분석','예약표에 자동 등록 → 발행 → 유입경로로 성과 집계']}[WH_T];
   v.innerHTML='<h3>'+nm[0]+' <span class="badge" style="background:rgba(147,174,169,.18);color:var(--soft)">'+WH_T+'단계에서 연결</span></h3><div class="empty"><div class="ic">🚧</div>'+nm[1]+'<br><br><span style="font-size:11.5px">아직 안 만들었어요. <b style="color:var(--gold)">숫자 0은 진짜 0</b>이에요 — 꾸며낸 값 아니에요.</span></div>';
 }
+// ══ ★홍보마케팅비서 2·3·4단계 (한 줄 카피 → 원고 → 콘텐츠 → 발행) ══════════
+//    2단계만 서버(/api/promo2/expand12)를 부른다. 3·4단계는 그 결과를 화면에서 가공한다(추가 비용 0).
+//    ★발송은 결재함(/api/approval/create)으로만. 여기서 바로 나가는 발송 코드는 없다.
+var WH_GEN=null;          // 2단계 결과 { copy, results[] }
+var WH_BUSY=false;
+
+function _wh2Html(){
+  var c=_whCur();
+  var 도착지=(c&&c.diagUrl)||'';
+  var h='<h3>📝 2단계 · 원고 12종 만들기 <span class="badge" style="background:rgba(59,143,212,.2);color:var(--blue)">자동</span></h3>';
+  h+='<p style="font-size:12px;color:var(--soft);margin:0 0 10px">한 줄 카피를 넣으면 채널별 원고 12종을 한 번에 만들어요. 채널마다 꼬리표(UTM)가 자동으로 달라져요.</p>';
+  h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">'
+    +'<label style="font-size:11px;color:var(--soft)">서비스<input id="wh2Svc" value="'+_whEsc((c&&c.service)||'부트캠프')+'" style="width:100%;background:#04110F;border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:8px;font-size:12px;font-family:inherit"></label>'
+    +'<label style="font-size:11px;color:var(--soft)">내용<input id="wh2Cnt" value="'+_whEsc((c&&c.name)||'')+'" style="width:100%;background:#04110F;border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:8px;font-size:12px;font-family:inherit"></label>'
+    +'</div>';
+  h+='<label style="font-size:11px;color:var(--soft)">도착지(진단 주소)<input id="wh2Url" value="'+_whEsc(도착지)+'" placeholder="https://..." style="width:100%;background:#04110F;border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:8px;font-size:11.5px;font-family:inherit;margin-bottom:8px"></label>';
+  h+='<textarea id="wh2Copy" rows="2" placeholder="예: 당신이 잠든 사이 AI가 일해요" style="width:100%;background:#04110F;border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:10px;font-size:13px;font-family:inherit;resize:vertical"></textarea>';
+  h+='<button id="wh2Btn" onclick="whGen12()" class="upbtn" style="margin-top:8px;width:100%">원고 12종 만들기</button>';
+  h+='<div id="wh2Out" style="margin-top:12px">'+(WH_GEN?_wh2Result():'')+'</div>';
+  return h;
+}
+
+function _wh2Result(){
+  if(!WH_GEN) return '';
+  var g=WH_GEN, ok=g.results.filter(function(r){return !r.error;}).length;
+  var 범위=g.results.filter(function(r){return r.inRange;}).length;
+  var 금지=g.results.filter(function(r){return r.banned;});
+  var h='<div class="note"><b>'+ok+'/'+g.results.length+'종 생성</b> · 목표 ±20% 안 '+범위+'종'
+    +(g.saveError?'<br><span style="color:#FFB4A5">⚠ '+_whEsc(g.saveError)+'</span>':'<br>시트 저장 '+g.saved+'행')
+    +(금지.length?'<br><span style="color:#FFB4A5">⚠ 확인 필요(지어낸 표현일 수 있어요): '+금지.map(function(r){return _whEsc(r.label+'—'+r.banned);}).join(' · ')+'</span>':'')+'</div>';
+  h+='<table><thead><tr><th style="width:150px">종류</th><th style="width:64px">글자</th><th style="width:56px">달성</th><th style="width:56px">보정</th><th>보기</th></tr></thead><tbody>';
+  g.results.forEach(function(r,i){
+    h+='<tr><td>'+_whEsc(r.label)+'</td><td>'+(r.chars||0)+'</td>'
+      +'<td style="color:'+(r.inRange?'var(--green)':'#FFB4A5')+'">'+(r.rate||0)+'%</td>'
+      +'<td style="color:var(--soft)">'+_whEsc(r.fixed||'—')+'</td>'
+      +'<td>'+(r.error?'<span style="color:#FFB4A5">실패</span>':'<a onclick="whShow('+i+')" style="cursor:pointer;color:var(--gold)">펼치기</a> · <a onclick="whCopy('+i+')" style="cursor:pointer;color:var(--blue)">복사</a>')+'</td></tr>';
+    h+='<tr id="whR'+i+'" style="display:none"><td colspan="5"><div style="white-space:pre-wrap;font-size:11.5px;line-height:1.65;background:var(--panel2);padding:10px;border-radius:8px;max-height:280px;overflow:auto">'+_whEsc(r.text||r.error||'')+'</div><div style="font-size:10px;color:var(--soft);margin-top:4px;word-break:break-all">'+_whEsc(r.url||'')+'</div></td></tr>';
+  });
+  return h+'</tbody></table>';
+}
+
+function whShow(i){ var e=document.getElementById('whR'+i); if(e) e.style.display=(e.style.display==='none'?'table-row':'none'); }
+function whCopy(i){ var r=WH_GEN&&WH_GEN.results[i]; if(!r)return; var t=(r.text||'')+'\n\n'+(r.url||'');
+  try{ navigator.clipboard.writeText(t).then(function(){ toast(r.label+' 복사했어요'); }); }catch(e){ toast('복사 실패'); } }
+
+function whGen12(){
+  if(WH_BUSY){ toast('만드는 중이에요'); return; }
+  var copy=(document.getElementById('wh2Copy')||{}).value||'';
+  var url=(document.getElementById('wh2Url')||{}).value||'';
+  if(!copy.trim()){ toast('한 줄 카피를 넣어주세요'); return; }
+  if(!url.trim()){ toast('도착지 주소를 넣어주세요'); return; }
+  var c=_whCur();
+  var body={ key:(c&&c.key)||'direct', copyNo:1, copy:copy.trim(), campaign:{
+    service:(document.getElementById('wh2Svc')||{}).value||'부트캠프',
+    content:(document.getElementById('wh2Cnt')||{}).value||'',
+    landing:url.trim(), facts:'' } };
+  WH_BUSY=true;
+  var b=document.getElementById('wh2Btn'); if(b){ b.disabled=true; b.textContent='만드는 중… (1분쯤 걸려요)'; }
+  fetch('/api/promo2/expand12',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify(body)})
+    .then(function(r){return r.json();})
+    .then(function(j){
+      if(!j.ok) throw new Error(j.error||'실패');
+      WH_GEN=j;
+      var o=document.getElementById('wh2Out'); if(o) o.innerHTML=_wh2Result();
+      whSetPipe2();
+      toast('원고 '+j.results.filter(function(r){return !r.error;}).length+'종 만들었어요');
+    })
+    .catch(function(e){ toast('만들지 못했어요: '+e.message); })
+    .then(function(){ WH_BUSY=false; var b2=document.getElementById('wh2Btn'); if(b2){ b2.disabled=false; b2.textContent='다시 만들기'; } });
+}
+
+// 2단계 카운터를 실제 숫자로(꾸며낸 값 아님)
+function whSetPipe2(){
+  if(!WH_GEN) return;
+  var n=WH_GEN.results.filter(function(r){return !r.error;}).length;
+  var c2=document.getElementById('whC2'), b2=document.getElementById('whB2');
+  if(c2) c2.innerHTML=n+'<small>/12</small>';
+  if(b2) b2.style.width=Math.round(n/12*100)+'%';
+}
+
+function _whFind(kind){ if(!WH_GEN) return null; return WH_GEN.results.filter(function(r){return r.kind===kind;})[0]||null; }
+
+// ── 3단계 · 콘텐츠 (2단계 결과를 화면에서 가공 · 추가 API 호출 0) ──────────
+function _wh3Html(){
+  if(!WH_GEN) return '<div class="empty"><div class="ic">📝</div>먼저 <b style="color:var(--gold)">2단계</b>에서 원고를 만들어 주세요.</div>';
+  var blog=_whFind('blog'), card=_whFind('cardnews'), img=_whFind('image');
+  var h='<h3>🎬 3단계 · 콘텐츠 만들기</h3><p style="font-size:12px;color:var(--soft);margin:0 0 10px">2단계 원고로 바로 만들어요. 추가 비용 없어요.</p>';
+  h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">'
+    +'<button class="upbtn" onclick="whBlogHtml()" '+(blog?'':'disabled')+'>📝 블로그 글 내려받기</button>'
+    +'<button class="upbtn" onclick="whCardNews()" '+(card?'':'disabled')+'>🖼️ 카드뉴스 10장 만들기</button>'
+    +'</div>';
+  if(img) h+='<div class="note"><b>🎨 그림 지시문</b> — 미드저니·DALL-E에 붙여 쓰세요<div style="white-space:pre-wrap;font-size:11.5px;line-height:1.6;margin-top:6px;max-height:200px;overflow:auto">'+_whEsc(img.text)+'</div><button class="upbtn" style="margin-top:6px" onclick="whCopy('+WH_GEN.results.indexOf(img)+')">복사</button></div>';
+  h+='<div class="note"><b>🎥 영상·오디오</b> — 대표님이 찍어서 올리시면 3단계 통과예요(AI가 만들지 않아요).<br>'
+    +'<input type="file" accept="video/*,audio/*" onchange="whAttach(this)" style="margin-top:6px;font-size:11.5px"><span id="wh3Att" style="font-size:11.5px;color:var(--soft)"></span></div>';
+  h+='<div id="wh3Out" style="margin-top:10px"></div>';
+  return h;
+}
+function whAttach(el){ var f=el.files&&el.files[0]; var s=document.getElementById('wh3Att');
+  if(f&&s){ s.textContent=' ✓ '+f.name+' ('+Math.round(f.size/1024/1024*10)/10+'MB) — 첨부 확인'; toast('영상 첨부 확인했어요'); } }
+
+function whBlogHtml(){
+  var b=_whFind('blog'); if(!b){ toast('블로그 원고가 없어요'); return; }
+  var body=_whEsc(b.text).replace(/\n/g,'<br>');
+  var html='<!doctype html><meta charset="utf-8"><title>'+_whEsc(WH_GEN.copy)+'</title>'
+    +'<body style="max-width:720px;margin:40px auto;padding:0 16px;font-family:system-ui,sans-serif;line-height:1.8;color:#222">'
+    +body+'<p><a href="'+_whEsc(b.url)+'">1분 무료 진단 받기</a></p></body>';
+  _whDownload(html,'블로그_'+Date.now()+'.html','text/html');
+  toast('블로그 글을 내려받았어요');
+}
+
+function whCardNews(){
+  var c=_whFind('cardnews'); if(!c){ toast('카드뉴스 원고가 없어요'); return; }
+  var lines=c.text.split(/\r?\n/).map(function(s){return s.trim();}).filter(function(s){return /^\d+장\s*[:：]/.test(s);});
+  if(!lines.length) lines=c.text.split(/\r?\n/).filter(Boolean).slice(0,10);
+  var out=document.getElementById('wh3Out'); if(!out) return;
+  var h='<div class="note"><b>카드뉴스 '+lines.length+'장</b> — 각 카드에서 <b>내려받기</b>를 누르면 PNG로 저장돼요.</div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px">';
+  lines.forEach(function(t,i){
+    var txt=t.replace(/^\d+장\s*[:：]\s*/,'');
+    h+='<div style="background:#0E2A24;border:1px solid var(--line);border-radius:10px;padding:10px;text-align:center">'
+      +'<div style="font-size:10px;color:var(--soft)">'+(i+1)+'/'+lines.length+'</div>'
+      +'<div id="whCd'+i+'" style="font-size:12px;font-weight:800;line-height:1.5;margin:8px 0;min-height:52px;color:var(--ink)">'+_whEsc(txt)+'</div>'
+      +'<button class="upbtn" style="font-size:10.5px;padding:5px 8px" onclick="whCardPng('+i+',\''+encodeURIComponent(txt)+'\')">내려받기</button></div>';
+  });
+  out.innerHTML=h+'</div>';
+  var c3=document.getElementById('whC3'), b3=document.getElementById('whB3');
+  if(c3) c3.innerHTML=lines.length+'<small>/10</small>';
+  if(b3) b3.style.width=Math.min(100,Math.round(lines.length/10*100))+'%';
+}
+
+// 카드 한 장을 SVG로 그려 PNG로 저장(글자는 SVG라 한글이 안 깨짐)
+function whCardPng(i,enc){
+  var txt=decodeURIComponent(enc);
+  var W=1080,H=1080, lines=[], cur='';
+  txt.split(' ').forEach(function(w){ if((cur+' '+w).trim().length>14){ lines.push(cur.trim()); cur=w; } else cur+=' '+w; });
+  if(cur.trim()) lines.push(cur.trim());
+  var y=H/2-(lines.length-1)*45;
+  var tspans=lines.map(function(l){ var s='<tspan x="'+(W/2)+'" y="'+y+'">'+l.replace(/[&<>]/g,'')+'</tspan>'; y+=90; return s; }).join('');
+  var svg='<svg xmlns="http://www.w3.org/2000/svg" width="'+W+'" height="'+H+'"><rect width="'+W+'" height="'+H+'" fill="#0B2620"/>'
+    +'<rect x="40" y="40" width="'+(W-80)+'" height="'+(H-80)+'" fill="none" stroke="#F2B23E" stroke-width="3" rx="24"/>'
+    +'<text font-family="Malgun Gothic,AppleSDGothicNeo,sans-serif" font-size="66" font-weight="800" fill="#EAF3F1" text-anchor="middle">'+tspans+'</text>'
+    +'<text x="'+(W/2)+'" y="'+(H-70)+'" font-family="Malgun Gothic,sans-serif" font-size="34" fill="#F2B23E" text-anchor="middle">오원트금융연구소</text></svg>';
+  var im=new Image();
+  im.onload=function(){ var cv=document.createElement('canvas'); cv.width=W; cv.height=H;
+    cv.getContext('2d').drawImage(im,0,0);
+    cv.toBlob(function(bl){ _whDownloadBlob(bl,'카드뉴스_'+(i+1)+'.png'); toast((i+1)+'번 카드 저장했어요'); }); };
+  im.onerror=function(){ toast('카드 그리기 실패'); };
+  im.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg);
+}
+
+function _whDownload(text,name,mime){ _whDownloadBlob(new Blob([text],{type:mime||'text/plain;charset=utf-8'}),name); }
+function _whDownloadBlob(bl,name){ var a=document.createElement('a'); a.href=URL.createObjectURL(bl); a.download=name; document.body.appendChild(a); a.click(); setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); },800); }
+
+// ── 4단계 · 발행 (반자동 발행함 + 결재함) ─────────────────────────────
+var WH_CH=[
+  {k:'blog',      n:'네이버 블로그',  auto:false},
+  {k:'cafe',      n:'카페',          auto:false},
+  {k:'brunch',    n:'브런치',        auto:false},
+  {k:'linkedin',  n:'링크드인',      auto:false},
+  {k:'threads',   n:'스레드',        auto:false},
+  {k:'newsletter',n:'이메일',        auto:true },
+  {k:'shorts',    n:'쇼츠',          auto:false},
+  {k:'cardnews',  n:'카드뉴스',      auto:false}
+];
+function _wh4Html(){
+  if(!WH_GEN) return '<div class="empty"><div class="ic">📝</div>먼저 <b style="color:var(--gold)">2단계</b>에서 원고를 만들어 주세요.</div>';
+  var h='<h3>🚀 4단계 · 발행</h3>';
+  h+='<div class="note"><b>지금은 반자동이에요.</b> 원고와 주소를 복사해서 각 채널에 붙여넣으시면 돼요(채널당 1~2분).<br>'
+    +'네이버 블로그·카페·브런치는 자동 발행 API가 없어서 사람이 붙여넣는 것이 <b>규정 위반이 아닌 유일한 방법</b>이에요.<br>'
+    +'문자·이메일은 <b>결재함</b>을 거쳐야만 나가요. 여기서 바로 나가지 않아요.</div>';
+  h+='<table><thead><tr><th>채널</th><th style="width:74px">글자</th><th style="width:130px">보내기</th></tr></thead><tbody>';
+  WH_CH.forEach(function(ch){
+    var r=_whFind(ch.k); if(!r||r.error) return;
+    var i=WH_GEN.results.indexOf(r);
+    h+='<tr><td>'+_whEsc(ch.n)+'</td><td>'+r.chars+'</td><td>'
+      +'<a onclick="whCopy('+i+')" style="cursor:pointer;color:var(--blue)">📋 복사</a>'
+      +(ch.auto?' · <a onclick="whToApproval('+i+')" style="cursor:pointer;color:var(--gold)">✅ 결재함</a>':'')
+      +'</td></tr>';
+  });
+  h+='</tbody></table>';
+  h+='<div class="note" style="margin-top:8px">📊 <b>성과 보기</b>는 발행한 뒤 채널별 꼬리표(UTM)로 집계돼요. 각 원고 아래 주소를 그대로 쓰셔야 집계됩니다.</div>';
+  return h;
+}
+function whToApproval(i){
+  var r=WH_GEN&&WH_GEN.results[i]; if(!r) return;
+  if(!confirm(r.label+' 원고를 결재함에 올릴까요?\n(올리기만 해요. 대표님이 승인 버튼을 누르셔야 실제로 나갑니다.)')) return;
+  fetch('/api/approval/create',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',
+    body:JSON.stringify({ 요청내용:'홍보 '+r.label+' 발송', 채널:'이메일', 템플릿:(r.text||'')+'\n\n'+(r.url||''), 출처:'홍보마케팅' })})
+    .then(function(x){return x.json();})
+    .then(function(j){ if(j&&j.ok!==false){ toast('결재함에 올렸어요. 결재함비서에서 승인해 주세요.'); } else { toast('올리지 못했어요: '+((j&&j.error)||'')); } })
+    .catch(function(e){ toast('올리지 못했어요: '+e.message); });
+}
+
 function whPick(){ var c=_whCur(); if(!c){ toast('먼저 캠페인을 고르세요'); return; } var f=document.getElementById('whFile'); if(f) f.click(); }
 function whUpload(el){
   var f=el.files&&el.files[0]; if(!f) return; var c=_whCur(); if(!c){ el.value=''; return; }
