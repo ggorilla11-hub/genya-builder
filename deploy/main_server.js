@@ -3017,12 +3017,16 @@ async function orderHandler(req, res) {
       try { _gateEvents = await personalMem.recallRecentEvents({ ownerId: _uidG, limit: 5 }); } catch (e) {}
     }
     // ★이 로그의 match/events는 "방금 올린 것 인지"용이다 — ★카드·발굴과 무관하다(오해 방지).
-    console.log('[🛡️수문장·방금올린것인지] uid=' + (_uidG || '(없음)') + ' · pineconeReady=' + personalMem.configured() + ' · match=' + _gateMatch + ' · events=' + (_gateEvents ? 'HIT(' + _gateEvents.slice(0, 40) + '…)' : 'MISS') + ' · q="' + String(q).slice(0, 30) + '" (카드 여부는 [📇카드] 줄을 보세요)');
+    // ★2026-07-29 이름 변경: 예전엔 이 값이 그냥 'match='로 찍혀서, 대표님이 ★약관 판별이 false인 줄
+    //   오해하셨다. 이 값은 "방금/올린/업로드 같은 말이 있나"일 뿐이고 약관과 무관하다.
+    //   약관 판별은 아래 [🧭라우팅] 줄의 '약관질문='을 봐야 한다. 이름을 헷갈리지 않게 바꾼다.
+    console.log('[🛡️수문장·방금올린것인지] uid=' + (_uidG || '(없음)') + ' · pineconeReady=' + personalMem.configured() + ' · 방금올린것말투=' + _gateMatch + '(약관과 무관) · events=' + (_gateEvents ? 'HIT(' + _gateEvents.slice(0, 40) + '…)' : 'MISS') + ' · q="' + String(q).slice(0, 30) + '" (카드 여부는 [📇카드] 줄 · ★약관 여부는 [🧭라우팅] 줄을 보세요)');
     // ★2026-07-29 회장님 지시: "대표님이 물었을 때 실제로 어디까지 가는지" 로그로 추적할 수 있게 한다.
     //   추측 대신 Render 로그 한 줄로 갈린다 — 약관으로 갔는지, 카드가 가로챘는지, 도구로 샜는지.
-    console.log('[🧭라우팅] q="' + String(q).slice(0, 40) + '" · 약관질문=' + _yakAsk
+    console.log('[🧭라우팅★약관은여기] q="' + String(q).slice(0, 40) + '" · ★약관질문=' + _yakAsk
       + ' · activeSkill=' + (activeSkill || '(없음)') + (activeSkill && !SKILL_CTX[activeSkill] ? '(★없는코드)' : '')
-      + ' · toolIntent=' + _toolIntent + ' · canData=' + canData);
+      + ' · toolIntent=' + _toolIntent + ' · canData=' + canData
+      + (_yakAsk ? ' → 📄약관창고로 보냄' : ' → 약관 아님(다른 분기로)'));
     // ★버그수정: activeSkill(localStorage 복원)이 시트·발송 도구 의도를 가로채던 문제 → _toolIntent(위에서 정의)면 activeSkill·events·명단 분기를 건너뛰고 approval/sheetCRUD 도구 분기로.
     // ★이슈#1 근본수정(웹검색 라우팅 가로챔): 최신정보 토픽(시세·환율·세법·판례 등)이면서 고객(○○님) 지칭이 아니면
     //   시트/캘린더 분기가 "어때/조회/뭐야"로 가로채는 것을 막고 일반대화(웹검색) 우선. ★고객명 시트조회는 그대로 유지.
