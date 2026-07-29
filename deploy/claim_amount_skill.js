@@ -50,43 +50,44 @@ function _금지어정리(s) {
 function _금지어남음(s) { return 금지어.some((b) => { b.re.lastIndex = 0; return b.re.test(String(s || '')); }); }
 
 // ═══════════════════════════════════════════════════════════════
-// 1. 약관 창고 — ★기존 yakgwan_module.js를 수정하지 않고 같은 곳을 직접 읽는다
+// 1. 약관 창고 — ★공용 엔진(yakgwan_search)을 쓴다
 // ═══════════════════════════════════════════════════════════════
-// 왜 직접 읽나: yakgwan_module.askYakgwan()은 ★가공된 답변만 돌려주고 원문 발췌를 안 준다.
-//   우리는 금액을 LLM이 아니라 ★원문 숫자에서 뽑아야 하므로 발췌 원문이 필요하다.
-//   그 파일을 고치면 기존 기능(약관 질문)을 건드리는 것이라, 같은 인덱스를 읽기만 한다.
-const INDEX = 'genya-knowledge';
-const NAMESPACE = 'yakgwan_samsung_auto_2025';
-const SOURCE = '삼성화재 개인용 자동차보험 2025-08-16';
-const EMBED_MODEL = 'text-embedding-3-small';
-const ANSWER_MODEL = 'claude-sonnet-5';   // 대표 절대규칙: 모든 LLM은 Claude Sonnet
-const MIN_SCORE = 0.28;
+// ★2026-07-29 이전: 이 파일이 파인콘을 직접 뒤졌고, 창고를 '삼성화재 자동차보험 하나'로 잘못 알았다.
+//   실제로는 약관 68종·631,026개가 있었고 ★삼성화재 실손은 longterm 네임스페이스 안에 있었다.
+//   → 이제 공용 엔진이 보험사·상품군을 보고 여러 후보를 뒤져 점수로 고른다(실손도 찾는다).
+//   금액은 여전히 LLM이 아니라 ★약관 원문 숫자에서만 뽑는다 — 그래서 발췌 원문이 필요하고,
+//   공용 엔진은 가공된 답변이 아니라 ★원문 발췌를 그대로 돌려준다.
+const yakSearch = require('./yakgwan_search');   // 📚 공용 약관 검색(공동 자산)
 
-let _oa = null, _ix = null, _an = null;
-function _configured() { return !!(process.env.PINECONE_API_KEY && process.env.OPENAI_API_KEY); }
+const ANSWER_MODEL = 'claude-sonnet-5';   // 대표 절대규칙: 모든 LLM은 Claude Sonnet
+const 창고이름 = '보험 약관 창고(삼성화재·현대해상·KB손해보험·흥국화재·AXA)';
+
+let _an = null;
 function _clients() {
-  if (!_oa) _oa = new (require('openai'))({ apiKey: process.env.OPENAI_API_KEY });
-  if (!_ix) _ix = new (require('@pinecone-database/pinecone').Pinecone)({ apiKey: process.env.PINECONE_API_KEY }).index(INDEX).namespace(NAMESPACE);
   if (!_an) { try { _an = new (require('@anthropic-ai/sdk'))({ apiKey: process.env.ANTHROPIC_API_KEY }); } catch (e) { _an = null; } }
-  return { oa: _oa, ix: _ix, an: _an };
+  return { an: _an };
 }
 
-/** 약관 발췌 검색 → {found, 발췌:[{page,text,score}], sources, pages}. 실패해도 던지지 않는다(정직히 found=false). */
+/**
+ * 약관 발췌 검색 → {found, 발췌:[{page,text,score}], sources, pages}. 실패해도 던지지 않는다(정직히 found=false).
+ * ★★2026-07-29 대표님 승인 — 공용 엔진(yakgwan_search)으로 갈아끼움.
+ *   예전엔 이 파일이 파인콘을 ★직접 뒤졌고, 그때 창고를 '자동차보험 하나'로 잘못 알고 있었다.
+ *   실제로는 약관 68종·631,026개가 있었고 ★삼성화재 실손은 longterm 안에 있었다.
+ *   → 이제 공용 엔진이 보험사·상품군을 보고 여러 후보를 뒤져 점수로 고른다. 실손도 찾는다.
+ */
 async function 약관발췌(question) {
-  if (!_configured()) return { found: false, 발췌: [], sources: [], pages: [], 사유: '약관 창고가 연결되어 있지 않아요' };
   try {
-    const { oa, ix } = _clients();
-    const emb = await oa.embeddings.create({ model: EMBED_MODEL, input: [String(question)] });
-    const res = await ix.query({ vector: emb.data[0].embedding, topK: 4, includeMetadata: true });
-    const ms = (res.matches || []).filter((m) => m.metadata && m.metadata.text);
-    if (!ms.length || ms[0].score < MIN_SCORE) {
-      return { found: false, 발췌: [], sources: [], pages: [], 사유: '이 약관 창고에서 근거를 못 찾았어요' };
+    const r = await yakSearch.search({ 질문: String(question), topK: 4 });
+    if (!r.found) {
+      return { found: false, 발췌: [], sources: [], pages: [], 찾아본곳: r.찾아본곳 || [], 사유: r.사유 || '근거를 못 찾았어요' };
     }
     return {
       found: true,
-      발췌: ms.map((m) => ({ page: m.metadata.page, text: String(m.metadata.text), score: m.score })),
-      sources: ms.map((m) => `${SOURCE} p.${m.metadata.page}`),
-      pages: ms.map((m) => m.metadata.page),
+      발췌: r.발췌.map((x) => ({ page: x.페이지, text: x.원문, score: x.점수, 보험사: x.보험사, 상품: x.상품 })),
+      sources: r.출처,
+      pages: r.페이지,
+      찾아본곳: r.찾아본곳,
+      보험사: r.보험사, 상품군: r.상품군,
     };
   } catch (e) {
     return { found: false, 발췌: [], sources: [], pages: [], 사유: '약관 창고 조회가 잠깐 어려워요' };
@@ -260,14 +261,18 @@ async function explain(text, opts) {
     return Object.assign({
       ok: true,
       약관근거: false,
-      창고: SOURCE,
+      창고: 창고이름,
       사유: r.사유,
+      찾아본곳: r.찾아본곳 || [],
       구조설명: null,
       참고범위: { 있음: false, 사유: '약관 근거를 못 찾아 금액은 내지 않았어요 (지어내지 않음)' },
       필요정보: 필요정보_기본.slice(),
+      // ★어디를 찾아봤는지 정직히 알린다("없다"는 말이 게으른 답이 아니라는 증거)
       알림: [
-        `지금 약관 창고에는 [${SOURCE}] 하나만 있어요. 실손·장기 약관은 아직 없습니다.`,
-        '약관이 확보되면 그때 정밀하게 안내할 수 있어요. 지금은 구조와 확인할 항목까지만 알려드립니다.',
+        (r.찾아본곳 && r.찾아본곳.length)
+          ? `약관 ${r.찾아본곳.length}곳을 찾아봤는데 이 질문에 맞는 근거가 없었어요.`
+          : '약관 창고에서 근거를 못 찾았어요.',
+        '보험사·상품명을 같이 말씀해 주시면 더 정확히 찾습니다. 없는 내용은 지어내지 않습니다.',
       ],
     }, 기본);
   }
@@ -292,10 +297,13 @@ async function explain(text, opts) {
   return Object.assign({
     ok: true,
     약관근거: true,
-    창고: SOURCE,
+    창고: 창고이름,
+    보험사: r.보험사 || null,
+    상품군: r.상품군 || null,
+    찾아본곳: r.찾아본곳 || [],
     출처: r.sources,
     페이지: r.pages,
-    발췌: r.발췌.map((x) => ({ page: x.page, 원문: x.text.slice(0, 300) })),
+    발췌: r.발췌.map((x) => ({ page: x.page, 보험사: x.보험사 || '', 상품: x.상품 || '', 원문: String(x.text).slice(0, 300) })),
     구조설명: 설명,
     진료비: 돈,
     진료비표기: 돈 ? 원표기(돈) : null,
@@ -316,5 +324,5 @@ module.exports = {
   약관발췌, 비율뽑기, 한도뽑기, 진료비읽기, 참고범위, 구조설명,
   _금지어정리, _금지어남음,
   면책, 설계사전용, 필요정보_기본,
-  SOURCE, NAMESPACE, INDEX,
+  창고이름,
 };

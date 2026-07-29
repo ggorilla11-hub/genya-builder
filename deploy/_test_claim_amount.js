@@ -143,10 +143,19 @@ await TA('★필요정보에 구체 수치를 넣지 않는다(지어내기 0)',
   const r = await amt.explain('실손 얼마', null);
   ok(!/\d+\s*%/.test(r.필요정보.join(' ')), '필요정보에 %가 들어감');
 });
-await TA('실손 약관이 아직 없다고 정직히 말한다', async () => {
+// ★2026-07-29 갱신: 예전엔 "실손 약관은 아직 없습니다"라고 말하는 게 맞았지만,
+//   파인콘엔 실제로 실손 약관이 있었다(코드가 한 곳만 봐서 못 찾았을 뿐).
+//   이제 없을 때는 ★어디를 찾아봤는지 + 지어내지 않는다는 것을 말해야 한다.
+await TA('근거를 못 찾으면 어디를 찾아봤는지·지어내지 않는다고 말한다', async () => {
   const r = await amt.explain('실손 얼마', null);
-  has(r.알림.join(' '), '실손');
-  has(r.알림.join(' '), '아직');
+  const a = r.알림.join(' ');
+  has(a, '못 찾');
+  has(a, '지어내지 않습니다');
+});
+await TA('★"약관이 아직 없다"는 옛 거짓 안내가 사라졌다', async () => {
+  const r = await amt.explain('실손 얼마', null);
+  const a = r.알림.join(' ');
+  ok(!/실손[^.]*아직 없/.test(a), '옛 거짓 안내가 남아있음: ' + a.slice(0, 100));
 });
 await TA('★면책·설계사전용이 이때도 붙는다', async () => {
   const r = await amt.explain('실손 얼마', null);
@@ -169,11 +178,18 @@ if (!키있음) {
     ok(r.발췌.length > 0);
     ok(r.발췌[0].text.length > 10, '발췌 원문이 비었음');
   });
-  await TA('출처에 삼성화재 자동차보험 + 페이지가 붙는다', async () => {
+  // ★2026-07-29 갱신: 창고가 한 종(삼성 자동차)이 아니라 68종이 됐다.
+  //   특정 문서명을 못 박으면 안 된다 — ★보험사명 + 페이지가 붙는지를 본다.
+  await TA('출처에 보험사명과 페이지가 붙는다', async () => {
     const r = await amt.약관발췌('대인배상 보험금 지급 기준');
     ok(r.found === true, r.사유 || '');
-    has(r.sources.join('|'), '삼성화재 개인용 자동차보험');
+    const s = r.sources.join('|');
+    ok(/삼성화재|현대해상|KB손해보험|흥국화재|AXA/.test(s), '보험사명이 없음: ' + s.slice(0, 120));
     ok(/p\.\d+/.test(r.sources[0]), '페이지 표기가 없음: ' + r.sources[0]);
+  });
+  await TA('★여러 약관 중에서 골랐다는 증거(찾아본곳)가 남는다', async () => {
+    const r = await amt.약관발췌('실손의료비 본인부담금');
+    ok(Array.isArray(r.찾아본곳) && r.찾아본곳.length >= 2, '한 곳만 뒤졌음: ' + JSON.stringify(r.찾아본곳));
   });
   await TA('explain 이 실제 약관 근거로 답한다(구조 안내)', async () => {
     const r = await amt.explain('삼성화재 자기신체사고 지급 구조 알려줘', null);

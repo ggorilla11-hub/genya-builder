@@ -1,75 +1,50 @@
 // ─────────────────────────────────────────────────────────────
-// yakgwan_module.js — 약관 창고(RAG) 독립 모듈 ★메인에 "꽂는" 부품
-// 무엇을·왜: 약관 질문 → Pinecone 약관 네임스페이스에서 근거 검색 → 쉽게 설명 + 출처(페이지).
+// yakgwan_module.js — 약관 창고(RAG) ★메인에 "꽂는" 부품
+// 무엇을·왜: 약관 질문 → 근거 검색 → 쉽게 설명 + 출처(페이지).
 //   창고에 없으면 지어내지 않고 "확인 필요". 어디서든 require 한 줄로 꽂아 쓴다.
+//
+// ★★2026-07-29 속을 갈아끼웠다 (대표님 승인 · 겉모습은 그대로)
+//   [사고] 예전엔 네임스페이스가 한 줄로 박혀 있었다:
+//            const NAMESPACE = 'yakgwan_samsung_auto_2025';   // 575개
+//          그런데 파인콘엔 실제로 ★631,026개(약관 68종 · 보험사 5곳)가 있었다. ★0.09%만 쓰고 있었고,
+//          실손·장기·현대해상을 물어도 "약관에 없어요"라고 ★거짓 안내를 해 왔다.
+//   [수정] 검색을 공용 엔진 yakgwan_search.js 로 옮겼다. 이 파일은 ★겉모습만 유지하는 얇은 껍데기다.
+//          → askYakgwan(질문)의 입력·출력이 예전과 같아서 ★호출하는 5곳을 하나도 고치지 않았다.
+//            (main_server 2곳 · policy_analysis_skill · product_compare_skill · 대화 라우터)
+//
 // 사용: const { askYakgwan } = require('.../yakgwan_module'); const r = await askYakgwan('무보험차상해?');
 //        r = { found, answer, sources:['삼성화재 … p.27'], pages:[27,…] }
+//   ★새로 쓰는 곳은 공용 엔진을 바로 쓰는 편이 낫다(보험사·상품군 지정, 원문 발췌까지 받음):
+//        const yak = require('./yakgwan_search'); await yak.search({ 질문, 보험사, 상품군 });
 //
 // ★공통 자산(전 회원 공유 지식) — 고객 데이터 아님. 공개약관·참조용·출처표시. /parksugeun 무접촉.
-// ★격리: 인덱스 'genya-knowledge'의 약관 전용 네임스페이스만 읽음(직업지식 네임스페이스 무접촉).
+// ★격리: 인덱스 'genya-knowledge'의 ★약관 네임스페이스(yakgwan_*)만 읽는다.
+//        개인 기억(owner_*)은 쳐다보지도 않는다. 쓰기·삭제 코드 없음(읽기 전용).
 // ─────────────────────────────────────────────────────────────
 'use strict';
-const RAGSRV = '';
-try{require('dotenv').config();}catch(e){}
-const { Pinecone } = require('@pinecone-database/pinecone');
-const OpenAI = require('openai');
+try { require('dotenv').config(); } catch (e) {}
 
-const INDEX = 'genya-knowledge';
-const NAMESPACE = 'yakgwan_samsung_auto_2025';
-const EMBED_MODEL = 'text-embedding-3-small';   // ★임베딩은 OpenAI 유지(Pinecone 벡터가 이 모델로 만들어짐 — 바꾸면 검색 깨짐)
-const ANSWER_MODEL = 'claude-sonnet-5';         // ★답변 생성 = Claude Sonnet 5(폴백도 동일 — 모든 LLM은 Claude Sonnet)
-const SOURCE = '삼성화재 개인용 자동차보험 2025-08-16';
-const MIN_SCORE = 0.28;
+const yak = require('./yakgwan_search');   // 📚 공용 약관 검색 엔진(공동 자산)
 
-let _oa = null, _ix = null, _an = null;
-function clients() {
-  if (!_oa) _oa = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-  if (!_ix) _ix = new Pinecone({ apiKey: process.env.PINECONE_API_KEY }).index(INDEX).namespace(NAMESPACE);
-  if (!_an) { try { _an = new (require('@anthropic-ai/sdk'))({ apiKey: process.env.ANTHROPIC_API_KEY }); } catch (e) { _an = null; } }
-  return { oa: _oa, ix: _ix, an: _an };
-}
+// ★예전 이름 유지 — 이 값을 참조하는 곳이 있어도 깨지지 않게 둔다.
+//   다만 이제 "창고 = 자동차보험 하나"가 아니다. 창고 전체를 뜻하는 이름으로 바꿨다.
+const SOURCE = '보험 약관 창고(삼성화재·현대해상·KB손해보험·흥국화재·AXA)';
+const NAMESPACE = 'yakgwan_*';             // ★더 이상 한 곳이 아니다(질문에 따라 자동 선택)
 
-const SYS = `너는 보험설계사를 돕는 비서 "지니야"다. 아래 [약관 발췌]만 근거로 질문에 쉽게(비유 곁들여) 답한다.
-규칙: ① 발췌에 있는 내용만 사용, 절대 지어내지 않는다. ② 발췌에 답이 없으면 "이 약관 발췌에는 없어요 — 원문 확인이 필요해요"라고만 답한다. ③ 구체 수치·지급조건은 발췌 그대로. 출처 페이지는 프론트가 붙이니 본문엔 넣지 마라.`;
-
-/** 약관 질문 → 근거+출처 답. 창고에 없으면 found=false + "확인 필요". */
-async function askYakgwan(question) {
+/**
+ * 약관 질문 → 근거+출처 답. 창고에 없으면 found=false + "확인 필요".
+ * ★입력·출력 모양은 예전과 같다(호출부 무접촉).
+ * @param {string} question
+ * @param {object} [opts] { 보험사, 상품군, topK } — 안 줘도 질문에서 알아서 찾는다
+ */
+async function askYakgwan(question, opts) {
   if (!question || !String(question).trim()) throw new Error('question 비어있음');
-  const { oa, ix, an } = clients();
-  const emb = await oa.embeddings.create({ model: EMBED_MODEL, input: [String(question)] });
-  const res = await ix.query({ vector: emb.data[0].embedding, topK: 4, includeMetadata: true });
-  const matches = (res.matches || []).filter((m) => m.metadata && m.metadata.text);
-  const top = matches[0];
-
-  if (!top || top.score < MIN_SCORE) {
-    return { found: false, score: top ? top.score : null, answer: '이 약관 창고(삼성화재 자동차보험)에서는 근거를 못 찾았어요 — 원문 확인이 필요해요. (지어내지 않음)', sources: [], pages: [] };
-  }
-  const context = matches.map((m, i) => `(${i + 1}) [p.${m.metadata.page}] ${m.metadata.text}`).join('\n\n');
-  const userMsg = `[질문] ${question}\n\n[약관 발췌]\n${context}`;
-  let answer = '';
-  try {
-    // ★답변 생성 = Claude Sonnet 5 (system은 별도 파라미터)
-    if (!an) throw new Error('anthropic 미설정');
-    const ar = await an.messages.create({ model: ANSWER_MODEL, max_tokens: 600, system: SYS, messages: [{ role: 'user', content: userMsg }] });
-    answer = (ar.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
-    if (!answer) throw new Error('빈 응답');
-  } catch (e) {
-    // ★폴백도 Claude Sonnet(대표 절대규칙: 모든 LLM은 Claude Sonnet). 한 번 더 시도, 안 되면 정직하게 안내.
-    try {
-      if (!an) throw e;
-      const ar2 = await an.messages.create({ model: ANSWER_MODEL, max_tokens: 480, system: SYS, messages: [{ role: 'user', content: userMsg }] });
-      answer = (ar2.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
-    } catch (e2) {
-      answer = '지금 약관 답변 생성이 잠깐 어려워요 — 잠시 후 다시 시도해 주세요. (약관 근거 검색은 정상입니다)';
-    }
-  }
-  return {
-    found: true,
-    score: top.score,
-    answer: answer,
-    sources: matches.map((m) => `${SOURCE} p.${m.metadata.page}`),
-    pages: matches.map((m) => m.metadata.page),
-  };
+  return yak.ask(String(question), opts || {});
 }
 
-module.exports = { askYakgwan, SOURCE, NAMESPACE };
+module.exports = {
+  askYakgwan,
+  SOURCE, NAMESPACE,
+  // ★문 열어두기: 새로 만드는 기능은 이걸 바로 써도 된다(원문 발췌·보험사 지정 가능)
+  search: yak.search, 창고요약: yak.창고요약, 지도: yak.지도,
+};
