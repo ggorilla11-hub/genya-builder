@@ -128,12 +128,22 @@ async function 서버깨어남(초) {
   //   그래서 시험은 14/14 통과했는데 ★대표님 실제 화면에서는 증권분석비서가 가로채고 있었다
   //   ("증권을 올려달라"는 SKILL_CTX.policy_analysis 문구다).
   //   → 반드시 ★main_server.js의 SKILL_CTX 실제 키를 쓴다.
-  for (const skill of ['policy_analysis', 'product_compare', 'insurance_review', 'client_management']) {
+  //   ★2026-07-29 대표님 라우팅 로그 실측: activeSkill=client_discovery(발굴 모드)에서 신고가 들어왔다.
+  //     SKILL_CTX 전체를 다 돌려서, 어느 모드가 켜져 있어도 약관 질문은 약관창고로 가는지 확인한다.
+  for (const skill of ['client_discovery', 'lead_gen', 'renewal', 'policy_analysis',
+    'product_compare', 'insurance_review', 'client_management', 'pension_analysis', 'yakgwan']) {
     await T(`activeSkill=${skill} 이어도 약관창고`, async () => {
       const r = await ask(q1, skill);
       ok(r.kind === '📄 약관창고', 'activeSkill이 가로챔: ' + r.kind);
     });
   }
+  await T('★대표님 실측 조건 그대로: client_discovery + "삼성화재 암진단비 면책기간은?"', async () => {
+    const r = await ask('삼성화재 암진단비 면책기간은?', 'client_discovery');
+    ok(r.kind === '📄 약관창고', '발굴 모드가 가로챔: ' + r.kind);
+    ok(r.sources && r.sources.length > 0, '근거 출처가 없음');
+    ok(/삼성화재/.test(r.sources.join('|')), '삼성화재 약관이 아님: ' + r.sources.join('|'));
+    ok(/p\.\d+/.test(r.sources[0]), '페이지가 없음');
+  });
 
   console.log('\n━━━ 3. 기존 명령을 가로채지 않는다 ━━━');
   for (const [q, why] of [
