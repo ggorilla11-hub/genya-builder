@@ -963,8 +963,12 @@ app.post('/api/promo/draft', async (req, res) => {
       '④ 숫자는 한 문장에 하나만 ⑤ 마지막 씬은 "무료 진단 받아보세요" 같은 행동유도',
       '⑥ 과장·허위 금지, 사실만. 출력은 "씬1: ...\\n씬2: ..." 형식으로만.',
     ].join('\n');
-    const r = await _anthropic.messages.create({ model: WS_CHAT_MODEL, max_tokens: 900, system: sys, messages: [{ role: 'user', content: '한줄카피: ' + copy } ] });
+    // ★긴급수정: Sonnet5는 생각(thinking)이 기본 ON이고 max_tokens를 생각과 본문이 나눠 쓴다.
+    //   생각이 900을 다 먹으면 본문 블록이 아예 안 생겨 화면이 빈다(실측 7회 중 3회 빈화면·2회 잘림).
+    //   생각을 끄면 8/8 정상(토큰 142~209/900). ★거짓 성공 금지: 비면 정직하게 실패로 알린다.
+    const r = await _anthropic.messages.create({ model: WS_CHAT_MODEL, max_tokens: 900, thinking: { type: 'disabled' }, system: sys, messages: [{ role: 'user', content: '한줄카피: ' + copy } ] });
     const script = (r.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
+    if (!script) return res.status(502).json({ ok: false, error: '원고가 비어서 나왔어요. 한 번 더 눌러 주세요.' });
     res.json({ ok: true, copy, script, engine: 'claude-sonnet-5' });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
@@ -997,10 +1001,11 @@ app.post('/api/promo/expand', async (req, res) => {
       '③ 쉬운 말. 70대도 알아듣게 ④ 결과물만 출력한다. "네, 만들어 드릴게요" 같은 인사말 금지.',
     ].join('\n');
     const r = await _anthropic.messages.create({
-      model: WS_CHAT_MODEL, max_tokens: 2000, system: sys,
+      model: WS_CHAT_MODEL, max_tokens: 2000, thinking: { type: 'disabled' }, system: sys,   // ★긴급수정: 위와 같은 이유(생각이 예산을 먹어 빈 응답)
       messages: [{ role: 'user', content: (copy ? ('한줄카피: ' + copy + '\n\n') : '') + '쇼츠 원고:\n' + script }],
     });
     const out = (r.content || []).filter((x) => x.type === 'text').map((x) => x.text).join('').trim();
+    if (!out) return res.status(502).json({ ok: false, error: '원고가 비어서 나왔어요. 한 번 더 눌러 주세요.' });   // ★거짓 성공 금지
     res.json({ ok: true, kind, label: k.label, text: out });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
