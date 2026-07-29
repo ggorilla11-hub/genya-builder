@@ -5264,6 +5264,25 @@ function _bootRoute(){
     _goReal(1);
   });
 }
+// ── 📄 약관창고 출처 표시 (2026-07-29 대표님 지시) ──
+//   [사고] 약관 검색은 성공해서 상품별 실제 조건까지 답했는데, 화면엔 그게 ★약관 근거라는 표시가 없었다.
+//          서버는 kind='📄 약관창고'와 sources(상품명·페이지)를 보내는데 ★화면이 d.text만 꺼내 쓰고 버렸다.
+//   → 답 위에 뱃지, 답 아래에 근거 약관(상품명·페이지)을 붙인다.
+//   ★약관창고일 때만 붙인다 — 다른 기능 화면은 한 글자도 안 바꾼다(무접촉).
+function _yakBadge(d){
+  if(!d || d.kind!=='📄 약관창고') return '';
+  return '<div style="display:inline-block;background:#0f766e;color:#fff;border-radius:6px;padding:2px 9px;font-size:10.5px;font-weight:700;margin-bottom:7px">📄 약관창고</div><div></div>';
+}
+function _yakSources(d){
+  if(!d || d.kind!=='📄 약관창고') return '';
+  var s=(d.sources||[]);
+  if(!s.length) return '<div style="margin-top:8px;padding-top:7px;border-top:1px solid #eef1f5;font-size:10.5px;color:#8a6d1a">근거 약관을 못 찾았어요 — 지어내지 않습니다</div>';
+  var seen={}, li='';
+  s.forEach(function(x){ var t=String(x||''); if(!t||seen[t])return; seen[t]=1;
+    li+='<div style="font-size:10.5px;color:#5a6b7d;line-height:1.65">· '+_sEsc(t)+'</div>'; });
+  return '<div style="margin-top:9px;padding-top:7px;border-top:1px solid #eef1f5">'
+    +'<div style="font-size:10.5px;color:#0f766e;font-weight:700;margin-bottom:3px">근거 약관 (제출 전 원문 확인)</div>'+li+'</div>';
+}
 // 실제 대화 → /api/order (Claude Sonnet 5, 직업 페르소나 + 히스토리)
 var _HIST=[];
 // ★순서3-A 대화지속: _HIST를 localStorage(genya_hist_{userId})에 실시간 저장/복원 + 긴 대화 요약압축(토큰관리) + _ACTIVE_SKILL 저장
@@ -5365,8 +5384,9 @@ window.sendMsg=function(){
        var _t=reply.trim().replace(/^```(json)?/i,'').replace(/```$/,'').trim();
        if(_t.charAt(0)==='{'){ try{ var _p=JSON.parse(_t); if(_p&&Array.isArray(_p.cards)) reply=String(_p.text||''); }catch(e){} }
      }
-     _HIST.push({role:'user',content:v}); _HIST.push({role:'assistant',content:reply}); _persistHist();
-     if(reply) pushMsg('gen', renderMd(reply));
+     _HIST.push({role:'user',content:v}); _HIST.push({role:'assistant',content:reply}); _persistHist();  // ★기록엔 글만(뱃지 HTML은 안 넣는다)
+     if(reply) pushMsg('gen', _yakBadge(d) + renderMd(reply) + _yakSources(d));   // 📄 약관창고면 뱃지·근거를 함께
+
      // ★고객카드 띄우기 명령 신호(자비스): 명단·연결 드로어 열고 해당 고객 카드(ghRowDetail) 자동 표시
      if(d && d.rows) { try{ _cacheCardRows(d.rows); }catch(e){} }                                                    // ★서버가 보내준 카드 내용을 먼저 받아둔다
      // ★거짓 보고 차단: 조용히 삼키지 않고 ★실제로 떴는지 확인해서 말한다(_카드확인)
