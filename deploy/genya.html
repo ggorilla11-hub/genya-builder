@@ -461,7 +461,13 @@
   #whRoot .s3 .cnt{color:var(--purple)} #whRoot .s3 .bar i{background:var(--purple)}
   #whRoot .s4 .cnt{color:var(--soft)} #whRoot .s4 .bar i{background:var(--soft)}
   #whRoot .soon{position:absolute;top:11px;right:11px;font-size:9px;font-weight:900;background:rgba(147,174,169,.18);color:var(--soft);padding:3px 7px;border-radius:11px}
-  #whRoot .view{background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:18px;min-height:200px}
+  /* ★display:block 을 지우지 마세요 — 지우면 홍보마케팅비서 화면이 통째로 빕니다.
+     이유: 줄 28의 전역 규칙 `.view{display:none} .view.on{display:block}` 은 온보딩·메인의
+     탭 전환기(data-v 9개)용인데, 여기 #whRoot 안의 .view 3곳(한줄카피 목록·준비중 안내·
+     [원고 만들기])은 탭이 아니라 그냥 카드 박스라 .on 이 없어 함께 숨겨졌습니다.
+     ★해결책으로 .on 을 붙이지 마세요 — 줄 1208·4792·4861의 querySelector('.view.on')이
+     홍보 모달을 "활성 탭"으로 오인합니다. #whRoot 스코프로 막는 이 방식이 안전합니다. */
+  #whRoot .view{display:block;background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:18px;min-height:200px}
   #whRoot .view h3{font-size:15px;font-weight:900;margin-bottom:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
   #whRoot .view h3 .badge{font-size:9.5px;font-weight:900;padding:2px 8px;border-radius:9px;background:rgba(242,178,62,.18);color:var(--gold)}
   #whRoot table{width:100%;border-collapse:collapse;font-size:11.5px}
