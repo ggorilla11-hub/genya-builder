@@ -479,21 +479,31 @@ async function ask(question, opts) {
     };
   }
   const ctx = r.발췌.map((x, i) => `(${i + 1}) [${x.보험사} ${x.상품} p.${x.페이지}] ${x.원문}`).join('\n\n');
-  let answer = '';
+  let answer = '', 잘림 = false;
   const an = _claude();
-  for (let 시도 = 0; 시도 < 2 && !answer; 시도++) {
+  // ★★2026-07-29 대표님 실측 사고 — 이 한도를 다시 줄이지 말 것.
+  //   예전엔 max_tokens 600(재시도 480)이었다. 한글은 글자당 토큰을 많이 먹어서,
+  //   상품 3~4개의 면책기간을 설명하면 ★반드시 중간에 잘렸다.
+  //     실제 화면: "면책은 없지만, 처…" / "정리하자면: 면책이라고 콕 찍어 말할" 에서 끊김
+  //   ★내 E2E가 가끔 흔들린 것도 이것 때문이었다 — 답이 잘려 확인할 낱말 앞에서 끝났다.
+  //     (시험이 흔들리면 "운이 나빴다"가 아니라 ★진짜 버그 신호일 수 있다)
+  const 한도 = [2500, 2000];
+  for (let 시도 = 0; 시도 < 한도.length && !answer; 시도++) {
     try {
       if (!an) break;
       const ar = await an.messages.create({
-        model: ANSWER_MODEL, max_tokens: 시도 === 0 ? 600 : 480, system: SYS,
+        model: ANSWER_MODEL, max_tokens: 한도[시도], system: SYS,
         messages: [{ role: 'user', content: `[질문] ${question}\n\n[약관 발췌]\n${ctx}` }],
       });
       answer = (ar.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
+      잘림 = (ar.stop_reason === 'max_tokens');   // ★잘렸으면 숨기지 않는다
     } catch (e) { /* 한 번 더 시도 */ }
   }
   if (!answer) answer = '지금 약관 답변 생성이 잠깐 어려워요 — 잠시 후 다시 시도해 주세요. (약관 근거 검색은 정상입니다)';
+  // ★그래도 잘렸으면 잘린 채로 조용히 보여주지 않는다 — 정직히 알리고 다음 수를 안내한다.
+  else if (잘림) answer += '\n\n> ⚠️ 내용이 길어 여기서 끊겼어요. 상품을 하나만 지정해 다시 물어봐 주시면 끝까지 정리해 드릴게요.';
   return {
-    found: true, score: r.발췌[0].점수, answer,
+    found: true, score: r.발췌[0].점수, answer, 잘림,
     sources: r.출처, pages: r.페이지,
     발췌: r.발췌, 찾아본곳: r.찾아본곳, 보험사: r.보험사, 상품군: r.상품군,
   };

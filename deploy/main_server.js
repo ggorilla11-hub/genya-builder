@@ -3487,7 +3487,8 @@ async function orderHandler(req, res) {
       //   그래서 "현대해상 암진단비 면책기간은?"이 여기 안 걸려 일반 대화로 새 나갔고,
       //   창고에 현대해상 약관이 26종·163,353개나 있는데 ★"약관을 올려달라"고 답했다(대표님 실측).
       //   → 판별을 공용 모듈(yakgwan_search)로 옮겼다. 창고가 넓어지면 그 파일만 고치면 된다.
-      const r = await askYakgwan(q); out = { kind: '📄 약관창고', text: r.answer, sources: r.sources }; // 공통 지식(구글 불필요)
+      // ★잘림 플래그도 함께 내보낸다 — 답이 중간에 끊겼는지 화면·시험이 숨김없이 알 수 있게(2026-07-29)
+      const r = await askYakgwan(q); out = { kind: '📄 약관창고', text: r.answer, sources: r.sources, 잘림: !!r.잘림 }; // 공통 지식(구글 불필요)
     } else if (/만기|명단|자산가|고객.*(정리|목록|누구)/.test(q)) {
       if (!canData) { out = needConnect; } else { const s = await connectors.sheet(ma); out = { kind: '🔌 시트 커넥터', text: `7월 만기 ${s.july만기.length}명 · 임박순 ${s.임박순.join(' → ')}\n자산가: ${s.자산가.join(', ')}` }; }
     } else if (/증권|드라이브|서류|파일.*찾/.test(q)) {

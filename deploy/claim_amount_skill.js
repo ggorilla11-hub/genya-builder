@@ -214,11 +214,14 @@ async function 구조설명(question, 발췌) {
   if (!an) return null;
   const ctx = 발췌.map((x, i) => `(${i + 1}) [p.${x.page}] ${x.text}`).join('\n\n');
   try {
+    // ★2026-07-29 약관 답변이 중간에 끊기던 사고와 같은 원인 — 한글은 토큰을 많이 먹는다.
+    //   500이면 3~5줄 설명도 끝을 못 맺는다. 넉넉히 주고, 그래도 잘리면 정직히 알린다.
     const r = await an.messages.create({
-      model: ANSWER_MODEL, max_tokens: 500, system: SYS,
+      model: ANSWER_MODEL, max_tokens: 1500, system: SYS,
       messages: [{ role: 'user', content: `[질문] ${question}\n\n[약관 발췌]\n${ctx}` }],
     });
-    const t = (r.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
+    let t = (r.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
+    if (t && r.stop_reason === 'max_tokens') t += '\n\n(설명이 길어 여기서 끊겼어요 — 담보를 하나만 지정해 다시 물어봐 주세요.)';
     return t ? _금지어정리(t) : null;         // ★금지어 필터 통과 후에만 내보낸다
   } catch (e) { return null; }
 }
