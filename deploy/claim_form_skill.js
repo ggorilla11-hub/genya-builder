@@ -35,16 +35,24 @@ const fs = require('fs');
 const path = require('path');
 const PDFDocument = require('pdfkit');
 
-// ── 한글 폰트: OS별 후보 탐색(Windows 로컬 + 리눅스 배포). 없으면 기본폰트 폴백(크래시 방지) ──
-//   pdf_skill.js와 같은 후보군. 그 파일을 수정하지 않기 위해 여기 독립적으로 둔다(무접촉 원칙).
+// ── 한글 폰트 ──
+// ★★2026-07-29 긴급수정 — 배포된 청구서 PDF의 한글이 전부 깨졌다("¼ôÕØ®…").
+//   원인: Render(리눅스)에는 아래 OS 폰트가 ★하나도 없다. 전부 못 찾아 null → PDFKit 기본폰트
+//        (Helvetica)로 떨어졌고, 그 폰트엔 한글 글리프가 없어 깨져 나왔다.
+//   ★함정: 개발 PC는 Windows라 맑은고딕이 잡혀 ★로컬에선 멀쩡해 보였다.
+//        → CLAUDE.md 6-7 "시험은 실물 구조 그대로". 그래서 이제 ★번들 폰트를 맨 앞에 둔다.
+//          로컬도 배포도 같은 파일(deploy/fonts/NanumGothic.ttf)을 쓴다 → 여기서 본 게 거기서 보는 것.
+//   ★.ttc(폰트 모음)를 앞에 두면 안 되는 이유: registerFont가 모음 파일은 이름 없이 못 읽어 예외가
+//     나고, catch에 먹혀 ★조용히 기본폰트로 떨어진다(같은 사고 재발). 번들 .ttf가 항상 이긴다.
+//   ★나눔고딕 = SIL Open Font License → 함께 배포 가능(fonts/OFL.txt 동봉).
+const BUNDLED_KR_FONT = path.join(__dirname, 'fonts', 'NanumGothic.ttf');
 function krFont() {
   const cands = [
-    process.env.KR_FONT_PATH,
-    'C:\\Windows\\Fonts\\malgun.ttf',
+    process.env.KR_FONT_PATH,          // 대표님이 지정하면 그게 최우선
+    BUNDLED_KR_FONT,                   // ★기본값 — 어디서 돌리든 같은 폰트(배포 안전)
+    'C:\\Windows\\Fonts\\malgun.ttf',  // 아래는 번들이 없을 때만 쓰는 비상 후보
     '/usr/share/fonts/truetype/nanum/NanumGothic.ttf',
-    '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
     '/usr/share/fonts/truetype/noto/NotoSansCJKkr-Regular.otf',
-    path.join(__dirname, 'fonts', 'NanumGothic.ttf'),
   ].filter(Boolean);
   for (const p of cands) { try { if (fs.existsSync(p)) return p; } catch (e) {} }
   return null;
@@ -397,8 +405,17 @@ function renderClaimPdf(claim) {
       doc.on('end', () => resolve(Buffer.concat(chunks)));   // ★파일 저장 없음 — 메모리에서 바로 Buffer
       doc.on('error', reject);
 
+      // ★한글 폰트 — 실패를 ★조용히 넘기지 않는다(2026-07-29 사고: 조용히 기본폰트로 떨어져 한글이 깨졌다).
+      //   크래시는 막되(빈 PDF보다 낫다), 무슨 일이 있었는지는 로그에 남긴다. ★고객 값은 안 찍는다.
       const f = krFont();
-      if (f) { try { doc.registerFont('KR', f); doc.font('KR'); } catch (e) {} } // 폰트 없으면 기본폰트(크래시 방지)
+      let 한글폰트 = false;
+      if (f) {
+        try { doc.registerFont('KR', f); doc.font('KR'); 한글폰트 = true; }
+        catch (e) { console.error('[🩹청구서] 한글 폰트 등록 실패 — PDF 한글이 깨집니다:', e.message); }
+      } else {
+        console.error('[🩹청구서] 한글 폰트를 못 찾았습니다 — PDF 한글이 깨집니다. deploy/fonts/NanumGothic.ttf 확인 필요');
+      }
+      claim._한글폰트 = 한글폰트;   // 시험이 실제로 확인할 수 있게(값은 안 남긴다)
 
       const L = doc.page.margins.left;
       const W = doc.page.width - doc.page.margins.left - doc.page.margins.right;
@@ -457,4 +474,6 @@ function renderClaimPdf(claim) {
 module.exports = {
   buildClaim, renderClaimPdf, parseSay, planSay, savesToSheet, sheetColFor,
   FORM, NEED_MARK, _pickCol: pickCol, _findCustomer: findCustomer,
+  // ★2026-07-29 한글 깨짐 사고 이후 — 어느 폰트가 실제로 쓰이는지 시험이 밖에서 확인할 수 있게 연다.
+  _krFont: krFont, _BUNDLED_KR_FONT: BUNDLED_KR_FONT,
 };
