@@ -3578,13 +3578,25 @@ function _whFind(kind){ if(!WH_GEN) return null; return WH_GEN.results.filter(fu
 // ── 3단계 · 콘텐츠 (2단계 결과를 화면에서 가공 · 추가 API 호출 0) ──────────
 function _wh3Html(){
   if(!WH_GEN) return '<div class="empty"><div class="ic">📝</div>먼저 <b style="color:var(--gold)">2단계</b>에서 원고를 만들어 주세요.</div>';
-  var blog=_whFind('blog'), card=_whFind('cardnews'), img=_whFind('image');
+  var blog=_whFind('blog'), card=_whFind('cardnews'), img=_whFind('image'), info=_whFind('infographic');
   var h='<h3>🎬 3단계 · 콘텐츠 만들기</h3><p style="font-size:12px;color:var(--soft);margin:0 0 10px">2단계 원고로 바로 만들어요. 추가 비용 없어요.</p>';
   h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">'
     +'<button class="upbtn" onclick="whBlogHtml()" '+(blog?'':'disabled')+'>📝 블로그 글 내려받기</button>'
     +'<button class="upbtn" onclick="whCardNews()" '+(card?'':'disabled')+'>🖼️ 카드뉴스 10장 만들기</button>'
+    +'<button class="upbtn" onclick="whZipAll()" style="background:var(--gold);color:#04110F">📦 전부 한번에 받기(ZIP)</button>'
     +'</div>';
-  if(img) h+='<div class="note"><b>🎨 그림 지시문</b> — 미드저니·DALL-E에 붙여 쓰세요<div style="white-space:pre-wrap;font-size:11.5px;line-height:1.6;margin-top:6px;max-height:200px;overflow:auto">'+_whEsc(img.text)+'</div><button class="upbtn" style="margin-top:6px" onclick="whCopy('+WH_GEN.results.indexOf(img)+')">복사</button></div>';
+  h+='<div class="note" style="font-size:11px">📦 <b>한번에 받기를 권해요</b> — 카드를 한 장씩 받으면 크롬이 두 번째부터 막아요. ZIP은 파일 하나라 안 막혀요.</div>';
+  // 콘텐츠 카드 — 채널 아이콘 · 글자 수 · 복사 버튼
+  var 카드들=[{r:blog,ic:'📝',n:'블로그 글'},{r:card,ic:'🖼️',n:'카드뉴스'},{r:info,ic:'📊',n:'인포그래픽'},{r:img,ic:'🎨',n:'그림 지시문'}];
+  h+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-bottom:10px">';
+  카드들.forEach(function(x){ if(!x.r) return; var i=WH_GEN.results.indexOf(x.r);
+    h+='<div style="background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px">'
+      +'<div style="font-size:12px;font-weight:800">'+x.ic+' '+x.n+'</div>'
+      +'<div style="font-size:11px;color:var(--soft);margin:4px 0">'+x.r.chars+'자</div>'
+      +'<button class="upbtn" style="font-size:10.5px;padding:5px 8px;width:100%" onclick="whCopy('+i+')">복사</button></div>'; });
+  h+='</div>';
+  if(info) h+='<div class="note"><b>📊 인포그래픽 텍스트</b> — 디자이너에게 그대로 넘기세요<div style="white-space:pre-wrap;font-size:11.5px;line-height:1.6;margin-top:6px;max-height:180px;overflow:auto">'+_whEsc(info.text)+'</div></div>';
+  if(img) h+='<div class="note"><b>🎨 그림 지시문</b> — 미드저니·DALL-E에 붙여 쓰세요<div style="white-space:pre-wrap;font-size:11.5px;line-height:1.6;margin-top:6px;max-height:200px;overflow:auto">'+_whEsc(img.text)+'</div></div>';
   h+='<div class="note"><b>🎥 영상·오디오</b> — 대표님이 찍어서 올리시면 3단계 통과예요(AI가 만들지 않아요).<br>'
     +'<input type="file" accept="video/*,audio/*" onchange="whAttach(this)" style="margin-top:6px;font-size:11.5px"><span id="wh3Att" style="font-size:11.5px;color:var(--soft)"></span></div>';
   h+='<div id="wh3Out" style="margin-top:10px"></div>';
@@ -3640,6 +3652,71 @@ function whCardPng(i,enc){
     cv.toBlob(function(bl){ _whDownloadBlob(bl,'카드뉴스_'+(i+1)+'.png'); toast((i+1)+'번 카드 저장했어요'); }); };
   im.onerror=function(){ toast('카드 그리기 실패'); };
   im.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg);
+}
+
+// ── ZIP 한 개로 묶기 ─────────────────────────────────────────────────
+//    왜: 카드 10장을 따로 내려받으면 크롬이 "여러 파일 다운로드"를 막아 2장째부터 저장이 안 된다.
+//        한 개 파일로 묶으면 다운로드가 1회라 막히지 않는다. (실측에서 확인한 문제)
+//    압축은 하지 않는다(store) — PNG는 이미 압축돼 있어 의미가 없고, 코드가 짧아진다.
+var _WH_CRC=(function(){ var t=[]; for(var n=0;n<256;n++){ var c=n; for(var k=0;k<8;k++) c=(c&1)?(0xEDB88320^(c>>>1)):(c>>>1); t[n]=c>>>0; } return t; })();
+function _whCrc32(u8){ var c=0xFFFFFFFF; for(var i=0;i<u8.length;i++) c=_WH_CRC[(c^u8[i])&0xFF]^(c>>>8); return (c^0xFFFFFFFF)>>>0; }
+function _whZip(files){                       // files: [{name, data:Uint8Array}]
+  var parts=[], central=[], off=0;
+  var enc=function(s){ return new TextEncoder().encode(s); };
+  var u16=function(v){ return [v&255,(v>>8)&255]; };
+  var u32=function(v){ return [v&255,(v>>8)&255,(v>>16)&255,(v>>24)&255]; };
+  files.forEach(function(f){
+    var nm=enc(f.name), crc=_whCrc32(f.data), sz=f.data.length;
+    var lh=[].concat([80,75,3,4],u16(20),u16(0),u16(0),u16(0),u16(0),u32(crc),u32(sz),u32(sz),u16(nm.length),u16(0));
+    parts.push(new Uint8Array(lh), nm, f.data);
+    central.push({nm:nm,crc:crc,sz:sz,off:off});
+    off += lh.length + nm.length + sz;
+  });
+  var cstart=off, cbytes=[];
+  central.forEach(function(c){
+    cbytes=cbytes.concat([80,75,1,2],u16(20),u16(20),u16(0),u16(0),u16(0),u16(0),
+      u32(c.crc),u32(c.sz),u32(c.sz),u16(c.nm.length),u16(0),u16(0),u16(0),u16(0),u32(0),u32(c.off));
+    parts.push(new Uint8Array(cbytes.slice(-46)), c.nm);
+    off += 46 + c.nm.length;
+  });
+  parts.push(new Uint8Array([].concat([80,75,5,6],u16(0),u16(0),u16(files.length),u16(files.length),u32(off-cstart),u32(cstart),u16(0))));
+  return new Blob(parts,{type:'application/zip'});
+}
+// 카드 한 장을 PNG 바이트로 (내려받지 않고 데이터만)
+function _whCardBytes(txt){
+  return new Promise(function(res,rej){
+    var W=1080,H=1080,lines=[],cur='';
+    txt.split(' ').forEach(function(w){ if((cur+' '+w).trim().length>14){ lines.push(cur.trim()); cur=w; } else cur+=' '+w; });
+    if(cur.trim()) lines.push(cur.trim());
+    var y=H/2-(lines.length-1)*45;
+    var ts=lines.map(function(l){ var s='<tspan x="'+(W/2)+'" y="'+y+'">'+l.replace(/[&<>]/g,'')+'</tspan>'; y+=90; return s; }).join('');
+    var svg='<svg xmlns="http://www.w3.org/2000/svg" width="'+W+'" height="'+H+'"><rect width="'+W+'" height="'+H+'" fill="#0B2620"/>'
+      +'<rect x="40" y="40" width="'+(W-80)+'" height="'+(H-80)+'" fill="none" stroke="#F2B23E" stroke-width="3" rx="24"/>'
+      +'<text font-family="Malgun Gothic,AppleSDGothicNeo,sans-serif" font-size="66" font-weight="800" fill="#EAF3F1" text-anchor="middle">'+ts+'</text>'
+      +'<text x="'+(W/2)+'" y="'+(H-70)+'" font-family="Malgun Gothic,sans-serif" font-size="34" fill="#F2B23E" text-anchor="middle">오원트금융연구소</text></svg>';
+    var im=new Image();
+    im.onload=function(){ var cv=document.createElement('canvas'); cv.width=W; cv.height=H;
+      cv.getContext('2d').drawImage(im,0,0);
+      cv.toBlob(function(bl){ bl.arrayBuffer().then(function(ab){ res(new Uint8Array(ab)); }); }); };
+    im.onerror=function(){ rej(new Error('카드 그리기 실패')); };
+    im.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg);
+  });
+}
+// ★카드 전부 + 블로그 + 원고 12종을 ZIP 한 개로
+function whZipAll(){
+  var texts=Array.from(document.querySelectorAll('#wh3Out [id^=whCd]')).map(function(e){return e.textContent;});
+  if(!texts.length){ toast('먼저 카드뉴스를 만들어 주세요'); return; }
+  toast('묶는 중… 잠시만요');
+  Promise.all(texts.map(function(t){ return _whCardBytes(t); })).then(function(imgs){
+    var files=imgs.map(function(u8,i){ return { name:'카드뉴스_'+(i+1)+'.png', data:u8 }; });
+    var enc=new TextEncoder();
+    var b=_whFind('blog');
+    if(b) files.push({ name:'블로그.html', data: enc.encode('<!doctype html><meta charset="utf-8"><body style="max-width:720px;margin:40px auto;font-family:system-ui;line-height:1.8">'+_whEsc(b.text).replace(/\n/g,'<br>')+'<p><a href="'+_whEsc(b.url)+'">1분 무료 진단</a></p>') });
+    var all=(WH_GEN?WH_GEN.results:[]).map(function(r){ return '■ '+r.label+' ('+r.chars+'자)\n'+(r.text||'')+'\n주소: '+(r.url||'')+'\n'; }).join('\n──────────\n');
+    files.push({ name:'원고_12종.txt', data: enc.encode(all) });
+    _whDownloadBlob(_whZip(files), '홍보묶음_'+Date.now()+'.zip');
+    toast('ZIP 하나로 받았어요 (카드 '+imgs.length+'장 + 블로그 + 원고 12종)');
+  }).catch(function(e){ toast('묶지 못했어요: '+e.message); });
 }
 
 function _whDownload(text,name,mime){ _whDownloadBlob(new Blob([text],{type:mime||'text/plain;charset=utf-8'}),name); }
