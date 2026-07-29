@@ -448,7 +448,10 @@ const app = express();
 app.use(express.json({ limit: '50mb' })); // 자료 업로드(base64) 파싱 — 큰 제안서 PDF 다중 업로드 대비 상향
 // ★배포 반영 확인용(정직): 재배포 후 이 build 값이 바뀌면 새 코드가 실제 활성화됐다는 증거. 공개·민감정보 없음.
 const BUILD_TAG = 'v4.0-day4-vapi-clientData-expiring-2026-07-24';
-app.get(['/health', '/api/version'], (req, res) => res.json({ ok: true, build: BUILD_TAG, emojiFilter: typeof stripEmoji === 'function', pineconeReady: (function () { try { return personalMem.configured(); } catch (e) { return false; } })(), ts: new Date().toISOString() }));
+// ★배포된 코드가 어느 커밋인지 화면에서 바로 확인하려고 넣는다(추측·통계로 판단하던 것을 없앰).
+//   Render가 자동으로 넣어주는 환경변수를 읽기만 한다. 없으면 'local' — 지어내지 않는다.
+const GIT_SHA = String(process.env.RENDER_GIT_COMMIT || '').slice(0, 7) || 'local';
+app.get(['/health', '/api/version'], (req, res) => res.json({ ok: true, build: BUILD_TAG, commit: GIT_SHA, emojiFilter: typeof stripEmoji === 'function', pineconeReady: (function () { try { return personalMem.configured(); } catch (e) { return false; } })(), ts: new Date().toISOString() }));
 // 🔑 SA 전환 확인용 진단: 로그인·OAuth 없이 서비스 계정만으로 실제 시트를 읽어 본다. ok:true면 SA 영구접근 성공(토큰만료 무관).
 //   loadTable(null)은 ma 없이 SA로 이름검색+읽기를 그대로 수행. 개인정보 행은 반환하지 않고 건수만 노출.
 app.get('/api/diag/auth-test', async (req, res) => {
