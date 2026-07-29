@@ -30,6 +30,7 @@ const rosterImport = require('./roster_import');              // 📇 Step 2-F �
 const customEvents = require('./custom_events');              // ⭐ 대표가 직접 정의하는 이벤트(독립 모듈·기본 6개 무접촉)
 const claimForm = require('./claim_form_skill');              // 🩹 보상비서 1단계 · 삼성화재 청구서 자동 입력(독립 모듈 · 제로 저장 · 기존 기능 무접촉)
 const claimDocs = require('./claim_docs_skill');              // 🩹 보상비서 2단계 · 필요 서류 안내(독립 모듈 · 순수함수 · 발송 0 · 금액산정 0)
+const claimAmount = require('./claim_amount_skill');          // 🩹 보상비서 3단계 · 지급 구조 안내(독립 모듈 · 약관 근거만 · 면책 강제 · 설계사 전용)
 const _openai = new (require('openai'))({ apiKey: process.env.OPENAI_API_KEY });
 // ★워크스페이스 대화 = Anthropic Claude Sonnet 5(대표 지시). 온보딩·OCR·약관·문자초안은 OpenAI 유지.
 //   대표가 준 'claude-sonnet-4-6-20250514'는 존재하지 않는 ID → 최신 Sonnet인 claude-sonnet-5로. 날짜접미사 금지.
@@ -2864,6 +2865,31 @@ app.post('/api/claim/docs', (req, res) => {
     const text = String((req.body || {}).text || '').trim();
     const r = claimDocs.guide(text);
     console.log(`[🩹서류안내] ${r.ok ? '안내 생성' : '되물음'}`); // ★고객 값은 로그에 안 남긴다(이름조차)
+    res.json(r);
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// 🩹 보상비서 3단계 — 지급 "구조" 안내 (독립 모듈 claim_amount_skill · 추가만)
+// ═══════════════════════════════════════════════════════════════
+// 무엇을·왜: "이 담보는 무엇이 어떻게 정해지는가"를 ★약관 근거로 설명한다.
+//   설계사가 진료비와 ★적용할 비율을 고르면 그때 대략의 참고 범위를 보여준다.
+//
+// ★★★법적 방어선(회장님 지시 · 모듈이 코드로 강제 — 여기서 뚫을 수 없다)
+//   · "산정·확정" 금지어 필터를 통과한 문장만 나간다 → 참고·추정만
+//   · 면책 문구·설계사 전용 표시가 ★항상 붙는다(금액이 안 나와도 붙는다)
+//   · ★약관 발췌를 못 찾으면 금액을 내지 않는다(구조와 확인할 항목까지만)
+//   · ★지니야가 비율을 임의로 고르지 않는다 — 손해사정사 영역(적용 판단) 침범 금지
+//     (2026-07-29 실물 시험 사고: 자기부담금 20%를 보상비율로 잘못 곱해 엉뚱한 금액이 나왔다)
+// ★설계사 전용이므로 로그인 필수. ★발송 코드 없음. ★제로 인그레스(저장 0 · 고객 값 로그 0).
+app.post('/api/claim/amount', async (req, res) => {
+  try {
+    if (!sessionOf(req)) return res.status(401).json({ ok: false, error: '로그인이 필요해요' });
+    const b = req.body || {};
+    const r = await claimAmount.explain(String(b.text || ''), {
+      진료비: b.진료비, 적용비율: b.적용비율, 자기부담금: b.자기부담금, 한도: b.한도,
+    });
+    console.log(`[🩹구조안내] 약관근거=${r.약관근거 === true} · 범위=${!!(r.참고범위 && r.참고범위.있음)}`); // ★값은 안 남긴다
     res.json(r);
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });

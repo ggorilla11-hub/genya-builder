@@ -3604,6 +3604,16 @@ function openClaim(){
     +'<button onclick="claimDocsAsk()" id="claimDocsBtn" style="background:#1d4ed8;color:#fff;border:none;border-radius:8px;padding:9px 16px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap">서류 안내 →</button></div>'
     +'<div style="font-size:10.5px;color:#98a4b2;margin-top:6px">⚖️ 필요 서류 <b>안내(정보 제공)</b>예요. 보험금 산정·청구 대리가 아니고, <b>발송도 하지 않아요</b>(안내문은 복사해서 직접 보내세요).</div>'
     +'<div id="claimDocsOut" style="margin-top:10px"></div></div>'
+    /* ★보상비서 3단계(추가) — 지급 구조 안내. 약관 근거·면책 강제·설계사 전용. 기존 흐름 무접촉. */
+    +'<div style="border:1.5px solid #e3d5f5;border-radius:10px;padding:12px;margin-bottom:14px;background:#faf7fe">'
+    +'<div style="font-size:12px;font-weight:700;color:#6d28d9;margin-bottom:2px">📐 이 사고는 어떻게 계산되나요 <span style="background:#6d28d9;color:#fff;border-radius:5px;padding:1px 5px;font-size:9.5px;margin-left:4px">설계사 전용</span></div>'
+    +'<div style="font-size:10.5px;color:#8a93a3;margin-bottom:8px">약관을 찾아 <b>지급 구조</b>를 설명해요. 진료비를 넣고 약관에서 찾은 비율을 <b>고르시면</b> 대략 범위를 보여드려요.</div>'
+    +'<input id="claimAmtIn" placeholder="예: 삼성화재 자기신체사고 지급 구조 알려줘" style="width:100%;box-sizing:border-box;border:1px solid #d5dde6;border-radius:8px;padding:9px 11px;font-size:12.5px;font-family:inherit;margin-bottom:6px" onkeydown="if(event.key===\'Enter\')claimAmtAsk()">'
+    +'<div style="display:flex;gap:6px"><input id="claimAmtCost" placeholder="진료비·손해액 (원) — 선택" inputmode="numeric" style="flex:1;border:1px solid #d5dde6;border-radius:8px;padding:9px 11px;font-size:12.5px;font-family:inherit">'
+    +'<input id="claimAmtDed" placeholder="자기부담금 — 선택" inputmode="numeric" style="width:130px;border:1px solid #d5dde6;border-radius:8px;padding:9px 11px;font-size:12.5px;font-family:inherit">'
+    +'<button onclick="claimAmtAsk()" id="claimAmtBtn" style="background:#6d28d9;color:#fff;border:none;border-radius:8px;padding:9px 16px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap">구조 보기 →</button></div>'
+    +'<div style="font-size:10.5px;color:#98a4b2;margin-top:6px">⚖️ 금액을 정해 드리는 게 아니에요. 약관에 적힌 값을 <b>읽어서 보여드릴 뿐</b>이고, 어떤 비율이 이 사고에 맞는지는 <b>설계사님이 고르세요</b>.</div>'
+    +'<div id="claimAmtOut" style="margin-top:10px"></div></div>'
     +'<div style="border:1px solid #e2e8ef;border-radius:10px;padding:12px;margin-bottom:10px"><div style="font-size:12px;font-weight:700;color:#0d1b2a;margin-bottom:6px">① 보험사 보상청구 양식 <span style="color:#8a93a3;font-weight:400">(회사별 기본틀)</span></div>'
     +'<button onclick="claimPick(\'form\')" style="background:#eef2f6;border:1px solid #d5dde6;border-radius:8px;padding:8px 14px;font-size:12px;cursor:pointer;font-family:inherit">📄 양식 업로드</button><span id="claimFormName" style="font-size:11.5px;color:#8a93a3;margin-left:8px">아직 없음</span></div>'
     +'<div style="border:1px solid #e2e8ef;border-radius:10px;padding:12px;margin-bottom:10px"><div style="font-size:12px;font-weight:700;color:#0d1b2a;margin-bottom:6px">② 고객 증빙자료 <span style="color:#8a93a3;font-weight:400">(진단서·영수증 등 · 여러 장)</span></div>'
@@ -3613,6 +3623,83 @@ function openClaim(){
     +'<div id="claimOut" style="margin-top:12px"></div>'
     +'<input type="file" id="claimFile" style="display:none" accept="image/*,.pdf">'));
 }
+// ── 🩹 보상비서 3단계: 지급 구조 안내 (독립 · 1·2단계·기존 흐름 무접촉) ──
+//   ★면책·설계사전용은 서버가 항상 보내준다(d.면책·d.설계사전용) — 화면이 지울 수 없다.
+//   ★비율은 지니야가 고르지 않는다. 후보 버튼을 ★설계사가 눌러야 범위가 나온다.
+var _claimAmtLast={};
+function _claimAmtNum(id){ var el=document.getElementById(id); var v=String((el&&el.value)||'').replace(/[^\d]/g,''); return v?parseInt(v,10):null; }
+function claimAmtAsk(적용비율){
+  var q=String((document.getElementById('claimAmtIn')||{}).value||'').trim();
+  var out=document.getElementById('claimAmtOut'), btn=document.getElementById('claimAmtBtn');
+  if(!q){ toast('무엇이 궁금하신지 한 줄로 적어주세요'); return; }
+  var body={text:q,진료비:_claimAmtNum('claimAmtCost'),자기부담금:_claimAmtNum('claimAmtDed')};
+  if(적용비율) body.적용비율=적용비율;
+  _claimAmtLast=body;
+  btn.disabled=true; btn.textContent='약관 찾는 중…';
+  out.innerHTML='<div style="font-size:11.5px;color:#8a93a3">약관 창고에서 근거를 찾고 있어요…</div>';
+  fetch('/api/claim/amount',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
+    .then(function(r){return r.json();}).then(function(d){
+      btn.disabled=false; btn.textContent='구조 보기 →';
+      out.innerHTML=_claimAmtRender(d);
+    }).catch(function(){ btn.disabled=false; btn.textContent='구조 보기 →';
+      out.innerHTML='<div style="font-size:12px;color:#c0392b">불러오지 못했어요 — 잠시 후 다시</div>'; });
+}
+function claimAmtPick(p){ claimAmtAsk(p); }
+function _claimAmtRender(d){
+  if(!d) return '<div style="font-size:12px;color:#c0392b">응답이 비었어요</div>';
+  // ★면책·설계사전용은 무조건 붙인다(성공·실패·금액 유무 상관없이)
+  var 꼬리='<div style="font-size:10.5px;color:#6d28d9;background:#f5f0fe;border:1px solid #e3d5f5;border-radius:8px;padding:8px 10px;margin-top:10px;line-height:1.6"><b>⚠️ '+_sEsc(d.설계사전용||'')+'</b></div>'
+    +'<div style="font-size:10.5px;color:#8a6d1a;background:#fff7ed;border:1px solid #f0e0c8;border-radius:8px;padding:8px 10px;margin-top:6px;line-height:1.6">'+_sEsc(d.면책||'')+'</div>';
+  if(!d.ok) return '<div style="font-size:12px;color:#6d28d9;background:#f5f0fe;border:1px solid #e3d5f5;border-radius:8px;padding:10px">'+_sEsc(d.error||'조금 더 알려주세요')+'</div>'+꼬리;
+  var h='';
+  // 약관 근거 유무 — 정직하게 먼저 보여준다
+  if(d.약관근거){
+    h+='<div style="font-size:11px;color:#0f766e;margin-bottom:7px">📚 약관 근거: '+_sEsc((d.출처||[]).slice(0,3).join(' · '))+'</div>';
+  }else{
+    h+='<div style="font-size:11.5px;color:#8a6d1a;background:#fff7ed;border:1px solid #f0e0c8;border-radius:8px;padding:9px 11px;margin-bottom:7px">'
+      +'📭 '+_sEsc(d.사유||'약관 근거를 못 찾았어요')+' <b>— 금액은 내지 않았습니다(지어내지 않음)</b></div>';
+  }
+  if(d.구조설명) h+='<div style="border:1px solid #e2e8ef;border-radius:8px;padding:10px;background:#fff;margin-bottom:7px;font-size:11.5px;color:#33475a;line-height:1.75;white-space:pre-wrap">'+_sEsc(d.구조설명)+'</div>';
+  // 참고 범위 — 설계사가 비율을 골랐을 때만 나온다
+  if(d.참고범위&&d.참고범위.있음){
+    h+='<div style="border:1.5px solid #6d28d9;border-radius:8px;padding:10px;background:#faf7fe;margin-bottom:7px">'
+      +'<div style="font-size:13px;font-weight:700;color:#6d28d9">'+_sEsc(d.참고범위.표기||'')+'</div>'
+      +'<div style="font-size:11px;color:#8a93a3;margin-top:3px">'+_sEsc(d.참고범위.계산식||'')+'</div></div>';
+  }else if(d.참고범위&&d.참고범위.사유){
+    h+='<div style="font-size:11.5px;color:#475569;background:#f8fafc;border:1px solid #e2e8ef;border-radius:8px;padding:9px 11px;margin-bottom:7px">'+_sEsc(d.참고범위.사유)+'</div>';
+  }
+  // ★비율 후보 — 설계사가 고른다
+  if(d.비율후보&&d.비율후보.length){
+    h+='<div style="border:1px solid #e2e8ef;border-radius:8px;padding:10px;background:#fff;margin-bottom:7px">'
+      +'<div style="font-size:11px;font-weight:700;color:#0d1b2a;margin-bottom:5px">약관에서 찾은 비율 — <b style="color:#6d28d9">맞는 것을 고르세요</b></div>';
+    d.비율후보.slice(0,6).forEach(function(b){
+      h+='<div style="border-top:1px solid #f0f3f7;padding:7px 0">'
+        +'<button onclick="claimAmtPick('+b.비율+')" style="background:#6d28d9;color:#fff;border:none;border-radius:6px;padding:3px 9px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;margin-right:6px">'+_sEsc(b.표기)+' 적용</button>'
+        +'<span style="font-size:10.5px;color:#8a93a3">p.'+_sEsc(b.page)+'</span>'
+        +'<div style="font-size:11px;color:#5a6b7d;line-height:1.6;margin-top:4px">'+_sEsc(b.약관문장)+'</div></div>';
+    });
+    h+='</div>';
+  }
+  // 한도 후보(참고용 표시만)
+  if(d.한도후보&&d.한도후보.length){
+    h+='<div style="font-size:11px;color:#8a93a3;margin-bottom:7px">약관에서 본 금액: '
+      +_sEsc(d.한도후보.slice(0,4).map(function(x){return x.표기+'(p.'+x.page+')';}).join(' · '))+'</div>';
+  }
+  // 필요정보(약관 없을 때)
+  if(d.필요정보&&d.필요정보.length){
+    h+='<div style="background:#f8fafc;border:1px solid #e2e8ef;border-radius:8px;padding:9px 11px;margin-bottom:7px">'
+      +'<div style="font-size:11px;font-weight:700;color:#475569;margin-bottom:4px">금액을 보려면 이것들이 필요해요</div>';
+    d.필요정보.forEach(function(x){ h+='<div style="font-size:11.5px;color:#33475a;line-height:1.7">· '+_sEsc(x)+'</div>'; });
+    h+='</div>';
+  }
+  if(d.알림&&d.알림.length){
+    h+='<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:9px 11px">';
+    d.알림.forEach(function(a){ h+='<div style="font-size:11.5px;color:#8a6d1a;line-height:1.7">· '+_sEsc(a)+'</div>'; });
+    h+='</div>';
+  }
+  return h+꼬리;
+}
+
 // ── 🩹 보상비서 2단계: 필요 서류 안내 (독립 · 1단계·기존 claimBuild 흐름 무접촉) ──
 //   ★지어내기 0: 서버가 준 목록만 그대로 보여준다. 화면에서 서류를 만들지 않는다.
 //   ★발송 0: 안내문은 ★복사만 된다. 보내는 것은 설계사가 직접 한다.
