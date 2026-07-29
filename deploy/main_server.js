@@ -3009,12 +3009,20 @@ async function orderHandler(req, res) {
     // ★라우팅 우선순위(회장님 지시): approval > sheetCRUD > events > 일반. 도구 의도(결재·발송·올려·고객데이터)면 events 수문장을 건너뛴다.
     //   ★_toolIntent를 events 게이트보다 먼저 정의(이동) + "올려/초안" 보강(결재함 요청이 events=HIT로 새던 버그 차단).
     const _toolIntent = /보내|발송|알림톡|결재|승인|올려\s*(줘|둬|둘|놔|주세요)|초안.{0,10}(올려|결재|발송|보내|저장)|시트\s*(목록|리스트|들|현황|뭐|어떤|무슨|조회|검색|추가|수정|삭제)|어떤\s*시트|무슨\s*시트|내\s*(구글\s*)?시트|명단\s*(추가|수정|삭제|변경|조회|보여|알려|몇)|고객\s*(추가|등록|수정|삭제)|([가-힣]{2,4})\s*님?\s*(정보|연락처|전화번호|전화|휴대폰|핸드폰|번호|이메일|메일|주소|생일|생년월일|나이|성별|직업|만기|상품|알려|조회)|([가-힣]{2,4}).{0,25}(변경|수정|업데이트|바꿔|바꾸|고쳐|고치|메모|기록)/.test(q);
+    // ★약관 질문 판별(공용 모듈) — 한 번만 계산해 여러 분기에서 같은 값을 쓴다.
+    //   ★2026-07-29: 카드(activeSkill)가 약관 질문을 가로채 "증권 올려달라"고 답하던 사고 때문에 도입.
+    const _yakAsk = 약관질문인가(q);
     let _gateEvents = '';
     if (_uidG && personalMem.configured() && _gateMatch && !_toolIntent) {
       try { _gateEvents = await personalMem.recallRecentEvents({ ownerId: _uidG, limit: 5 }); } catch (e) {}
     }
     // ★이 로그의 match/events는 "방금 올린 것 인지"용이다 — ★카드·발굴과 무관하다(오해 방지).
     console.log('[🛡️수문장·방금올린것인지] uid=' + (_uidG || '(없음)') + ' · pineconeReady=' + personalMem.configured() + ' · match=' + _gateMatch + ' · events=' + (_gateEvents ? 'HIT(' + _gateEvents.slice(0, 40) + '…)' : 'MISS') + ' · q="' + String(q).slice(0, 30) + '" (카드 여부는 [📇카드] 줄을 보세요)');
+    // ★2026-07-29 회장님 지시: "대표님이 물었을 때 실제로 어디까지 가는지" 로그로 추적할 수 있게 한다.
+    //   추측 대신 Render 로그 한 줄로 갈린다 — 약관으로 갔는지, 카드가 가로챘는지, 도구로 샜는지.
+    console.log('[🧭라우팅] q="' + String(q).slice(0, 40) + '" · 약관질문=' + _yakAsk
+      + ' · activeSkill=' + (activeSkill || '(없음)') + (activeSkill && !SKILL_CTX[activeSkill] ? '(★없는코드)' : '')
+      + ' · toolIntent=' + _toolIntent + ' · canData=' + canData);
     // ★버그수정: activeSkill(localStorage 복원)이 시트·발송 도구 의도를 가로채던 문제 → _toolIntent(위에서 정의)면 activeSkill·events·명단 분기를 건너뛰고 approval/sheetCRUD 도구 분기로.
     // ★이슈#1 근본수정(웹검색 라우팅 가로챔): 최신정보 토픽(시세·환율·세법·판례 등)이면서 고객(○○님) 지칭이 아니면
     //   시트/캘린더 분기가 "어때/조회/뭐야"로 가로채는 것을 막고 일반대화(웹검색) 우선. ★고객명 시트조회는 그대로 유지.
@@ -3434,7 +3442,14 @@ async function orderHandler(req, res) {
       const sysP = genyaPersona(job, { email: uid }) + _findCtx(req) + '\n[활성 고객명단 — 실제 시트 데이터(마스터 시트)]' + extra;
       const text = await askClaude(sysP, hist.concat([{ role: 'user', content: q }]), 8192, { admin: _admin });
       out = { kind: '📇 고객명단', text, engine: _lastAskModel || pickedModel(q, { admin: _admin }) };
-    } else if (activeSkill && SKILL_CTX[activeSkill] && !_toolIntent) {
+    } else if (activeSkill && SKILL_CTX[activeSkill] && !_toolIntent && !_yakAsk) {
+      // ★★2026-07-29 대표님 실측 사고 — 이 조건의 `!_yakAsk`를 빼지 말 것.
+      //   카드(증권분석비서 등)를 한 번 열면 activeSkill이 화면 localStorage에 남는다.
+      //   그 뒤로는 ★약관 질문까지 이 분기가 가로채서, 지니야가 창고를 찾아보지도 않고
+      //   "증권을 ＋ 버튼으로 올려주세요"라고 답했다(위 시스템 프롬프트가 그렇게 시킨다).
+      //   → 약관 질문이면 이 분기를 건너뛰고 아래 📄 약관창고로 보낸다.
+      //   ※ 같은 종류의 사고가 이미 한 번 있었다(_toolIntent). 그때 시트·발송만 예외로 뒀고
+      //     약관은 빠져 있었다.
       // ★카드에서 시작한 작업 맥락: 키워드 라우팅(증권→드라이브 "해당 파일 없음") 건너뛰고 LLM이 맥락 유지해 이어서 답한다
       const job = String((req.body && req.body.job) || req.query.job || '');
       const hist = Array.isArray(req.body && req.body.history) ? req.body.history.slice(-10) : [];
@@ -3462,7 +3477,7 @@ async function orderHandler(req, res) {
         console.log('[🗂️sheetCRUD] runChat 응답 · reply="' + String((rc && rc.reply) || '(빈)').replace(/\n/g, ' ').slice(0, 180) + '" · pending=' + !!(rc && rc.pending));
         out = { kind: '🗂️ 고객명단', text: rc.reply || '무엇을 도와드릴까요?', pending: rc.pending || null, engine: MODEL_DEEP };
       }
-    } else if (약관질문인가(q)) {
+    } else if (_yakAsk) {
       // ★2026-07-29 수정: 예전 조건은 ★자동차보험 시절 낱말만 봤다.
       //   /약관|무보험|대물|자기신체|자동차상해|담보|보장.*(뭐|무엇|차이)/
       //   그래서 "현대해상 암진단비 면책기간은?"이 여기 안 걸려 일반 대화로 새 나갔고,

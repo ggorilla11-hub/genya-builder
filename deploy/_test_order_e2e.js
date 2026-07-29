@@ -73,8 +73,13 @@ async function 서버깨어남(초) {
     ok(/p\.\d+/.test(r1.sources[0]), '페이지 표기 없음: ' + r1.sources[0]);
   });
   await T('★"발췌에는 없어요"가 아니라 실제 면책 내용을 답한다', async () => {
-    ok(!/발췌에는 없어요/.test(r1.text || ''), '약관이 있는데 못 찾음: ' + String(r1.text).slice(0, 80));
-    ok(/면책|90일|보장개시/.test(r1.text || ''), '면책 내용이 없음: ' + String(r1.text).slice(0, 80));
+    // ★판정은 ★뜻으로 한다. LLM이 "발췌에는 없어요 — 참고로 면책기간은 90일…"처럼
+    //   운을 떼고 제대로 답하는 경우가 있어, 글자만 보면 시험이 흔들린다(실제로 한 번 흔들렸다).
+    //   진짜 실패는 "못 찾았다고 하면서 면책 내용도 없는" 경우다.
+    const t = String(r1.text || '');
+    const 내용있음 = /면책|90일|보장개시|감액/.test(t);
+    ok(내용있음, '면책 내용이 없음: ' + t.slice(0, 100));
+    ok(!(/발췌에는 없어요/.test(t) && !내용있음), '약관이 있는데 못 찾음: ' + t.slice(0, 100));
   });
 
   const q2 = '삼성화재 실손 본인부담금 지급구조';
@@ -99,7 +104,13 @@ async function 서버깨어남(초) {
   });
 
   console.log('\n━━━ 2. 카드(activeSkill)를 열어둔 상태에서도 약관으로 간다 ━━━');
-  for (const skill of ['claim', 'policy', 'compare']) {
+  // ★★2026-07-29 시험이 거짓말한 사고 — 이 주석 지우지 말 것.
+  //   처음엔 여기에 'claim','policy','compare' 같은 ★없는 코드를 넣었다.
+  //   서버는 `activeSkill && SKILL_CTX[activeSkill]` 로 검사하므로, 없는 코드면 ★분기가 아예 안 켜진다.
+  //   그래서 시험은 14/14 통과했는데 ★대표님 실제 화면에서는 증권분석비서가 가로채고 있었다
+  //   ("증권을 올려달라"는 SKILL_CTX.policy_analysis 문구다).
+  //   → 반드시 ★main_server.js의 SKILL_CTX 실제 키를 쓴다.
+  for (const skill of ['policy_analysis', 'product_compare', 'insurance_review', 'client_management']) {
     await T(`activeSkill=${skill} 이어도 약관창고`, async () => {
       const r = await ask(q1, skill);
       ok(r.kind === '📄 약관창고', 'activeSkill이 가로챔: ' + r.kind);
