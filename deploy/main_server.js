@@ -3734,6 +3734,8 @@ app.get('/api/profile', async (req, res) => {
 app.get('/api/boot', async (req, res) => {
   try {
     const s = sessionOf(req);
+    // 🎬 촬영 모드: 로그인 없이 바로 메인 화면(보험설계사)으로. 라이브면 아래 원래 줄 그대로 탄다.
+    if (!s && FILMING) return res.json({ ok: true, loggedIn: true, email: '촬영용@example.com', route: 'main', job: 'insurance', vip: true });
     if (!s) return res.json({ ok: true, loggedIn: false, route: 'login' });
     const email = String(s.email || '').toLowerCase();
     // 시연/체험용 계정: 항상 온보딩부터(교육생처럼)
@@ -4865,7 +4867,9 @@ app.get('/logout', async (req, res) => {
 // ★교육생 구제 통로: 남의 로그인이 남은 브라우저에서도 바로 내 계정으로.
 //   완전 로그아웃 → 구글 계정 선택창(prompt=select_account).
 app.get('/switch', (req, res) => { killSession(req, res); res.redirect(OA_CONFIGURED ? '/auth/google' : '/login'); });
-app.get('/me', (req, res) => { const s = sessionOf(req); res.json(s ? { ok: true, email: s.email, name: s.name, provider: s.provider, hasGoogleData: !!s.tokens, hasData: hasDataScope(req), scopes: (s.scope || (s.tokens && s.tokens.scope) || '') } : { ok: false }); });
+app.get('/me', (req, res) => { const s = sessionOf(req);
+  // 🎬 촬영 모드(내 PC 전용)에서 로그인 안 했으면 촬영용 신분으로 통과. 라이브(FILMING=false)면 아래 원래 코드 그대로.
+  if (!s && FILMING) return res.json({ ok: true, email: '촬영용@example.com', name: '오상열', provider: 'filming', hasGoogleData: false, hasData: true, scopes: '' }); res.json(s ? { ok: true, email: s.email, name: s.name, provider: s.provider, hasGoogleData: !!s.tokens, hasData: hasDataScope(req), scopes: (s.scope || (s.tokens && s.tokens.scope) || '') } : { ok: false }); });
 
 // 🔌 커넥터 실측 연결상태 — ★"토큰 있으니 연결됨"(거짓말) 금지. 실제 API 1회 호출 200 = 연결됨.
 //   지니야가 "연결됨"이라 표시했는데 실제론 안 됐던 사고의 근본 수정. "될 것 같다"가 아니라 "됐다".
@@ -5018,7 +5022,9 @@ const OG_TAGS = [
 app.get('/', (req, res) => {
   let html = fs.readFileSync(path.join(__dirname, 'genya.html'), 'utf8');
   // ★인증 게이트: 서버가 실제 세션 여부를 권위있게 주입(클라 라우팅 레이스 제거). 로그인 안 됐으면 클라가 로그인화면만 보이게 강제.
-  const authed = !!sessionOf(req);
+  // 🎬 촬영 모드는 내 PC에서만 도는 연출용 서버라 구글 로그인이 필요 없다(명단도 촬영 샘플에서 옴).
+  //    FILMING=false(라이브)면 아래는 원래대로 세션 여부 그대로다.
+  const authed = !!sessionOf(req) || FILMING;
   html = html.replace('<head>', '<head>\n' + KAKAO_ESCAPE + '\n<script>window.__AUTHED=' + (authed ? 'true' : 'false') + ';</script>'); // ★카톡 탈출 + 인증상태 주입(<head> 최상단, 다른 JS보다 먼저)
   html = html.replace('</head>', OG_TAGS + '\n</head>');
   res.setHeader('Cache-Control', 'no-store');

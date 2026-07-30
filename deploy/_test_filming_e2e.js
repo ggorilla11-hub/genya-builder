@@ -87,6 +87,18 @@ const P_FILM = 8098, P_LIVE = 8099;
     ok(!/@example\.com/.test(t), '★촬영용 가짜 이메일이 라이브 응답에 나옴');
     ok(!/__FILMING_SAMPLE__/.test(t), '★촬영 시트 표식이 라이브 응답에 나옴');
   });
+  await T('★★평소 서버는 로그인 없이 못 들어간다 (/me 는 여전히 ok:false)', async () => {
+    const m = await (await fetch(`http://localhost:${P_LIVE}/me`)).json();
+    ok(m.ok === false, '★로그인 안 했는데 통과됨 — 라이브 인증이 뚫림: ' + 글자(m));
+  });
+  await T('★★평소 서버 /api/boot 은 여전히 로그인 화면으로 보낸다', async () => {
+    const b = await (await fetch(`http://localhost:${P_LIVE}/api/boot`)).json();
+    ok(b.loggedIn === false && b.route === 'login', '★라이브가 로그인 없이 메인으로 감: ' + 글자(b));
+  });
+  await T('🎬촬영 서버는 로그인 없이 바로 메인 (촬영용 신분)', async () => {
+    const b = await (await fetch(`http://localhost:${P_FILM}/api/boot`)).json();
+    ok(b.loggedIn === true && b.route === 'main', 글자(b));
+  });
   await T('★평소 서버는 촬영 모드 꺼짐(/health)', async () => {
     const h = await (await fetch(`http://localhost:${P_LIVE}/health`)).json();
     ok(h.filming !== true, 'filming=' + h.filming);
