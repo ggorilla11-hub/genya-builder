@@ -82,10 +82,32 @@ const P_FILM = 8098, P_LIVE = 8099;
   await T('★평소 서버에 "명단 띄워봐" → 촬영 샘플 안 나옴', async () => {
     const r = await ask(P_LIVE, '명단 띄워봐');
     const t = 글자(r);
-    // 촬영 샘플에만 있는 표식(가짜 번호대·예시 도메인·가짜 시트ID)이 하나도 없어야 한다
-    ok(!/010-0000-/.test(t), '★촬영용 가짜 번호가 라이브 응답에 나옴: ' + t.slice(0, 300));
-    ok(!/@example\.com/.test(t), '★촬영용 가짜 이메일이 라이브 응답에 나옴');
+    // ★표식을 하드코딩하지 않는다 — 지금 쓰는 촬영 명단에서 직접 뽑아 쓴다.
+    //   (CSV를 갈아끼우면 예전 표식이 사라져 시험이 조용히 무의미해지던 것을 막는다)
+    const 촬영 = require('./filming_roster').table();
+    const 표식 = [촬영.rows[0]['증권번호'], 촬영.rows[0]['연락처'], 촬영.rows[0]['이메일']].filter((v) => v && String(v).length > 6);
+    ok(표식.length > 0, '촬영 명단에서 표식을 못 뽑음 — 이 시험이 무의미해짐');
+    표식.forEach((v) => ok(!t.includes(v), `★촬영 명단의 값(${v})이 라이브 응답에 나옴 = 샘플이 샜다`));
     ok(!/__FILMING_SAMPLE__/.test(t), '★촬영 시트 표식이 라이브 응답에 나옴');
+    ok(!(r.action === 'open_full_roster'), '★라이브에 전체화면 명단 신호가 붙음 — 메인 동작이 바뀜');
+  });
+  await T('★★라이브 "명단 띄워봐"에 전체화면 신호가 절대 안 붙는다', async () => {
+    for (const q of ['명단 띄워봐', '고객 명단 보여줘', '8월 만기 띄워봐']) {
+      const r = await ask(P_LIVE, q);
+      ok(r.action !== 'open_full_roster' && !r.roster, `"${q}" 에서 신호가 붙음: ` + 글자(r).slice(0, 200));
+    }
+  });
+  await T('🎬촬영 서버 "명단 띄워봐" → 전체화면 신호 + 표 데이터', async () => {
+    const r = await ask(P_FILM, '명단 띄워봐');
+    ok(r.action === 'open_full_roster', '신호 없음: ' + 글자(r).slice(0, 200));
+    ok(r.roster && r.roster.rows.length === 80, '80명이 아님: ' + (r.roster && r.roster.rows.length));
+    ok(r.roster.cols.join(',') === '번호,고객명,가입상품,보험사,만기일', '칸이 다름: ' + r.roster.cols.join(','));
+    ok(r.roster.rows.slice(0, 8).every((x) => x._hi), '상단 8명이 강조가 아님');
+    ok(r.roster.rows.filter((x) => x._hi).length === 8, '강조가 8명이 아님: ' + r.roster.rows.filter((x) => x._hi).length);
+  });
+  await T('🎬촬영 서버 "명단 몇 명이야"(띄우라는 말 아님) → 전체화면 안 열림', async () => {
+    const r = await ask(P_FILM, '명단 몇 명이야?');
+    ok(r.action !== 'open_full_roster', '띄우라고 안 했는데 열림: ' + 글자(r).slice(0, 200));
   });
   await T('★★평소 서버는 로그인 없이 못 들어간다 (/me 는 여전히 ok:false)', async () => {
     const m = await (await fetch(`http://localhost:${P_LIVE}/me`)).json();

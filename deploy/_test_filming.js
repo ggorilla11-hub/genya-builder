@@ -34,10 +34,11 @@ let t = null;
   ok('★명단 80명', t.rows.length === 80, t.rows.length + '명');
   ok('칸 20개', t.header.length === 20, t.header.length + '칸: ' + t.header.join('·'));
   ok('이름 칸 인식', t.nameCol === '고객명', t.nameCol);
-  ok('지시하신 20개 칸 이름 그대로',
+  // ★칸 이름은 단위(만원·원)가 붙어 올 수 있다(CTO CSV: '연소득(만원)'·'월보험료(원)') → 앞부분만 본다.
+  ok('지시하신 20개 칸 그대로',
     ['번호', '고객명', '생년월일', '성별', '연락처', '이메일', '주소', '가족사항', '직업', '연소득',
       '가입상품', '보험사', '증권번호', '월보험료', '가입일', '만기일', '주요보장', '특약', '무사고여부', '비고']
-      .every((h) => t.header.includes(h)), t.header.join(','));
+      .every((h) => t.header.some((x) => String(x).startsWith(h))), t.header.join(','));
 
   // ═══ [2] 8월 만기 8명 상단 ═══
   console.log('\n[2] 8월 만기 8명이 맨 위인가');
@@ -60,10 +61,22 @@ let t = null;
   ok('★구글 API 객체 자체가 없음(쓰려야 쓸 수 없음)', t.sheets === null, String(t.sheets));
   ok('★촬영 데이터 파일이 구글 라이브러리를 안 부름',
     !/require\(['"]googleapis['"]\)/.test(require('fs').readFileSync(path.join(__dirname, 'filming_roster.js'), 'utf8')));
-  ok('★연락처가 실제로 존재하지 않는 번호대(010-0000-)',
-    t.rows.every((r) => /^010-0000-\d{4}$/.test(r['연락처'])), t.rows[0]['연락처']);
-  ok('★이메일이 예시 전용 도메인(@example.com)',
-    t.rows.every((r) => /@example\.com$/.test(r['이메일'])), t.rows[0]['이메일']);
+  // ★연락처·이메일: 어떤 명단을 쓰느냐에 따라 달라진다.
+  //   내장 80명 = 010-0000-XXXX(미배정 번호대) · @example.com(예시 전용) → 실존 인물과 절대 무관.
+  //   CTO CSV   = 실제로 있을 법한 번호·gmail 주소일 수 있다 → 화면에 뜨면 실존 번호일 위험.
+  //   그래서 "무해한 값인가"를 판정하지 않고, ★사실을 그대로 세어 알린다(지어내지 않는다).
+  const 안전번호 = t.rows.filter((r) => /^010-0000-/.test(String(r['연락처'] || ''))).length;
+  const 안전메일 = t.rows.filter((r) => /@example\.com$/.test(String(r['이메일'] || ''))).length;
+  if (안전번호 === t.rows.length && 안전메일 === t.rows.length) {
+    ok('★연락처·이메일이 실존 불가능한 값(미배정 번호대·예시 도메인)', true);
+  } else {
+    console.log(`  ⚠️  주의 — 이 명단의 연락처·이메일은 실존할 수 있는 형식입니다.`);
+    console.log(`      실존불가 번호 ${안전번호}/${t.rows.length} · 예시 도메인 ${안전메일}/${t.rows.length} (예: ${t.rows[0]['연락처']} / ${t.rows[0]['이메일']})`);
+    console.log(`      → 촬영 화면(전체 명단)에는 연락처·이메일 칸이 없어 노출되지 않습니다. 개별 카드를 열면 보일 수 있으니 확인하세요.`);
+  }
+  // ★그래서 더 중요한 것: 촬영 전체 화면에 연락처·이메일이 아예 안 들어가는가
+  const 촬영칸 = require('./filming_fullscreen').SHOW_COLS;
+  ok('★촬영 전체 화면에는 연락처·이메일 칸이 없다', !촬영칸.includes('연락처') && !촬영칸.includes('이메일'), 촬영칸.join(','));
 
   // ═══ [5] 쓰기 차단 ═══
   console.log('\n[5] 촬영 모드에서 시트 쓰기·발송이 막히는가');
@@ -80,7 +93,7 @@ let t = null;
   crud.setSource(null);
   ok('★촬영 모드 끄면 다시 평소 상태', crud.isFilming() === false);
   ok('★촬영 코드는 FILMING_MODE=1 일 때만 켜짐(라이브엔 그 변수 없음)',
-    /const FILMING = process\.env\.FILMING_MODE === '1';/.test(ms) && /if \(FILMING\) require\('\.\/filming_roster'\)\.enable\(sheetsCrud\);/.test(ms));
+    /const FILMING = process\.env\.FILMING_MODE === '1';/.test(ms) && /if \(FILMING\) \{ require\('\.\/filming_roster'\)\.enable\(sheetsCrud\);/.test(ms));
   ok('★평소엔 촬영 파일을 require조차 안 함(if 안에 있음)',
     !/^const filmingRoster = require/m.test(ms));
   // loadTable 원래 코드가 살아 있는가 (갈림길만 추가, 본문 무접촉)

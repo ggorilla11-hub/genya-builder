@@ -441,7 +441,8 @@ sheetsCrud.init({
 // require 조차 되지 않고, 아래 한 줄은 통째로 건너뛴다 = 기존 동작 100% 그대로.
 // 켜지면 명단 관문이 촬영용 샘플 80명으로 바뀐다(구글 시트 접근 0 · 실제 고객 무접촉 · 시트 쓰기 차단).
 const FILMING = process.env.FILMING_MODE === '1';
-if (FILMING) require('./filming_roster').enable(sheetsCrud);
+let filmFull = null;
+if (FILMING) { require('./filming_roster').enable(sheetsCrud); filmFull = require('./filming_fullscreen'); }
 // 🔌 B-8 훅(엄마2 재인덱싱 구독 지점): 지금은 로그만. 엄마2가 sheetsCrud.onWrite(cb)로 Pinecone 재인덱싱 연결.
 sheetsCrud.onWrite((ev) => { try { if (process.env.LOCAL_STAGING === '1') console.log('[crud→B8] write event', JSON.stringify(ev)); } catch (e) {} });
 const CAL_ID = process.env.CAL_ID || 'ggorilla11@gmail.com';
@@ -3557,6 +3558,15 @@ async function orderHandler(req, res) {
     //   ★서버 저장 0 — 응답에 실어 보내고 끝.
     if (out && typeof out.text === 'string' && out.text.length > 4) {
       try { out.mentioned = await _namesInText(out.text); } catch (e) {}
+    }
+    // 🎬 촬영 B-2: "명단 띄워봐"면 화면 가득 큰 표로 띄우라는 신호를 함께 보낸다(음성·텍스트 같은 길).
+    //    ★FILMING=false(라이브)면 이 블록은 통째로 건너뛴다 → 메인·교육생 응답에 아무것도 안 붙는다.
+    if (FILMING && filmFull && filmFull.wantsRoster(q)) {
+      try {
+        const _ft = await sheetsCrud.loadTable(null);
+        const _fr = filmFull.build(_ft, q);
+        if (_fr) { out.action = 'open_full_roster'; out.roster = _fr; console.log(`[🎬전체화면명단] ${_fr.total}명 · 강조 ${_fr.hiCount}명 (${_fr.focusLabel || '없음'})`); }
+      } catch (e) { console.log('[🎬전체화면명단] 실패(대화는 그대로 진행):', e.message); }
     }
     res.json({ ok: true, ...out, saved });
   } catch (e) {

@@ -5393,6 +5393,7 @@ window.sendMsg=function(){
      if(d && d.action==='open_card' && d.customer){ window._CARD_MISS=0; _카드확인(function(){ openCustomerCard(d.customer); }, 1); }
      if(d && d.action==='open_cards' && d.customers){ window._CARD_MISS=0; _카드확인(function(){ openCustomerCards(d.customers, d.label); }, (d.customers||[]).length); }   // 📇 묶음 카드(상담 대기·만기 등)
      if(d && d.action==='close_card'){ try{ closeCustomerCards(d.customer); }catch(e){} try{ showCardsClose(); }catch(e){} if(d.발굴도){ try{ closeDiscovery(); }catch(e){} } }   // ★고객카드+내 상자+(발굴이라 하시면)발굴 팝업까지                            // 📇 카드 닫기(화면만·데이터 무접촉)
+     if(d && d.action==='open_full_roster'){ try{ openFullRoster(d.roster); }catch(e){} }   // 🎬 "명단 띄워봐" → 화면 가득 큰 표
      _rememberMentioned(d);                                                                                          // ★브리핑이 말한 이름을 기억 → "방금 말한 4명 카드"
      // ⭐ 말로 이벤트 만들기: 서버가 실제로 만든 경우에만 이 신호가 온다 → 대시보드를 열어 새 타일을 "짠" 하고 보여준다.
      if(d && d.action==='create_event' && d.eventName){ try{ _eventCreated(d.eventName, d.eventCount); }catch(e){} }
@@ -5484,6 +5485,7 @@ function _voiceExec(q){
       if(d.action==='open_tab'){ try{ discoveryPanel(d.tab||'find'); }catch(e){} }
       if(d.action==='refresh'){ try{ genyaRefresh(); }catch(e){} }
       if(d.action==='show_cards'){ try{ genyaShowCards(d.spec); }catch(e){} }              // 👀 음성으로도 보여줘
+      if(d.action==='open_full_roster'){ try{ openFullRoster(d.roster); }catch(e){} }      // 🎬 음성으로 "명단 띄워봐" → 화면 가득 큰 표
     }).catch(function(){ try{ pushMsg('gen','결재 처리 중 오류가 났어요. 잠시 후 다시 말씀해 주세요.'); }catch(e){} });
 }
 // ===== 📅 일정관리 비서 — 구글 캘린더 실데이터만(가짜·하드코딩 0). 오늘/이번주/이번달 전환 =====
@@ -6013,6 +6015,68 @@ window.addFile=function(){ doOCR(); };
     else{document.getElementById('ghPv').innerHTML='<div class="gh-warn">'+esc(j.message||j.error||'실패')+'</div>';}
   };
 })();
+</script>
+
+<!-- ═══ 🎬 촬영 B-2 · 전체 화면 명단 — 자체완결(기존 화면 무접촉) ═══
+     "명단 띄워봐"(음성·텍스트) → 화면 가득 큰 표. 뒤에서 풀샷으로 찍어도 읽히는 크기.
+     서버가 action:'open_full_roster' 를 보낼 때만 열린다(촬영 모드에서만 보낸다).
+     닫기: ✕ 버튼 또는 ESC. ─────────────────────────────────────── -->
+<div id="fullRoster" style="display:none;position:fixed;inset:0;z-index:99999;background:#0F1A35;color:#EAF0FA;font-family:Pretendard,'맑은 고딕',sans-serif;">
+  <div style="height:100%;display:flex;flex-direction:column;padding:26px 34px 18px;box-sizing:border-box;">
+    <!-- 머리 -->
+    <div style="display:flex;align-items:center;gap:18px;flex-shrink:0;padding-bottom:16px;border-bottom:2px solid rgba(255,255,255,.14);">
+      <div style="font-size:34px;font-weight:800;letter-spacing:-.5px;">📇 <span id="frTitle">고객 명단</span></div>
+      <div id="frSub" style="font-size:22px;color:#8FA3C4;font-weight:600;"></div>
+      <div id="frFocus" style="font-size:20px;font-weight:800;color:#0F1A35;background:#3DDC97;padding:6px 16px;border-radius:999px;"></div>
+      <div style="flex:1"></div>
+      <div onclick="closeFullRoster()" style="cursor:pointer;font-size:20px;font-weight:700;color:#8FA3C4;border:2px solid rgba(255,255,255,.2);border-radius:12px;padding:8px 20px;">✕ 닫기</div>
+    </div>
+    <!-- 표 -->
+    <div style="flex:1;overflow:auto;margin-top:6px;">
+      <table id="frTable" style="width:100%;border-collapse:collapse;font-size:26px;"></table>
+    </div>
+    <div style="flex-shrink:0;padding-top:12px;font-size:17px;color:#6E82A6;">스크롤하면 아래로 계속 보실 수 있어요 · ESC 로 닫기</div>
+  </div>
+</div>
+<script>
+/* 🎬 전체 화면 명단 — 열기/닫기. 이 함수들은 다른 화면을 건드리지 않는다. */
+function openFullRoster(r){
+  if(!r || !r.cols || !r.rows) return;
+  var esc = function(s){ return String(s==null?'':s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); };
+  document.getElementById('frTitle').textContent = r.title || '고객 명단';
+  document.getElementById('frSub').textContent   = r.subtitle || '';
+  var f = document.getElementById('frFocus');
+  f.textContent = r.focusLabel || ''; f.style.display = r.focusLabel ? '' : 'none';
+
+  var th = '<thead><tr>';
+  r.cols.forEach(function(c){
+    var w = (c==='번호') ? 'width:90px;' : (c==='고객명' ? 'width:190px;' : '');
+    th += '<th style="'+w+'text-align:left;padding:14px 16px;font-size:22px;color:#8FA3C4;font-weight:700;'
+        + 'position:sticky;top:0;background:#0F1A35;border-bottom:2px solid rgba(255,255,255,.14);">'+esc(c)+'</th>';
+  });
+  th += '</tr></thead>';
+
+  var tb = '<tbody>';
+  r.rows.forEach(function(row){
+    /* 강조행(가장 가까운 만기) = 형광 초록 배경 + 굵은 글씨. 뒤에서 찍어도 바로 눈에 들어오게. */
+    var hi = !!row._hi;
+    tb += '<tr style="'+(hi?'background:rgba(61,220,151,.18);':'')+'border-bottom:1px solid rgba(255,255,255,.07);">';
+    r.cols.forEach(function(c,i){
+      var style = 'padding:13px 16px;'+(hi?'color:#3DDC97;font-weight:800;':'color:#EAF0FA;font-weight:500;');
+      if(i===0) style += 'border-left:6px solid '+(hi?'#3DDC97':'transparent')+';';
+      tb += '<td style="'+style+'">'+esc(row[c])+'</td>';
+    });
+    tb += '</tr>';
+  });
+  tb += '</tbody>';
+
+  document.getElementById('frTable').innerHTML = th + tb;
+  document.getElementById('fullRoster').style.display = '';
+  /* ★다시 열 때 항상 맨 위부터. (안 하면 아까 스크롤한 자리에서 열려 9번부터 보인다 — 촬영 망침) */
+  try{ document.getElementById('frTable').parentNode.scrollTop = 0; }catch(e){}
+}
+function closeFullRoster(){ var el=document.getElementById('fullRoster'); if(el) el.style.display='none'; }
+document.addEventListener('keydown', function(e){ if(e.key==='Escape') closeFullRoster(); });
 </script>
 </body>
 </html>
