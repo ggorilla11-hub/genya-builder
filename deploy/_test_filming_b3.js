@@ -32,17 +32,47 @@ const 시안줄 = sm[1].trim()
   .replace(/^\(function\(\)\{/, '').replace(/\}\)\(\);$/, '')
   .split('\n').map((l) => l.trim()).filter((l) => l);
 const 화면줄 = new Set(gh.split('\n').map((l) => l.trim()));
-// ★대표님이 명시적으로 승인한 변경은 딱 하나 — maxR 크기(0.375 → 0.455).
-//   그 줄만 예외로 두고, 나머지는 여전히 한 줄이라도 다르면 실패시킨다.
-const 승인된변경 = [/var breath=1, maxR=Math\.min\(W,H\)\*0\.375, spinMul=1, coreGlow=1;/];
+// ★대표님이 명시적으로 지시한 변경(크기·밝기)만 예외로 둔다.
+//   그 외에는 여전히 한 줄이라도 다르면 실패시킨다 — "시안 그대로"를 지키려고.
+const 승인된변경 = [
+  /var breath=1, maxR=Math\.min\(W,H\)\*0\.375, spinMul=1, coreGlow=1;/,   // 크기
+  /var y=CY\+Math\.sin\(st\.ang\)\*R\*0\.84;/,                              // 세로 압축 완화
+  /if\(rNorm<0\.26\)\{ return 'rgba\('\+Math\.floor\(150\+b\*105\)/,          // 별 밝기
+  /if\(rNorm<0\.52\)\{ return 'rgba\(60,'/,                                 // 별 밝기
+  /return 'rgba\('\+Math\.floor\(90\+b\*60\)/,                              // 별 밝기
+  /var bright=\(0\.3\+tw\*0\.7\)\*st\.depth;/,                              // 최소 밝기
+  /var sz=st\.size\*\(0\.5\+\(1-st\.baseR\)\*0\.9\);/,                       // 별 크기
+  /grd\.addColorStop\(0,'rgba\(90,224,200,'\+\(0\.24\*coreGlow\)\+'\)'\);/,   // 농도
+  /grd\.addColorStop\(0\.16,'rgba\(50,180,180,'\+\(0\.12\*coreGlow\)\+'\)'\);/,
+  /grd\.addColorStop\(0\.5,'rgba\(38,90,110,0\.05\)'\);/,
+  /var cg=ctx\.createRadialGradient\(CX,CY,0,CX,CY,30\*breath\*coreGlow\);/, // 코어 강화
+  /cg\.addColorStop\(0,'rgba\(200,255,240,'\+\(0\.9\*coreGlow\)\+'\)'\);/,
+  /cg\.addColorStop\(0\.42,'rgba\(88,220,210,'\+\(0\.55\*coreGlow\)\+'\)'\);/,
+  /ctx\.fillStyle=cg; ctx\.beginPath\(\); ctx\.arc\(CX,CY,30\*breath\*coreGlow,0,Math\.PI\*2\); ctx\.fill\(\);/,
+];
 const 빠진 = 시안줄.filter((l) => !화면줄.has(l) && !승인된변경.some((re) => re.test(l)));
-ok('★★시안 코드가 (승인된 크기 한 줄 빼고) 전부 그대로 있다', 빠진.length === 0,
+ok('★★시안 코드가 (지시받은 크기·밝기 줄 빼고) 전부 그대로 있다', 빠진.length === 0,
   빠진.length + '줄 빠짐: ' + 빠진.slice(0, 3).join(' / '));
+
+console.log('\n[1-3] ★크기 확대 · 존재감 강화 (대표님 2차 지시)');
 const mr = gh.match(/maxR=Math\.min\(W,H\)\*(0\.\d+)/);
-ok('★크기가 대표님 지시 범위(0.44~0.47)', mr && Number(mr[1]) >= 0.44 && Number(mr[1]) <= 0.47, mr ? mr[1] : '못 찾음');
-ok('★그 한 줄 말고는 시안 숫자를 안 건드림(호흡·색·회전 그대로)',
-  /breath=1\+Math\.sin\(t\*0\.9\)\*0\.02/.test(gh) && /st\.ang\+=st\.spin\*0\.0032\*spinMul;/.test(gh)
-  && /rgba\(200,255,240,/.test(gh) && /var rr=Math\.pow\(Math\.random\(\),0\.62\);/.test(gh));
+ok('★크기가 시안 원값(0.375)보다 확실히 큼', mr && Number(mr[1]) >= 0.47, mr ? mr[1] : '못 찾음');
+// ★★"꽉 채워 잘리진 않게" — maxR 은 캔버스 반지름 대비 비율이라 0.5를 넘으면 무조건 잘린다.
+ok('★★잘리지 않는다(maxR ≤ 0.5)', mr && Number(mr[1]) <= 0.5, mr ? mr[1] + ' → ' + (Number(mr[1]) * 200).toFixed(0) + '%' : '못 찾음');
+ok('★캔버스가 좌측 열 폭을 다 쓴다(안쪽 여백 상쇄)', /id="galaxyWrap" style="display:none;margin:0 -15px 14px;"/.test(gh));
+ok('★세로 압축 완화(0.84 → 0.89) — 더 원에 가깝게', /Math\.sin\(st\.ang\)\*R\*0\.89;/.test(gh));
+ok('★별 밝기 강화(투명도 상향)', /Math\.min\(1,b\*1\.35\)/.test(gh) && /Math\.min\(1,b\*1\.25\)/.test(gh) && /Math\.min\(1,b\*1\.12\)/.test(gh));
+ok('★흐린 별도 보이게 최소 밝기 상향', /var bright=\(0\.5\+tw\*0\.62\)\*\(0\.55\+st\.depth\*0\.55\);/.test(gh));
+ok('★별 크기 확대(밀도감)', /\*1\.45;/.test(gh));
+ok('★중심 코어 강화(크기 30→46 · 밝기 상향)', /var 코어R=46\*breath\*coreGlow;/.test(gh) && /Math\.min\(1,1\.0\*coreGlow\)/.test(gh));
+ok('★은하 전체 농도 강화', /Math\.min\(1,0\.38\*coreGlow\)/.test(gh));
+
+console.log('\n[1-4] ★건드리지 말라신 것은 그대로인가');
+ok('★모양(원형 분포) 그대로', /var ang=Math\.random\(\)\*Math\.PI\*2;/.test(gh) && /var rr=Math\.pow\(Math\.random\(\),0\.62\);/.test(gh));
+ok('★청록색 그대로', /rgba\(200,255,240,/.test(gh) && /rgba\(88,220,210,/.test(gh) && /,255,230,/.test(gh));
+ok('★호흡 그대로', /breath=1\+Math\.sin\(t\*0\.9\)\*0\.02/.test(gh) && /breath=1\+\(slow\*0\.10\)\+\(mid\*0\.05\)/.test(gh));
+ok('★회전 그대로(태극 변형 없음)', /st\.ang\+=st\.spin\*0\.0032\*spinMul;/.test(gh));
+ok('★별 개수 2600 그대로', /var N=2600, stars=\[\];/.test(gh));
 ok('★시안 canvas(jarvisHolo)가 화면에 있다', /<canvas id="jarvisHolo" width="600" height="440"/.test(gh));
 ok('★시안이 요구한 상태 함수 setJarvisState 가 살아 있다', /window\.setJarvisState=function\(s\)\{ state=s; \};/.test(gh));
 ok('★자체 제작 은하는 완전히 제거됨(중복 렌더 없음)',
