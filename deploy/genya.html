@@ -767,6 +767,11 @@
       <!-- 좌: 비서 + 직업별 문제카드 -->
       <div class="col col-l">
         <div class="col-scroll">
+          <!-- 🎬 B-3 · 자비스 은하 홀로그램 (촬영 모드에서만 보인다. 평소엔 display:none 그대로 · 자리도 안 차지) -->
+          <div id="galaxyWrap" style="display:none;margin:0 0 14px;">
+            <canvas id="galaxyCv" style="display:block;width:100%;border-radius:14px;background:radial-gradient(ellipse at 50% 50%,#0a1430 0%,#050a1c 60%,#03060f 100%);"></canvas>
+            <div id="galaxyLbl" style="margin-top:7px;text-align:center;font-size:11.5px;letter-spacing:.4px;color:#6E82A6;font-weight:700;">대기 중</div>
+          </div>
           <div class="sect-t">온보딩에서 설계된 내 비서</div>
           <div class="genya-card">
             <div class="who"><div class="av"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3l7 4v6c0 4-3 6.5-7 8-4-1.5-7-4-7-8V7l7-4z" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/><circle cx="12" cy="11" r="2.2" fill="#fff"/></svg></div><div><b id="genyaTitle">지니야 · 보험설계 전담</b><span id="genyaSub">23년차 맞춤</span></div></div>
@@ -4606,7 +4611,9 @@ function addToolAsk(){ window._ACTIVE_SKILL='add_tool'; pushMsg('gen','어떤 �
   var vapi=null, _vapiConnecting=false, vapiCfg=null;
   fetch('/api/vapi-config').then(function(r){return r.json();}).then(function(c){ vapiCfg=c||{ready:false}; }).catch(function(){ vapiCfg={ready:false}; });
   function micEl(){ return document.getElementById('vdMic'); }
-  function micState(s){ var m=micEl(); if(!m)return; m.classList.remove('recording','connecting','vapi-on'); if(s){ m.classList.add(s); m.classList.add('vapi-on'); } m.title = s==='recording'?'듣는 중… (클릭하면 종료)' : s==='connecting'?'연결 중…' : '음성으로 말하기'; }
+  function micState(s){ var m=micEl(); if(!m)return; m.classList.remove('recording','connecting','vapi-on'); if(s){ m.classList.add(s); m.classList.add('vapi-on'); } m.title = s==='recording'?'듣는 중… (클릭하면 종료)' : s==='connecting'?'연결 중…' : '음성으로 말하기';
+    try{ if(window.galaxyState) window.galaxyState(s); }catch(e){}   /* 🎬 은하: 대기·듣기·작업 — 음성 상태가 모이는 유일한 곳 */
+  }
   function tip(t){ try{ toast(t); }catch(e){ console.log('[Vapi]',t); } }
   window.vapiToggle = async function(){ if(vapi){ stopCall(); } else { await startCall(); } };
   async function startCall(){
@@ -4628,7 +4635,9 @@ function addToolAsk(){ window._ACTIVE_SKILL='add_tool'; pushMsg('gen','어떤 �
           var t=String(msg.transcript||'').trim(); if(!t) return;
           var r=String(msg.role||'').toLowerCase();
           if(r==='user'||r==='customer'||r==='human') pushMsg('me', t.replace(/[<>]/g,''));       // 사용자(SDK별 role 명칭 방어)
-          else if(r==='assistant'||r==='bot'||r==='ai') pushMsg('gen', t.replace(/[<>]/g,''));    // 지니야
+          else if(r==='assistant'||r==='bot'||r==='ai'){ pushMsg('gen', t.replace(/[<>]/g,''));    // 지니야
+            try{ if(window.galaxySpeak) window.galaxySpeak(Math.min(9000, 900+t.length*95)); }catch(e){}  /* 🎬 은하: 지니야가 말하는 동안 잔잔한 호흡(글자 수만큼) */
+          }
           else pushMsg('me', t.replace(/[<>]/g,''));                                              // role 미상이면 일단 사용자로 표시(누락 방지)
           // ★PC 음성 근본수정: PC STT는 한 문장을 여러 개의 final 조각으로 쪼개 보내는 경우가 있어(폰은 통문장으로 옴) 조각마다 검사하면 "결재"와 "올려"가 서로 다른 조각에 흩어져 감지가 안 됨 → 최근 사용자 발화(final)를 이어붙인 버퍼로 검사. 발동 시 버퍼를 비우고 4초 쿨다운으로 중복 등록을 막는다(폰 통문장 경로는 그대로 즉시 동작).
           if(r!=='assistant'&&r!=='bot'&&r!=='ai'){
@@ -5373,6 +5382,7 @@ window.sendMsg=function(){
   w.innerHTML='<div class="av"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3l7 4v6c0 4-3 6.5-7 8-4-1.5-7-4-7-8V7l7-4z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><circle cx="12" cy="11" r="2.2" fill="currentColor"/></svg></div><div class="bubble" style="color:#98a4b2">지니야가 생각하는 중…</div>';
   s.appendChild(w); s.scrollTop=s.scrollHeight;
   var job=(GENYA_JOBS[CUR_JOB]||{}).label||'';
+  try{ if(window.galaxyState) window.galaxyState('connecting'); }catch(e){}   /* 🎬 은하: 생각하는 중 */
   fetch('/api/order',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({q:v,message:v,job:job,history:_histForSend(),activeSkill:(window._ACTIVE_SKILL||''),lastMentioned:(window._LAST_MENTIONED||[]),cardOpen:_isCardOpen(),findStats:(window._FIND_STATS||null),salesStats:(window._SALES_STATS||null)})})
    .then(function(r){return r.json();}).then(function(d){ w.remove();
      if(d&&d.needsConnect){ pushMsg('gen',(d.text||'구글 데이터 연결이 필요해요')+' <a href="#" onclick="connectGoogle();return false;" style="color:var(--teal-d);font-weight:700">연결하기 →</a>'); return; }
@@ -5386,6 +5396,7 @@ window.sendMsg=function(){
      }
      _HIST.push({role:'user',content:v}); _HIST.push({role:'assistant',content:reply}); _persistHist();  // ★기록엔 글만(뱃지 HTML은 안 넣는다)
      if(reply) pushMsg('gen', _yakBadge(d) + renderMd(reply) + _yakSources(d));   // 📄 약관창고면 뱃지·근거를 함께
+     try{ if(window.galaxySpeak) window.galaxySpeak(Math.min(9000, 900+String(reply).length*55)); }catch(e){}  /* 🎬 은하: 글로 답할 때도 잔잔한 호흡 */
 
      // ★고객카드 띄우기 명령 신호(자비스): 명단·연결 드로어 열고 해당 고객 카드(ghRowDetail) 자동 표시
      if(d && d.rows) { try{ _cacheCardRows(d.rows); }catch(e){} }                                                    // ★서버가 보내준 카드 내용을 먼저 받아둔다
@@ -6077,6 +6088,161 @@ function openFullRoster(r){
 }
 function closeFullRoster(){ var el=document.getElementById('fullRoster'); if(el) el.style.display='none'; }
 document.addEventListener('keydown', function(e){ if(e.key==='Escape') closeFullRoster(); });
+</script>
+
+<script>
+/* ═══ 🎬 B-3 · 자비스 은하 홀로그램 ═══════════════════════════════════
+   무엇을·왜: 지니야가 "살아 있다"는 느낌을 주는 화면 효과. 좌측 상단에 조용히 돈다.
+   ★데이터를 만들지 않는다 — 별은 그냥 그림이다. (2026-07-27 폐기된 홀로그램은
+     LLM이 고객 값을 지어내 카드로 만들던 것이었다. 이건 그것과 전혀 다르다.)
+   ★기능과 공존: 좌측 열 맨 위에 자리를 잡고 흐르므로 아무것도 가리지 않는다.
+   ★촬영 모드에서만 켜진다(window.__FILMING). 평소엔 display:none 이라 그리지도 않는다.
+   ─────────────────────────────────────────────────────────────── */
+(function(){
+  var STARS = 3400;                 // 대표님 확정: 별 2600개 이상 — 촘촘하게 보이려고 넉넉히 잡았다
+  var wrap, cv, ctx, lbl, W, H, CX, CY, R, stars = [], raf = null;
+  var 크게 = false;                 // 촬영 모드 = 조금 크고 화려하게
+  var 상태 = 'idle';                // idle(대기) · listen(듣기) · think(작업) · speak(말하기)
+  var 에너지 = 0, 목표에너지 = 0;    // 0~1 부드럽게 따라간다(툭 튀지 않게)
+  var 숨 = 0;                       // 잔잔한 호흡 위상 — ★심장 쿵쾅이 아니라 느린 들숨·날숨
+  var 각 = 0;
+  var 잔잔 = false;                 // 사용자가 애니메이션 줄이기를 켰으면 정지 화면
+  var 이름 = { idle:'대기 중', listen:'듣는 중', think:'생각하는 중', speak:'말하는 중' };
+
+  function 만들기(){
+    stars = [];
+    for (var i=0;i<STARS;i++){
+      /* 안으로 갈수록 촘촘하게: 제곱을 주면 중심에 몰린다 */
+      var t = Math.pow(Math.random(), 1.75);
+      var th;
+      /* 3할은 팔에서 벗어난 별 — 팔 사이를 메워 "촘촘한 은하수"로 보이게 한다.
+         (팔만 그리면 성기게 흩뿌린 것처럼 보였다) */
+      if (Math.random() < 0.30) {
+        th = Math.random()*Math.PI*2;
+      } else {
+        var arm = Math.floor(Math.random()*3);                     // 나선 팔 3개
+        var 흔들 = (Math.random()-0.5) * (0.20 + t*0.34);          // 팔은 얇게 — 대신 위 원반이 채운다
+        th = arm*(Math.PI*2/3) + t*4.2 + 흔들;                     // 나선
+      }
+      stars.push({
+        t: t, th: th,
+        s: 0.55 + Math.random()*1.15,                              // 별 크기(작으면 화면에서 사라져 성겨 보인다)
+        tw: Math.random()*Math.PI*2,                               // 반짝임 위상
+        tws: 0.6 + Math.random()*1.6,                              // 반짝임 속도
+        z: 0.62 + Math.random()*0.38                               // 밝기 편차
+      });
+    }
+  }
+
+  /* 중심=황금, 바깥=푸른빛. 사이는 부드럽게 섞는다. */
+  function 색(t, a){
+    var g = [255, 205, 110], b = [90, 165, 255];                   // 금 → 파랑
+    var k = Math.min(1, Math.pow(t, 0.78));
+    var r = Math.round(g[0]+(b[0]-g[0])*k), gg = Math.round(g[1]+(b[1]-g[1])*k), bb = Math.round(g[2]+(b[2]-g[2])*k);
+    return 'rgba('+r+','+gg+','+bb+','+a.toFixed(3)+')';
+  }
+
+  function 맞추기(){
+    if(!cv) return;
+    var w = wrap.clientWidth || 240;
+    var size = 크게 ? Math.min(w, 250) : Math.min(w, 168);         // 촬영=크게 · 실제=작게
+    var dpr = Math.min(window.devicePixelRatio||1, 2);
+    cv.style.height = size + 'px';
+    W = cv.width = Math.round(w*dpr); H = cv.height = Math.round(size*dpr);
+    ctx = cv.getContext('2d'); ctx.setTransform(dpr,0,0,dpr,0,0);
+    W = w; H = size; CX = W/2; CY = H/2; R = Math.min(W,H)*0.46;
+  }
+
+  function 그리기(){
+    if(!ctx) return;
+    ctx.clearRect(0,0,W,H);
+
+    에너지 += (목표에너지 - 에너지) * 0.06;                        // 상태가 바뀌어도 부드럽게
+    var 회전 = (상태==='think' ? 0.0042 : 상태==='listen' ? 0.0018 : 0.0011);
+    각 += 회전;
+
+    /* ★말하기 = 잔잔한 호흡.
+       주기 약 5초 = 사람이 편히 쉬는 숨(분당 12회). 심장 박동(분당 60~80)과는 전혀 다른 느린 파형이라
+       쿵쾅거리지 않고 어지럽지 않다. 진폭도 ±5.5%로 작게 잡았다.
+       (처음엔 10.6초로 잡았더니 너무 느려 아예 반응이 없어 보였다) */
+    숨 += 0.016;                                   // 60fps 기준 초당 0.96
+    var 호흡 = (상태==='speak') ? Math.sin(숨*1.3) : 0;   // 0.96×1.3 ≈ 1.25 rad/s → 약 5.0초 주기
+    var 모임 = 호흡 * 0.055 * (0.5 + 에너지*0.5);                  // 중심으로 모였다 퍼짐(±5.5%)
+    var 밝기업 = 0.10*에너지 + (상태==='speak' ? Math.max(0,호흡)*0.10 : 0);
+
+    /* 중앙 황금 코어 */
+    var 코어 = R*(0.30 + 에너지*0.05 + 호흡*0.03);
+    var g = ctx.createRadialGradient(CX,CY,0,CX,CY,코어);
+    g.addColorStop(0,   'rgba(255,232,170,'+(0.55+밝기업).toFixed(3)+')');
+    g.addColorStop(0.35,'rgba(255,196,90,'+(0.24+밝기업*0.6).toFixed(3)+')');
+    g.addColorStop(1,   'rgba(255,170,60,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(CX,CY,코어,0,Math.PI*2); ctx.fill();
+
+    /* 바깥 푸른 헤일로 */
+    var g2 = ctx.createRadialGradient(CX,CY,R*0.35,CX,CY,R*1.15);
+    g2.addColorStop(0,'rgba(70,140,255,0)');
+    g2.addColorStop(0.7,'rgba(70,140,255,'+(0.13+에너지*0.06).toFixed(3)+')');
+    g2.addColorStop(1,'rgba(40,90,220,'+(0.20+에너지*0.08).toFixed(3)+')');
+    ctx.fillStyle = g2; ctx.fillRect(0,0,W,H);
+
+    /* 별 2600개 */
+    for (var i=0;i<stars.length;i++){
+      var st = stars[i];
+      var t = st.t * (1 - 모임);                                    // 호흡: 전체가 살짝 모였다 퍼진다
+      var 차등 = 각 * (1.7 - st.t*0.95);                            // 안쪽이 더 빨리 돈다(진짜 은하처럼)
+      var th = st.th + 차등;
+      var r = t * R;
+      var x = CX + Math.cos(th)*r, y = CY + Math.sin(th)*r*0.62;    // 살짝 눕힌 원반
+      st.tw += 0.02*st.tws;
+      var a = (0.46 + 0.38*Math.abs(Math.sin(st.tw))) * st.z * (1-t*0.22) + 밝기업*0.5;
+      if (a <= 0.02) continue;
+      ctx.fillStyle = 색(t, Math.min(1,a));
+      var sz = st.s * (크게 ? 1.15 : 0.92);
+      ctx.fillRect(x, y, sz, sz);                                   // 점 2600개는 fillRect가 제일 가볍다
+    }
+    raf = requestAnimationFrame(그리기);
+  }
+
+  /* 바깥에서 부르는 것 — 상태 바꾸기 */
+  window.galaxyState = function(s){
+    var m = { '':'idle', 'recording':'listen', 'connecting':'think', 'speaking':'speak' };
+    var v = m.hasOwnProperty(s) ? m[s] : (s||'idle');
+    if (!이름[v]) v = 'idle';
+    상태 = v;
+    목표에너지 = (v==='speak') ? 1 : (v==='think') ? 0.7 : (v==='listen') ? 0.45 : 0;
+    if (lbl) lbl.textContent = 이름[v];
+    if (잔잔 && ctx) 그리기한번();
+  };
+  /* 지니야가 말하는 동안만 잠깐 호흡 — 끝나면 알아서 대기로 */
+  var _spkT = null;
+  window.galaxySpeak = function(ms){
+    window.galaxyState('speak');
+    if(_spkT) clearTimeout(_spkT);
+    _spkT = setTimeout(function(){ window.galaxyState(''); }, Math.max(1200, ms||2600));
+  };
+  window.galaxyBig = function(on){ 크게 = !!on; 맞추기(); };
+
+  function 그리기한번(){ var s=상태; 상태=s; 에너지=목표에너지; 그리기(); if(raf){cancelAnimationFrame(raf); raf=null;} }
+
+  function 켜기(){
+    wrap = document.getElementById('galaxyWrap'); cv = document.getElementById('galaxyCv'); lbl = document.getElementById('galaxyLbl');
+    if(!wrap||!cv) return;
+    /* ★촬영 모드에서만 켠다. 평소(라이브)엔 아무 일도 일어나지 않는다. */
+    if(!window.__FILMING) return;
+    크게 = true;                                   // 촬영 = 조금 크고 화려하게
+    wrap.style.display = '';
+    만들기(); 맞추기();
+    try{ 잔잔 = window.matchMedia('(prefers-reduced-motion: reduce)').matches; }catch(e){}
+    if(잔잔){ 그리기한번(); } else { 그리기(); }
+    window.addEventListener('resize', function(){ 맞추기(); });
+    /* 탭이 안 보이면 그리기를 멈춘다(노트북 배터리·발열) */
+    document.addEventListener('visibilitychange', function(){
+      if(document.hidden){ if(raf){cancelAnimationFrame(raf); raf=null;} }
+      else if(!raf && !잔잔){ 그리기(); }
+    });
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', 켜기); else 켜기();
+})();
 </script>
 </body>
 </html>

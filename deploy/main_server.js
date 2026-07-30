@@ -5035,7 +5035,8 @@ app.get('/', (req, res) => {
   // 🎬 촬영 모드는 내 PC에서만 도는 연출용 서버라 구글 로그인이 필요 없다(명단도 촬영 샘플에서 옴).
   //    FILMING=false(라이브)면 아래는 원래대로 세션 여부 그대로다.
   const authed = !!sessionOf(req) || FILMING;
-  html = html.replace('<head>', '<head>\n' + KAKAO_ESCAPE + '\n<script>window.__AUTHED=' + (authed ? 'true' : 'false') + ';</script>'); // ★카톡 탈출 + 인증상태 주입(<head> 최상단, 다른 JS보다 먼저)
+  // 🎬 B-3: 촬영 모드 여부를 화면에 알려준다(은하 홀로그램은 이 값이 true 일 때만 켜진다). 라이브면 false.
+  html = html.replace('<head>', '<head>\n' + KAKAO_ESCAPE + '\n<script>window.__AUTHED=' + (authed ? 'true' : 'false') + ';window.__FILMING=' + (FILMING ? 'true' : 'false') + ';</script>'); // ★카톡 탈출 + 인증상태 주입(<head> 최상단, 다른 JS보다 먼저)
   html = html.replace('</head>', OG_TAGS + '\n</head>');
   res.setHeader('Cache-Control', 'no-store');
   res.send(html);
