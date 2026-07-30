@@ -770,8 +770,13 @@
           <!-- 🎬 B-3 · 자비스 은하 홀로그램 (촬영 모드에서만 보인다. 평소엔 display:none 그대로 · 자리도 안 차지) -->
           <div id="galaxyWrap" style="display:none;margin:0 0 14px;">
             <canvas id="galaxyCv" style="display:block;width:100%;border-radius:14px;background:radial-gradient(ellipse at 50% 50%,#0a1430 0%,#050a1c 60%,#03060f 100%);"></canvas>
-            <div id="galaxyLbl" style="margin-top:7px;text-align:center;font-size:11.5px;letter-spacing:.4px;color:#6E82A6;font-weight:700;">대기 중</div>
+            <!-- 상태 문구는 화면에 안 보인다(대표님 지시: 박스 문구 삭제). 은하 움직임만으로 상태를 보여준다.
+                 값은 그대로 갱신되므로 시험·진단에서는 확인할 수 있다. -->
+            <div id="galaxyLbl" style="display:none"></div>
           </div>
+          <!-- 🎬 촬영 모드에서는 이 묶음이 통째로 숨는다(대표님 지시: 자비스 자리를 홀로그램이 대체).
+               ★평소(라이브·교육생)에는 그대로 다 보인다 — id 만 붙였고 내용은 한 글자도 안 바꿨다. -->
+          <div id="profileBoxes">
           <div class="sect-t">온보딩에서 설계된 내 비서</div>
           <div class="genya-card">
             <div class="who"><div class="av"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3l7 4v6c0 4-3 6.5-7 8-4-1.5-7-4-7-8V7l7-4z" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/><circle cx="12" cy="11" r="2.2" fill="#fff"/></svg></div><div><b id="genyaTitle">지니야 · 보험설계 전담</b><span id="genyaSub">23년차 맞춤</span></div></div>
@@ -781,6 +786,7 @@
           <div class="prof-row"><span>직업</span><b id="pfJob">보험설계사(GA)</b></div>
           <div class="prof-row"><span>핵심 고민</span><b>발굴·제안·관리</b></div>
           <div class="prof-row"><span>철칙</span><b>발송 전 승인</b></div>
+          </div>
           <!-- 📅 일정관리 비서 — 구글 캘린더 실데이터만. 오늘/이번주/이번달 전환. 가짜 일정 표시 없음. -->
           <div class="sect-t mt">일정관리 비서</div>
           <div class="genya-card" style="cursor:pointer" onclick="openSchedule()">
@@ -6099,7 +6105,7 @@ document.addEventListener('keydown', function(e){ if(e.key==='Escape') closeFull
    ★촬영 모드에서만 켜진다(window.__FILMING). 평소엔 display:none 이라 그리지도 않는다.
    ─────────────────────────────────────────────────────────────── */
 (function(){
-  var STARS = 3400;                 // 대표님 확정: 별 2600개 이상 — 촘촘하게 보이려고 넉넉히 잡았다
+  var STARS = 2600;                 // ★대표님 확정: 별 2600개 (원형이라 팔에 몰리지 않고 고르게 촘촘하다)
   var wrap, cv, ctx, lbl, W, H, CX, CY, R, stars = [], raf = null;
   var 크게 = false;                 // 촬영 모드 = 조금 크고 화려하게
   var 상태 = 'idle';                // idle(대기) · listen(듣기) · think(작업) · speak(말하기)
@@ -6114,16 +6120,10 @@ document.addEventListener('keydown', function(e){ if(e.key==='Escape') closeFull
     for (var i=0;i<STARS;i++){
       /* 안으로 갈수록 촘촘하게: 제곱을 주면 중심에 몰린다 */
       var t = Math.pow(Math.random(), 1.75);
-      var th;
-      /* 3할은 팔에서 벗어난 별 — 팔 사이를 메워 "촘촘한 은하수"로 보이게 한다.
-         (팔만 그리면 성기게 흩뿌린 것처럼 보였다) */
-      if (Math.random() < 0.30) {
-        th = Math.random()*Math.PI*2;
-      } else {
-        var arm = Math.floor(Math.random()*3);                     // 나선 팔 3개
-        var 흔들 = (Math.random()-0.5) * (0.20 + t*0.34);          // 팔은 얇게 — 대신 위 원반이 채운다
-        th = arm*(Math.PI*2/3) + t*4.2 + 흔들;                     // 나선
-      }
+      /* ★원형 은하 — 각도를 고르게 흩뿌린다.
+         (전엔 나선 팔 3개였는데, 안쪽이 빨리 도는 차등 회전과 겹치면서 팔이 감겼다 풀렸다 해
+          ★태극처럼 모양이 계속 바뀌었다. 대표님 지시대로 원 중심을 유지하도록 팔을 없앴다.) */
+      var th = Math.random()*Math.PI*2;
       stars.push({
         t: t, th: th,
         s: 0.55 + Math.random()*1.15,                              // 별 크기(작으면 화면에서 사라져 성겨 보인다)
@@ -6134,9 +6134,9 @@ document.addEventListener('keydown', function(e){ if(e.key==='Escape') closeFull
     }
   }
 
-  /* 중심=황금, 바깥=푸른빛. 사이는 부드럽게 섞는다. */
+  /* ★중심=청록, 바깥=푸른빛. 사이는 부드럽게 섞는다. (대표님 확정: 중앙 청록 코어) */
   function 색(t, a){
-    var g = [255, 205, 110], b = [90, 165, 255];                   // 금 → 파랑
+    var g = [150, 255, 240], b = [80, 150, 255];                   // 청록 → 파랑
     var k = Math.min(1, Math.pow(t, 0.78));
     var r = Math.round(g[0]+(b[0]-g[0])*k), gg = Math.round(g[1]+(b[1]-g[1])*k), bb = Math.round(g[2]+(b[2]-g[2])*k);
     return 'rgba('+r+','+gg+','+bb+','+a.toFixed(3)+')';
@@ -6170,12 +6170,12 @@ document.addEventListener('keydown', function(e){ if(e.key==='Escape') closeFull
     var 모임 = 호흡 * 0.055 * (0.5 + 에너지*0.5);                  // 중심으로 모였다 퍼짐(±5.5%)
     var 밝기업 = 0.10*에너지 + (상태==='speak' ? Math.max(0,호흡)*0.10 : 0);
 
-    /* 중앙 황금 코어 */
+    /* ★중앙 청록 코어 */
     var 코어 = R*(0.30 + 에너지*0.05 + 호흡*0.03);
     var g = ctx.createRadialGradient(CX,CY,0,CX,CY,코어);
-    g.addColorStop(0,   'rgba(255,232,170,'+(0.55+밝기업).toFixed(3)+')');
-    g.addColorStop(0.35,'rgba(255,196,90,'+(0.24+밝기업*0.6).toFixed(3)+')');
-    g.addColorStop(1,   'rgba(255,170,60,0)');
+    g.addColorStop(0,   'rgba(190,255,248,'+(0.62+밝기업).toFixed(3)+')');
+    g.addColorStop(0.35,'rgba(0,229,255,'+(0.28+밝기업*0.6).toFixed(3)+')');
+    g.addColorStop(1,   'rgba(0,190,220,0)');
     ctx.fillStyle = g; ctx.beginPath(); ctx.arc(CX,CY,코어,0,Math.PI*2); ctx.fill();
 
     /* 바깥 푸른 헤일로 */
@@ -6189,10 +6189,11 @@ document.addEventListener('keydown', function(e){ if(e.key==='Escape') closeFull
     for (var i=0;i<stars.length;i++){
       var st = stars[i];
       var t = st.t * (1 - 모임);                                    // 호흡: 전체가 살짝 모였다 퍼진다
-      var 차등 = 각 * (1.7 - st.t*0.95);                            // 안쪽이 더 빨리 돈다(진짜 은하처럼)
-      var th = st.th + 차등;
+      /* ★모양 불변: 별 전체가 같은 속도로 돈다.
+         (전엔 안쪽이 1.7배 빨랐다 = 차등 회전. 그래서 시간이 갈수록 팔이 감기며 태극처럼 변했다.) */
+      var th = st.th + 각;
       var r = t * R;
-      var x = CX + Math.cos(th)*r, y = CY + Math.sin(th)*r*0.62;    // 살짝 눕힌 원반
+      var x = CX + Math.cos(th)*r, y = CY + Math.sin(th)*r;         // ★정원(눕히지 않는다)
       st.tw += 0.02*st.tws;
       var a = (0.46 + 0.38*Math.abs(Math.sin(st.tw))) * st.z * (1-t*0.22) + 밝기업*0.5;
       if (a <= 0.02) continue;
@@ -6231,6 +6232,9 @@ document.addEventListener('keydown', function(e){ if(e.key==='Escape') closeFull
     if(!window.__FILMING) return;
     크게 = true;                                   // 촬영 = 조금 크고 화려하게
     wrap.style.display = '';
+    /* ★촬영 모드에서는 좌측 프로필 박스 묶음을 숨긴다 — 그 자리를 자비스 홀로그램이 대신한다.
+       (평소·교육생 화면에서는 이 줄이 아예 실행되지 않아 전부 그대로 보인다) */
+    try{ var pb = document.getElementById('profileBoxes'); if(pb) pb.style.display='none'; }catch(e){}
     만들기(); 맞추기();
     try{ 잔잔 = window.matchMedia('(prefers-reduced-motion: reduce)').matches; }catch(e){}
     if(잔잔){ 그리기한번(); } else { 그리기(); }

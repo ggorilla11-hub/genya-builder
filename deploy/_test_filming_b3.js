@@ -19,15 +19,17 @@ if (_s < 0 || _e < 0) { console.log('★은하 코드를 못 찾음 — 시험 �
 const blk = gh.slice(_s, _e);
 
 // ═══ [1] 은하 느낌 — 대표님 확정 사양 ═══
-console.log('\n[1] 은하 느낌 (촘촘 · 황금 중심)');
-ok('★별 2600개 이상', /var STARS = (\d+);/.test(blk) && Number(blk.match(/var STARS = (\d+);/)[1]) >= 2600,
+console.log('\n[1] ★원형 은하 (태극 아님 · 중앙 청록 코어)');
+ok('★별 2600개', /var STARS = (\d+);/.test(blk) && Number(blk.match(/var STARS = (\d+);/)[1]) >= 2600,
   blk.match(/var STARS = (\d+);/) ? blk.match(/var STARS = (\d+);/)[1] + '개' : '못 찾음');
 ok('★안으로 갈수록 촘촘해짐(제곱 분포)', /Math\.pow\(Math\.random\(\), 1\.75\)/.test(blk));
-ok('★나선 팔이 있음(은하수 모양)', /arm\*\(Math\.PI\*2\/3\)/.test(blk) && /나선/.test(blk));
-ok('★중앙 황금 코어', /255,232,170|255,196,90/.test(blk) && /코어/.test(blk));
-ok('★바깥은 푸른빛', /var g = \[255, 205, 110\], b = \[90, 165, 255\]/.test(blk));
+// ★★태극 재발 방지 — 모양이 시간에 따라 변하게 만드는 두 원인을 코드에서 못 들어오게 막는다.
+ok('★★나선 팔 없음(각도를 고르게 흩뿌린 원형)', /var th = Math\.random\(\)\*Math\.PI\*2;/.test(blk) && !/arm\*\(Math\.PI\*2\/3\)/.test(blk));
+ok('★★차등 회전 없음 — 전부 같은 속도라 모양이 안 변한다', /var th = st\.th \+ 각;/.test(blk) && !/1\.7 - st\.t/.test(blk));
+ok('★★눕히지 않은 정원(원 중심 유지)', /Math\.sin\(th\)\*r;/.test(blk) && !/Math\.sin\(th\)\*r\*0\.\d+/.test(blk));
+ok('★중앙 청록 코어', /rgba\(190,255,248|rgba\(0,229,255/.test(blk) && /청록 코어/.test(blk));
+ok('★바깥은 푸른빛', /var g = \[150, 255, 240\], b = \[80, 150, 255\]/.test(blk));
 ok('★은하가 회전함', /각 \+= 회전/.test(blk));
-ok('안쪽이 더 빨리 도는 차등 회전(진짜 은하처럼)', /차등 = 각 \* \(1\.7 - st\.t\*0\.95\)/.test(blk));
 
 // ═══ [2] 음성 반응 — 잔잔한 호흡 (★심장 쿵쾅 금지) ═══
 console.log('\n[2] ★말할 때 잔잔한 호흡 (어지럽지 않게)');
@@ -46,8 +48,22 @@ ok('애니메이션 줄이기 설정을 존중(어지럼 배려)', /prefers-redu
 // ═══ [3] 4가지 상태 ═══
 console.log('\n[3] 4가지 상태 (대기·듣기·작업·말하기)');
 ['idle', 'listen', 'think', 'speak'].forEach((s) => ok(`상태 ${s} 있음`, new RegExp("'" + s + "'").test(blk)));
-ok('★상태 이름이 한국어로 화면에 표시', /대기 중.*듣는 중.*생각하는 중.*말하는 중/.test(blk.replace(/\n/g, ' ')));
 ok('상태별로 회전 속도가 다름', /상태==='think' \? 0\.0042 : 상태==='listen' \? 0\.0018 : 0\.0011/.test(blk));
+
+// ═══ [3-2] ★박스 문구 삭제 (대표님 지시) ═══
+console.log('\n[3-2] ★박스 문구 전부 삭제 · 좌측엔 자비스만');
+ok('★상태 문구("대기 중") 안 보임', /id="galaxyLbl" style="display:none"/.test(gh));
+ok('★프로필 박스 묶음에 id 가 붙어 통째로 숨길 수 있음', /<div id="profileBoxes">/.test(gh));
+[['온보딩에서 설계된 내 비서'], ['지니야 · 보험설계 전담'], ['23년차 맞춤'], ['genyaTags'], ['painBanner'], ['직업'], ['핵심 고민'], ['철칙']]
+  .forEach(function (x) {
+    var i = gh.indexOf('<div id="profileBoxes">'), j = gh.indexOf('</div>\n          <!-- 📅 일정관리', i);
+    var 안 = gh.slice(i, j > i ? j : i + 2000);
+    ok(`"${x[0]}" 이 숨김 대상 안에 있음`, 안.indexOf(x[0]) >= 0);
+  });
+ok('★촬영 모드에서 실제로 숨긴다', /getElementById\('profileBoxes'\); if\(pb\) pb\.style\.display='none';/.test(gh));
+ok('★평소엔 안 숨긴다(촬영 켜기 안쪽에만 있음)',
+  blk.indexOf("if(!window.__FILMING) return;") < blk.indexOf("getElementById('profileBoxes')"));
+ok('★내용은 한 글자도 안 바꿈(감싸기만 함)', /<div class="sect-t">온보딩에서 설계된 내 비서<\/div>/.test(gh) && /<b>발송 전 승인<\/b>/.test(gh));
 
 // ═══ [4] ★실제 음성(Vapi) 연동 — 촬영=실제 ═══
 console.log('\n[4] ★실제 음성(Vapi)에 진짜 붙었는가');
