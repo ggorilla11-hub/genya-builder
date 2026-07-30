@@ -47,6 +47,13 @@ function init(opts) {
 }
 function onWrite(cb) { crudEvents.on('write', cb); }
 
+// ── 🎬 촬영 모드 훅 (2026-07-31 대표님 승인 · 촬영 B-1) ──
+// 명단을 읽는 관문(loadTable)을 통째로 다른 데이터로 바꾼다. 부르는 40여 곳은 손대지 않는다.
+// _SOURCE 가 null 이면(=평소·라이브) 아래 코드는 아무 영향이 없다.
+let _SOURCE = null;
+function setSource(fn) { _SOURCE = (typeof fn === 'function') ? fn : null; }
+function isFilming() { return !!_SOURCE; }
+
 // ═══════════════════════════════════════════════════════════════
 // 1. 스키마 자동 감지 (A: 첫 행 + 동의어 매핑)
 // ═══════════════════════════════════════════════════════════════
@@ -102,6 +109,9 @@ function colLetter(idx) { // 0-based → A,B,...,Z,AA
 // 2. 시트 로드 (제로 인그레스: 읽어서 메모리에만)
 // ═══════════════════════════════════════════════════════════════
 async function loadTable(ma) {
+  // 🎬 촬영 모드(FILMING_MODE=1)에서만 켜지는 갈림길. 평소엔 _SOURCE=null 이라 아래 원래 코드 그대로 탄다.
+  //    켜지면 구글을 아예 안 부른다 → 실제 고객 시트 접근 0(섞일 길이 없음).
+  if (_SOURCE) return _SOURCE(ma);
   // 🔑 시트 접근 = 서비스 계정(ma 없어도 동작). 로그인 OAuth는 사용자 인증 전용으로 별개 유지.
   const auth = await getServiceAuth();
   console.log('[🔑인증] 시트 접근: 서비스 계정 사용'); // 이 줄이 찍히면 SA 접근(토큰만료 무관). 안 찍히면 아직 OAuth 경로.
@@ -379,6 +389,8 @@ async function planWrite(ma, op, raw) {
 // ═══════════════════════════════════════════════════════════════
 async function commit(ma, action, sig, opts) {
   opts = opts || {};
+  // 🎬 촬영 모드에서는 구글 시트에 실제로 쓰지 않는다(촬영용 가짜 명단이라 쓸 곳도 없다).
+  if (_SOURCE) return { ok: false, message: '🎬 촬영 모드예요. 화면에는 보여드리지만 실제 시트에는 쓰지 않습니다.' };
   const v = verifyAction(action, sig);
   if (!v.ok) return { ok: false, message: v.reason };
   if (action.op === 'delete' && !opts.confirmed) return { ok: false, needsDoubleConfirm: true, message: '삭제는 한 번 더 확인이 필요해요.' };
@@ -538,6 +550,7 @@ async function runChat(ma, messages, opts) {
 
 module.exports = {
   init, onWrite, crudEvents,
+  setSource, isFilming,   // 🎬 촬영 모드 훅(평소 미사용)
   runChat, commit,
   // 하위 유닛(엔드포인트/테스트용)
   doSearch, doRead, doListSheets, planWrite,

@@ -436,6 +436,12 @@ sheetsCrud.init({
   signSecret: process.env.CRUD_SIGN_SECRET || process.env.TOKEN_ENC_KEY || process.env.ANTHROPIC_API_KEY || 'genya-crud-dev',
   demoTitle: DEMO_TITLE, sheetTab: SHEET_TAB,
 });
+// ═══ 🎬 촬영 모드 (2026-07-31 대표님 승인 · 홍보 쇼츠 B-1) ═══
+// 환경변수 FILMING_MODE=1 일 때만 켜진다. 라이브(메인·교육생)엔 이 변수가 없으므로
+// require 조차 되지 않고, 아래 한 줄은 통째로 건너뛴다 = 기존 동작 100% 그대로.
+// 켜지면 명단 관문이 촬영용 샘플 80명으로 바뀐다(구글 시트 접근 0 · 실제 고객 무접촉 · 시트 쓰기 차단).
+const FILMING = process.env.FILMING_MODE === '1';
+if (FILMING) require('./filming_roster').enable(sheetsCrud);
 // 🔌 B-8 훅(엄마2 재인덱싱 구독 지점): 지금은 로그만. 엄마2가 sheetsCrud.onWrite(cb)로 Pinecone 재인덱싱 연결.
 sheetsCrud.onWrite((ev) => { try { if (process.env.LOCAL_STAGING === '1') console.log('[crud→B8] write event', JSON.stringify(ev)); } catch (e) {} });
 const CAL_ID = process.env.CAL_ID || 'ggorilla11@gmail.com';
@@ -446,12 +452,21 @@ const YAK = JSON.parse(fs.readFileSync(path.join(__dirname, 'yakgwan_pages.json'
 
 const app = express();
 app.use(express.json({ limit: '50mb' })); // 자료 업로드(base64) 파싱 — 큰 제안서 PDF 다중 업로드 대비 상향
+// ═══ 🎬 촬영 모드 발송 차단막 (추가만 · 기존 발송 하드가드는 그대로 뒤에 살아 있다) ═══
+// 촬영 중에 실수로 [승인] 버튼을 눌러도 문자·메일이 밖으로 나가지 않게 앞단에서 통째로 막는다.
+// FILMING=false(라이브)면 next()만 하므로 기존 동작에 아무 영향이 없다.
+const _FILM_SEND_BLOCK = /^\/api\/(send\/sms|gmail\/send|campaign\/(send|test)|approval\/act|events\/approve-send|alimtalk\/send)$/;
+app.use((req, res, next) => {
+  if (!FILMING || req.method !== 'POST' || !_FILM_SEND_BLOCK.test(req.path)) return next();
+  console.log('[🎬촬영모드·발송차단]', req.path, '→ 실제 발송 안 함');
+  return res.status(403).json({ ok: false, 발송함: false, filming: true, error: '🎬 촬영 모드에서는 실제 발송이 막혀 있어요. 화면 연출만 됩니다.' });
+});
 // ★배포 반영 확인용(정직): 재배포 후 이 build 값이 바뀌면 새 코드가 실제 활성화됐다는 증거. 공개·민감정보 없음.
 const BUILD_TAG = 'v4.0-day4-vapi-clientData-expiring-2026-07-24';
 // ★배포된 코드가 어느 커밋인지 화면에서 바로 확인하려고 넣는다(추측·통계로 판단하던 것을 없앰).
 //   Render가 자동으로 넣어주는 환경변수를 읽기만 한다. 없으면 'local' — 지어내지 않는다.
 const GIT_SHA = String(process.env.RENDER_GIT_COMMIT || '').slice(0, 7) || 'local';
-app.get(['/health', '/api/version'], (req, res) => res.json({ ok: true, build: BUILD_TAG, commit: GIT_SHA, emojiFilter: typeof stripEmoji === 'function', pineconeReady: (function () { try { return personalMem.configured(); } catch (e) { return false; } })(), ts: new Date().toISOString() }));
+app.get(['/health', '/api/version'], (req, res) => res.json({ ok: true, build: BUILD_TAG, commit: GIT_SHA, filming: FILMING, emojiFilter: typeof stripEmoji === 'function', pineconeReady: (function () { try { return personalMem.configured(); } catch (e) { return false; } })(), ts: new Date().toISOString() }));
 // 🔑 SA 전환 확인용 진단: 로그인·OAuth 없이 서비스 계정만으로 실제 시트를 읽어 본다. ok:true면 SA 영구접근 성공(토큰만료 무관).
 //   loadTable(null)은 ma 없이 SA로 이름검색+읽기를 그대로 수행. 개인정보 행은 반환하지 않고 건수만 노출.
 app.get('/api/diag/auth-test', async (req, res) => {
@@ -2976,6 +2991,9 @@ async function orderHandler(req, res) {
     const ma = memberAuth(req);
     if (ma) ma._email = (sessionOf(req) || {}).email || ''; // ★솔라피 회원키 조회용(문자 발송 시)
     const canData = !!(ma && hasDataScope(req)); // ★데이터 스코프까지 있는 회원만 캘린더·시트·드라이브 호출
+    // 🎬 촬영 모드: 명단은 구글이 아니라 촬영용 샘플에서 오므로 "구글 연결" 관문이 필요 없다.
+    //    ★시트·명단 분기에만 쓴다(캘린더·드라이브는 그대로 canData) — 평소엔 canSheet === canData 라 동작 동일.
+    const canSheet = canData || FILMING;
     // ★Step2-1: 회장 admin의 관리성 명령(발송·시트 변경 등)은 깊은 모델(Opus4.8)로 라우팅
     const _admin = _isAdmin(req) && /알림톡|문자|이메일|발송|보내|시트.*(추가|수정|삭제|변경|바꿔)|결재|승인/.test(q);
     if (!q) return res.json({ ok: true, kind: 'idle', text: '무엇이든 말씀하세요 (예: "무보험차상해가 뭐야?" / "이번 주 만기 고객 정리해줘")' });
@@ -3408,7 +3426,7 @@ async function orderHandler(req, res) {
       // ★활성 명단 전체 자동 sheet_read(회장님): 명단·전체 관련 요청이고 데이터연결(canData)이 있으면,
       //   이벤트 인지에서 그치지 말고 실제 회원 시트(고객명단)를 조회해 개별 내용까지 답한다. 개별 이름 없이도 전체 조회.
       const _rosterFull = /명단|고객|전체|목록|리스트|정리|분석|누구|몇\s*명|어떤|내용|현황/.test(q) && /명단|roster|업로드/.test(_gateEvents);
-      if (_rosterFull && canData) {
+      if (_rosterFull && canSheet) {
         const rc = await sheetsCrud.runChat(ma, hist.concat([{ role: 'user', content: q }]));
         console.log('[🛡️수문장→sheetCRUD] 활성명단 전체조회 · q="' + String(q).slice(0, 30) + '" · reply="' + String((rc && rc.reply) || '(빈)').replace(/\n/g, ' ').slice(0, 150) + '"');
         out = { kind: '🗂️ 고객명단', text: rc.reply || '명단을 시트에서 불러왔어요.', pending: rc.pending || null, engine: MODEL_DEEP };
@@ -3417,7 +3435,7 @@ async function orderHandler(req, res) {
         const text = await askClaude(sysG, hist.concat([{ role: 'user', content: q }]), 8192, { admin: _admin });
         out = { kind: '💬 지니야', text, engine: _lastAskModel || pickedModel(q, { admin: _admin }) };
       }
-    } else if (!_toolIntent && canData && /명단|만기|임박|목록|리스트|몇\s*명|인원|전체|자산가|고객\s*(목록|전체|누구|정리|명단)/.test(q) && !/([가-힣]{2,4})\s*님?\s*(정보|연락처|추가|삭제|수정|등록|빼|지워|변경|바꿔)/.test(q)) {
+    } else if (!_toolIntent && canSheet && /명단|만기|임박|목록|리스트|몇\s*명|인원|전체|자산가|고객\s*(목록|전체|누구|정리|명단)/.test(q) && !/([가-힣]{2,4})\s*님?\s*(정보|연락처|추가|삭제|수정|등록|빼|지워|변경|바꿔)/.test(q)) {
       // 📇 명단 전체·만기 = 실제 시트 데이터를 먼저 조회해 LLM 프롬프트에 주입(고수 채택·Function Calling 미호출 원천 해결). 개별 이름은 아래 sheetsCrud read_row.
       const job = String((req.body && req.body.job) || req.query.job || '');
       const hist = Array.isArray(req.body && req.body.history) ? req.body.history.slice(-10) : [];
@@ -3474,7 +3492,7 @@ async function orderHandler(req, res) {
       // 🗂️ Step 2-B(마스터 CRM): 명단·만기·고객·개별 조회/수정 = 항상 마스터 시트(지니야빌더_데모_명단) CRUD 도구 루프. 데모 커넥터가 아니라 실제 시트.
       // ★라우팅 진단 로깅(엄마2): "김철수 정보 알려줘"가 이 분기로 왔는지·canData·runChat 응답 원문을 Render 로그로 확정. sheetsCrud 내부는 무접촉.
       console.log('[🗂️sheetCRUD 라우팅] 분기진입 · q="' + String(q).slice(0, 40) + '" · canData=' + canData + ' · uid=' + ((sessionOf(req) || {}).email || '(없음)') + ' · hasDataScope=' + hasDataScope(req));
-      if (!canData) { out = needConnect; console.log('[🗂️sheetCRUD] → needConnect (canData=false · 구글 데이터 연결 없음 → sheetsCrud 호출 안 함)'); }
+      if (!canSheet) { out = needConnect; console.log('[🗂️sheetCRUD] → needConnect (canData=false · 구글 데이터 연결 없음 → sheetsCrud 호출 안 함)'); }
       else {
         const hist = Array.isArray(req.body && req.body.history) ? req.body.history.slice(-10) : [];
         const rc = await sheetsCrud.runChat(ma, hist.concat([{ role: 'user', content: q }]));
