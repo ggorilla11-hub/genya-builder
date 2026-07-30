@@ -1,0 +1,104 @@
+<!--
+  ============================================================
+  자비스 은하 홀로그램 — 청록 버전 (대표님 확정)
+  ============================================================
+  [확정 사양]
+  - 별 2600개 이상 · 촘촘한 은하수
+  - 중앙 밝은 청록/시안 코어 · 안으로 밀도 높아짐
+  - 바깥은 딥블루/네이비 별
+  - 은하 회전
+  - 음성 반응: 중심으로 모였다 퍼지는 잔잔한 호흡 (심장 쿵쾅 X · 어지럽지 않게)
+  - 4가지 상태: idle(대기)·listen(듣기)·think(작업)·speak(말하기)
+
+  [엄마에게 - 통합 방법]
+  1. 이 캔버스를 촬영 화면 "좌측 상단"에 배치 (지니야 안내 텍스트 영역)
+  2. 실제 Vapi 음성에 연동:
+     - 대표 말하는 중  → window.setJarvisState('listen')
+     - 지니야 작업 중   → window.setJarvisState('think')
+     - 지니야 답하는 중 → window.setJarvisState('speak')
+     - 평소             → window.setJarvisState('idle')
+  3. 캔버스 width/height는 배치 영역에 맞게 조정 (정사각형 권장)
+  4. 실제 모드: 작게 · 촬영 모드: 같은 위치에서 조금 크고 화려하게
+  ============================================================
+-->
+<canvas id="jarvisHolo" width="600" height="440" style="width:100%;display:block;border-radius:12px;background:#04060d;"></canvas>
+
+<script>
+(function(){
+  var cv=document.getElementById('jarvisHolo'), ctx=cv.getContext('2d');
+  var W=cv.width, H=cv.height, CX=W/2, CY=H/2;
+  var state='idle', t=0;
+
+  var N=2600, stars=[];
+  for(var i=0;i<N;i++){
+    var ang=Math.random()*Math.PI*2;
+    var rr=Math.pow(Math.random(),0.62);
+    stars.push({
+      ang:ang, baseR:rr,
+      spin:(0.15+Math.random()*0.7)*(Math.random()<0.5?1:-1),
+      size:0.4+Math.random()*1.5,
+      tw:Math.random()*Math.PI*2,
+      twSpd:0.8+Math.random()*2.2,
+      depth:0.35+Math.random()*0.65
+    });
+  }
+
+  function colorTeal(rNorm, b){
+    if(rNorm<0.26){ return 'rgba('+Math.floor(150+b*105)+',255,230,'+b.toFixed(2)+')'; }
+    if(rNorm<0.52){ return 'rgba(60,'+Math.floor(210+rNorm*40)+',200,'+(b*0.9).toFixed(2)+')'; }
+    return 'rgba('+Math.floor(90+b*60)+','+Math.floor(150+b*60)+',255,'+(b*0.82).toFixed(2)+')';
+  }
+
+  function frame(){
+    t+=0.016;
+    ctx.clearRect(0,0,W,H);
+    ctx.fillStyle='#04060d'; ctx.fillRect(0,0,W,H);
+
+    var breath=1, maxR=Math.min(W,H)*0.375, spinMul=1, coreGlow=1;
+    if(state==='idle'){ breath=1+Math.sin(t*0.9)*0.02; spinMul=0.3; coreGlow=0.9+Math.sin(t*0.9)*0.08; }
+    else if(state==='listen'){ breath=1.05+Math.sin(t*1.4)*0.03; spinMul=0.5; coreGlow=1.05; }
+    else if(state==='think'){ breath=1+Math.sin(t*1.2)*0.015; spinMul=1.9; coreGlow=1+Math.abs(Math.sin(t*3))*0.2; }
+    else if(state==='speak'){
+      var slow=Math.sin(t*1.6), mid=Math.sin(t*2.4)*0.4;
+      breath=1+(slow*0.10)+(mid*0.05);
+      spinMul=0.75; coreGlow=1.05+Math.abs(slow)*0.25;
+    }
+
+    var effR=maxR*breath;
+
+    var grd=ctx.createRadialGradient(CX,CY,0,CX,CY,effR);
+    grd.addColorStop(0,'rgba(90,224,200,'+(0.24*coreGlow)+')');
+    grd.addColorStop(0.16,'rgba(50,180,180,'+(0.12*coreGlow)+')');
+    grd.addColorStop(0.5,'rgba(38,90,110,0.05)');
+    grd.addColorStop(1,'rgba(4,6,13,0)');
+    ctx.fillStyle=grd; ctx.beginPath(); ctx.arc(CX,CY,effR,0,Math.PI*2); ctx.fill();
+
+    for(var i=0;i<N;i++){
+      var st=stars[i];
+      st.ang+=st.spin*0.0032*spinMul;
+      var R=st.baseR*effR;
+      var x=CX+Math.cos(st.ang)*R;
+      var y=CY+Math.sin(st.ang)*R*0.84;
+      var tw=0.5+0.5*Math.sin(t*st.twSpd+st.tw);
+      var bright=(0.3+tw*0.7)*st.depth;
+      var sz=st.size*(0.5+(1-st.baseR)*0.9);
+      ctx.fillStyle=colorTeal(st.baseR, bright);
+      ctx.fillRect(x,y,sz,sz);
+    }
+
+    var cg=ctx.createRadialGradient(CX,CY,0,CX,CY,30*breath*coreGlow);
+    cg.addColorStop(0,'rgba(200,255,240,'+(0.9*coreGlow)+')');
+    cg.addColorStop(0.42,'rgba(88,220,210,'+(0.55*coreGlow)+')');
+    cg.addColorStop(1,'rgba(38,158,180,0)');
+    ctx.fillStyle=cg; ctx.beginPath(); ctx.arc(CX,CY,30*breath*coreGlow,0,Math.PI*2); ctx.fill();
+
+    ctx.strokeStyle='rgba(110,220,210,0.08)'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.ellipse(CX,CY,effR*0.97,effR*0.82,t*0.08*spinMul,0,Math.PI*2); ctx.stroke();
+
+    requestAnimationFrame(frame);
+  }
+
+  window.setJarvisState=function(s){ state=s; };
+  frame();
+})();
+</script>

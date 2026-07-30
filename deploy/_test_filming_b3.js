@@ -13,42 +13,66 @@ const gh = fs.readFileSync(path.join(__dirname, 'genya.html'), 'utf8');
 const ms = fs.readFileSync(path.join(__dirname, 'main_server.js'), 'utf8');
 // ★은하 코드만 정확히 잘라낸다. (처음엔 주석 첫 등장부터 파일 끝까지 잘라서
 //   앱 전체 코드가 딸려 들어갔고, "고객 데이터를 안 읽는가" 시험이 엉뚱하게 실패했다.)
-const _s = gh.indexOf('  var STARS = ');
-const _e = gh.indexOf('})();', _s);
+// ★은하 코드만 정확히 잘라낸다(앱 전체가 딸려 들어가면 검사가 엉뚱해진다).
+const _s = gh.indexOf('/* ═══ 🎬 B-3 · 자비스 은하 홀로그램');
+const _e = gh.indexOf('window.galaxyBig', _s);
 if (_s < 0 || _e < 0) { console.log('★은하 코드를 못 찾음 — 시험 불가'); process.exit(1); }
 const blk = gh.slice(_s, _e);
 
 // ═══ [1] 은하 느낌 — 대표님 확정 사양 ═══
-console.log('\n[1] ★원형 은하 (태극 아님 · 중앙 청록 코어)');
-ok('★별 2600개', /var STARS = (\d+);/.test(blk) && Number(blk.match(/var STARS = (\d+);/)[1]) >= 2600,
-  blk.match(/var STARS = (\d+);/) ? blk.match(/var STARS = (\d+);/)[1] + '개' : '못 찾음');
-ok('★안으로 갈수록 촘촘해짐(제곱 분포)', /Math\.pow\(Math\.random\(\), 1\.75\)/.test(blk));
-// ★★태극 재발 방지 — 모양이 시간에 따라 변하게 만드는 두 원인을 코드에서 못 들어오게 막는다.
-ok('★★나선 팔 없음(각도를 고르게 흩뿌린 원형)', /var th = Math\.random\(\)\*Math\.PI\*2;/.test(blk) && !/arm\*\(Math\.PI\*2\/3\)/.test(blk));
-ok('★★차등 회전 없음 — 전부 같은 속도라 모양이 안 변한다', /var th = st\.th \+ 각;/.test(blk) && !/1\.7 - st\.t/.test(blk));
-ok('★★눕히지 않은 정원(원 중심 유지)', /Math\.sin\(th\)\*r;/.test(blk) && !/Math\.sin\(th\)\*r\*0\.\d+/.test(blk));
-ok('★중앙 청록 코어', /rgba\(190,255,248|rgba\(0,229,255/.test(blk) && /청록 코어/.test(blk));
-ok('★바깥은 푸른빛', /var g = \[150, 255, 240\], b = \[80, 150, 255\]/.test(blk));
-ok('★은하가 회전함', /각 \+= 회전/.test(blk));
+console.log('\n[1] ★★시안 코드가 화면에 실제로 들어갔는가 (파일만 있고 미반영 X)');
+// ★대표님 지적: "파일을 폴더에 두는 것과 화면에 적용하는 것은 다르다."
+//   그래서 시안 파일과 genya.html 을 ★줄 단위로 대조한다. 한 줄이라도 다르면 실패.
+const 시안경로 = path.join(__dirname, 'jarvis_hologram_teal.html');
+ok('시안 파일이 있다', fs.existsSync(시안경로), 시안경로);
+const 시안 = fs.readFileSync(시안경로, 'utf8');
+const sm = 시안.match(/<script>([\s\S]*?)<\/script>/);
+ok('시안에서 코드를 뽑을 수 있다', !!sm);
+const 시안줄 = sm[1].trim()
+  .replace(/^\(function\(\)\{/, '').replace(/\}\)\(\);$/, '')
+  .split('\n').map((l) => l.trim()).filter((l) => l);
+const 화면줄 = new Set(gh.split('\n').map((l) => l.trim()));
+// ★대표님이 명시적으로 승인한 변경은 딱 하나 — maxR 크기(0.375 → 0.455).
+//   그 줄만 예외로 두고, 나머지는 여전히 한 줄이라도 다르면 실패시킨다.
+const 승인된변경 = [/var breath=1, maxR=Math\.min\(W,H\)\*0\.375, spinMul=1, coreGlow=1;/];
+const 빠진 = 시안줄.filter((l) => !화면줄.has(l) && !승인된변경.some((re) => re.test(l)));
+ok('★★시안 코드가 (승인된 크기 한 줄 빼고) 전부 그대로 있다', 빠진.length === 0,
+  빠진.length + '줄 빠짐: ' + 빠진.slice(0, 3).join(' / '));
+const mr = gh.match(/maxR=Math\.min\(W,H\)\*(0\.\d+)/);
+ok('★크기가 대표님 지시 범위(0.44~0.47)', mr && Number(mr[1]) >= 0.44 && Number(mr[1]) <= 0.47, mr ? mr[1] : '못 찾음');
+ok('★그 한 줄 말고는 시안 숫자를 안 건드림(호흡·색·회전 그대로)',
+  /breath=1\+Math\.sin\(t\*0\.9\)\*0\.02/.test(gh) && /st\.ang\+=st\.spin\*0\.0032\*spinMul;/.test(gh)
+  && /rgba\(200,255,240,/.test(gh) && /var rr=Math\.pow\(Math\.random\(\),0\.62\);/.test(gh));
+ok('★시안 canvas(jarvisHolo)가 화면에 있다', /<canvas id="jarvisHolo" width="600" height="440"/.test(gh));
+ok('★시안이 요구한 상태 함수 setJarvisState 가 살아 있다', /window\.setJarvisState=function\(s\)\{ state=s; \};/.test(gh));
+ok('★자체 제작 은하는 완전히 제거됨(중복 렌더 없음)',
+  !/var STARS = /.test(gh) && !/galaxyCv/.test(gh) && !/차등 = 각/.test(gh));
+
+console.log('\n[1-2] 시안이 확정한 사양 (원형 · 청록 · 2600개)');
+ok('★별 2600개', /var N=2600, stars=\[\];/.test(blk));
+ok('★원형 분포(각도 고르게) — 태극 아님', /var ang=Math\.random\(\)\*Math\.PI\*2;/.test(blk));
+ok('★중앙 청록/시안 코어', /rgba\(200,255,240,|rgba\(88,220,210,/.test(blk));
+ok('★바깥은 딥블루 별', /return 'rgba\('\+Math\.floor\(90\+b\*60\)\+','\+Math\.floor\(150\+b\*60\)\+',255,/.test(blk));
+ok('★은하 회전', /st\.ang\+=st\.spin\*0\.0032\*spinMul;/.test(blk));
 
 // ═══ [2] 음성 반응 — 잔잔한 호흡 (★심장 쿵쾅 금지) ═══
 console.log('\n[2] ★말할 때 잔잔한 호흡 (어지럽지 않게)');
-// ★주기를 숫자로 못 박는다 — "잔잔한 호흡"인지 눈이 아니라 계산으로 확인.
-//   숨 += 0.016(60fps → 초당 0.96) × 배수 = 각속도. 주기 = 2π / 각속도.
-const 증가 = blk.match(/숨 \+= (0\.\d+);/), 배수 = blk.match(/Math\.sin\(숨\*(\d+(?:\.\d+)?)\)/);
-ok('호흡 파형이 있다', !!(증가 && 배수));
-const 주기 = (증가 && 배수) ? (2 * Math.PI) / (Number(증가[1]) * 60 * Number(배수[1])) : 0;
+// ★시안이 정한 호흡을 그대로 검사한다(내 옛 방식이 아니라).
+//   시안: t += 0.016 (60fps → 초당 0.96) · speak 일 때 breath = 1 + sin(t*1.6)*0.10 + sin(t*2.4)*0.4*0.05
+const 증가 = blk.match(/t\+=(0\.\d+);/);
+const 느린 = blk.match(/var slow=Math\.sin\(t\*(\d+(?:\.\d+)?)\)/);
+ok('★말하기 호흡 파형이 있다(시안 원문)', !!(증가 && 느린) && /breath=1\+\(slow\*0\.10\)\+\(mid\*0\.05\)/.test(blk));
+const 주기 = (증가 && 느린) ? (2 * Math.PI) / (Number(증가[1]) * 60 * Number(느린[1])) : 0;
 ok('★호흡 주기가 사람 숨 범위(3~7초) — 심장 박동(1초)이 아니다', 주기 >= 3 && 주기 <= 7, 주기.toFixed(1) + '초');
-const 진폭 = blk.match(/호흡 \* (0\.\d+) \* \(0\.5 \+ 에너지\*0\.5\)/);
-ok('★진폭이 작다(±6% 이하 — 쿵쾅거리지 않음)', 진폭 && Number(진폭[1]) <= 0.06, 진폭 ? '±' + (Number(진폭[1]) * 100).toFixed(1) + '%' : '못 찾음');
-ok('★중심으로 모였다 퍼진다', /var t = st\.t \* \(1 - 모임\)/.test(blk));
-ok('★상태가 튀지 않고 부드럽게 따라감', /에너지 \+= \(목표에너지 - 에너지\) \* 0\.06/.test(blk));
-ok('애니메이션 줄이기 설정을 존중(어지럼 배려)', /prefers-reduced-motion/.test(blk));
+ok('★중심으로 모였다 퍼진다(반지름이 호흡을 탄다)', /var effR=maxR\*breath;/.test(blk) && /var R=st\.baseR\*effR;/.test(blk));
+ok('★대기 상태는 거의 안 움직인다(±2%)', /breath=1\+Math\.sin\(t\*0\.9\)\*0\.02/.test(blk));
+ok('★작업 중에도 흔들림은 작다(±1.5%) — 어지럽지 않게', /breath=1\+Math\.sin\(t\*1\.2\)\*0\.015/.test(blk));
 
 // ═══ [3] 4가지 상태 ═══
 console.log('\n[3] 4가지 상태 (대기·듣기·작업·말하기)');
 ['idle', 'listen', 'think', 'speak'].forEach((s) => ok(`상태 ${s} 있음`, new RegExp("'" + s + "'").test(blk)));
-ok('상태별로 회전 속도가 다름', /상태==='think' \? 0\.0042 : 상태==='listen' \? 0\.0018 : 0\.0011/.test(blk));
+ok('상태별로 회전 속도가 다름(시안 spinMul)',
+  /state==='idle'\)\{ breath[\s\S]{0,60}spinMul=0\.3/.test(blk) && /spinMul=0\.5/.test(blk) && /spinMul=1\.9/.test(blk) && /spinMul=0\.75/.test(blk));
 
 // ═══ [3-2] ★박스 문구 삭제 (대표님 지시) ═══
 console.log('\n[3-2] ★박스 문구 전부 삭제 · 좌측엔 자비스만');
@@ -82,8 +106,8 @@ ok('★음성 신호를 못 받아도 대화가 안 끊긴다(try·catch로 감�
 console.log('\n[5] 좌측 상단 배치 · 명단 안 가림');
 ok('★좌측 열 맨 위에 있다', gh.indexOf('id="galaxyWrap"') < gh.indexOf('온보딩에서 설계된 내 비서'));
 ok('★띄우는 게 아니라 자리를 차지하며 흐른다(아무것도 안 가림)', !/id="galaxyWrap"[^>]*position:\s*(fixed|absolute)/.test(gh));
-ok('★모니터 통째가 아님(좌측 열 폭 안에서만)', /Math\.min\(w, 250\)/.test(blk) && /Math\.min\(w, 168\)/.test(blk));
-ok('★촬영=크게(250) · 실제=작게(168)', /크게 \? Math\.min\(w, 250\) : Math\.min\(w, 168\)/.test(blk));
+ok('★모니터 통째가 아님(좌측 열 안, 최대 250px)', /maxWidth = \(촬영 \? 250 : 168\) \+ 'px'/.test(gh) && !/position:\s*fixed/.test(blk));
+ok('★촬영=크게(250) · 실제=작게(168)', /var 촬영 = true;/.test(gh) && /window\.galaxyBig = function\(on\)\{ 촬영 = !!on;/.test(gh));
 ok('★전체화면 명단이 뜨면 그 아래로 들어간다(명단을 안 가림)',
   /id="fullRoster"[^>]*z-index:99999/.test(gh) && !/galaxyWrap[^>]*z-index/.test(gh));
 
@@ -93,8 +117,13 @@ ok('★촬영 모드에서만 켜진다(window.__FILMING)', /if\(!window\.__FILM
 ok('★평소엔 화면에 자리도 안 차지(display:none 그대로)', /id="galaxyWrap" style="display:none/.test(gh));
 ok('★__FILMING 은 서버가 넣어준다', /window\.__FILMING=' \+ \(FILMING \? 'true' : 'false'\)/.test(ms));
 ok('★라이브면 false 가 들어간다(FILMING 은 환경변수로만 true)', /const FILMING = process\.env\.FILMING_MODE === '1';/.test(ms));
-ok('★평소엔 그리기 자체를 시작 안 함(별 계산도 안 함)',
-  blk.indexOf('if(!window.__FILMING) return;') < blk.indexOf('만들기(); 맞추기();'));
+// ★촬영 아님 → return 이 시안 코드(별 생성 for문·frame())보다 ★위에 있어야 한다.
+//   그래야 라이브에서 별 2600개 계산도, 애니메이션도 아예 시작되지 않는다.
+const _게이트 = blk.indexOf('if(!window.__FILMING) return;');
+ok('★평소엔 별 계산조차 안 함(게이트가 별 생성보다 위)',
+  _게이트 >= 0 && _게이트 < blk.indexOf('for(var i=0;i<N;i++)'), '게이트=' + _게이트 + ' · 별생성=' + blk.indexOf('for(var i=0;i<N;i++)'));
+ok('★평소엔 애니메이션도 시작 안 함(게이트가 frame() 호출보다 위)',
+  _게이트 >= 0 && _게이트 < blk.lastIndexOf('frame();'));
 
 // ═══ [7] 지어내지 않는가 (폐기된 홀로그램과 다른 점) ═══
 console.log('\n[7] ★값을 지어내지 않는가 (2026-07-27 폐기 사고 재발 방지)');
@@ -104,10 +133,10 @@ ok('★숫자·이름을 만들어 표시하지 않는다(표시는 상태 이�
 
 // ═══ [8] 성능 (촬영 중 버벅이면 안 됨) ═══
 console.log('\n[8] 촬영 중 버벅이지 않는가');
-ok('점 찍기는 가장 가벼운 방식(fillRect)', /ctx\.fillRect\(x, y, sz, sz\)/.test(blk));
-ok('안 보이는 별은 건너뜀', /if \(a <= 0\.02\) continue;/.test(blk));
-ok('탭이 가려지면 그리기 정지(발열·배터리)', /visibilitychange/.test(blk));
-ok('고해상도 화면 배율 상한(2배)', /Math\.min\(window\.devicePixelRatio\|\|1, 2\)/.test(blk));
+ok('점 찍기는 가장 가벼운 방식(fillRect)', /ctx\.fillRect\(x,y,sz,sz\);/.test(blk));
+ok('별 2600개 = 촬영에 충분히 가벼운 수', /var N=2600/.test(blk));
+ok('★캔버스가 화면 폭에 맞게 조정됨(시안 주석 3번)', /cv0\.width = cv0\.height = 560;/.test(gh));
+ok('★촬영=250px · 실제=168px (시안 주석 4번)', /\(촬영 \? 250 : 168\) \+ 'px'/.test(gh));
 
 console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 console.log(`통과 ${통과} · 실패 ${실패}`);

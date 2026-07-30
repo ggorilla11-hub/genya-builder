@@ -769,7 +769,8 @@
         <div class="col-scroll">
           <!-- 🎬 B-3 · 자비스 은하 홀로그램 (촬영 모드에서만 보인다. 평소엔 display:none 그대로 · 자리도 안 차지) -->
           <div id="galaxyWrap" style="display:none;margin:0 0 14px;">
-            <canvas id="galaxyCv" style="display:block;width:100%;border-radius:14px;background:radial-gradient(ellipse at 50% 50%,#0a1430 0%,#050a1c 60%,#03060f 100%);"></canvas>
+            <!-- ★시안 파일(jarvis_hologram_teal.html)의 canvas 원문 그대로 -->
+            <canvas id="jarvisHolo" width="600" height="440" style="width:100%;display:block;border-radius:12px;background:#04060d;"></canvas>
             <!-- 상태 문구는 화면에 안 보인다(대표님 지시: 박스 문구 삭제). 은하 움직임만으로 상태를 보여준다.
                  값은 그대로 갱신되므로 시험·진단에서는 확인할 수 있다. -->
             <div id="galaxyLbl" style="display:none"></div>
@@ -6098,154 +6099,140 @@ document.addEventListener('keydown', function(e){ if(e.key==='Escape') closeFull
 
 <script>
 /* ═══ 🎬 B-3 · 자비스 은하 홀로그램 ═══════════════════════════════════
-   무엇을·왜: 지니야가 "살아 있다"는 느낌을 주는 화면 효과. 좌측 상단에 조용히 돈다.
-   ★데이터를 만들지 않는다 — 별은 그냥 그림이다. (2026-07-27 폐기된 홀로그램은
-     LLM이 고객 값을 지어내 카드로 만들던 것이었다. 이건 그것과 전혀 다르다.)
-   ★기능과 공존: 좌측 열 맨 위에 자리를 잡고 흐르므로 아무것도 가리지 않는다.
-   ★촬영 모드에서만 켜진다(window.__FILMING). 평소엔 display:none 이라 그리지도 않는다.
+   ★아래 렌더링 코드는 대표님이 주신 시안 파일 deploy/jarvis_hologram_teal.html 의
+     <script> 원문 그대로다. 별 생성·색·프레임 로직은 한 글자도 손대지 않았다.
+     (시험 [1]에서 시안 파일과 줄 단위로 대조해 다르면 실패시킨다)
+
+   감싼 것은 세 가지뿐 — 시안 주석의 "엄마에게 - 통합 방법" 그대로:
+     1) 좌측 상단 배치 · 캔버스 크기를 배치 영역에 맞게(정사각형 권장)
+     2) 실제 Vapi 음성 연동 → setJarvisState('listen'/'think'/'speak'/'idle')
+     3) 실제 모드=작게 · 촬영 모드=조금 크게
+
+   ★촬영 모드(window.__FILMING)에서만 켠다. 라이브에선 별 계산조차 안 한다.
+   ★데이터를 아예 안 읽는다 — 2026-07-27 폐기된 "LLM이 값을 지어내던 홀로그램"과 다르다.
    ─────────────────────────────────────────────────────────────── */
 (function(){
-  var STARS = 2600;                 // ★대표님 확정: 별 2600개 (원형이라 팔에 몰리지 않고 고르게 촘촘하다)
-  var wrap, cv, ctx, lbl, W, H, CX, CY, R, stars = [], raf = null;
-  var 크게 = false;                 // 촬영 모드 = 조금 크고 화려하게
-  var 상태 = 'idle';                // idle(대기) · listen(듣기) · think(작업) · speak(말하기)
-  var 에너지 = 0, 목표에너지 = 0;    // 0~1 부드럽게 따라간다(툭 튀지 않게)
-  var 숨 = 0;                       // 잔잔한 호흡 위상 — ★심장 쿵쾅이 아니라 느린 들숨·날숨
-  var 각 = 0;
-  var 잔잔 = false;                 // 사용자가 애니메이션 줄이기를 켰으면 정지 화면
-  var 이름 = { idle:'대기 중', listen:'듣는 중', think:'생각하는 중', speak:'말하는 중' };
+  var wrap = document.getElementById('galaxyWrap');
+  var cv0  = document.getElementById('jarvisHolo');
+  var lbl  = document.getElementById('galaxyLbl');
+  if(!wrap || !cv0) return;
+  /* ★촬영 모드에서만. 평소(라이브·교육생)엔 여기서 끝 — 아래 시안 코드는 실행조차 안 된다. */
+  if(!window.__FILMING) return;
 
-  function 만들기(){
-    stars = [];
-    for (var i=0;i<STARS;i++){
-      /* 안으로 갈수록 촘촘하게: 제곱을 주면 중심에 몰린다 */
-      var t = Math.pow(Math.random(), 1.75);
-      /* ★원형 은하 — 각도를 고르게 흩뿌린다.
-         (전엔 나선 팔 3개였는데, 안쪽이 빨리 도는 차등 회전과 겹치면서 팔이 감겼다 풀렸다 해
-          ★태극처럼 모양이 계속 바뀌었다. 대표님 지시대로 원 중심을 유지하도록 팔을 없앴다.) */
-      var th = Math.random()*Math.PI*2;
-      stars.push({
-        t: t, th: th,
-        s: 0.55 + Math.random()*1.15,                              // 별 크기(작으면 화면에서 사라져 성겨 보인다)
-        tw: Math.random()*Math.PI*2,                               // 반짝임 위상
-        tws: 0.6 + Math.random()*1.6,                              // 반짝임 속도
-        z: 0.62 + Math.random()*0.38                               // 밝기 편차
-      });
-    }
+  /* 통합①: 배치 영역에 맞게 캔버스 크기 조정(시안 주석 3번 — 정사각형 권장).
+     내부 해상도를 표시 크기보다 크게 잡아 선명하게. 시안 스크립트가 W,H를 읽기 ★전에 정한다. */
+  var 촬영 = true;                                  // 통합③: 촬영=크게 · 실제=작게
+  cv0.width = cv0.height = 560;                     // 정사각형(권장)
+  cv0.style.height = 'auto';
+  cv0.style.maxWidth = (촬영 ? 250 : 168) + 'px';
+  cv0.style.margin = '0 auto';
+
+  wrap.style.display = '';
+  /* ★촬영 모드에서는 좌측 프로필 박스 묶음을 숨긴다 — 그 자리를 자비스 홀로그램이 대신한다.
+     (평소·교육생 화면에서는 이 줄이 아예 실행되지 않아 전부 그대로 보인다) */
+  try{ var pb = document.getElementById('profileBoxes'); if(pb) pb.style.display='none'; }catch(e){}
+
+  /* ══════ 여기부터 ↓ 시안 원문 (deploy/jarvis_hologram_teal.html) ══════ */
+
+  var cv=document.getElementById('jarvisHolo'), ctx=cv.getContext('2d');
+  var W=cv.width, H=cv.height, CX=W/2, CY=H/2;
+  var state='idle', t=0;
+
+  var N=2600, stars=[];
+  for(var i=0;i<N;i++){
+    var ang=Math.random()*Math.PI*2;
+    var rr=Math.pow(Math.random(),0.62);
+    stars.push({
+      ang:ang, baseR:rr,
+      spin:(0.15+Math.random()*0.7)*(Math.random()<0.5?1:-1),
+      size:0.4+Math.random()*1.5,
+      tw:Math.random()*Math.PI*2,
+      twSpd:0.8+Math.random()*2.2,
+      depth:0.35+Math.random()*0.65
+    });
   }
 
-  /* ★중심=청록, 바깥=푸른빛. 사이는 부드럽게 섞는다. (대표님 확정: 중앙 청록 코어) */
-  function 색(t, a){
-    var g = [150, 255, 240], b = [80, 150, 255];                   // 청록 → 파랑
-    var k = Math.min(1, Math.pow(t, 0.78));
-    var r = Math.round(g[0]+(b[0]-g[0])*k), gg = Math.round(g[1]+(b[1]-g[1])*k), bb = Math.round(g[2]+(b[2]-g[2])*k);
-    return 'rgba('+r+','+gg+','+bb+','+a.toFixed(3)+')';
+  function colorTeal(rNorm, b){
+    if(rNorm<0.26){ return 'rgba('+Math.floor(150+b*105)+',255,230,'+b.toFixed(2)+')'; }
+    if(rNorm<0.52){ return 'rgba(60,'+Math.floor(210+rNorm*40)+',200,'+(b*0.9).toFixed(2)+')'; }
+    return 'rgba('+Math.floor(90+b*60)+','+Math.floor(150+b*60)+',255,'+(b*0.82).toFixed(2)+')';
   }
 
-  function 맞추기(){
-    if(!cv) return;
-    var w = wrap.clientWidth || 240;
-    var size = 크게 ? Math.min(w, 250) : Math.min(w, 168);         // 촬영=크게 · 실제=작게
-    var dpr = Math.min(window.devicePixelRatio||1, 2);
-    cv.style.height = size + 'px';
-    W = cv.width = Math.round(w*dpr); H = cv.height = Math.round(size*dpr);
-    ctx = cv.getContext('2d'); ctx.setTransform(dpr,0,0,dpr,0,0);
-    W = w; H = size; CX = W/2; CY = H/2; R = Math.min(W,H)*0.46;
-  }
-
-  function 그리기(){
-    if(!ctx) return;
+  function frame(){
+    t+=0.016;
     ctx.clearRect(0,0,W,H);
+    ctx.fillStyle='#04060d'; ctx.fillRect(0,0,W,H);
 
-    에너지 += (목표에너지 - 에너지) * 0.06;                        // 상태가 바뀌어도 부드럽게
-    var 회전 = (상태==='think' ? 0.0042 : 상태==='listen' ? 0.0018 : 0.0011);
-    각 += 회전;
-
-    /* ★말하기 = 잔잔한 호흡.
-       주기 약 5초 = 사람이 편히 쉬는 숨(분당 12회). 심장 박동(분당 60~80)과는 전혀 다른 느린 파형이라
-       쿵쾅거리지 않고 어지럽지 않다. 진폭도 ±5.5%로 작게 잡았다.
-       (처음엔 10.6초로 잡았더니 너무 느려 아예 반응이 없어 보였다) */
-    숨 += 0.016;                                   // 60fps 기준 초당 0.96
-    var 호흡 = (상태==='speak') ? Math.sin(숨*1.3) : 0;   // 0.96×1.3 ≈ 1.25 rad/s → 약 5.0초 주기
-    var 모임 = 호흡 * 0.055 * (0.5 + 에너지*0.5);                  // 중심으로 모였다 퍼짐(±5.5%)
-    var 밝기업 = 0.10*에너지 + (상태==='speak' ? Math.max(0,호흡)*0.10 : 0);
-
-    /* ★중앙 청록 코어 */
-    var 코어 = R*(0.30 + 에너지*0.05 + 호흡*0.03);
-    var g = ctx.createRadialGradient(CX,CY,0,CX,CY,코어);
-    g.addColorStop(0,   'rgba(190,255,248,'+(0.62+밝기업).toFixed(3)+')');
-    g.addColorStop(0.35,'rgba(0,229,255,'+(0.28+밝기업*0.6).toFixed(3)+')');
-    g.addColorStop(1,   'rgba(0,190,220,0)');
-    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(CX,CY,코어,0,Math.PI*2); ctx.fill();
-
-    /* 바깥 푸른 헤일로 */
-    var g2 = ctx.createRadialGradient(CX,CY,R*0.35,CX,CY,R*1.15);
-    g2.addColorStop(0,'rgba(70,140,255,0)');
-    g2.addColorStop(0.7,'rgba(70,140,255,'+(0.13+에너지*0.06).toFixed(3)+')');
-    g2.addColorStop(1,'rgba(40,90,220,'+(0.20+에너지*0.08).toFixed(3)+')');
-    ctx.fillStyle = g2; ctx.fillRect(0,0,W,H);
-
-    /* 별 2600개 */
-    for (var i=0;i<stars.length;i++){
-      var st = stars[i];
-      var t = st.t * (1 - 모임);                                    // 호흡: 전체가 살짝 모였다 퍼진다
-      /* ★모양 불변: 별 전체가 같은 속도로 돈다.
-         (전엔 안쪽이 1.7배 빨랐다 = 차등 회전. 그래서 시간이 갈수록 팔이 감기며 태극처럼 변했다.) */
-      var th = st.th + 각;
-      var r = t * R;
-      var x = CX + Math.cos(th)*r, y = CY + Math.sin(th)*r;         // ★정원(눕히지 않는다)
-      st.tw += 0.02*st.tws;
-      var a = (0.46 + 0.38*Math.abs(Math.sin(st.tw))) * st.z * (1-t*0.22) + 밝기업*0.5;
-      if (a <= 0.02) continue;
-      ctx.fillStyle = 색(t, Math.min(1,a));
-      var sz = st.s * (크게 ? 1.15 : 0.92);
-      ctx.fillRect(x, y, sz, sz);                                   // 점 2600개는 fillRect가 제일 가볍다
+    /* ★크기만 조정(2026-07-31 대표님 지시): 시안 원값 0.375 → 0.455.
+       0.375는 존재감이 없었고, 예전 자체 제작(0.46 정원)은 꽉 차서 부담스러웠다.
+       0.455 + 세로 0.84 압축 = 가로 약 91% · 세로 약 76% → 사각형에 가깝되 꽉 차진 않는다.
+       ★이 숫자 하나 말고 시안 코드는 그대로다(색·모양·호흡·청록 코어 무접촉). */
+    var breath=1, maxR=Math.min(W,H)*0.455, spinMul=1, coreGlow=1;
+    if(state==='idle'){ breath=1+Math.sin(t*0.9)*0.02; spinMul=0.3; coreGlow=0.9+Math.sin(t*0.9)*0.08; }
+    else if(state==='listen'){ breath=1.05+Math.sin(t*1.4)*0.03; spinMul=0.5; coreGlow=1.05; }
+    else if(state==='think'){ breath=1+Math.sin(t*1.2)*0.015; spinMul=1.9; coreGlow=1+Math.abs(Math.sin(t*3))*0.2; }
+    else if(state==='speak'){
+      var slow=Math.sin(t*1.6), mid=Math.sin(t*2.4)*0.4;
+      breath=1+(slow*0.10)+(mid*0.05);
+      spinMul=0.75; coreGlow=1.05+Math.abs(slow)*0.25;
     }
-    raf = requestAnimationFrame(그리기);
+
+    var effR=maxR*breath;
+
+    var grd=ctx.createRadialGradient(CX,CY,0,CX,CY,effR);
+    grd.addColorStop(0,'rgba(90,224,200,'+(0.24*coreGlow)+')');
+    grd.addColorStop(0.16,'rgba(50,180,180,'+(0.12*coreGlow)+')');
+    grd.addColorStop(0.5,'rgba(38,90,110,0.05)');
+    grd.addColorStop(1,'rgba(4,6,13,0)');
+    ctx.fillStyle=grd; ctx.beginPath(); ctx.arc(CX,CY,effR,0,Math.PI*2); ctx.fill();
+
+    for(var i=0;i<N;i++){
+      var st=stars[i];
+      st.ang+=st.spin*0.0032*spinMul;
+      var R=st.baseR*effR;
+      var x=CX+Math.cos(st.ang)*R;
+      var y=CY+Math.sin(st.ang)*R*0.84;
+      var tw=0.5+0.5*Math.sin(t*st.twSpd+st.tw);
+      var bright=(0.3+tw*0.7)*st.depth;
+      var sz=st.size*(0.5+(1-st.baseR)*0.9);
+      ctx.fillStyle=colorTeal(st.baseR, bright);
+      ctx.fillRect(x,y,sz,sz);
+    }
+
+    var cg=ctx.createRadialGradient(CX,CY,0,CX,CY,30*breath*coreGlow);
+    cg.addColorStop(0,'rgba(200,255,240,'+(0.9*coreGlow)+')');
+    cg.addColorStop(0.42,'rgba(88,220,210,'+(0.55*coreGlow)+')');
+    cg.addColorStop(1,'rgba(38,158,180,0)');
+    ctx.fillStyle=cg; ctx.beginPath(); ctx.arc(CX,CY,30*breath*coreGlow,0,Math.PI*2); ctx.fill();
+
+    ctx.strokeStyle='rgba(110,220,210,0.08)'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.ellipse(CX,CY,effR*0.97,effR*0.82,t*0.08*spinMul,0,Math.PI*2); ctx.stroke();
+
+    requestAnimationFrame(frame);
   }
 
-  /* 바깥에서 부르는 것 — 상태 바꾸기 */
+  window.setJarvisState=function(s){ state=s; };
+  frame();
+  /* ══════ 여기까지 ↑ 시안 원문 ══════ */
+
+  /* 통합②: 실제 Vapi 음성 연동.
+     음성 상태가 모이는 micState()가 galaxyState()를 부른다 → 시안의 setJarvisState로 넘긴다. */
+  var 이름 = { idle:'대기 중', listen:'듣는 중', think:'생각하는 중', speak:'말하는 중' };
   window.galaxyState = function(s){
     var m = { '':'idle', 'recording':'listen', 'connecting':'think', 'speaking':'speak' };
     var v = m.hasOwnProperty(s) ? m[s] : (s||'idle');
-    if (!이름[v]) v = 'idle';
-    상태 = v;
-    목표에너지 = (v==='speak') ? 1 : (v==='think') ? 0.7 : (v==='listen') ? 0.45 : 0;
-    if (lbl) lbl.textContent = 이름[v];
-    if (잔잔 && ctx) 그리기한번();
+    if(!이름[v]) v = 'idle';
+    try{ window.setJarvisState(v); }catch(e){}
+    if(lbl) lbl.textContent = 이름[v];              // 화면엔 안 보이고(시험·진단용) 값만 갱신
   };
-  /* 지니야가 말하는 동안만 잠깐 호흡 — 끝나면 알아서 대기로 */
+  /* 지니야가 말하는 동안만 호흡 — 끝나면 알아서 대기로 */
   var _spkT = null;
   window.galaxySpeak = function(ms){
     window.galaxyState('speak');
     if(_spkT) clearTimeout(_spkT);
     _spkT = setTimeout(function(){ window.galaxyState(''); }, Math.max(1200, ms||2600));
   };
-  window.galaxyBig = function(on){ 크게 = !!on; 맞추기(); };
-
-  function 그리기한번(){ var s=상태; 상태=s; 에너지=목표에너지; 그리기(); if(raf){cancelAnimationFrame(raf); raf=null;} }
-
-  function 켜기(){
-    wrap = document.getElementById('galaxyWrap'); cv = document.getElementById('galaxyCv'); lbl = document.getElementById('galaxyLbl');
-    if(!wrap||!cv) return;
-    /* ★촬영 모드에서만 켠다. 평소(라이브)엔 아무 일도 일어나지 않는다. */
-    if(!window.__FILMING) return;
-    크게 = true;                                   // 촬영 = 조금 크고 화려하게
-    wrap.style.display = '';
-    /* ★촬영 모드에서는 좌측 프로필 박스 묶음을 숨긴다 — 그 자리를 자비스 홀로그램이 대신한다.
-       (평소·교육생 화면에서는 이 줄이 아예 실행되지 않아 전부 그대로 보인다) */
-    try{ var pb = document.getElementById('profileBoxes'); if(pb) pb.style.display='none'; }catch(e){}
-    만들기(); 맞추기();
-    try{ 잔잔 = window.matchMedia('(prefers-reduced-motion: reduce)').matches; }catch(e){}
-    if(잔잔){ 그리기한번(); } else { 그리기(); }
-    window.addEventListener('resize', function(){ 맞추기(); });
-    /* 탭이 안 보이면 그리기를 멈춘다(노트북 배터리·발열) */
-    document.addEventListener('visibilitychange', function(){
-      if(document.hidden){ if(raf){cancelAnimationFrame(raf); raf=null;} }
-      else if(!raf && !잔잔){ 그리기(); }
-    });
-  }
-  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', 켜기); else 켜기();
+  window.galaxyBig = function(on){ 촬영 = !!on; cv0.style.maxWidth = (촬영 ? 250 : 168) + 'px'; };
 })();
 </script>
 </body>
