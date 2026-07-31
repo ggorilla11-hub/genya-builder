@@ -427,7 +427,10 @@ async function loadMemberPrefs(email) {
 }
 // 발송 컨텍스트에 회원 설정 부착(문자 동반·상호). ma._email 있어야 함.
 async function _attachPrefs(ma) {
-  if (!ma || !ma._email) return;
+  if (!ma) return;
+  // 🎬 촬영: 로그인이 없어도 메모리 설정(상호명 등)을 붙인다 → 문자 끝에 상호명이 실제로 들어간다.
+  if (FILMING) { ma._smsCompanion = _FILM_PREFS.smsCompanion; ma._bizName = _FILM_PREFS.bizName; return; }
+  if (!ma._email) return;
   try { const p = await loadMemberPrefs(ma._email); ma._smsCompanion = p.smsCompanion; ma._bizName = p.bizName; } catch (e) {}
 }
 
@@ -450,6 +453,8 @@ rosterGate.init({ anthropic: _anthropic, model: MODEL_SIMPLE, sheetsCrud });
 // 켜지면 명단 관문이 촬영용 샘플 80명으로 바뀐다(구글 시트 접근 0 · 실제 고객 무접촉 · 시트 쓰기 차단).
 const FILMING = process.env.FILMING_MODE === '1';
 const FILM_ROSTER_FILE = 'genya_customer_list_80.xlsx';   // [명단·연결]에 보일 촬영용 파일 이름
+// 🎬 촬영용 설정(상호명·문자 동반) — 로그인·Firestore 없이 메모리에만. 서버 끄면 사라진다.
+let _FILM_PREFS = { smsCompanion: true, bizName: '' };
 let filmFull = null;
 if (FILMING) {
   require('./filming_roster').enable(sheetsCrud);
@@ -4226,9 +4231,11 @@ app.get('/api/settings/solapi', async (req, res) => {
 app.post('/api/settings/prefs', async (req, res) => {
   try {
     const uid = ((sessionOf(req) || {}).email) || '';
-    if (!uid) return res.json({ ok: false, needsLogin: true });
     const smsCompanion = !(req.body && req.body.smsCompanion === false); // 기본 ON
     const bizName = String((req.body && req.body.bizName) || '').slice(0, 40);
+    // 🎬 촬영: 로그인 없이 메모리에 담는다(상호명이 문자 끝에 붙는다). 라이브면 아래 관문 그대로.
+    if (FILMING) { _FILM_PREFS = { smsCompanion, bizName }; return res.json({ ok: true, smsCompanion, bizName, filming: true }); }
+    if (!uid) return res.json({ ok: false, needsLogin: true });
     await saveMemberPrefs(uid, { smsCompanion, bizName });
     return res.json({ ok: true, smsCompanion, bizName });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
@@ -4236,6 +4243,8 @@ app.post('/api/settings/prefs', async (req, res) => {
 app.get('/api/settings/prefs', async (req, res) => {
   try {
     const uid = ((sessionOf(req) || {}).email) || '';
+    // 🎬 촬영: 로그인 없이 메모리 값을 돌려준다(화면이 "로그인 필요"로 막지 않게).
+    if (FILMING) return res.json({ ok: true, smsCompanion: _FILM_PREFS.smsCompanion, bizName: _FILM_PREFS.bizName, filming: true });
     if (!uid) return res.json({ ok: true, smsCompanion: true, bizName: '', needsLogin: true });
     const p = await loadMemberPrefs(uid);
     return res.json({ ok: true, smsCompanion: p.smsCompanion, bizName: p.bizName });
