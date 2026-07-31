@@ -80,9 +80,14 @@ let t = null;
 
   // ═══ [5] 쓰기 차단 ═══
   console.log('\n[5] 촬영 모드에서 시트 쓰기·발송이 막히는가');
+  // ★2026-07-31 방법1(길 합치기): 촬영에서도 ★본 CRUD로 실제 수정한다(촬영 명단에만).
+  //   전엔 쓰기를 막아서 별도 지름길을 파야 했고, 그 지름길이 본 기능과 충돌했다.
+  const 전 = (await crud.loadTable(null)).rows.find((r) => r['고객명'] === '김철수')['주소'];
   const act = { op: 'update', name: '김철수', column: '주소', value: '촬영테스트', rowNum: 2, ts: Date.now() };
   const c = await crud.commit(null, act, crud.signAction(act));
-  ok('★올바른 승인서명이어도 시트 쓰기 거부', c.ok === false && /촬영 모드/.test(c.message || ''), JSON.stringify(c));
+  const 후 = (await crud.loadTable(null)).rows.find((r) => r['고객명'] === '김철수')['주소'];
+  ok('★촬영 명단에는 실제로 써진다(길이 하나)', c.ok === true && 후 === '촬영테스트', `"${전}" → "${후}"`);
+  ok('★구글은 안 부른다(촬영 명단은 시트 객체가 없음)', (await crud.loadTable(null)).sheets === null);
 
   const ms = require('fs').readFileSync(path.join(__dirname, 'main_server.js'), 'utf8');
   ok('★발송 차단막이 서버에 있음(문자·메일·캠페인·결재함·알림톡)',

@@ -51,7 +51,11 @@ function onWrite(cb) { crudEvents.on('write', cb); }
 // 명단을 읽는 관문(loadTable)을 통째로 다른 데이터로 바꾼다. 부르는 40여 곳은 손대지 않는다.
 // _SOURCE 가 null 이면(=평소·라이브) 아래 코드는 아무 영향이 없다.
 let _SOURCE = null;
-function setSource(fn) { _SOURCE = (typeof fn === 'function') ? fn : null; }
+let _WRITE_SOURCE = null;   // 촬영 명단에 실제로 쓰는 함수(commit이 여기로 넘긴다)
+function setSource(fn, writeFn) {
+  _SOURCE = (typeof fn === 'function') ? fn : null;
+  _WRITE_SOURCE = (typeof writeFn === 'function') ? writeFn : null;
+}
 function isFilming() { return !!_SOURCE; }
 
 // ═══════════════════════════════════════════════════════════════
@@ -227,7 +231,16 @@ async function doSearch(ma, args) {
   const needle = String(args.contains || args.keyword || '').trim();
   // ★특정 컬럼에 한정하지 않고 "전체 컬럼"에서 검색(컬럼명 예측 불가). 요청 컬럼은 참고값으로만 반환.
   if (needle) hits = hits.filter((r) => table.header.some((h) => String(r[h]).includes(needle)));
-  return { ok: true, count: hits.length, column: col, matches: hits.slice(0, 30).map((r) => slim(r, table.header)) };
+  // ★count 는 ★전체 건수다(matches 는 화면용 30건만). 이 둘을 헷갈려
+  //   "상위 30명 기준으로는 8명"처럼 ★틀린 수를 말하던 것을 막는다.
+  return {
+    ok: true,
+    count: hits.length,
+    전체건수: hits.length,
+    안내: `조건에 맞는 고객은 총 ${hits.length}명입니다. 아래 matches 는 그중 앞 ${Math.min(30, hits.length)}명만 보여준 것이니, ★인원수를 말할 때는 반드시 ${hits.length} 을(를) 쓰세요.`,
+    column: col,
+    matches: hits.slice(0, 30).map((r) => slim(r, table.header)),
+  };
 }
 // 회장님 드라이브의 스프레드시트(시트 파일) 목록 조회 — sheet_list 도구. 최신순 최대 30개.
 async function doListSheets(ma) {
@@ -333,6 +346,11 @@ async function planWrite(ma, op, raw) {
     if (hits.length === 0) { const nf = notFoundMsg(table, raw.name); return { ok: false, suggestions: nf.suggestions, message: nf.message }; }
     if (hits.length > 1) return { ok: false, candidates: hits.map((r) => r[table.nameCol]), message: `'${raw.name}' 후보가 여럿이에요: ${hits.map((r) => r[table.nameCol]).join(', ')}. 누구인지 정확히 말씀해 주세요.` };
     const col = resolveColumn(raw.field, table.header);
+    // ★없는 항목에 기록하라고 하면 거부하지 말고 ★항목을 만들면서 기록한다(2026-07-31).
+    //   전엔 "그 항목을 못 찾았어요"로 끝나 값이 안 들어갔다. 대표 뜻은 "그 항목에 남겨라"로 분명하다.
+    if (!col && String(raw.field || '').trim() && String(raw.value || '').trim()) {
+      return planWrite(ma, 'add_column_set', { column: raw.field, name: raw.name, value: raw.value });
+    }
     if (!col) return { ok: false, message: `'${raw.field}' 항목을 시트 컬럼에서 못 찾았어요. (컬럼: ${table.header.join(', ')})` };
     const target = hits[0];
     action.rowNum = target._rowNum; action.column = col; action.value = String(raw.value);
@@ -356,8 +374,15 @@ async function planWrite(ma, op, raw) {
     warning = '삭제는 되돌릴 수 없어요. 한 번 더 확인해 주세요.';
     preview = slim(target, table.header);
   } else if (op === 'add_column' || op === 'add_column_set') {
-    // 🆕 구조 변경: 맨 끝에 새 항목(컬럼) 추가. add_column_set은 값 기록까지 승인 1회로 묶는다.
+    // 🆕 구조 변경: 맨 끝에 새 항목(컬럼) 추가. add_column_set은 값 기록까지 한 번에 처리.
     const c = _planColumn(table, raw.column);
+    // ★이미 있는 항목이면 거부하지 말고 ★수정(update)으로 자동 전환한다(2026-07-31).
+    //   전엔 "이미 '비고' 항목이 있어요. 거기에 기록할까요?" 하고 되묻기만 해서
+    //   대표가 두 번 말해야 했고, 값이 끝내 안 들어가는 일이 잦았다. 뜻은 이미 분명하다.
+    if (c.error && op === 'add_column_set' && String(raw.name || '').trim()) {
+      const 있는칸 = c.existing || resolveColumn(raw.column, table.header) || raw.column;
+      if (있는칸) return planWrite(ma, 'update', { name: raw.name, field: 있는칸, value: raw.value });
+    }
     if (c.error) return { ok: false, message: c.error, existing: c.existing };
     action.column = c.name;
     action.colIndex = table.header.length;      // 맨 끝(0-based)
@@ -389,11 +414,19 @@ async function planWrite(ma, op, raw) {
 // ═══════════════════════════════════════════════════════════════
 async function commit(ma, action, sig, opts) {
   opts = opts || {};
-  // 🎬 촬영 모드에서는 구글 시트에 실제로 쓰지 않는다(촬영용 가짜 명단이라 쓸 곳도 없다).
-  if (_SOURCE) return { ok: false, message: '🎬 촬영 모드예요. 화면에는 보여드리지만 실제 시트에는 쓰지 않습니다.' };
-  const v = verifyAction(action, sig);
-  if (!v.ok) return { ok: false, message: v.reason };
+  // ★내부 명단 수정은 대표 지시로 즉시 반영한다(2026-07-31 승인).
+  //   되돌릴 수 있는 일(수정·추가·항목추가)은 서명 없이도 진행. 되돌릴 수 없는 삭제는 그대로 확인받는다.
+  //   ★고객에게 나가는 발송은 여기 오지 않는다(approval_skill 하드가드 무접촉).
+  if (!opts.즉시) {
+    const v = verifyAction(action, sig);
+    if (!v.ok) return { ok: false, message: v.reason };
+  }
   if (action.op === 'delete' && !opts.confirmed) return { ok: false, needsDoubleConfirm: true, message: '삭제는 한 번 더 확인이 필요해요.' };
+
+  // 🎬 촬영 모드: 구글 대신 ★촬영 명단(메모리)에 그대로 쓴다.
+  //   전엔 쓰기를 거부해서, 촬영에서 "추가·수정"을 하려면 별도 지름길을 파야 했다 →
+  //   그 지름길이 본 기능과 충돌해 오인식·승인창 잔재·연결 요구를 만들었다. 이제 길은 하나다.
+  if (_SOURCE && _WRITE_SOURCE) return _WRITE_SOURCE(action);
 
   const table = await loadTable(ma);
   if (!table.id) return { ok: false, message: `'${_DEMO_TITLE}' 시트를 찾지 못했어요.` };
@@ -463,22 +496,24 @@ const TOOLS = [
     input_schema: { type: 'object', properties: { column: { type: 'string', description: '필터할 컬럼명(예: 만기일, 보험사). 생략 가능' }, contains: { type: 'string', description: 'column에 포함될 값(예: 2026-07)' }, keyword: { type: 'string', description: '전체 컬럼 대상 키워드 검색' } } } },
   { name: 'sheet_read', description: '한 고객의 상세 정보 전체를 읽는다. 이름으로 조회.',
     input_schema: { type: 'object', properties: { name: { type: 'string', description: '고객 이름' } }, required: ['name'] } },
-  { name: 'sheet_create', description: '신규 고객 1명을 명단에 추가한다. 반드시 대표 승인 후 실제 반영됨(여기서는 미리보기만).',
+  { name: 'sheet_create', description: '신규 고객 1명을 명단에 추가한다. 대표 지시로 즉시 반영된다(승인 버튼 없음).',
     input_schema: { type: 'object', properties: { fields: { type: 'object', description: '항목:값 (예: {"이름":"이지혜","연락처":"010-1234-5678"})' } }, required: ['fields'] } },
-  { name: 'sheet_update', description: '한 고객의 특정 항목을 수정한다. 반드시 대표 승인 후 실제 반영됨(여기서는 미리보기만).',
+  { name: 'sheet_update', description: '한 고객의 특정 항목을 수정한다. 대표 지시로 즉시 반영된다(승인 버튼 없음).',
     input_schema: { type: 'object', properties: { name: { type: 'string' }, field: { type: 'string', description: '수정할 항목(예: 주소, 자녀수)' }, value: { type: 'string', description: '새 값' } }, required: ['name', 'field', 'value'] } },
-  { name: 'sheet_delete', description: '한 고객을 명단에서 삭제한다. 되돌릴 수 없어 이중 확인 필요(여기서는 미리보기만).',
+  { name: 'sheet_delete', description: '한 고객을 명단에서 삭제한다. 되돌릴 수 없어 한 번 더 확인한다.',
     input_schema: { type: 'object', properties: { name: { type: 'string' } }, required: ['name'] } },
-  { name: 'sheet_add_column', description: '고객명단에 없는 새 항목(컬럼)을 맨 끝에 추가한다. 예) "결혼기념일 항목 추가해줘", "등록기념일 컬럼 만들어줘". 명단에 없는 항목은 값을 기록할 수 없으므로 먼저 이 도구로 항목을 만든다. 기존 항목·데이터는 건드리지 않는다. 대표 승인 후 실제 반영(여기서는 미리보기만).',
+  { name: 'sheet_add_column', description: '고객명단에 없는 새 항목(컬럼)을 맨 끝에 추가한다. 예) "결혼기념일 항목 추가해줘", "등록기념일 컬럼 만들어줘". 명단에 없는 항목은 값을 기록할 수 없으므로 먼저 이 도구로 항목을 만든다. 기존 항목·데이터는 건드리지 않는다. 대표 지시로 즉시 반영된다(승인 버튼 없음).',
     input_schema: { type: 'object', properties: { column: { type: 'string', description: '새로 만들 항목 이름(예: 결혼기념일)' } }, required: ['column'] } },
-  { name: 'sheet_add_column_and_set', description: '명단에 없는 새 항목(컬럼)을 맨 끝에 만들고 특정 고객의 값까지 한 번에 기록한다. 예) "결혼기념일 추가하고 김철수 7월 27일 기록해줘". 승인 1회로 항목 생성과 값 기록을 함께 처리한다. ★이미 있는 항목이면 이 도구가 아니라 sheet_update를 쓴다. 대표 승인 후 실제 반영(여기서는 미리보기만).',
+  { name: 'sheet_add_column_and_set', description: '명단에 없는 새 항목(컬럼)을 맨 끝에 만들고 특정 고객의 값까지 한 번에 기록한다. 예) "결혼기념일 추가하고 김철수 7월 27일 기록해줘". 승인 1회로 항목 생성과 값 기록을 함께 처리한다. ★이미 있는 항목이면 이 도구가 아니라 sheet_update를 쓴다. 대표 지시로 즉시 반영된다(승인 버튼 없음).',
     input_schema: { type: 'object', properties: { column: { type: 'string', description: '새로 만들 항목 이름' }, name: { type: 'string', description: '고객 이름' }, value: { type: 'string', description: '기록할 값(예: 7월 27일). 연도를 안 말했으면 그대로 넘기면 시스템이 올해로 채운다' } }, required: ['column', 'name', 'value'] } },
 ];
 const READ_TOOLS = new Set(['sheet_list', 'sheet_search', 'sheet_read']);
 const WRITE_OP = { sheet_create: 'create', sheet_update: 'update', sheet_delete: 'delete', sheet_add_column: 'add_column', sheet_add_column_and_set: 'add_column_set' };
 
 function systemPrompt() {
+  const 오늘 = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);  // 한국 날짜(사실)
   return `당신은 "지니야" — 대표님의 고객명단(구글 시트)을 돌보는 비서입니다.
+[오늘 날짜] ${오늘} (한국 시간). "오늘"·"오늘 날짜로"라고 하면 이 값을 쓴다.
 [핵심 능력 — 절대 "못 한다"고 말하지 마세요]
 당신은 실제로 구글 시트를 다룰 수 있습니다: 시트 목록 조회(sheet_list), 명단 조회·검색(sheet_search/sheet_read), 추가·수정·삭제(sheet_create/update/delete). 예) "내 구글 시트에 어떤 시트들이 있어?" → sheet_list로 실제 목록 조회, "김철수 정보 알려줘" → sheet_read, "홍길동 주소 바꿔줘" → sheet_update 미리보기. 절대 "연동이 안 잡혀 있다/지어내는 게 된다/시트를 못 본다"고 답하지 마세요 — 도구로 실제 조회하세요.
 [도구 사용 규칙]
@@ -486,6 +521,15 @@ function systemPrompt() {
 2. 정보를 바꾸는 일(추가·수정·삭제)은 create_row/update_row/delete_row 도구를 부른다. 단, 실제 반영은 대표 승인 후에만 되며, 도구 호출은 "미리보기 준비"까지만이다.
 3. 수정·삭제는 대상이 한 명으로 특정될 때만 도구를 부른다. 애매하면 먼저 되묻는다.
 4. 삭제는 특히 신중히. 되돌릴 수 없음을 알린다.
+4-1. ★내부 명단 수정(추가·수정·항목 만들기)은 ★대표 지시로 바로 반영된다. 승인 버튼을 요구하지 마라.
+     "승인해 주세요"·"이대로 할까요?" 라고 되묻지 말고 도구를 불러 실행한 뒤, 무엇이 어떻게 바뀌었는지 사실대로 말한다.
+     (되돌릴 수 없는 삭제만 예외로 한 번 더 확인한다)
+4-2. ★값을 안 말했어도 되묻지 말고 진행한다 — 이런 일이 언제 있었는지가 곧 값이기 때문이다.
+     "출산·이사·갱신완료·득남·결혼·입원·퇴사" 처럼 ★일어난 일(이벤트) 항목은 값을 안 주면 ★오늘 날짜를 넣는다.
+     그 외 항목도 값이 없으면 'O' 로 표시한다. 넣은 값이 무엇인지는 반드시 말해 준다.
+     ★날짜는 사실이므로 지어내는 것이 아니다. 다만 ★고객의 실제 정보(연락처·금액 등)는 절대 지어내지 않는다.
+     예) "이영희 출산 항목 추가해" → sheet_add_column_and_set(column:'출산', name:'이영희', value: 오늘 날짜)
+4-3. 대표가 "그냥 해"·"바로 해"·"승인 없이" 라고 하면 두말 말고 즉시 도구를 부른다.
 5. 말투: 70대 어르신도 알아듣게 따뜻하고 쉽게. '클로드'·'AI' 같은 말은 쓰지 않는다. ★이모지·이모티콘(😊 📋 ⭐ 등)은 절대 쓰지 않는다(장식 기호 금지).
 6. 항목 이름은 대표가 말한 대로 도구에 넘긴다(주소·연락처 등). 시스템이 실제 컬럼에 맞춰준다.
 7. 선택지가 여럿이면 가장 알맞은 하나를 추천으로 명시하고("추천: ○○"), "회장님, 이걸로 진행할까요?"처럼 확인을 받는다. 없는 정보는 지어내지 않는다.
@@ -523,12 +567,26 @@ async function runChat(ma, messages, opts) {
       trace.push({ tool: writeUse.name, op });
       if (!planned.ok) return { ok: true, reply: planned.message, trace };
       const p = planned.pending;
-      const reply = op === 'delete'
-        ? `삭제 미리보기예요. ${p.warning}\n아래 내용을 지울까요? 확인하시면 한 번 더 여쭤볼게요.`
-        : op === 'create'
-          ? `추가 미리보기예요.${p.warning ? ' ' + p.warning : ''} 이대로 명단에 넣을까요?`
-          : `수정 미리보기예요. 이대로 바꿀까요?`;
-      return { ok: true, reply, pending: p, trace };
+
+      // ★내부 명단 수정은 대표 지시로 ★즉시 반영한다(2026-07-31 승인).
+      //   되돌릴 수 있는 일(수정·추가·항목추가)만 해당. ★삭제는 되돌릴 수 없어 그대로 확인받는다.
+      //   ★고객에게 나가는 발송은 이 모듈에 없다(approval_skill 하드가드 무접촉).
+      if (op !== 'delete') {
+        const done = await commit(ma, p.action, p.sig, { 즉시: true });
+        trace.push({ commit: op, ok: done.ok });
+        if (!done.ok) return { ok: true, reply: done.message || '반영하지 못했어요.', trace };
+        // ★"됐다"는 말이 아니라 ★실제로 바뀐 값을 그대로 읽어 말한다(조용한 실패 차단).
+        const rs = done.result || {};
+        let reply;
+        if (op === 'update') reply = `${rs.name}님 ${rs.항목}을(를) ${rs.기존값 ? `'${rs.기존값}' → ` : ''}'${rs.새값}' 로 바꿨어요. 바로 반영했습니다.`;
+        else if (op === 'create') reply = `명단에 새로 추가했어요. 바로 반영했습니다.`;
+        else reply = `'${rs.새항목}' 항목을 ${rs.새칸 === false ? '' : '새로 '}만들었어요.`
+          + (rs.기록 ? ` ${rs.기록.대상}님 값은 '${rs.기록.값}' 로 넣었습니다.` : '')
+          + ` 바로 반영했습니다.`;
+        return { ok: true, reply, applied: rs, trace };
+      }
+
+      return { ok: true, reply: `삭제 미리보기예요. ${p.warning}\n아래 내용을 지울까요? 확인하시면 한 번 더 여쭤볼게요.`, pending: p, trace };
     }
 
     // 읽기 도구 → 즉시 실행하고 결과를 모델에 되돌려 대화 이어감

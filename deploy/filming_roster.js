@@ -150,19 +150,73 @@ function table() {
  * 촬영 모드 켜기 — 명단을 읽는 유일한 관문(sheets_crud_skill.loadTable)을 이 샘플로 바꾼다.
  * 이 함수를 부르지 않으면 아무 일도 일어나지 않는다.
  */
+/**
+ * ★본 CRUD(sheets_crud_skill)가 넘겨주는 쓰기를 촬영 명단에 그대로 반영한다.
+ * 길을 하나로 합치는 핵심 — 촬영이든 라이브든 ★같은 기능·같은 판단을 쓴다.
+ * 구글은 안 부르고 CSV 원본도 안 고친다(서버 재시작하면 원래대로).
+ * @param {object} action  {op, name, column, value, fields, rowNum}
+ */
+function applyWrite(action) {
+  try {
+    const nameIdx = SRC_HEADER.indexOf('고객명') >= 0 ? SRC_HEADER.indexOf('고객명') : 1;
+    const 찾기 = (nm) => SRC_ROWS.find((r) => String(r[nameIdx] || '').trim() === String(nm || '').trim());
+    const 칸만들기 = (col) => {
+      let ci = SRC_HEADER.indexOf(col);
+      if (ci >= 0) return { ci, 새칸: false };
+      SRC_HEADER.push(col);
+      SRC_ROWS.forEach((r) => { while (r.length < SRC_HEADER.length) r.push(''); });
+      return { ci: SRC_HEADER.length - 1, 새칸: true };
+    };
+
+    if (action.op === 'update') {
+      const row = 찾기(action.name);
+      if (!row) return { ok: false, message: `명단에서 '${action.name}'님을 못 찾았어요.` };
+      const ci = SRC_HEADER.indexOf(action.column);
+      if (ci < 0) return { ok: false, message: `'${action.column}' 항목이 명단에 없어요.` };
+      const 기존 = row[ci] || '';
+      row[ci] = String(action.value == null ? '' : action.value);
+      return { ok: true, result: { op: 'update', name: action.name, 항목: action.column, 기존값: 기존, 새값: row[ci] } };
+    }
+    if (action.op === 'create') {
+      const 새행 = SRC_HEADER.map((h) => String((action.fields || {})[h] || ''));
+      SRC_ROWS.push(새행);
+      return { ok: true, result: { op: 'create', fields: action.fields } };
+    }
+    if (action.op === 'delete') {
+      const i = SRC_ROWS.findIndex((r) => String(r[nameIdx] || '').trim() === String(action.name || '').trim());
+      if (i < 0) return { ok: false, message: `명단에서 '${action.name}'님을 못 찾았어요.` };
+      SRC_ROWS.splice(i, 1);
+      return { ok: true, result: { op: 'delete', name: action.name } };
+    }
+    if (action.op === 'add_column' || action.op === 'add_column_set') {
+      const 있나 = SRC_HEADER.indexOf(action.column);
+      if (있나 >= 0 && action.op === 'add_column') return { ok: false, message: `이미 '${action.column}' 항목이 있어요.` };
+      const { ci, 새칸 } = 칸만들기(action.column);
+      let 기록 = null;
+      if (action.op === 'add_column_set') {
+        const row = 찾기(action.name);
+        if (!row) return { ok: false, message: `명단에서 '${action.name}'님을 못 찾았어요.` };
+        while (row.length < SRC_HEADER.length) row.push('');
+        row[ci] = String(action.value == null ? '' : action.value);
+        기록 = { 대상: action.name, 값: row[ci] };
+      }
+      return { ok: true, result: { op: action.op, 새항목: action.column, 위치: '맨 끝', 새칸, 항목수: SRC_HEADER.length, 고객수: SRC_ROWS.length, 기록 } };
+    }
+    return { ok: false, message: '알 수 없는 작업이에요.' };
+  } catch (e) { return { ok: false, message: '반영 중 오류: ' + e.message }; }
+}
+
 function enable(crud) {
   if (!crud || typeof crud.setSource !== 'function') throw new Error('filming_roster: setSource 없는 crud');
-  crud.setSource(async () => table());
+  crud.setSource(async () => table(), applyWrite);
   console.log('[🎬촬영모드] 명단 = ' + SRC_NAME + ' · ' + SRC_ROWS.length + '명 (구글 시트 접근 0 · 실제 고객 무접촉)');
   return { rows: SRC_ROWS.length, source: SRC_NAME };
 }
 
 /**
- * ★B-6 · 말로 항목(칸) 추가 — 촬영 모드 전용 (2026-07-31 대표님 지시)
- * 예) "최동욱 출산했으니 컬럼 추가해서 오늘 날짜로" → '출산' 칸을 만들고 그 분만 오늘 날짜.
- * ★촬영용 명단(메모리)에만 반영한다 — 실제 고객 시트·구글은 손대지 않는다.
- * ★CSV 원본 파일도 안 고친다(서버를 껐다 켜면 원래대로).
- * @returns {{ok:boolean, 칸:string, 대상:string, 값:string, 새칸:boolean, error?:string}}
+ * ⚠️ 옛 지름길 — 2026-07-31 "길 합치기"로 ★대화 경로에서는 더 이상 쓰지 않는다.
+ *   (항목 추가·수정은 전부 본 CRUD(sheets_crud_skill) → applyWrite 로 간다)
+ *   시험·도구용으로만 남겨 둔다. 여기에 새 기능을 붙이지 말 것 — 길이 다시 둘로 갈라진다.
  */
 function addField(고객명, 칸, 값) {
   칸 = String(칸 || '').trim();
@@ -189,4 +243,4 @@ function addField(고객명, 칸, 값) {
   return { ok: true, 칸, 대상: 고객명, 값, 새칸 };
 }
 
-module.exports = { HEADER, ROWS, table, enable, addField, source: SRC_NAME };
+module.exports = { HEADER, ROWS, table, enable, applyWrite, addField, source: SRC_NAME };

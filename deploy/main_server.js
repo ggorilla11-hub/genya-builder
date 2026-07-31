@@ -3493,7 +3493,10 @@ async function orderHandler(req, res) {
         const rc = await approval.runChat(ma, hist.concat([{ role: 'user', content: q }]));
         out = { kind: '🗂️ 결재함', text: rc.reply || '무엇을 보내드릴까요?', pending: rc.pending || null, engine: MODEL_DEEP };
       }
-    } else if (!_webQuery && (/시트\s*(목록|리스트|들|현황|뭐|어떤|무슨)|어떤\s*시트|무슨\s*시트|내\s*(구글\s*)?시트|([가-힣]{2,4})\s*님?\s*(정보|연락처|전화번호|전화|휴대폰|핸드폰|번호|이메일|메일|주소|생일|생년월일|나이|성별|직업|만기|상품|알려|조회|어때|추가|등록|삭제|빼|지워|넣어|수정|변경|바꿔)|시트\s*(조회|검색|추가|수정|삭제|변경|바꿔)|명단|만기|자산가|고객\s*(추가|등록|수정|삭제|정리|목록|누구|전체|명단)|(주소|연락처|번호|생일|상품)\s*(을|를|은|는)?\s*(바꿔|수정|변경|고쳐|추가)|([가-힣]{2,4}).{0,25}(변경|수정|업데이트|바꿔|바꾸|고쳐|고치|메모|기록)/.test(q))) {
+    } else if (!_webQuery && (/시트\s*(목록|리스트|들|현황|뭐|어떤|무슨)|어떤\s*시트|무슨\s*시트|내\s*(구글\s*)?시트|([가-힣]{2,4})\s*님?\s*(정보|연락처|전화번호|전화|휴대폰|핸드폰|번호|이메일|메일|주소|생일|생년월일|나이|성별|직업|만기|상품|알려|조회|어때|추가|등록|삭제|빼|지워|넣어|수정|변경|바꿔)|시트\s*(조회|검색|추가|수정|삭제|변경|바꿔)|명단|만기|자산가|고객\s*(추가|등록|수정|삭제|정리|목록|누구|전체|명단)|(주소|연락처|번호|생일|상품)\s*(을|를|은|는)?\s*(바꿔|수정|변경|고쳐|추가)|([가-힣]{2,4}).{0,25}(변경|수정|업데이트|바꿔|바꾸|고쳐|고치|메모|기록)/.test(q)
+      // ★추가(2026-07-31): "출산 컬럼 추가해"·"그냥 추가해"처럼 항목을 만들라는 말이 일반 대화로 새서
+      //   "구글 연결하라"는 엉뚱한 답이 나갔다. 항목·칸·컬럼을 만들라는 말은 여기(본 CRUD)로 보낸다.
+      || /(칸|컬럼|항목|필드)\s*(을|를)?\s*(추가|만들|생성|넣)|(그냥|바로|지금)\s*(추가|기록|넣|수정|바꿔|해)/.test(q))) {
       // 🗂️ Step 2-B(마스터 CRM): 명단·만기·고객·개별 조회/수정 = 항상 마스터 시트(지니야빌더_데모_명단) CRUD 도구 루프. 데모 커넥터가 아니라 실제 시트.
       // ★라우팅 진단 로깅(엄마2): "김철수 정보 알려줘"가 이 분기로 왔는지·canData·runChat 응답 원문을 Render 로그로 확정. sheetsCrud 내부는 무접촉.
       console.log('[🗂️sheetCRUD 라우팅] 분기진입 · q="' + String(q).slice(0, 40) + '" · canData=' + canData + ' · uid=' + ((sessionOf(req) || {}).email || '(없음)') + ' · hasDataScope=' + hasDataScope(req));
@@ -3589,31 +3592,9 @@ async function orderHandler(req, res) {
         }
       } catch (e) { console.log('[🎬명단표] 실패(대화는 그대로 진행):', e.message); }
     }
-    // 🎬 촬영 B-6: 말로 항목 추가 — ★승인 버튼도, 구글 연결도 없이 즉시 반영.
-    //    내부 명단 수정만 여기로 온다. 고객에게 나가는 발송은 판별에서 제외돼 승인 하드가드를 그대로 탄다.
-    if (FILMING && filmFull && !out.action) {
-      try {
-        const _t3 = await sheetsCrud.loadTable(null);
-        const _nc3 = _t3.nameCol || '고객명';
-        const _names = (_t3.rows || []).map((r) => String(r[_nc3] || '').trim()).filter(Boolean);
-        const _af = filmFull.wantsAddField(q, _names);
-        if (_af) {
-          const 대상 = _af.대상 || String((req.body && req.body.filmCur) || '').trim();
-          const _r6 = require('./filming_roster').addField(대상, _af.칸, _af.값);
-          out.kind = '🗂️ 고객명단';
-          delete out.customers; delete out.customer; delete out.needsConnect; delete out.connectUrl;
-          if (_r6.ok) {
-            out.action = 'field_added'; out.added = _r6;
-            out.text = 대상
-              ? `${대상}님 명단에 '${_r6.칸}' 항목을 ${_r6.새칸 ? '새로 만들고 ' : ''}${_r6.값} 로 기록했어요. 바로 반영했습니다.`
-              : `명단에 '${_r6.칸}' 항목을 새로 만들었어요. 누구 것인지 말씀해 주시면 값을 넣을게요.`;
-          } else {
-            out.text = _r6.error || '항목을 추가하지 못했어요.';
-          }
-          console.log(`[🎬항목추가] ${대상 || '(대상없음)'} · ${_af.칸} = ${_af.값} · ${_r6.ok ? '반영됨' : _r6.error}`);
-        }
-      } catch (e) { console.log('[🎬항목추가] 실패:', e.message); }
-    }
+    // ★촬영 전용 "항목 추가 지름길"은 제거했다(2026-07-31 방법1 승인).
+    //   같은 일을 하는 길이 둘이라 충돌했다 — 이름 오인식·승인창 잔재·연결 요구의 뿌리였다.
+    //   이제 추가·수정·추출은 ★본 기능(sheets_crud_skill) 하나로만 간다. 촬영도 라이브도 같은 길.
     // 🎬 촬영 B-5: 카드 순회 — "다음"·"이전". 화면이 순서를 들고 카드를 넘긴다.
     //    ★서버는 순서(이름 배열)만 알려주고 상태는 안 갖는다(제로 인그레스 유지).
     if (FILMING && filmFull) {
