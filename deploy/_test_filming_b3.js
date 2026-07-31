@@ -141,8 +141,9 @@ ok('★좌측 열 맨 위에 있다', gh.indexOf('id="galaxyWrap"') < gh.indexOf
 ok('★띄우는 게 아니라 자리를 차지하며 흐른다(아무것도 안 가림)', !/id="galaxyWrap"[^>]*position:\s*(fixed|absolute)/.test(gh));
 ok('★모니터 통째가 아님(좌측 열 안, 최대 250px)', /maxWidth = \(촬영 \? 250 : 168\) \+ 'px'/.test(gh) && !/position:\s*fixed/.test(blk));
 ok('★촬영=크게(250) · 실제=작게(168)', /var 촬영 = true;/.test(gh) && /window\.galaxyBig = function\(on\)\{ 촬영 = !!on;/.test(gh));
-ok('★전체화면 명단이 뜨면 그 아래로 들어간다(명단을 안 가림)',
-  /id="fullRoster"[^>]*z-index:99999/.test(gh) && !/galaxyWrap[^>]*z-index/.test(gh));
+// 명단은 이제 전체화면이 아니라 대화창 안 카드다 → 좌측 은하와 애초에 겹치지 않는다.
+ok('★명단과 은하가 겹치지 않는다(명단=대화창 카드 · 은하=좌측 열)',
+  !/id="fullRoster"/.test(gh) && /pushMsg\('gen', card\)/.test(gh) && !/galaxyWrap[^>]*z-index/.test(gh));
 
 // ═══ [6] ★메인(교육생) 무접촉 ═══
 console.log('\n[6] ★메인·교육생 기능 그대로');

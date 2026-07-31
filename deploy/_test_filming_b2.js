@@ -73,23 +73,30 @@ ok('★촬영 모듈은 FILMING 일 때만 require', /if \(FILMING\) \{ require\
 ok('★평소엔 filmFull=null 이라 블록이 안 켜짐', /let filmFull = null;/.test(ms));
 
 const gh = fs.readFileSync(path.join(__dirname, 'genya.html'), 'utf8');
-ok('★화면: 전체화면 명단 DOM 추가됨', /id="fullRoster"/.test(gh));
 ok('★화면: 여는 함수 추가됨', /function openFullRoster\(r\)/.test(gh));
 ok('★화면: 텍스트 대화에서 열림', /if\(d && d\.action==='open_full_roster'\)/.test(gh));
 ok('★화면: 음성에서도 열림', /if\(d\.action==='open_full_roster'\)/.test(gh));
 ok('★신호가 없으면 안 열림(기존 화면 그대로)', (gh.match(/openFullRoster\(d\.roster\)/g) || []).length === 2);
 
-// ═══ [7] 촬영 가독성(큰 글씨) ═══
-console.log('\n[7] 뒤에서 촬영해도 읽힐 크기인가');
-const blk = gh.slice(gh.indexOf('id="fullRoster"'));
-ok('★표 글씨 26px 이상', /font-size:2[6-9]px|font-size:[3-9]\dpx/.test(blk.slice(0, 3000)));
-ok('★제목 34px', /font-size:34px/.test(blk.slice(0, 2000)));
-ok('★전체 화면(position:fixed;inset:0)', /position:fixed;inset:0/.test(blk.slice(0, 500)));
-ok('★어두운 자비스 톤(딥네이비 #0F1A35)', /background:#0F1A35/.test(blk.slice(0, 500)));
-ok('★강조는 형광 초록(#3DDC97)', /#3DDC97/.test(blk));
+// ═══ [7] ★하얀 표 카드 (2026-07-31 대표님 지시로 전체화면 딥네이비에서 바뀜) ═══
+console.log('\n[7] ★하얀 표 카드 · 대화창 안 · 엑셀 느낌');
+const _b = gh.indexOf('function openFullRoster(r)');
+const blk = gh.slice(_b, gh.indexOf('function closeFullRoster', _b));
+ok('★★전체 화면을 꽉 채우지 않는다(오버레이 제거)',
+  !/id="fullRoster"/.test(gh) && !/position:fixed;inset:0;z-index:99999/.test(gh));
+ok('★★대화창 본문 중간에 카드로 뜬다(말풍선처럼)', /pushMsg\('gen', card\)/.test(blk));
+ok('★하얀 배경 카드', /background:#fff;/.test(blk));
+ok('★헤더만 옅은 색(엑셀·구글시트 느낌)', /background:#F5F7FA/.test(blk));
+ok('★촌스러운 형광초록 안 씀', !/#3DDC97/.test(blk) && !/rgba\(61,220,151/.test(blk));
+ok('★강조는 차분한 초록(옅은 배경 + 왼쪽 띠)', /#F2FBF7/.test(blk) && /#2FB27C/.test(blk) && /#0B6B4F/.test(blk));
+ok('★가로형 표 — 컬럼이 가로(thead), 행이 세로로 쌓임(tbody)', /<thead><tr>/.test(blk) && /<tbody>/.test(blk));
+ok('줄무늬로 읽기 쉽게', /ri % 2 \? '#FBFCFD' : '#FFFFFF'/.test(blk));
 ok('머리행 고정(스크롤해도 칸 이름 보임)', /position:sticky;top:0/.test(blk));
-ok('★다시 열면 항상 맨 위부터(스크롤 자리 안 남음)', /parentNode\.scrollTop = 0/.test(blk));
-ok('ESC 로 닫힘', /e\.key==='Escape'/.test(blk));
+ok('★카드 높이 제한 — 대화창을 안 밀어냄', /max-height:340px;overflow:auto/.test(blk));
+ok('★칸이 많아도 안 깨짐(가로 스크롤)', /white-space:nowrap/.test(blk));
+ok('★전체 인원을 카드 안에서 다 볼 수 있다고 안내', /명 전부 보실 수 있어요/.test(blk));
+ok('옛 닫기 호출이 남아 있어도 안 터진다', /function closeFullRoster\(\)\{\}/.test(gh));
+// (ESC 닫기는 전체화면일 때만 의미가 있었다. 카드는 대화 기록의 일부라 닫을 게 없다.)
 
 console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 console.log(`통과 ${통과} · 실패 ${실패}`);
