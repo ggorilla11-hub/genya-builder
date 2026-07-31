@@ -158,8 +158,7 @@ function _previewFor(o, table) {
   const tpl = String(o.템플릿 || '');
   if (!table || !Array.isArray(table.rows) || !table.rows.length) return tpl;
   let criteria = {}; try { criteria = JSON.parse(o.기준JSON || '{}'); } catch (e) {}
-  let rows = table.rows;
-  Object.entries(criteria || {}).forEach(([k, v]) => { const col = crud.resolveColumn(k, table.header); if (col) rows = rows.filter((r) => String(r[col]).includes(String(v))); });
+  let rows = _applyCriteria(table.rows, criteria, table.header);
   if (!rows.length) return tpl;
   if (rows.length === 1) return _render(tpl, rows[0], table.header);
   const nameCol = crud.resolveColumn('고객명', table.header) || crud.detectNameCol(table.header);
@@ -235,17 +234,45 @@ async function act(ma, input) {
   return { ok: false, message: '알 수 없는 동작이에요(approve/reject/edit).' };
 }
 
-// ── 명단 재조회: criteria로 필터(동의어 컬럼 지원). 채널별 연락처 컬럼 확인. ──
+// ★2026-07-31 발송 대상 필터를 두뇌(sheet_search)와 같은 엔진으로 통일한다.
+//   criteria.filters(월·범위·나이 등)면 crud._filter 엔진을 쓰고, 없으면 옛 {칸:값} 부분일치.
+//   → "8월 생일자에게" 같은 조건도 발송이 정확히 좁힌다(성배: 재료창고에서 골라 그들에게만).
+function _applyCriteria(rows, criteria, header) {
+  const c = criteria || {};
+  const filters = Array.isArray(c.filters) ? c.filters.filter((f) => f && f.column) : [];
+  const F = crud._filter;
+  if (filters.length && F && F.prep && F.match) {
+    const today = F.todayKST();
+    const prepared = [];
+    for (const f of filters) {
+      const col = crud.resolveColumn(f.column, header);
+      if (!col) continue;
+      const p = F.prep(col, f);
+      if (p.error) continue;
+      prepared.push(p.filter);
+    }
+    if (!prepared.length) return rows;
+    const mode = String(c.match || 'AND').toUpperCase() === 'OR' ? 'OR' : 'AND';
+    return rows.filter((r) => (mode === 'OR'
+      ? prepared.some((f) => F.match(r[f.col], f, today))
+      : prepared.every((f) => F.match(r[f.col], f, today))));
+  }
+  // 하위호환: 옛 {칸:값} 부분일치
+  let out = rows;
+  Object.entries(c).forEach(([k, v]) => {
+    if (k === 'filters' || k === 'match') return;
+    const col = crud.resolveColumn(k, header); if (!col) return;
+    out = out.filter((r) => String(r[col]).includes(String(v)));
+  });
+  return out;
+}
+
+// ── 명단 재조회: criteria로 필터(두뇌 엔진 통일). 채널별 연락처 컬럼 확인. ──
 async function _resolveTargets(ma, criteria, 채널) {
   const table = await crud.loadTable(ma); // Step 2-B 재사용
   const emailCol = crud.resolveColumn('이메일', table.header);
   const phoneCol = crud.resolveColumn('연락처', table.header);
-  let rows = table.rows;
-  Object.entries(criteria || {}).forEach(([k, v]) => {
-    const col = crud.resolveColumn(k, table.header); if (!col) return;
-    const val = String(v);
-    rows = rows.filter((r) => String(r[col]).includes(val));
-  });
+  let rows = _applyCriteria(table.rows, criteria, table.header);
   const hasE = (r) => emailCol && String(r[emailCol] || '').trim();
   const hasP = (r) => phoneCol && String(r[phoneCol] || '').trim();
   // ★Fix1: both=이메일 또는 연락처 하나라도 있으면 대상. gmail/sms=해당 연락처 있는 대상만(컬럼 없으면 전체→안전모드로 회장님).
@@ -333,7 +360,7 @@ async function plan(ma, text) {
 // ★Anthropic API 규칙: input_schema properties 키는 ^[a-zA-Z0-9_.-]{1,64}$ (한글 불가) → 영문 키 사용, 내부에서 한글 필드로 매핑
 const TOOLS = [
   { name: 'create_approval', description: '회장님이 문자·이메일 발송을 지시하면, 실제로 보내기 전에 발송 초안을 "결재함"에 저장한다. 대상은 고객명단(구글시트)에서 조건으로 자동 조회된다. 저장 후 회장님이 승인하면 실제 발송된다. 예: "김철수님에게 신상품 안내 메일 보내줘" → criteria:{"고객명":"김철수"}, channel:"gmail". ★당신은 실제로 발송할 수 있으니 절대 "직접 못 보낸다"고 답하지 말 것.',
-    input_schema: { type: 'object', properties: { title: { type: 'string', description: '짧은 제목(예: 신상품 안내)' }, channel: { type: 'string', enum: ['sms', 'gmail', 'both'], description: '문자=sms, 이메일=gmail, 둘 다 동시=both. ★미지정 시 자동 결정: 고객 이메일+연락처가 둘 다 명단에 있으면 both(메일+문자 동시 발송), 하나만 있으면 그 채널. 회장님이 "메일만/문자만"이라고 명시할 때만 gmail/sms.' }, criteria: { type: 'object', description: '대상 조건(예: {"고객명":"김철수"} 또는 {"만기일":"2026-08"}). 전체면 {}. ★"8월 만기 고객들"처럼 여러 명을 한 번에 보낼 때는 이름을 나열하지 말고 반드시 {"만기일":"2026-08"} 처럼 ★조건 하나로 준다 — 이름을 몇 개만 적으면 나머지 고객이 통째로 빠진다(실제로 8명 중 3명만 나간 사고가 있었다).' }, template: { type: 'string', description: '보낼 문구. #{고객명} 같은 시트 컬럼 치환자 사용. 정보성·존댓말·짧게' } }, required: ['template'] } },
+    input_schema: { type: 'object', properties: { title: { type: 'string', description: '짧은 제목(예: 신상품 안내)' }, channel: { type: 'string', enum: ['sms', 'gmail', 'both'], description: '문자=sms, 이메일=gmail, 둘 다 동시=both. ★미지정 시 자동 결정: 고객 이메일+연락처가 둘 다 명단에 있으면 both(메일+문자 동시 발송), 하나만 있으면 그 채널. 회장님이 "메일만/문자만"이라고 명시할 때만 gmail/sms.' }, criteria: { type: 'object', description: '대상 조건(예: {"고객명":"김철수"} 또는 {"만기일":"2026-08"}). 전체면 {}. ★"8월 만기 고객들"처럼 여러 명을 한 번에 보낼 때는 이름을 나열하지 말고 반드시 {"만기일":"2026-08"} 처럼 ★조건 하나로 준다 — 이름을 몇 개만 적으면 나머지 고객이 통째로 빠진다(실제로 8명 중 3명만 나간 사고가 있었다). ★월·범위·나이 조건("8월 생일자"·"연소득 5천 이상"·"40대")은 {칸:값}으로 못 하므로 반드시 criteria.filters 로 준다 — 예: {"filters":[{"column":"생년월일","op":"month","value":8}]} (8월 생일 = 정확히 그 사람만). op: month(월)/year(년)/gt·gte·lt·lte(초과~이하)/between(범위,value2필요)/age_between(나이,value2필요)/contains(포함)/equals(같음). 여러 조건은 filters 배열+match:"AND"|"OR". 생일=생년월일칸·만기=만기일칸.' }, template: { type: 'string', description: '보낼 문구. #{고객명} 같은 시트 컬럼 치환자 사용. 정보성·존댓말·짧게' } }, required: ['template'] } },
   { name: 'list_approvals', description: '결재함에 올라온 발송 건들을 조회한다(대기/완료 등). "결재함 보여줘", "뭐 올라와 있어?" 등에 사용.',
     input_schema: { type: 'object', properties: { status: { type: 'string', description: '대기/완료/거부 중 하나로 필터. 생략시 전체' } } } },
   // ★안전(휴먼인루프 하드가드): 대화(음성·텍스트)에는 '발송' 도구를 절대 노출하지 않는다. 어떤 발화·명령으로도 자동 발송이 불가능하도록 approve_and_send 도구를 제거했다. 실제 발송은 오직 회장님이 결재함에서 [승인] 버튼을 누를 때(HTTP /api/approval/act → act())만 일어난다.
