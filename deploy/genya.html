@@ -5406,13 +5406,16 @@ window.sendMsg=function(){
        if(_t.charAt(0)==='{'){ try{ var _p=JSON.parse(_t); if(_p&&Array.isArray(_p.cards)) reply=String(_p.text||''); }catch(e){} }
      }
      _HIST.push({role:'user',content:v}); _HIST.push({role:'assistant',content:reply}); _persistHist();  // ★기록엔 글만(뱃지 HTML은 안 넣는다)
-     if(reply) pushMsg('gen', _yakBadge(d) + renderMd(reply) + _yakSources(d));   // 📄 약관창고면 뱃지·근거를 함께
+     // 🎬 카드 순회("다음")는 넘어간 뒤 화면이 "2번 이영희님 카드예요"라고 직접 말한다.
+     //    서버 답이 비어 있어 여기서 "(응답 없음)"이 찍히던 것을 막는다.
+     if(reply && !(d && d.action==='card_step')) pushMsg('gen', _yakBadge(d) + renderMd(reply) + _yakSources(d));   // 📄 약관창고면 뱃지·근거를 함께
      try{ if(window.galaxySpeak) window.galaxySpeak(Math.min(9000, 900+String(reply).length*55)); }catch(e){}  /* 🎬 은하: 글로 답할 때도 잔잔한 호흡 */
 
      // ★고객카드 띄우기 명령 신호(자비스): 명단·연결 드로어 열고 해당 고객 카드(ghRowDetail) 자동 표시
      if(d && d.rows) { try{ _cacheCardRows(d.rows); }catch(e){} }                                                    // ★서버가 보내준 카드 내용을 먼저 받아둔다
      // ★거짓 보고 차단: 조용히 삼키지 않고 ★실제로 떴는지 확인해서 말한다(_카드확인)
-     if(d && d.action==='open_card' && d.customer){ window._CARD_MISS=0; _카드확인(function(){ openCustomerCard(d.customer); }, 1); }
+     if(d && d.action==='open_card' && d.customer){ window._CARD_MISS=0; try{ _filmRemember(d.customer); }catch(e){} _카드확인(function(){ openCustomerCard(d.customer); }, 1); }
+     if(d && d.action==='card_step'){ try{ stepCard(d); }catch(e){} }                       // 🎬 "다음"·"이전" → 카드 순회
      if(d && d.action==='open_cards' && d.customers){ window._CARD_MISS=0; _카드확인(function(){ openCustomerCards(d.customers, d.label); }, (d.customers||[]).length); }   // 📇 묶음 카드(상담 대기·만기 등)
      if(d && d.action==='close_card'){ try{ closeCustomerCards(d.customer); }catch(e){} try{ showCardsClose(); }catch(e){} if(d.발굴도){ try{ closeDiscovery(); }catch(e){} } }   // ★고객카드+내 상자+(발굴이라 하시면)발굴 팝업까지                            // 📇 카드 닫기(화면만·데이터 무접촉)
      if(d && d.action==='open_full_roster'){ try{ openFullRoster(d.roster); }catch(e){} }   // 🎬 "명단 띄워봐" → 하얀 가로 표 카드
@@ -5495,7 +5498,8 @@ function _voiceExec(q){
       if(d.text) pushMsg('gen', renderMd(d.text)); // 서버가 실제로 올렸을 때만 "결재함에 올렸어요"라고 답함(approval.create 결과)
       if(d.pending){ try{ pushMsg('gen', _apOpenBtnHtml()); }catch(e){} try{ if(document.getElementById('apList')) apRender(); }catch(e){} } // 실제 등록됨(서버 pending) → 열기 버튼 + 열려있는 결재함 즉시 갱신
       if(d.rows){ try{ _cacheCardRows(d.rows); }catch(e){} }
-      if(d.action==='open_card'&&d.customer){ window._CARD_MISS=0; _카드확인(function(){ openCustomerCard(d.customer); }, 1); }
+      if(d.action==='open_card'&&d.customer){ window._CARD_MISS=0; try{ _filmRemember(d.customer); }catch(e){} _카드확인(function(){ openCustomerCard(d.customer); }, 1); }
+      if(d.action==='card_step'){ try{ stepCard(d); }catch(e){} }                          // 🎬 음성으로 "다음" → 카드 순회
       if(d.action==='open_cards'&&d.customers){ window._CARD_MISS=0; _카드확인(function(){ openCustomerCards(d.customers, d.label); }, (d.customers||[]).length); }
       if(d.action==='close_card'){ try{ closeCustomerCards(d.customer); }catch(e){} try{ showCardsClose(); }catch(e){} if(d.발굴도){ try{ closeDiscovery(); }catch(e){} } }
       _rememberMentioned(d);
@@ -6154,6 +6158,41 @@ function openFullRoster(r){
     setTimeout(맞추기, 60);                        /* 그림 그려진 뒤 한 번 더(높이 확정 후) */
     setTimeout(맞추기, 260);
   }catch(e){}
+}
+
+/* ═══ 🎬 B-5 · 카드 순회 — "다음"·"이전" ═══════════════════════════
+   "김철수 카드 띄워" 다음에 "다음" 하면 이영희 → 최동욱 … 순서대로 넘어간다.
+   ★이름을 지어내지 않는다 — 서버가 준 순서(명단 실제 값) 안에서만 움직인다.
+   ★B-6 대비: 여기는 "누구를 볼지"만 정한다. 카드 안에 항목이 늘어나도(출산·기념일 등)
+     이 코드는 손댈 필요가 없다.
+   ─────────────────────────────────────────────────────────────── */
+window._FILM_CUR = window._FILM_CUR || '';     /* 지금 보고 있는 고객 */
+window._FILM_ORDER = window._FILM_ORDER || []; /* 순회 순서(서버가 준 실제 이름) */
+
+/* 카드를 열 때마다 "지금 누구인지" 기억해 둔다(직접 이름을 불러 열었을 때도 순회가 이어지게) */
+function _filmRemember(name){ if(name) window._FILM_CUR = String(name).trim(); }
+
+function stepCard(sc){
+  sc = sc || {};
+  var 순서 = (sc.order && sc.order.length) ? sc.order : window._FILM_ORDER;
+  if(!순서 || !순서.length){ try{ pushMsg('gen','아직 넘길 명단이 없어요. "만기 8명 띄워"나 "김철수 카드 띄워"부터 해주세요.'); }catch(e){} return false; }
+  window._FILM_ORDER = 순서;
+
+  var 지금 = window._FILM_CUR;
+  var i = 순서.indexOf(지금);
+  var 앞으로 = (sc.step !== 'prev');
+
+  if(i < 0){ i = 앞으로 ? -1 : 순서.length; }        /* 아직 아무도 안 봤으면 처음/끝부터 */
+  var j = 앞으로 ? i + 1 : i - 1;
+
+  if(j >= 순서.length){ try{ pushMsg('gen','마지막입니다. ('+순서[순서.length-1]+'님이 마지막이에요)'); }catch(e){} return false; }
+  if(j < 0){ try{ pushMsg('gen','처음입니다. ('+순서[0]+'님이 처음이에요)'); }catch(e){} return false; }
+
+  var 이름 = 순서[j];
+  window._FILM_CUR = 이름;
+  try{ pushMsg('gen', (j+1)+'번 '+이름+'님 카드예요. (전체 '+순서.length+'명 중)'); }catch(e){}
+  try{ openCustomerCard(이름); }catch(e){ try{ pushMsg('gen','카드를 못 띄웠어요: '+((e&&e.message)||'')); }catch(_){} return false; }
+  return true;
 }
 
 /* ═══ 🎬 말로 명단 밀기 — "우측으로 밀어봐"·"아래로 내려봐" ═══

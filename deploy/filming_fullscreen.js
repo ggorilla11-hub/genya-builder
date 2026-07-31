@@ -59,6 +59,21 @@ function wantsScroll(q) {
   return null;
 }
 
+/**
+ * ★B-5 카드 순회 — "다음"·"이전" (2026-07-31 대표님 지시)
+ * "김철수 카드 띄워" 다음에 "다음" 하면 이영희 → 최동욱 … 순서대로 넘어간다.
+ * @returns {'next'|'prev'|null}
+ */
+function wantsStep(q) {
+  const s = String(q || '').trim().replace(/\s+/g, ' ');
+  if (!s || s.length > 14) return null;                 // 긴 문장은 순회 명령이 아니다
+  // 명단을 밀라는 말·카드를 띄우라는 말과 겹치지 않게 좁게 본다.
+  if (/명단|표|밀어|스크롤|띄워|보여줘|올려|내려/.test(s)) return null;
+  if (/^(다음|다음이요|다음요|다음 사람|다음 고객|다음분|다음 분|넘겨|넘겨줘|넘겨봐|next)$/.test(s)) return 'next';
+  if (/^(이전|이전요|이전 사람|이전 고객|앞|앞으로|뒤로|전으로|back|prev)$/.test(s)) return 'prev';
+  return null;
+}
+
 /** 오늘(한국시간) 'YYYY-MM'. 시험에서 날짜를 고정할 수 있게 인자로 덮어쓸 수 있다. */
 function _todayYM() { return new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 7); }
 
@@ -147,4 +162,18 @@ function _nearestMonth(rows, todayYM) {
   return 앞으로.length ? 앞으로[0] : null;
 }
 
-module.exports = { wantsRoster, wantsScroll, wantsMonth, build, SHOW_COLS, _todayYM };
+/**
+ * ★B-5 순회 대상 — 다가올(또는 지목한) 만기 달 고객을 명단 순서대로.
+ * 이름만 준다(개인정보 최소). 화면이 이 순서로 카드를 넘긴다.
+ * ★B-6 대비: 항목이 늘어나도 이 함수는 이름 순서만 다루므로 영향 없다.
+ */
+function stepOrder(table, q, todayYM) {
+  if (!table || !Array.isArray(table.rows)) return [];
+  const today = todayYM || _todayYM();
+  const ym = wantsMonth(q, table.rows, today) || _nearestMonth(table.rows, today);
+  const 대상 = ym ? table.rows.filter((r) => String(r['만기일'] || '').startsWith(ym)) : table.rows;
+  const nameCol = table.nameCol || '고객명';
+  return 대상.map((r) => String(r[nameCol] || '').trim()).filter(Boolean);
+}
+
+module.exports = { wantsRoster, wantsScroll, wantsStep, stepOrder, wantsMonth, build, SHOW_COLS, _todayYM };

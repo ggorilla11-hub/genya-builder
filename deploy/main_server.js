@@ -3578,6 +3578,25 @@ async function orderHandler(req, res) {
         }
       } catch (e) { console.log('[🎬명단표] 실패(대화는 그대로 진행):', e.message); }
     }
+    // 🎬 촬영 B-5: 카드 순회 — "다음"·"이전". 화면이 순서를 들고 카드를 넘긴다.
+    //    ★서버는 순서(이름 배열)만 알려주고 상태는 안 갖는다(제로 인그레스 유지).
+    if (FILMING && filmFull) {
+      const _st = filmFull.wantsStep(q);
+      if (_st) {
+        try {
+          const _t2 = await sheetsCrud.loadTable(null);
+          const _order = filmFull.stepOrder(_t2, q);
+          // 화면이 카드를 그릴 수 있게 그 사람들의 행도 같이 보낸다(촬영용 가짜 데이터).
+          const _nc = _t2.nameCol || '고객명';
+          out.rows = (_t2.rows || []).filter((r) => _order.includes(String(r[_nc] || '').trim()));
+          out.action = 'card_step'; out.step = _st; out.order = _order;
+          out.kind = '📇 고객카드';
+          out.text = '';                                  // 실제로 넘어간 뒤 화면이 누구인지 말한다(지어내기 금지)
+          delete out.customers; delete out.customer;
+          console.log(`[🎬카드순회] ${_st} · 순서 ${_order.length}명`);
+        } catch (e) { console.log('[🎬카드순회] 실패:', e.message); }
+      }
+    }
     // 🎬 촬영 B-2: "우측으로 밀어봐"·"아래로 내려봐" → 화면이 명단 표를 민다(손 안 대고 말로).
     //    ★명단을 띄우라는 말이 아닐 때만 본다(위 분기가 우선). 라이브면 통째로 건너뛴다.
     if (FILMING && filmFull && !out.action) {
