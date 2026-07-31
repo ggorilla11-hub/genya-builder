@@ -3598,7 +3598,15 @@ async function orderHandler(req, res) {
     // 🎬 촬영 B-5: 카드 순회 — "다음"·"이전". 화면이 순서를 들고 카드를 넘긴다.
     //    ★서버는 순서(이름 배열)만 알려주고 상태는 안 갖는다(제로 인그레스 유지).
     if (FILMING && filmFull) {
-      const _st = filmFull.wantsStep(q);
+      let _st = filmFull.wantsStep(q);
+      // ★카드를 보고 있는 중이면 "다음" 비슷한 말은 무조건 순회로 본다(2026-07-31 지시).
+      //   전엔 못 잡으면 기존 라우터로 새서 "누구 카드요?" 하거나 ★전체 80명 명단을 쏟아냈다.
+      if (!_st && String((req.body && req.body.filmCur) || '').trim()
+          && /다음|담|넘|이전|앞|뒤로/.test(q) && String(q).trim().length <= 20
+          && !/명단|시트|전체|목록|리스트|띄워|달|주\b/.test(q)) {
+        _st = /이전|앞|뒤로/.test(q) ? 'prev' : 'next';
+        console.log(`[🎬카드순회] 맥락으로 판단 · q="${String(q).slice(0, 20)}" → ${_st}`);
+      }
       if (_st) {
         try {
           const _t2 = await sheetsCrud.loadTable(null);

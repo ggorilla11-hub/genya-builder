@@ -17,11 +17,20 @@ const TODAY = '2026-07';
 
 // ═══ [1] "다음"·"이전" 말귀 ═══
 console.log('\n[1] "다음"·"이전"을 알아듣는가');
-['다음', '다음요', '다음 사람', '다음 고객', '넘겨', '넘겨줘', 'next'].forEach((q) => ok(`"${q}" → next`, ff.wantsStep(q) === 'next', String(ff.wantsStep(q))));
-['이전', '이전 사람', '앞으로', '뒤로', 'prev'].forEach((q) => ok(`"${q}" → prev`, ff.wantsStep(q) === 'prev', String(ff.wantsStep(q))));
-// ★다른 기능과 겹치면 안 된다
-['명단 띄워봐', '만기 8명 띄워', '우측으로 밀어봐', '아래로 내려봐', '김철수 카드 띄워', '다음 달 만기 알려줘', '오늘 일정 뭐야']
+// ★대표님이 실제로 쓰시는 표현 전부 (2026-07-31 지시: "다음"이 들어가면 순회)
+['다음', '다음요', '다음이요', '다음카드', '다음 카드', '다음 고객카드', '다음 사람', '다음 고객',
+ '다음 분', '다음분', '다음 거', '다음거', '담', '넘겨', '넘겨줘', '넘어가', 'next']
+  .forEach((q) => ok(`"${q}" → next`, ff.wantsStep(q) === 'next', String(ff.wantsStep(q))));
+['이전', '이전요', '이전카드', '이전 카드', '이전 고객', '이전 사람', '앞 사람', '앞으로', '뒤로', '되돌려', 'prev']
+  .forEach((q) => ok(`"${q}" → prev`, ff.wantsStep(q) === 'prev', String(ff.wantsStep(q))));
+// ★다른 기능과 겹치면 안 된다 — 특히 "다음 달"은 시간이지 순회가 아니다
+['명단 띄워봐', '만기 8명 띄워', '시트 보여줘', '우측으로 밀어봐', '아래로 내려봐', '김철수 카드 띄워',
+ '다음 달 만기 알려줘', '다음 주 일정 뭐야', '다음 분기 계획', '오늘 일정 뭐야', '전체 명단 보여줘']
   .forEach((q) => ok(`"${q}" → 순회 아님`, ff.wantsStep(q) === null, String(ff.wantsStep(q))));
+
+// ★못 알아들어도 전체 명단을 쏟아내지 않는다(카드 보는 중이면 순회 맥락 유지)
+ok('★카드 보는 중이면 "다음"류를 맥락으로 잡는다', /맥락으로 판단/.test(ms) && /req\.body\.filmCur/.test(ms));
+ok('★그때도 "다음 달·주"는 순회로 안 본다', /!\/명단\|시트\|전체\|목록\|리스트\|띄워\|달\|주\\b\//.test(ms));
 
 // ═══ [2] ★순서 (대표님이 정하신 8명) ═══
 console.log('\n[2] ★8명 순서');
@@ -38,7 +47,7 @@ ok('다른 달을 물으면 그 달 사람 순서', 순서11.length > 0 && 순�
 
 // ═══ [3] 서버 연결 ═══
 console.log('\n[3] 서버가 순회 신호를 보내는가');
-ok('★촬영 모드에서만 켜진다', /if \(FILMING && filmFull\) \{\s*\n\s*const _st = filmFull\.wantsStep\(q\);/.test(ms));
+ok('★촬영 모드에서만 켜진다', /if \(FILMING && filmFull\) \{\s*\n\s*let _st = filmFull\.wantsStep\(q\);/.test(ms));
 ok('★action=card_step · step · order 를 보낸다', /out\.action = 'card_step'; out\.step = _st; out\.order = _order;/.test(ms));
 ok('★카드를 그릴 행도 같이 보낸다', /out\.rows = \(_t2\.rows \|\| \[\]\)\.filter/.test(ms));
 ok('★서버는 상태를 안 갖는다(순서만 알려줌 · 제로 인그레스)', /서버는 순서\(이름 배열\)만 알려주고 상태는 안 갖는다/.test(ms));
