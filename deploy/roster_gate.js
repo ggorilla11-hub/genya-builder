@@ -20,6 +20,7 @@
 // ─────────────────────────────────────────────────────────────
 'use strict';
 const _policy = require('./policy_text_skill');   // 📄 증권 텍스트 해석(독립 모듈)
+const _link = require('./policy_link_skill');     // 🔗 증권 → 명단 반영(독립 모듈)
 
 let _anthropic = null;
 let _MODEL = 'claude-sonnet-5';   // 판정은 짧고 빨라야 한다(YES/NO 한 낱말)
@@ -34,6 +35,7 @@ function init(opts) {
   if (opts.sheetsCrud) _crud = opts.sheetsCrud;
   // 📄 증권 텍스트 해석(1단계)도 이 통로를 쓴다 — 라우터에 새 줄을 더 넣지 않기 위해 여기서 함께 준비한다.
   try { _policy.init({ anthropic: _anthropic, sheetsCrud: _crud }); } catch (e) {}
+  try { _link.init({ anthropic: _anthropic, sheetsCrud: _crud }); } catch (e) {}
 }
 function stats() { return { ..._stats }; }
 
@@ -70,6 +72,12 @@ ${칸안내 || ''}
 · ★증권 얘기를 말로만 하는 것은 false 다. 예) "증권 분석 되나요?", "증권 올리면 돼?" → false
 · 증권이면 roster_query 는 false 로 둔다(둘은 다른 일이다).
 
+[또 따로 보는 것 — apply_to_roster]
+방금 읽어 준 증권 내용을 ★명단에 넣어 달라는 지시면 apply_to_roster=true 로 표시한다.
+· 예) "반영해줘", "명단에 반영해", "그대로 넣어줘", "명단에 추가해줘", "업데이트해줘", "응 반영"
+· 이때 roster_query·policy_text 는 false 로 둔다(반영은 조회도 해석도 아니다).
+· ★단순 동의("응", "그래")만 있고 무엇을 하라는 말이 없으면 false 로 둔다.
+
 판정 결과는 반드시 judge 도구로 넘겨라.`;
 }
 
@@ -84,6 +92,7 @@ const JUDGE_TOOL = {
     properties: {
       roster_query: { type: 'boolean', description: '고객 명단에서 사람을 찾거나·세거나·조건으로 거르거나·특정 고객 값을 확인하려는 요청이면 true' },
       policy_text: { type: 'boolean', description: '★말 안에 보험 증권(보험증권·보험계약)의 내용이 실제로 들어 있으면 true. 증권을 읽어달라고 붙여넣은 경우다. 증권 얘기를 "말로만" 하는 것(예: "증권 분석 되나요?")은 false' },
+      apply_to_roster: { type: 'boolean', description: '★앞서 읽어 준 증권 내용을 "명단에 반영/추가해 달라"는 지시면 true. 예) "반영해줘", "명단에 넣어줘", "그대로 반영", "명단에 추가해줘", "업데이트해줘". 무엇을 반영할지는 앞 대화에 있다.' },
       customer_name: { type: 'string', description: '증권이면, 말에서 드러난 고객 이름(예: "김철수 증권이야" → 김철수). 없으면 빈칸' },
       why: { type: 'string', description: '그렇게 본 이유 한 문장(짧게)' },
     },
@@ -99,6 +108,7 @@ const JUDGE_TOOL = {
 function _게이트통과(intent, opts, 말) {
   opts = opts || {};
   if (intent === 'policy') return true;
+  if (intent === 'apply') return true;   // 🔗 "반영해줘" — 기존 분기가 못 하던 일(전엔 일반 대화가 지어냈다)
   if (intent !== 'roster') return false;
   if (opts.toolIntent) { console.log(`[🛡️2층안전망] q="${String(말).slice(0, 24)}" → 도구 의도라 기존 길로 넘김`); return false; }
   if (opts.expiryWord) { console.log(`[🛡️2층안전망] q="${String(말).slice(0, 24)}" → 만기 질문이라 기존 길로 넘김`); return false; }
@@ -153,6 +163,7 @@ async function wants(q, opts) {
       이유 = String(tu.input.why || '');
       // 📄 증권 텍스트면 명단 조회보다 우선한다(다른 일이다). "만기" 낱말이 증권 안에 있어도 여기서 받는다.
       if (tu.input.policy_text === true) { intent = 'policy'; 이름 = String(tu.input.customer_name || '').trim(); }
+      else if (tu.input.apply_to_roster === true) intent = 'apply';   // 🔗 방금 읽은 증권을 명단에 반영
       else if (tu.input.roster_query === true) intent = 'roster';
     } else {
       // 도구가 안 왔으면(모델·버전 차이) 글자에서라도 읽는다. 그것도 없으면 ★판정 실패로 본다(조용한 NO 금지).
@@ -180,6 +191,12 @@ async function answer(q, opts) {
   opts = opts || {};
   const hist = Array.isArray(opts.history) ? opts.history.slice(-10) : [];
 
+  // 🔗 방금 판정이 "명단에 반영해 달라"였으면 반영 모듈로 보낸다.
+  //    ★전에는 이 말이 일반 대화로 흘러가, 아무것도 안 하고 "반영했습니다"라고 지어냈다(2026-07-31 실측).
+  if (_memo.q === String(q || '').trim() && _memo.intent === 'apply' && (Date.now() - _memo.at) < 60000) {
+    console.log('[🛡️2층안전망→명단반영] 직전 증권 해석을 명단에 넣는다');
+    return _link.applyFromHistory(String(q || ''), { ma: opts.ma || null, history: opts.history || [] });
+  }
   // 📄 방금 판정이 "증권 텍스트"였으면 증권 해석 모듈로 보낸다(명단 도구가 아니라).
   if (_memo.q === String(q || '').trim() && _memo.intent === 'policy' && (Date.now() - _memo.at) < 60000) {
     console.log('[🛡️2층안전망→증권해석] 이름힌트=' + (_memo.name || '(없음)'));
