@@ -5420,6 +5420,7 @@ window.sendMsg=function(){
      if(d && d.action==='close_card'){ try{ closeCustomerCards(d.customer); }catch(e){} try{ showCardsClose(); }catch(e){} if(d.발굴도){ try{ closeDiscovery(); }catch(e){} } }   // ★고객카드+내 상자+(발굴이라 하시면)발굴 팝업까지                            // 📇 카드 닫기(화면만·데이터 무접촉)
      if(d && d.action==='open_full_roster'){ try{ openFullRoster(d.roster); }catch(e){} }   // 🎬 "명단 띄워봐" → 하얀 가로 표 카드
      if(d && d.action==='scroll_roster'){ try{ scrollRoster(d.scroll); }catch(e){} }        // 🎬 "우측으로 밀어봐" → 표를 민다
+     if(d && d.action==='open_approval'){ try{ openApproval(); }catch(e){} }                // 🗂️ "결재함 열어줘" → 결재함 창을 실제로 연다
      _rememberMentioned(d);                                                                                          // ★브리핑이 말한 이름을 기억 → "방금 말한 4명 카드"
      // ⭐ 말로 이벤트 만들기: 서버가 실제로 만든 경우에만 이 신호가 온다 → 대시보드를 열어 새 타일을 "짠" 하고 보여준다.
      if(d && d.action==='create_event' && d.eventName){ try{ _eventCreated(d.eventName, d.eventCount); }catch(e){} }
@@ -5514,6 +5515,7 @@ function _voiceExec(q){
       if(d.action==='show_cards'){ try{ genyaShowCards(d.spec); }catch(e){} }              // 👀 음성으로도 보여줘
       if(d.action==='open_full_roster'){ try{ openFullRoster(d.roster); }catch(e){} }      // 🎬 음성으로 "명단 띄워봐" → 하얀 가로 표 카드
       if(d.action==='scroll_roster'){ try{ scrollRoster(d.scroll); }catch(e){} }           // 🎬 음성으로 "우측으로 밀어봐" → 표를 민다
+      if(d.action==='open_approval'){ try{ openApproval(); }catch(e){} }                   // 🗂️ 음성으로 "결재함 열어줘" → 결재함 창
     }).catch(function(){ try{ pushMsg('gen','결재 처리 중 오류가 났어요. 잠시 후 다시 말씀해 주세요.'); }catch(e){} });
 }
 // ===== 📅 일정관리 비서 — 구글 캘린더 실데이터만(가짜·하드코딩 0). 오늘/이번주/이번달 전환 =====

@@ -101,7 +101,9 @@ const P_FILM = 8098, P_LIVE = 8099;
     const r = await ask(P_FILM, '명단 띄워봐');
     ok(r.action === 'open_full_roster', '신호 없음: ' + 글자(r).slice(0, 200));
     ok(r.roster && r.roster.rows.length === 80, '80명이 아님: ' + (r.roster && r.roster.rows.length));
-    ok(r.roster.cols.join(',') === '번호,고객명,가입상품,보험사,만기일', '칸이 다름: ' + r.roster.cols.join(','));
+    // ★2026-07-31: 칸을 전부 보낸다(가로 스크롤로 넘겨보게). 앞 5칸 순서만 고정.
+    ok(r.roster.cols.slice(0, 5).join(',') === '번호,고객명,가입상품,보험사,만기일', '앞 5칸이 다름: ' + r.roster.cols.slice(0, 5).join(','));
+    ok(r.roster.cols.length >= 20, '칸이 20개 미만: ' + r.roster.cols.length);
     ok(r.roster.rows.slice(0, 8).every((x) => x._hi), '상단 8명이 강조가 아님');
     ok(r.roster.rows.filter((x) => x._hi).length === 8, '강조가 8명이 아님: ' + r.roster.rows.filter((x) => x._hi).length);
   });
@@ -131,7 +133,10 @@ const P_FILM = 8098, P_LIVE = 8099;
   });
 
   console.log('\n━━━ 3. 촬영 모드에서 실제 발송이 막히는가 ━━━');
-  for (const url of ['/api/send/sms', '/api/gmail/send', '/api/campaign/send', '/api/approval/act', '/api/alimtalk/send']) {
+  // ★/api/approval/act 은 촬영에서 ★일부러 열어 뒀다(씬6 — [승인] 버튼을 실제로 눌러 봐야 하므로).
+  //   위험 0인 이유: 명단 번호가 010-0000-XXXX(미배정 번호대) + 안전모드가 수신자를 화이트리스트로 강제.
+  //   ★대량 발송·직접 발송 경로는 그대로 막혀 있어야 한다.
+  for (const url of ['/api/send/sms', '/api/gmail/send', '/api/campaign/send', '/api/campaign/test', '/api/alimtalk/send']) {
     await T(`★${url} 차단됨`, async () => {
       const r = await fetch(`http://localhost:${P_FILM}${url}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', 'x-human-approval': '1' },
@@ -141,6 +146,25 @@ const P_FILM = 8098, P_LIVE = 8099;
       ok(r.status === 403 && j.filming === true, `status=${r.status} body=${글자(j).slice(0, 160)}`);
     });
   }
+
+  // ═══ 4. ★승인은 열되, 안전모드로만 나간다 (씬6) ═══
+  console.log('\n━━━ 4. ★승인 경로 — 열려 있되 안전모드 ━━━');
+  await T('★발화·자동으로는 여전히 못 보낸다(이중 채널 하드가드)', async () => {
+    const r = await fetch(`http://localhost:${P_FILM}/api/approval/act`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },   // ★헤더 없음 = 버튼 아님
+      body: JSON.stringify({ id: 'x', action: 'approve' }),
+    });
+    const j = await r.json().catch(() => ({}));
+    ok(j.ok !== true, '버튼 없이 발송이 통과됨: ' + 글자(j));
+  });
+  await T('★안전모드가 켜져 있다(수신자를 화이트리스트로 강제)', async () => {
+    const ap = require('./approval_skill');
+    const s = ap.safeRecipient('sms', '010-9999-8888');
+    ok(s.safeMode === true && s.blocked === true, JSON.stringify(s));
+  });
+  await T('★라이브 발송 스위치는 꺼져 있다', async () => {
+    ok(process.env.APPROVAL_LIVE_SEND !== '1', 'APPROVAL_LIVE_SEND=' + process.env.APPROVAL_LIVE_SEND);
+  });
 
   console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log(`통과 ${pass} · 실패 ${fail}`);

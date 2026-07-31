@@ -466,7 +466,13 @@ app.use(express.json({ limit: '50mb' })); // 자료 업로드(base64) 파싱 —
 // ═══ 🎬 촬영 모드 발송 차단막 (추가만 · 기존 발송 하드가드는 그대로 뒤에 살아 있다) ═══
 // 촬영 중에 실수로 [승인] 버튼을 눌러도 문자·메일이 밖으로 나가지 않게 앞단에서 통째로 막는다.
 // FILMING=false(라이브)면 next()만 하므로 기존 동작에 아무 영향이 없다.
-const _FILM_SEND_BLOCK = /^\/api\/(send\/sms|gmail\/send|campaign\/(send|test)|approval\/act|events\/approve-send|alimtalk\/send)$/;
+// ★2026-07-31 씬6: /api/approval/act 만 차단에서 뺀다 — 촬영에서 [승인]을 실제로 눌러야 하기 때문.
+//   ★위험 0인 이유(3중):
+//     ① 명단 8명 번호가 010-0000-XXXX(실제 배정 안 되는 번호대) → 눌러도 아무에게도 안 감
+//     ② approval_skill 의 안전모드(_liveSend()=false)가 수신자를 ★화이트리스트(대표님 폰)로 강제 교체
+//     ③ 라이브는 FILMING=false 라 이 차단막 자체가 안 돌고, 22블록 발송 하드가드가 그대로 지킨다
+//   대량 발송(campaign)·직접 발송(send/sms·gmail)은 ★그대로 차단 유지.
+const _FILM_SEND_BLOCK = /^\/api\/(send\/sms|gmail\/send|campaign\/(send|test)|events\/approve-send|alimtalk\/send)$/;
 app.use((req, res, next) => {
   if (!FILMING || req.method !== 'POST' || !_FILM_SEND_BLOCK.test(req.path)) return next();
   console.log('[🎬촬영모드·발송차단]', req.path, '→ 실제 발송 안 함');
@@ -3532,6 +3538,13 @@ async function orderHandler(req, res) {
         await _attachPrefs(ma); // ★문자 동반 토글·상호 부착(create 채널·_dispatch 서명용)
         const rc = await approval.runChat(ma, hist.concat([{ role: 'user', content: q }]));
         out = { kind: '🗂️ 결재함', text: rc.reply || '무엇을 보내드릴까요?', pending: rc.pending || null, engine: MODEL_DEEP };
+        // ★"결재함 열어줘"·"결재함 보여줘"·"결재 열어"·"결재함 띄워" → ★화면을 실제로 연다(2026-07-31 씬6).
+        //   전엔 말로만 답하고 창이 안 떠서 대표님이 버튼을 따로 눌러야 했다. 버튼도 그대로 살아 있다.
+        if (/(결재함?|승인함)\s*(을|를)?\s*(열|띄워|띄우|보여|확인|봐)|결재\s*(열|띄워|보여)|올렸[니냐어]|올라(온|와)/.test(q)) {
+          out.action = 'open_approval';
+          // ★휴먼인더루프 — AI가 함부로 안 보낸다는 것을 말로 분명히 한다.
+          out.text = String(out.text || '') + '\n\n🔒 발송은 제가 함부로 못 합니다 — 대표님이 [승인] 버튼을 직접 누르셔야 그때 나갑니다.';
+        }
       }
     } else if (!_webQuery && (/시트\s*(목록|리스트|들|현황|뭐|어떤|무슨)|어떤\s*시트|무슨\s*시트|내\s*(구글\s*)?시트|([가-힣]{2,4})\s*님?\s*(정보|연락처|전화번호|전화|휴대폰|핸드폰|번호|이메일|메일|주소|생일|생년월일|나이|성별|직업|만기|상품|알려|조회|어때|추가|등록|삭제|빼|지워|넣어|수정|변경|바꿔)|시트\s*(조회|검색|추가|수정|삭제|변경|바꿔)|명단|만기|자산가|고객\s*(추가|등록|수정|삭제|정리|목록|누구|전체|명단)|(주소|연락처|번호|생일|상품)\s*(을|를|은|는)?\s*(바꿔|수정|변경|고쳐|추가)|([가-힣]{2,4}).{0,25}(변경|수정|업데이트|바꿔|바꾸|고쳐|고치|메모|기록)/.test(q)
       // ★추가(2026-07-31): "출산 컬럼 추가해"·"그냥 추가해"처럼 항목을 만들라는 말이 일반 대화로 새서
@@ -4620,7 +4633,10 @@ app.post('/api/events/approve-send', async (req, res) => { try {
   res.json(Object.assign({ approvalId: id }, r || {}));
 } catch (e) { if (scopeGate(e, res, 'sheets')) return; res.status(500).json({ ok: false, error: e.message }); } });
 app.post('/api/approval/act', async (req, res) => { try {
-  const ma = gateGoogle(req, res); if (!ma) return;
+  // 🎬 촬영: 로그인이 없어도 [승인] 버튼을 눌러 볼 수 있게 관문만 통과시킨다.
+  //    ★이중 채널 하드가드(아래 humanApproval)는 그대로 — 발화·자동 경로는 여전히 못 넘는다.
+  //    ★실제 수신자는 approval_skill 안전모드가 화이트리스트(대표님 폰)로 바꾼다.
+  const ma = FILMING ? (memberAuth(req) || {}) : gateGoogle(req, res); if (!ma) return;
   ma._email = (sessionOf(req) || {}).email || '';
   await _attachPrefs(ma);
   const b = req.body || {};
