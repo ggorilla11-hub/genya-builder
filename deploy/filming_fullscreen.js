@@ -27,6 +27,38 @@ function wantsRoster(q) {
   return /띄워|띄우|보여|열어|열어봐|펼쳐|크게|전체\s*화면|풀\s*화면|화면에/.test(s);
 }
 
+/**
+ * ★말로 명단 밀기 — "우측으로 밀어봐"·"아래로 내려봐" (2026-07-31 대표님 지시)
+ * 손 안 대고 말로 표를 조작한다. 방향을 못 알아들으면 null(=평소대로 대화).
+ * @returns {{dir:string}|null}  dir: right|left|down|up|end|start|bottom|top
+ */
+function wantsScroll(q) {
+  const s = String(q || '').replace(/\s+/g, ' ');
+  // 표를 움직이라는 뜻의 말이 있어야 한다. (그냥 "오른쪽 사람" 같은 말에 반응하면 안 된다)
+  if (!/밀어|밀기|밀|넘겨|넘기|스크롤|내려|올려|가봐|가 봐|이동|보여줘|봐/.test(s)) return null;
+  // 명단 얘기가 아닌 게 확실하면 뺀다(예: 캘린더·발굴 화면 조작은 이 기능이 아니다)
+  if (/발굴|캘린더|일정|결재|약관/.test(s)) return null;
+
+  const 끝 = /맨\s*(끝|오른쪽|우측)|끝까지|제일\s*(끝|오른쪽|우측)/.test(s);
+  const 처음 = /맨\s*(앞|처음|왼쪽|좌측)|처음으로|제일\s*(앞|왼쪽|좌측)/.test(s);
+  const 맨아래 = /맨\s*(아래|밑|마지막)|끝까지\s*내려|마지막까지/.test(s);
+  const 맨위 = /맨\s*위|처음\s*으로\s*올려|위로\s*끝까지/.test(s);
+
+  // ★"맨 끝까지"처럼 방향 단어 없이 끝만 말할 때가 있다 → 끝/처음을 먼저 본다.
+  if (맨아래) return { dir: 'bottom' };
+  if (맨위) return { dir: 'top' };
+  if (끝) return { dir: 'end' };
+  if (처음) return { dir: 'start' };
+
+  if (/(오른쪽|우측|우로|right)/.test(s)) return { dir: 'right' };
+  if (/(왼쪽|좌측|좌로|left)/.test(s)) return { dir: 'left' };
+  if (/(아래|밑|다음|내려)/.test(s)) return { dir: 'down' };
+  if (/(위로|윗|이전|올려)/.test(s)) return { dir: 'up' };
+  // 방향 없이 "더 밀어봐"·"더 보여줘" → 오른쪽(칸 더 보기)이 기본
+  if (/더\s*(밀어|넘겨|보여|봐)/.test(s)) return { dir: 'right' };
+  return null;
+}
+
 /** 오늘(한국시간) 'YYYY-MM'. 시험에서 날짜를 고정할 수 있게 인자로 덮어쓸 수 있다. */
 function _todayYM() { return new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 7); }
 
@@ -105,4 +137,4 @@ function _nearestMonth(rows, todayYM) {
   return 앞으로.length ? 앞으로[0] : null;
 }
 
-module.exports = { wantsRoster, wantsMonth, build, SHOW_COLS, _todayYM };
+module.exports = { wantsRoster, wantsScroll, wantsMonth, build, SHOW_COLS, _todayYM };

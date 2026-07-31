@@ -94,7 +94,7 @@ ok('★가로형 표 — 컬럼이 가로(thead), 행이 세로로 쌓임(tbody)
 ok('줄무늬로 읽기 쉽게', /ri % 2 \? '#fbfcfd' : '#fff'/.test(blk));
 ok('머리행 고정(스크롤해도 칸 이름 보임)', /position:sticky;top:0/.test(blk));
 ok('★카드 높이 제한 — 대화창을 안 밀어냄', /max-height:340px;overflow:auto/.test(blk));
-ok('★전체 칸·인원을 밀어서 볼 수 있다고 안내', /표를 좌우로 밀면 나머지 칸이/.test(blk));
+ok('★말로도 밀 수 있다고 안내', /말로 "우측으로 밀어봐"·"아래로 내려봐" 하셔도 됩니다/.test(blk));
 
 // ═══ [7-2] ★본문 폭 꽉 + 가로 스크롤 (2026-07-31 지시) ═══
 console.log('\n[7-2] ★본문 폭 꽉 채우고 가로 스크롤');
@@ -119,6 +119,41 @@ ok('★★핵심 5칸만이 아니라 명단의 칸을 전부 보낸다', 전부
 ok('★앞 5칸은 지시하신 순서 그대로', 전부.cols.slice(0, 5).join(',') === '번호,고객명,가입상품,보험사,만기일', 전부.cols.slice(0, 5).join(','));
 ok('★나머지 칸도 빠짐없이(중복 없이)', new Set(전부.cols).size === 전부.cols.length && table.header.every((h) => 전부.cols.includes(h)));
 ok('★명단에 없는 칸은 만들지 않음', 전부.cols.every((c) => table.header.includes(c)));
+
+// ═══ [7-5] ★본문 폭 안에만 · 공중에 뜬 느낌 (2026-07-31 지시) ═══
+console.log('\n[7-5] ★우측 구글 4종 침범 금지 · 부양감');
+ok('★★카드가 본문 폭을 절대 안 넘는다', /max-width:100%;box-sizing:border-box;/.test(blk));
+ok('★★감싼 자리도 폭에 묶여 있다(삐져나옴 차단)',
+  /d\.style\.width = '100%'/.test(blk) && /d\.style\.boxSizing = 'border-box'/.test(blk) && /d\.style\.overflow = 'hidden'/.test(blk));
+ok('★넘치는 칸은 카드 안쪽 가로 스크롤로 처리', /genya-roster-scroll" style="max-width:100%;max-height:340px;overflow:auto/.test(blk));
+ok('★★살짝 공중에 뜬 느낌(큰 그림자 두 겹)',
+  /box-shadow:0 10px 26px rgba\(11,31,58,\.13\), 0 3px 8px rgba\(11,31,58,\.07\)/.test(blk));
+ok('★본문에 딱 붙지 않게 위아래 여백', /margin:12px 0 16px/.test(blk));
+
+// ═══ [7-6] ★말로 명단 밀기 (2026-07-31 지시) ═══
+console.log('\n[7-6] ★"우측으로 밀어봐"·"아래로 내려봐" — 말로 조작');
+[['우측으로 밀어봐', 'right'], ['오른쪽으로 밀어봐', 'right'], ['아래로 내려봐', 'down'], ['밑으로 내려봐', 'down'],
+ ['위로 올려봐', 'up'], ['왼쪽으로 밀어봐', 'left'], ['맨 끝까지 밀어봐', 'end'], ['맨 아래로 내려봐', 'bottom'],
+ ['더 밀어봐', 'right']].forEach(function (x) {
+  const g = ff.wantsScroll(x[0]);
+  ok(`"${x[0]}" → ${x[1]}`, g && g.dir === x[1], g ? g.dir : '못 알아들음');
+});
+[['명단 띄워봐'], ['김철수님 정보 알려줘'], ['오늘 일정 뭐야'], ['발굴 돌려'], ['8월 만기 고객 몇 명이야']].forEach(function (x) {
+  ok(`"${x[0]}" → 안 민다(엉뚱하게 반응 안 함)`, ff.wantsScroll(x[0]) === null, JSON.stringify(ff.wantsScroll(x[0])));
+});
+ok('★화면에 미는 함수가 있다', /function scrollRoster\(sc\)/.test(gh));
+// ★CSS의 behavior:'smooth' 는 환경에 따라 통째로 무시돼 ★아예 안 움직였다(실측으로 잡음).
+//   그래서 rAF 로 직접 그린다 — 어디서든 똑같이 부드럽게 움직인다.
+ok('★부드럽게 민다(직접 애니메이션 — 환경 타지 않음)',
+  /requestAnimationFrame\(한칸\)/.test(gh) && /var 시작 = null, 총 = 420;/.test(gh));
+ok('★끝을 넘어가지 않게 잘라준다', /가로 = Math\.max\(0, Math\.min\(최대가로, 가로\)\);/.test(gh));
+ok('★이미 끝이면 조용히 넘어간다', /if\(Math\.abs\(가로-시작가로\) < 1 && Math\.abs\(세로-시작세로\) < 1\) return true;/.test(gh));
+ok('★가장 최근에 뜬 명단을 민다', /표들\[표들\.length - 1\]/.test(gh));
+ok('★표가 없으면 아무 일도 안 한다', /if\(!표들\.length\) return false;/.test(gh));
+ok('★글 대화에서 작동', /if\(d && d\.action==='scroll_roster'\)/.test(gh));
+ok('★★음성에서도 작동', /if\(d\.action==='scroll_roster'\)/.test(gh));
+ok('★명단 띄우기가 우선(둘 다 걸리면 띄우기)', /if \(FILMING && filmFull && !out\.action\) \{/.test(ms));
+ok('★라이브엔 스크롤 신호가 안 붙는다', /FILMING && filmFull && !out\.action/.test(ms));
 
 // ═══ [7-4] ★촬영 모드는 크롬으로 열린다 (2026-07-31 지시) ═══
 console.log('\n[7-4] ★촬영모드_켜기.bat → 크롬으로 열림');

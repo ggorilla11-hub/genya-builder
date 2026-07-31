@@ -3565,8 +3565,14 @@ async function orderHandler(req, res) {
       try {
         const _ft = await sheetsCrud.loadTable(null);
         const _fr = filmFull.build(_ft, q);
-        if (_fr) { out.action = 'open_full_roster'; out.roster = _fr; console.log(`[🎬전체화면명단] ${_fr.total}명 · 강조 ${_fr.hiCount}명 (${_fr.focusLabel || '없음'})`); }
-      } catch (e) { console.log('[🎬전체화면명단] 실패(대화는 그대로 진행):', e.message); }
+        if (_fr) { out.action = 'open_full_roster'; out.roster = _fr; console.log(`[🎬명단표] ${_fr.total}명 · 칸 ${_fr.cols.length}개 · 강조 ${_fr.hiCount}명 (${_fr.focusLabel || '없음'})`); }
+      } catch (e) { console.log('[🎬명단표] 실패(대화는 그대로 진행):', e.message); }
+    }
+    // 🎬 촬영 B-2: "우측으로 밀어봐"·"아래로 내려봐" → 화면이 명단 표를 민다(손 안 대고 말로).
+    //    ★명단을 띄우라는 말이 아닐 때만 본다(위 분기가 우선). 라이브면 통째로 건너뛴다.
+    if (FILMING && filmFull && !out.action) {
+      const _sc = filmFull.wantsScroll(q);
+      if (_sc) { out.action = 'scroll_roster'; out.scroll = _sc; console.log(`[🎬명단밀기] ${_sc.dir}`); }
     }
     res.json({ ok: true, ...out, saved });
   } catch (e) {

@@ -5415,7 +5415,8 @@ window.sendMsg=function(){
      if(d && d.action==='open_card' && d.customer){ window._CARD_MISS=0; _카드확인(function(){ openCustomerCard(d.customer); }, 1); }
      if(d && d.action==='open_cards' && d.customers){ window._CARD_MISS=0; _카드확인(function(){ openCustomerCards(d.customers, d.label); }, (d.customers||[]).length); }   // 📇 묶음 카드(상담 대기·만기 등)
      if(d && d.action==='close_card'){ try{ closeCustomerCards(d.customer); }catch(e){} try{ showCardsClose(); }catch(e){} if(d.발굴도){ try{ closeDiscovery(); }catch(e){} } }   // ★고객카드+내 상자+(발굴이라 하시면)발굴 팝업까지                            // 📇 카드 닫기(화면만·데이터 무접촉)
-     if(d && d.action==='open_full_roster'){ try{ openFullRoster(d.roster); }catch(e){} }   // 🎬 "명단 띄워봐" → 화면 가득 큰 표
+     if(d && d.action==='open_full_roster'){ try{ openFullRoster(d.roster); }catch(e){} }   // 🎬 "명단 띄워봐" → 하얀 가로 표 카드
+     if(d && d.action==='scroll_roster'){ try{ scrollRoster(d.scroll); }catch(e){} }        // 🎬 "우측으로 밀어봐" → 표를 민다
      _rememberMentioned(d);                                                                                          // ★브리핑이 말한 이름을 기억 → "방금 말한 4명 카드"
      // ⭐ 말로 이벤트 만들기: 서버가 실제로 만든 경우에만 이 신호가 온다 → 대시보드를 열어 새 타일을 "짠" 하고 보여준다.
      if(d && d.action==='create_event' && d.eventName){ try{ _eventCreated(d.eventName, d.eventCount); }catch(e){} }
@@ -5507,7 +5508,8 @@ function _voiceExec(q){
       if(d.action==='open_tab'){ try{ discoveryPanel(d.tab||'find'); }catch(e){} }
       if(d.action==='refresh'){ try{ genyaRefresh(); }catch(e){} }
       if(d.action==='show_cards'){ try{ genyaShowCards(d.spec); }catch(e){} }              // 👀 음성으로도 보여줘
-      if(d.action==='open_full_roster'){ try{ openFullRoster(d.roster); }catch(e){} }      // 🎬 음성으로 "명단 띄워봐" → 화면 가득 큰 표
+      if(d.action==='open_full_roster'){ try{ openFullRoster(d.roster); }catch(e){} }      // 🎬 음성으로 "명단 띄워봐" → 하얀 가로 표 카드
+      if(d.action==='scroll_roster'){ try{ scrollRoster(d.scroll); }catch(e){} }           // 🎬 음성으로 "우측으로 밀어봐" → 표를 민다
     }).catch(function(){ try{ pushMsg('gen','결재 처리 중 오류가 났어요. 잠시 후 다시 말씀해 주세요.'); }catch(e){} });
 }
 // ===== 📅 일정관리 비서 — 구글 캘린더 실데이터만(가짜·하드코딩 0). 오늘/이번주/이번달 전환 =====
@@ -6092,31 +6094,88 @@ function openFullRoster(r){
   });
   tb += '</tbody>';
 
-  /* ── 카드: ★본문 폭을 꽉 채우고, 아래에 가로 스크롤바가 나온다(칸 20개를 밀어서 봄) ── */
+  /* ── 카드 ──
+     ★본문(대화창) 폭 안에만 뜬다 — 우측 구글 4종 영역을 절대 넘지 않는다.
+       (max-width:100% + box-sizing:border-box, 넘치는 건 안쪽 가로 스크롤로 처리)
+     ★살짝 공중에 뜬 느낌 — 그림자를 크게·부드럽게 주고 위아래 여백을 넉넉히. */
   var card =
-    '<div class="genya-roster-card" style="border:1px solid var(--line);border-radius:12px;background:var(--card);'
-    + 'box-shadow:0 1px 3px rgba(11,31,58,.05);margin:4px 0 6px;overflow:hidden;">'
+    '<div class="genya-roster-card" style="border:1px solid var(--line);border-radius:14px;background:var(--card);'
+    + 'max-width:100%;box-sizing:border-box;'
+    + 'box-shadow:0 10px 26px rgba(11,31,58,.13), 0 3px 8px rgba(11,31,58,.07);'   /* 부양감 */
+    + 'margin:12px 0 16px;overflow:hidden;">'
     + head
     /* overflow:auto → 가로·세로 둘 다 스크롤. table 을 max-content 로 둬야 칸이 안 눌리고 넘친다. */
-    + '<div style="max-height:340px;overflow:auto;">'
+    + '<div class="genya-roster-scroll" style="max-width:100%;max-height:340px;overflow:auto;">'
     + '<table style="width:max-content;min-width:100%;border-collapse:collapse;font-family:inherit;">' + th + tb + '</table>'
     + '</div>'
     + '<div style="padding:7px 13px;font-size:11px;color:var(--gray-l);background:#fcfdfe;border-top:1px solid var(--line-2);">'
-    +   '칸 ' + r.cols.length + '개 · ' + (r.total || r.rows.length) + '명 — 표를 좌우로 밀면 나머지 칸이, 위아래로 밀면 나머지 분들이 보여요.'
+    +   '칸 ' + r.cols.length + '개 · ' + (r.total || r.rows.length) + '명 — 말로 "우측으로 밀어봐"·"아래로 내려봐" 하셔도 됩니다.'
     + '</div>'
     + '</div>';
 
-  /* ★말풍선(max-width 88% · 좌우 여백)에 넣으면 좁아진다 → 대화창에 직접 붙여 폭을 꽉 채운다. */
+  /* ★말풍선(max-width 88% · 좌우 여백)에 넣으면 좁아진다 → 대화창에 직접 붙인다.
+     단 ★본문 폭을 넘지 않게 wrapper 를 폭에 묶어 둔다. */
   try{
     var s = document.getElementById('chatScroll');
     if(!s) return;
     var d = document.createElement('div');
     d.className = 'msg gen genya-roster-wrap';
-    d.style.maxWidth = '100%';        /* .msg 의 88% 제한 해제 */
-    d.style.display = 'block';        /* 아바타 없이 표만 — 폭을 온전히 쓴다 */
+    d.style.maxWidth = '100%';           /* .msg 의 88% 제한 해제 — 단 본문 폭까지만 */
+    d.style.width = '100%';
+    d.style.boxSizing = 'border-box';
+    d.style.display = 'block';           /* 아바타 없이 표만 — 폭을 온전히 쓴다 */
+    d.style.overflow = 'hidden';         /* ★어떤 경우에도 본문 밖으로 안 삐져나가게 */
     d.innerHTML = card;
     s.appendChild(d); s.scrollTop = s.scrollHeight;
   }catch(e){}
+}
+
+/* ═══ 🎬 말로 명단 밀기 — "우측으로 밀어봐"·"아래로 내려봐" ═══
+   서버가 action:'scroll_roster' 를 보내면 가장 최근에 뜬 명단 표를 부드럽게 민다.
+   손 안 대고 말로 조작(자비스 느낌). 표가 없으면 아무 일도 안 한다. */
+function scrollRoster(sc){
+  try{
+    sc = sc || {};
+    var 표들 = document.querySelectorAll('.genya-roster-scroll');
+    if(!표들.length) return false;
+    var el = 표들[표들.length - 1];                 /* 가장 최근에 뜬 명단 */
+    var 방향 = String(sc.dir || 'right');
+    var 몫  = Number(sc.amount) || 0.8;             /* 화면의 80%씩 민다 */
+    /* ★표를 먼저 화면에 들여놓는다(즉시 이동 — 부드럽게 하면 아래 밀기와 다툰다) */
+    try{ el.closest('.genya-roster-card').scrollIntoView({ block:'nearest' }); }catch(e){}
+
+    var 가로 = el.scrollLeft, 세로 = el.scrollTop;
+    var 최대가로 = el.scrollWidth - el.clientWidth, 최대세로 = el.scrollHeight - el.clientHeight;
+    if(방향 === 'end')         가로 = 최대가로;
+    else if(방향 === 'start')  가로 = 0;
+    else if(방향 === 'bottom') 세로 = 최대세로;
+    else if(방향 === 'top')    세로 = 0;
+    else if(방향 === 'right')  가로 = 가로 + el.clientWidth  * 몫;
+    else if(방향 === 'left')   가로 = 가로 - el.clientWidth  * 몫;
+    else if(방향 === 'down')   세로 = 세로 + el.clientHeight * 몫;
+    else if(방향 === 'up')     세로 = 세로 - el.clientHeight * 몫;
+    else return false;
+    가로 = Math.max(0, Math.min(최대가로, 가로));
+    세로 = Math.max(0, Math.min(최대세로, 세로));
+
+    /* ★직접 애니메이션으로 민다.
+       CSS의 behavior:'smooth' 는 환경에 따라 통째로 무시된다(실측으로 잡은 결함 — 아예 안 움직였다).
+       rAF 로 직접 그리면 어디서든 똑같이 부드럽게 움직인다. */
+    var 시작가로 = el.scrollLeft, 시작세로 = el.scrollTop;
+    if(Math.abs(가로-시작가로) < 1 && Math.abs(세로-시작세로) < 1) return true;  /* 이미 끝 — 조용히 넘어감 */
+    if(el._구르기) cancelAnimationFrame(el._구르기);
+    var 시작 = null, 총 = 420;                                   /* 0.42초 — 눈이 따라갈 만한 속도 */
+    function 한칸(now){
+      if(시작 === null) 시작 = now;
+      var p = Math.min(1, (now - 시작) / 총);
+      var e = p < 0.5 ? 2*p*p : 1 - Math.pow(-2*p+2, 2)/2;       /* 부드럽게 시작·끝 */
+      el.scrollLeft = 시작가로 + (가로 - 시작가로) * e;
+      el.scrollTop  = 시작세로 + (세로 - 시작세로) * e;
+      if(p < 1) el._구르기 = requestAnimationFrame(한칸); else el._구르기 = null;
+    }
+    el._구르기 = requestAnimationFrame(한칸);
+    return true;
+  }catch(e){ return false; }
 }
 /* 전체 화면이 아니라 카드라 따로 닫을 게 없다. 예전 호출부가 남아 있어도 안 터지게 빈 함수로 둔다. */
 function closeFullRoster(){}
