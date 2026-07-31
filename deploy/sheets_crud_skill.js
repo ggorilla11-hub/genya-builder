@@ -112,7 +112,49 @@ function colLetter(idx) { // 0-based → A,B,...,Z,AA
 // ═══════════════════════════════════════════════════════════════
 // 2. 시트 로드 (제로 인그레스: 읽어서 메모리에만)
 // ═══════════════════════════════════════════════════════════════
+// ── 🧾 3층: 칸 목록 기억 (2026-07-31) ──────────────────────────
+//  왜: 두뇌가 "이 명단에 무슨 칸이 있는지" 모른 채 도구를 불러 '8월' vs '-08-' 같은
+//      형식을 잘못 골랐다. → 칸 이름과 ★값 생김새만 기억해 시작할 때 알려준다.
+//  ★제로 인그레스: 실제 고객 값은 절대 남기지 않는다. 저장하는 건 칸 이름과 "YYYY-MM-DD" 같은 ★꼴뿐.
+const _SCHEMA = { header: [], formats: {} };
+function _shapeOf(v) {
+  const s = String(v == null ? '' : v).trim();
+  if (!s) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return 'YYYY-MM-DD (날짜)';
+  if (/^\d{4}[.\/]\d{1,2}[.\/]\d{1,2}$/.test(s)) return 'YYYY.MM.DD (날짜)';
+  if (/^\d{8}$/.test(s)) return 'YYYYMMDD (날짜)';
+  if (/^\d{2,3}-\d{3,4}-\d{4}$/.test(s)) return '전화번호꼴';
+  if (/@/.test(s)) return '이메일꼴';
+  if (/^[\d,]+원$/.test(s)) return '숫자+원 (쉼표 있음)';
+  if (/^\d+만원$/.test(s)) return '숫자+만원';
+  if (/^[\d,]+$/.test(s)) return '숫자';
+  if (/^(남|여)$/.test(s)) return "'남' 또는 '여'";
+  return '글자';
+}
+function _rememberSchema(t) {
+  if (!t || !Array.isArray(t.header) || !t.header.length) return;
+  const fmt = {};
+  for (const h of t.header) {
+    const row = (t.rows || []).find((r) => String(r[h] || '').trim());
+    fmt[h] = row ? _shapeOf(row[h]) : '(비어 있음)';
+  }
+  _SCHEMA.header = t.header.slice();
+  _SCHEMA.formats = fmt;
+}
+/** 두뇌에게 보여줄 재료창고 목록 (칸 이름 + 값 생김새). 아직 한 번도 못 읽었으면 빈 문자열. */
+function schemaHint() {
+  if (!_SCHEMA.header.length) return '';
+  const lines = _SCHEMA.header.map((h) => `  · ${h} — ${_SCHEMA.formats[h] || '글자'}`).join('\n');
+  return `\n[이 명단의 칸 ${_SCHEMA.header.length}개 — 값이 어떻게 생겼는지까지]\n${lines}\n`
+    + `★날짜 칸이 여럿이다(생년월일·가입일·만기일 등). "몇 월"을 물으면 ★어느 칸인지 반드시 지정하라 — 안 그러면 생일 물었는데 만기가 섞인다.\n`;
+}
+
 async function loadTable(ma) {
+  const _t = await _loadTableRaw(ma);
+  try { _rememberSchema(_t); } catch (e) {}   // 실패해도 조회는 그대로 진행(부가 기능)
+  return _t;
+}
+async function _loadTableRaw(ma) {
   // 🎬 촬영 모드(FILMING_MODE=1)에서만 켜지는 갈림길. 평소엔 _SOURCE=null 이라 아래 원래 코드 그대로 탄다.
   //    켜지면 구글을 아예 안 부른다 → 실제 고객 시트 접근 0(섞일 길이 없음).
   if (_SOURCE) return _SOURCE(ma);
@@ -221,25 +263,215 @@ function notFoundMsg(table, name) {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// 2-B. 🔪 조건 필터 엔진 (1층 · 2026-07-31 대표님 승인)
+// ═══════════════════════════════════════════════════════════════
+//  왜: 지금까지 명단 검색이 "글자 찾기" 하나뿐이라(국자 하나) 두뇌가 조건을 정확히
+//      이해해도 실행할 수가 없었다. "생년월일이 8월"을 시키면 '-08-'를 20칸 전부에서
+//      찾아 ★만기일·가입일이 섞였다. → 칸 지정·비교·범위·결합을 도구에 쥐어준다.
+//  ★계산은 코드가 한다(두뇌가 세지 않는다) → 인원수 환각이 구조적으로 0.
+//  ★기존 길(column/contains/keyword)은 그대로 살려둔다 — 지금 되는 것은 안 깨진다.
+
+/** 한국 오늘 (나이 계산 기준) */
+function _todayKST() {
+  const d = new Date(Date.now() + 9 * 3600 * 1000);
+  return { y: d.getUTCFullYear(), m: d.getUTCMonth() + 1, d: d.getUTCDate() };
+}
+/** 값에서 숫자만 뽑는다. '14,000원'→14000 · '11060만원'→11060 · 빈칸→null */
+function _toNum(v) {
+  const s = String(v == null ? '' : v).replace(/[,\s]/g, '');
+  if (!s) return null;
+  const m = s.match(/-?\d+(?:\.\d+)?/);
+  return m ? Number(m[0]) : null;
+}
+/** 날짜 해석. '1990-08-19' · '2026.08' · '20260817' · '8월 19일'(연도 없음) 모두 받는다. */
+function _toDate(v) {
+  const s = String(v == null ? '' : v).trim();
+  if (!s) return null;
+  let m = s.match(/^(\d{4})[-.\/년]\s*(\d{1,2})(?:[-.\/월]\s*(\d{1,2}))?/);
+  if (m) return { y: +m[1], mo: +m[2], d: m[3] ? +m[3] : null };
+  m = s.match(/^(\d{4})(\d{2})(\d{2})$/);
+  if (m) return { y: +m[1], mo: +m[2], d: +m[3] };
+  m = s.match(/^(\d{1,2})월\s*(\d{1,2})?\s*일?$/);           // 연도 없는 '8월 19일'
+  if (m) return { y: null, mo: +m[1], d: m[2] ? +m[2] : null };
+  return null;
+}
+/** 날짜를 비교용 숫자로. 일이 없으면 lo=1일 / hi=31일 (달 단위 비교를 정확히) */
+function _ymd(dt, edge) { if (!dt || !dt.y) return null; return dt.y * 10000 + dt.mo * 100 + (dt.d != null ? dt.d : (edge === 'hi' ? 31 : 1)); }
+/** 만 나이 (생일이 안 지났으면 한 살 뺀다) */
+function _age(v, today) {
+  const b = _toDate(v);
+  if (!b || !b.y) return null;
+  let a = today.y - b.y;
+  if (today.m < b.mo || (today.m === b.mo && b.d != null && today.d < b.d)) a--;
+  return a;
+}
+/** 말로 온 연산자를 표준형으로 (두뇌가 한글로 줘도 받는다) */
+const _OPS = {
+  '포함': 'contains', 'contains': 'contains', 'like': 'contains', '들어감': 'contains',
+  '미포함': 'not_contains', 'not_contains': 'not_contains', '제외': 'not_contains', '아님': 'not_equals',
+  '=': 'equals', '==': 'equals', 'eq': 'equals', 'equals': 'equals', '같음': 'equals', '일치': 'equals',
+  '!=': 'not_equals', 'ne': 'not_equals', 'not_equals': 'not_equals',
+  '>': 'gt', 'gt': 'gt', '초과': 'gt',
+  '>=': 'gte', 'gte': 'gte', '이상': 'gte',
+  '<': 'lt', 'lt': 'lt', '미만': 'lt',
+  '<=': 'lte', 'lte': 'lte', '이하': 'lte',
+  'between': 'between', '범위': 'between', '사이': 'between',
+  'month': 'month', '월': 'month',
+  'year': 'year', '년': 'year', '연도': 'year',
+  'age_between': 'age_between', '나이': 'age_between', '나이범위': 'age_between',
+  'empty': 'empty', '빈칸': 'empty', '없음': 'empty',
+  'not_empty': 'not_empty', '있음': 'not_empty', '채워짐': 'not_empty',
+};
+const _NEED_VALUE = new Set(['contains', 'not_contains', 'equals', 'not_equals', 'gt', 'gte', 'lt', 'lte', 'between', 'month', 'year', 'age_between']);
+
+/** 필터 1개를 검사 가능한 형태로 (틀리면 error 를 돌려 두뇌가 고쳐 부르게 한다) */
+function _prepFilter(col, f) {
+  const raw = String(f.op == null || f.op === '' ? 'contains' : f.op).trim().toLowerCase();
+  const op = _OPS[raw];
+  if (!op) return { error: `'${f.op}' 는 모르는 조건이에요. 쓸 수 있는 것: 포함·같음·이상·이하·초과·미만·범위(between)·월(month)·년(year)·나이(age_between)·빈칸(empty)·있음(not_empty)` };
+  const v = f.value == null ? '' : f.value;
+  if (_NEED_VALUE.has(op) && String(v).trim() === '') return { error: `'${col}' 조건에 값이 없어요.` };
+  if ((op === 'between' || op === 'age_between') && (f.value2 == null || String(f.value2).trim() === '')) {
+    return { error: `'${col}' 범위 조건에는 value 와 value2 가 둘 다 필요해요.` };
+  }
+  if (op === 'month') { const n = _toNum(v); if (!(n >= 1 && n <= 12)) return { error: `월은 1~12 로 주세요 (받은 값: ${v}).` }; }
+  return { filter: { col, op, value: v, value2: f.value2 } };
+}
+
+/** 이 값이 날짜 조건인가 — 조건 값이 날짜꼴이면 날짜로, 아니면 숫자로 비교한다 */
+function _isDateLike(v) { return /^\d{4}([-.\/]\d{1,2})/.test(String(v).trim()) || /^\d{8}$/.test(String(v).trim()); }
+
+/** 셀 1개가 필터 1개를 만족하는가 */
+function _matchOne(cell, f, today) {
+  const s = String(cell == null ? '' : cell).trim();
+  const norm = (x) => String(x == null ? '' : x).trim().toLowerCase();
+  switch (f.op) {
+    case 'empty': return s === '';
+    case 'not_empty': return s !== '';
+    case 'contains': return norm(s).includes(norm(f.value));
+    case 'not_contains': return !norm(s).includes(norm(f.value));
+    case 'equals': {
+      const a = _toNum(s), b = _toNum(f.value);
+      if (a != null && b != null && !_isDateLike(s) && !_isDateLike(f.value)) return a === b;
+      return norm(s) === norm(f.value);
+    }
+    case 'not_equals': return !_matchOne(cell, { ...f, op: 'equals' }, today);
+    case 'month': { const d = _toDate(s); return !!d && d.mo === _toNum(f.value); }
+    case 'year': { const d = _toDate(s); return !!d && d.y === _toNum(f.value); }
+    case 'age_between': {
+      const a = _age(s, today);
+      if (a == null) return false;
+      const lo = _toNum(f.value), hi = _toNum(f.value2);
+      return a >= Math.min(lo, hi) && a <= Math.max(lo, hi);
+    }
+    case 'gt': case 'gte': case 'lt': case 'lte': case 'between': {
+      const 날짜 = _isDateLike(f.value) || (f.op === 'between' && _isDateLike(f.value2));
+      if (날짜) {
+        const c = _ymd(_toDate(s), 'lo');
+        if (c == null) return false;
+        if (f.op === 'between') {
+          const lo = _ymd(_toDate(f.value), 'lo'), hi = _ymd(_toDate(f.value2), 'hi');
+          if (lo == null || hi == null) return false;
+          return c >= Math.min(lo, hi) && c <= Math.max(lo, hi);
+        }
+        const b = _ymd(_toDate(f.value), f.op === 'gt' || f.op === 'gte' ? 'lo' : 'hi');
+        if (b == null) return false;
+        return f.op === 'gt' ? c > b : f.op === 'gte' ? c >= b : f.op === 'lt' ? c < b : c <= b;
+      }
+      const c = _toNum(s);
+      if (c == null) return false;
+      if (f.op === 'between') {
+        const lo = _toNum(f.value), hi = _toNum(f.value2);
+        if (lo == null || hi == null) return false;
+        return c >= Math.min(lo, hi) && c <= Math.max(lo, hi);
+      }
+      const b = _toNum(f.value);
+      if (b == null) return false;
+      return f.op === 'gt' ? c > b : f.op === 'gte' ? c >= b : f.op === 'lt' ? c < b : c <= b;
+    }
+    default: return false;
+  }
+}
+/** 무슨 기준으로 걸렀는지 사람 말로 (지니야가 근거를 밝히게 — 환각 차단) */
+function _describe(f) {
+  switch (f.op) {
+    case 'contains': return `${f.col}에 '${f.value}' 포함`;
+    case 'not_contains': return `${f.col}에 '${f.value}' 없음`;
+    case 'equals': return `${f.col}이(가) '${f.value}'`;
+    case 'not_equals': return `${f.col}이(가) '${f.value}' 아님`;
+    case 'month': return `${f.col}이(가) ${_toNum(f.value)}월`;
+    case 'year': return `${f.col}이(가) ${_toNum(f.value)}년`;
+    case 'age_between': return `나이(${f.col} 기준·만 나이) ${f.value}~${f.value2}세`;
+    case 'between': return `${f.col}이(가) ${f.value} ~ ${f.value2}`;
+    case 'gt': return `${f.col}이(가) ${f.value} 초과`;
+    case 'gte': return `${f.col}이(가) ${f.value} 이상`;
+    case 'lt': return `${f.col}이(가) ${f.value} 미만`;
+    case 'lte': return `${f.col}이(가) ${f.value} 이하`;
+    case 'empty': return `${f.col}이(가) 빈칸`;
+    case 'not_empty': return `${f.col}이(가) 채워져 있음`;
+    default: return f.col;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
 // 3. 읽기 동작 (즉시 실행 · 승인 불필요)
 // ═══════════════════════════════════════════════════════════════
 async function doSearch(ma, args) {
   const table = await loadTable(ma);
   if (!table.id) return { ok: false, message: `'${_DEMO_TITLE}' 시트를 찾지 못했어요.` };
+  const header = table.header || [];
   let hits = table.rows;
-  const col = args.column ? resolveColumn(args.column, table.header) : null;
-  const needle = String(args.contains || args.keyword || '').trim();
-  // ★특정 컬럼에 한정하지 않고 "전체 컬럼"에서 검색(컬럼명 예측 불가). 요청 컬럼은 참고값으로만 반환.
-  if (needle) hits = hits.filter((r) => table.header.some((h) => String(r[h]).includes(needle)));
+  let col = null, 조건 = '(조건 없음 · 전체 명단)', 검색범위 = '전체';
+
+  // ── ★새 길: filters (칸·비교·범위·결합). 두뇌가 조건을 주면 코드가 정확히 거른다.
+  const filters = Array.isArray(args.filters) ? args.filters.filter((f) => f && f.column) : [];
+  if (filters.length) {
+    const prepared = [];
+    for (const f of filters) {
+      const c = resolveColumn(f.column, header);
+      if (!c) return { ok: false, 오류: `'${f.column}' 칸이 명단에 없어요.`, 칸목록: header, 안내: '아래 칸목록에 있는 이름으로 다시 불러 주세요. 지어내지 마세요.' };
+      const p = _prepFilter(c, f);
+      if (p.error) return { ok: false, 오류: p.error, 칸목록: header };
+      prepared.push(p.filter);
+    }
+    const mode = String(args.match || 'AND').trim().toUpperCase() === 'OR' ? 'OR' : 'AND';
+    const today = _todayKST();
+    hits = hits.filter((r) => (mode === 'OR'
+      ? prepared.some((f) => _matchOne(r[f.col], f, today))
+      : prepared.every((f) => _matchOne(r[f.col], f, today))));
+    조건 = prepared.map(_describe).join(mode === 'OR' ? ' 또는 ' : ' 그리고 ');
+    검색범위 = prepared.map((f) => f.col).join(', ') + ' 칸만';
+    col = prepared[0].col;
+  } else {
+    // ── 기존 길(하위호환): contains/keyword. ★단 칸을 지정했고 그 칸이 실제로 있으면 그 칸만 본다.
+    //    (예전엔 칸을 무시하고 20칸을 다 훑어 생년월일 대신 만기일·가입일이 섞였다)
+    col = args.column ? resolveColumn(args.column, header) : null;
+    const needle = String(args.contains || args.keyword || '').trim();
+    if (needle) {
+      if (col && !args.keyword) {
+        hits = hits.filter((r) => String(r[col]).includes(needle));
+        조건 = `${col}에 '${needle}' 포함`; 검색범위 = `${col} 칸만`;
+      } else {
+        // 칸을 안 줬거나 못 알아본 칸이면 예전처럼 전체 칸에서 찾는다(빈손 방지 안전망)
+        hits = hits.filter((r) => header.some((h) => String(r[h]).includes(needle)));
+        조건 = `전체 칸에 '${needle}' 포함`; 검색범위 = '전체 칸';
+      }
+    }
+  }
+
   // ★count 는 ★전체 건수다(matches 는 화면용 30건만). 이 둘을 헷갈려
   //   "상위 30명 기준으로는 8명"처럼 ★틀린 수를 말하던 것을 막는다.
   return {
     ok: true,
     count: hits.length,
     전체건수: hits.length,
-    안내: `조건에 맞는 고객은 총 ${hits.length}명입니다. 아래 matches 는 그중 앞 ${Math.min(30, hits.length)}명만 보여준 것이니, ★인원수를 말할 때는 반드시 ${hits.length} 을(를) 쓰세요.`,
+    조건: 조건,                 // ★무슨 기준으로 걸렀는지 — 지니야는 이 말 그대로 근거를 밝힌다
+    검색범위: 검색범위,
+    안내: `조건에 맞는 고객은 총 ${hits.length}명입니다. 아래 matches 는 그중 앞 ${Math.min(30, hits.length)}명만 보여준 것이니, ★인원수를 말할 때는 반드시 ${hits.length} 을(를) 쓰세요.`
+      + (hits.length === 0 ? ' ★0명이면 "없다"고 정직히 말하고, 조건을 바꿔 지어내지 마세요.' : ''),
     column: col,
-    matches: hits.slice(0, 30).map((r) => slim(r, table.header)),
+    칸목록: header,             // ★두뇌가 칸을 잘못 골랐으면 스스로 고쳐 다시 부를 수 있게
+    matches: hits.slice(0, 30).map((r) => slim(r, header)),
   };
 }
 // 회장님 드라이브의 스프레드시트(시트 파일) 목록 조회 — sheet_list 도구. 최신순 최대 30개.
@@ -492,8 +724,29 @@ async function commit(ma, action, sig, opts) {
 const TOOLS = [
   { name: 'sheet_list', description: '회장님 구글 드라이브에 있는 스프레드시트(시트 파일) 목록을 조회한다. "내 구글 시트에 어떤 시트들이 있어?", "시트 목록 알려줘", "무슨 시트 있지?" 등에 사용. ★실제로 조회 가능하니 절대 "연동 안 됐다/지어낸다"고 답하지 말 것.',
     input_schema: { type: 'object', properties: {} } },
-  { name: 'sheet_search', description: '고객명단 시트에서 조건으로 여러 행을 찾는다. 예) 이번 달 만기, 특정 보험사, 자산가, 전체 명단 인원수 등. column(찾을 컬럼)과 contains(포함 값), 또는 keyword(전체 검색)를 준다.',
-    input_schema: { type: 'object', properties: { column: { type: 'string', description: '필터할 컬럼명(예: 만기일, 보험사). 생략 가능' }, contains: { type: 'string', description: 'column에 포함될 값(예: 2026-07)' }, keyword: { type: 'string', description: '전체 컬럼 대상 키워드 검색' } } } },
+  { name: 'sheet_search', description: `고객명단에서 ★어떤 조건으로든 사람을 찾는다. 조건은 filters 로 준다(권장) — 칸을 지정하고 비교·범위·결합까지 된다. 계산은 시스템이 하니 인원수를 네가 세지 마라.
+[filters 쓰는 법] filters:[{column, op, value, value2}] · match:"AND"(기본) 또는 "OR"
+  op 종류: contains(포함·기본) · not_contains · equals · not_equals · gt(초과) · gte(이상) · lt(미만) · lte(이하) · between(범위·value~value2) · month(그 칸의 날짜가 몇 월) · year(몇 년) · age_between(만 나이 범위·생년월일 칸에) · empty(빈칸) · not_empty
+[예시]
+  "생년월일이 8월인 사람" → filters:[{column:"생년월일", op:"month", value:8}]     ★'-08-' 같은 글자 찾기를 쓰지 마라(만기일·가입일이 섞인다)
+  "8월 만기"            → filters:[{column:"만기일", op:"month", value:8}]
+  "연소득 5천만원 이상"   → filters:[{column:"연소득", op:"gte", value:5000}]        (칸 단위가 '만원'이면 만원 단위 숫자로)
+  "자동차보험 여성"      → filters:[{column:"가입상품", op:"contains", value:"자동차"},{column:"성별", op:"equals", value:"여"}], match:"AND"
+  "40대"               → filters:[{column:"생년월일", op:"age_between", value:40, value2:49}]
+  "2026년 하반기 만기"   → filters:[{column:"만기일", op:"between", value:"2026-07", value2:"2026-12"}]
+(옛 방식 column/contains/keyword 도 아직 받지만, 조건이 조금이라도 정교하면 반드시 filters 를 써라)`,
+    input_schema: { type: 'object', properties: {
+      filters: { type: 'array', description: '조건 목록(권장). 각 항목 {column, op, value, value2}', items: { type: 'object', properties: {
+        column: { type: 'string', description: '★반드시 명단에 실제로 있는 칸 이름(예: 생년월일, 만기일, 가입일, 성별, 연소득, 월보험료, 보험사, 가입상품, 주소)' },
+        op: { type: 'string', description: 'contains·equals·gte·lte·gt·lt·between·month·year·age_between·empty·not_empty' },
+        value: { type: 'string', description: '비교할 값. month 면 1~12, age_between 이면 시작 나이' },
+        value2: { type: 'string', description: 'between·age_between 의 끝 값' },
+      }, required: ['column'] } },
+      match: { type: 'string', description: '조건이 여럿일 때 AND(기본) 또는 OR' },
+      column: { type: 'string', description: '(옛 방식) 필터할 컬럼명' },
+      contains: { type: 'string', description: '(옛 방식) column에 포함될 값' },
+      keyword: { type: 'string', description: '(옛 방식) 전체 컬럼 대상 키워드 검색' },
+    } } },
   { name: 'sheet_read', description: '한 고객의 상세 정보 전체를 읽는다. 이름으로 조회.',
     input_schema: { type: 'object', properties: { name: { type: 'string', description: '고객 이름' } }, required: ['name'] } },
   { name: 'sheet_create', description: '신규 고객 1명을 명단에 추가한다. 대표 지시로 즉시 반영된다(승인 버튼 없음).',
@@ -516,6 +769,15 @@ function systemPrompt() {
 [오늘 날짜] ${오늘} (한국 시간). "오늘"·"오늘 날짜로"라고 하면 이 값을 쓴다.
 [핵심 능력 — 절대 "못 한다"고 말하지 마세요]
 당신은 실제로 구글 시트를 다룰 수 있습니다: 시트 목록 조회(sheet_list), 명단 조회·검색(sheet_search/sheet_read), 추가·수정·삭제(sheet_create/update/delete). 예) "내 구글 시트에 어떤 시트들이 있어?" → sheet_list로 실제 목록 조회, "김철수 정보 알려줘" → sheet_read, "홍길동 주소 바꿔줘" → sheet_update 미리보기. 절대 "연동이 안 잡혀 있다/지어내는 게 된다/시트를 못 본다"고 답하지 마세요 — 도구로 실제 조회하세요.
+${schemaHint()}[조건 검색 원칙 — ★어떤 조건이든 sheet_search 로 실행한다]
+· 대표가 말한 조건은 ★반드시 filters 로 옮겨 담아 sheet_search 를 부른다. "그건 못 찾는다"는 말은 하지 않는다.
+· ★어느 칸인지 반드시 지정한다. 명단에는 날짜 칸이 여럿이라(생년월일·가입일·만기일) 칸을 안 정하면 엉뚱한 게 섞인다.
+  "생일이 8월" = 생년월일 칸의 month=8 이다. 만기일이 아니다.
+· "몇 월"은 글자 찾기(-08-)가 아니라 op:"month" 로 한다. 숫자 크기 비교는 gte/lte, 기간은 between 을 쓴다.
+· ★인원수는 네가 세지 않는다. 도구가 돌려준 count(전체건수) 를 그대로 말한다. matches 는 앞 30명 미리보기일 뿐이다.
+· 답할 때 도구가 돌려준 '조건' 문장을 근거로 함께 밝힌다. 예) "생년월일이 8월인 분 10명이에요."
+· 0명이면 "없어요"라고 정직하게 말한다. 조건을 몰래 바꿔 억지로 사람을 만들어내지 않는다.
+· 칸 이름을 잘못 불러 오류가 오면, 함께 온 칸목록에서 맞는 칸을 골라 ★다시 부른다(포기하지 않는다).
 [도구 사용 규칙]
 1. 대표가 명단을 물으면(누구 정보·이번 주 만기 등) search_rows/read_row로 확인해 사실만 답한다. 지어내지 않는다. ★고객을 찾을 때 특정 컬럼('고객명' 등)에 한정하지 말고, 이름이 어느 컬럼에 있든 전체 데이터에서 검색한다(파일마다 컬럼명이 다를 수 있다: 고객명·이름·성명·Name·담당자 등).
 2. 정보를 바꾸는 일(추가·수정·삭제)은 create_row/update_row/delete_row 도구를 부른다. 단, 실제 반영은 대표 승인 후에만 되며, 도구 호출은 "미리보기 준비"까지만이다.
@@ -546,6 +808,10 @@ async function runChat(ma, messages, opts) {
   if (!_anthropic) return { ok: false, reply: '엔진이 초기화되지 않았어요.' };
   const conv = (messages || []).map((m) => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: String(m.content || m.text || '') })).filter((m) => m.content);
   if (!conv.length) return { ok: false, reply: '무엇을 도와드릴까요?' };
+
+  // 🧾 3층: 칸 목록을 아직 한 번도 못 읽었으면(서버 부팅 후 첫 대화) 한 번만 읽어 둔다.
+  //   두 번째부터는 기억하고 있어 추가 조회가 없다. 실패해도 대화는 그대로 진행한다.
+  if (!_SCHEMA.header.length) { try { await loadTable(ma); } catch (e) {} }
 
   const trace = [];
   for (let hop = 0; hop < 5; hop++) {
@@ -614,6 +880,9 @@ module.exports = {
   doSearch, doRead, doListSheets, planWrite,
   loadTable, resolveColumn, detectNameCol, signAction, verifyAction,
   findByName, suggestNames, nameSimilarity, toJamo, TOOLS,
+  // 🔪 1층 조건 필터 엔진 + 🧾 3층 칸 목록 (단위시험용 · 동작은 doSearch/systemPrompt 안에서만 쓴다)
+  schemaHint, systemPrompt,
+  _filter: { toNum: _toNum, toDate: _toDate, age: _age, prep: _prepFilter, match: _matchOne, describe: _describe, todayKST: _todayKST, shapeOf: _shapeOf },
   // 🆕 컬럼 추가 보조(내보내기만 추가 · 동작 변경 없음). 단위테스트와 재사용용.
   findSimilarColumn, colLetter,
   _internals: { normValue: _normValue, planColumn: _planColumn, ensureGridWidth: _ensureGridWidth, normCol: _normCol },
