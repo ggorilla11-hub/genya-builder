@@ -4650,51 +4650,26 @@ function addToolAsk(){ window._ACTIVE_SKILL='add_tool'; pushMsg('gen','어떤 �
             try{ if(window.galaxySpeak) window.galaxySpeak(Math.min(9000, 900+t.length*95)); }catch(e){}  /* 🎬 은하: 지니야가 말하는 동안 잔잔한 호흡(글자 수만큼) */
           }
           else pushMsg('me', t.replace(/[<>]/g,''));                                              // role 미상이면 일단 사용자로 표시(누락 방지)
-          // ★PC 음성 근본수정: PC STT는 한 문장을 여러 개의 final 조각으로 쪼개 보내는 경우가 있어(폰은 통문장으로 옴) 조각마다 검사하면 "결재"와 "올려"가 서로 다른 조각에 흩어져 감지가 안 됨 → 최근 사용자 발화(final)를 이어붙인 버퍼로 검사. 발동 시 버퍼를 비우고 4초 쿨다운으로 중복 등록을 막는다(폰 통문장 경로는 그대로 즉시 동작).
+          // ★★B안 — 음성 관문 제거 (2026-07-31 대표님 승인 · 촬영 핵심)
+          //   왜: 예전엔 정규식 6개에 맞는 말만 서버로 갔다. 그래서 "명단 띄워봐"·"다음"·"결재함 열어줘"·
+          //       "우측으로 밀어봐"·"발굴 돌려"는 ★요청조차 안 가서 지니야가 말로만 답하고 화면은 그대로였다
+          //       (실측: 17문장 중 13개가 안 감). 화면을 움직이는 코드(_voiceExec 응답부 14종)는 이미 다 있었다.
+          //   → 텍스트(sendMsg)와 똑같이 ★무조건 서버로 보낸다. 무엇을 할지는 ★서버가 판단한다(대표님 성배).
+          //   ★대신 지켜야 할 것: PC 음성은 한 문장을 여러 final 조각으로 쪼개 보낸다(폰은 통문장).
+          //     조각마다 보내면 요청이 두세 번 나가 표가 두 번 뜬다 → ★마지막 조각 후 잠깐 잠잠해지면 한 번만 보낸다.
           if(r!=='assistant'&&r!=='bot'&&r!=='ai'){
             var _now=Date.now();
             if(!window._vBuf || (_now-(window._vBufAt||0))>7000) window._vBuf='';   // 7초 이상 조용하면 새 발화로 리셋
             window._vBuf=(window._vBuf?window._vBuf+' ':'')+t; window._vBufAt=_now;
-            var B=window._vBuf;
-            var _cool=(_now-(window._vFireAt||0))<4000;  // 방금 발동했으면 잠시 무시(중복 결재 차단)
-            // (6·7) 📣 홍보 / ⏰ 리마인더 — 서버와 같은 배타 규칙. '알림톡'은 결재라 제외되고, 문서 낱말이면 문서에 양보.
-            if(!_cool && !/(카드|스캔)/.test(B) && !/(결재|결제|발송|알림톡|승인)/.test(B) && !/이벤트/.test(B)
-               && !/(제안서|비교표|안내문|상담\s*보고서|보고서|세미나\s*자료|발표\s*자료)/.test(B)
-               && ( (/(리마인더|리마인드|다시\s*알려|잊지|알림(?!톡))/.test(B) && /(걸어|설정|등록|해줘|맞춰|넣어|알려|잡아)/.test(B))
-                 || (!/(잡아|잡을|예약|비워)/.test(B) && !/(리마인더|리마인드|다시\s*알려|잊지|알림(?!톡))/.test(B)
-                     && /(홍보|마케팅|인스타|블로그|포스팅|릴스|숏츠|콘텐츠)/.test(B) && /(써|쓰|만들|생성|작성|뽑아|올려줘)/.test(B)) )){
-              try{ _voiceExec(B); }catch(e){} window._vBuf=''; window._vFireAt=_now;
-            }
-            // (5) 📄 문서 생성: "제안서 만들어줘" — 서버와 같은 배타 규칙(단위테스트 22/22 고정).
-            else
-            //     문서 이름이 있어야만 발동하고, '잡아/예약'이면 일정 등록에 양보한다.
-            if(!_cool && !/(카드|스캔)/.test(B) && !/(결재|결제|발송|알림톡|승인)/.test(B) && !/이벤트/.test(B)
-               && !/(잡아|잡을|예약|비워)/.test(B)
-               && /(제안서|비교표|안내문|상담\s*보고서|보고서|세미나\s*자료|발표\s*자료)/.test(B) && /(만들|생성|뽑아|작성|출력|다운)/.test(B)){
-              try{ _voiceExec(B); }catch(e){} window._vBuf=''; window._vFireAt=_now;
-            }
-            // (4) 📅 일정 질문: "오늘 일정 뭐야?" "이번주 누구 만나?" — 서버와 같은 배타 규칙(단위테스트 23/23 고정)
-            else
-            //     '잡아/예약'(등록)이면 조회가 아니고, 명단 질문(만기·생일·고객목록)은 시트 분기에 양보한다.
-            if(!_cool && !/(카드|스캔)/.test(B) && !/이벤트/.test(B) && !/(결재|결제|발송|알림톡|승인)/.test(B)
-               && !/(잡아|잡을|예약|비워)/.test(B) && !/(명단|고객\s*(목록|전체)|만기|생일|리드|발굴)/.test(B)
-               && (/(일정|스케줄|약속|미팅|상담)/.test(B) || /(오늘|내일|모레|어제|이번\s*주|지난\s*주|저번\s*주|다음\s*주|이번\s*달|금주|주말)/.test(B))
-               && /(뭐|무엇|뭣|누구|알려|보여|있어|있나|확인|어때|어떻게\s*되|정리)/.test(B)){
-              try{ _voiceExec(B); }catch(e){} window._vBuf=''; window._vFireAt=_now;
-            }
-            // (3) ⭐ 이벤트 만들기: "○○ 이벤트 만들어줘" — 카드·결재 낱말을 배제해 셋이 서로 안 물리게.
-            else if(!_cool && /이벤트/.test(B) && /(만들|추가|생성|등록)/.test(B) && !/(카드|스캔)/.test(B) && !/(결재|결제|발송|알림톡|승인)/.test(B)){
-              try{ _voiceExec(B); }catch(e){} window._vBuf=''; window._vFireAt=_now;
-            }
-            // (1) 카드 띄우기: "○○ 카드 띄워/스캔/보여줘"
-            else if(/(카드|스캔)/.test(B) && /(띄워|띄우|보여|열어|뜨|스캔|해줘|해|줘)/.test(B)){
-              var _cm=B.replace(/지니야|고객님|고객|카드|스캔해줘|스캔해|스캔|띄워줘|띄워|띄우|보여줘|보여|열어줘|열어|해줘|줘|증권|서류|자료|파일|명단|이거|저거|화면|을|를|의|좀|씨|님/g,' ').trim().match(/([가-힣]{2,4})/);
-              if(_cm && _cm[1] && typeof openCustomerCard==='function'){ try{ openCustomerCard(_cm[1]); }catch(e){} window._vBuf=''; window._vFireAt=_now; }
-            }
-            // (2) 결재/발송 실행(FC 불필요): "○○ 결재함에 올려/안내문 발송" → 누적 문장 전체를 /api/order로 전달 → 서버 approval이 실제 결재함 등록. Vapi는 말만 하므로 실제 등록은 여기서.
-            else if(!_cool && !/(카드|스캔)/.test(B) && !/이벤트/.test(B) && ((/(결재|결제|발송|알림톡|승인)/.test(B) && /(올려|올릴|올려줘|보내|발송|해줘|등록|잡아)/.test(B)) || (/(안내문|문자|메일|이메일|카톡)/.test(B) && /(보내|발송|올려|올릴)/.test(B)))){
-              try{ _voiceExec(B); }catch(e){} window._vBuf=''; window._vFireAt=_now;
-            }
+            try{ clearTimeout(window._vTimer); }catch(e){}
+            window._vTimer=setTimeout(function(){
+              var B=String(window._vBuf||'').trim(); window._vBuf='';
+              if(!B) return;
+              // 같은 말이 곧바로 또 오면(SDK 재전송·메아리) 한 번만 처리한다
+              if(B===window._vLast && (Date.now()-(window._vLastAt||0))<8000) return;
+              window._vLast=B; window._vLastAt=Date.now();
+              try{ _voiceExec(B, true); }catch(e){}          // ★true = 음성에서 온 말(표시 규칙에 쓴다)
+            }, 900);   // ★마지막 조각 후 0.9초 잠잠하면 그때 딱 한 번 보낸다
           }
         }
       }catch(e){} });
@@ -5492,11 +5467,21 @@ function sheetWriteCommit(){
 // ★결재함 열기 버튼(대화창에 남는 확인 UI): 서버가 실제로 pending을 만든 경우에만 붙여 "올렸다"는 눈으로 확인 + 한 번에 결재함으로.
 function _apOpenBtnHtml(){ return '<div style="margin-top:7px"><button onclick="openApproval()" style="background:var(--teal);color:#fff;border:none;border-radius:9px;padding:8px 15px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit">🗂️ 결재함 열기 · 확인·승인 →</button></div>'; }
 // ★음성 액션 실행: 통화 중 결재/발송 발화를 텍스트처럼 /api/order로 보내 서버가 실제 처리. ★실제 등록 결과(서버 d.text)만 표시 → 등록 안 됐으면 "올렸다"고 안 함(환각 방지). Vapi FC 미사용.
-function _voiceExec(q){
+function _voiceExec(q, _음성){
   fetch('/api/order',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({q:q, history:(typeof _histForSend==='function'?_histForSend():[]), lastMentioned:(window._LAST_MENTIONED||[]), cardOpen:_isCardOpen(), findStats:(window._FIND_STATS||null), salesStats:(window._SALES_STATS||null), filmCur:(window._FILM_CUR||'')})})
     .then(function(r){return r.json();}).then(function(d){
       if(!d) return;
-      if(d.text) pushMsg('gen', renderMd(d.text)); // 서버가 실제로 올렸을 때만 "결재함에 올렸어요"라고 답함(approval.create 결과)
+      // ★★음성 표시 규칙 (2026-07-31 B안) — 지니야가 ★두 번 답하지 않게 하는 유일한 곳.
+      //   음성일 땐 Vapi가 이미 ★목소리로 답한다. 서버 글까지 띄우면 말과 글이 겹치거나 서로 다른 말을 한다.
+      //   그래서 음성에서는 이렇게만 글을 띄운다:
+      //     ① 화면이 실제로 움직인 경우(표·카드·결재함 등 d.action) → 글은 숨긴다. ★표가 곧 답이다.
+      //     ② 그냥 대화(kind='💬 지니야')       → 숨긴다. 목소리로 이미 답했다.
+      //     ③ 그 밖의 실제 결과(명단 조회 결과·증권 해석·결재 등록·명단 반영) → ★보여준다.
+      //        이건 목소리만으로는 확인이 안 되고, 값·근거가 화면에 남아야 하는 것들이다.
+      //   ★텍스트(_음성 아님)는 예전 그대로 항상 보여준다 — 기존 동작 무변.
+      var _잡담 = String(d.kind||'')==='💬 지니야';
+      var _글보여 = !_음성 || (!d.action && !_잡담) || !!d.pending;
+      if(d.text && _글보여) pushMsg('gen', renderMd(d.text)); // 서버가 실제로 올렸을 때만 "결재함에 올렸어요"라고 답함(approval.create 결과)
       if(d.pending){ try{ pushMsg('gen', _apOpenBtnHtml()); }catch(e){} try{ if(document.getElementById('apList')) apRender(); }catch(e){} } // 실제 등록됨(서버 pending) → 열기 버튼 + 열려있는 결재함 즉시 갱신
       if(d.rows){ try{ _cacheCardRows(d.rows); }catch(e){} }
       if(d.action==='open_card'&&d.customer){ window._CARD_MISS=0; try{ _filmRemember(d.customer); }catch(e){} _카드확인(function(){ openCustomerCard(d.customer); }, 1); }
