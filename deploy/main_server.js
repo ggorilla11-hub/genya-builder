@@ -3565,7 +3565,17 @@ async function orderHandler(req, res) {
       try {
         const _ft = await sheetsCrud.loadTable(null);
         const _fr = filmFull.build(_ft, q);
-        if (_fr) { out.action = 'open_full_roster'; out.roster = _fr; console.log(`[🎬명단표] ${_fr.total}명 · 칸 ${_fr.cols.length}개 · 강조 ${_fr.hiCount}명 (${_fr.focusLabel || '없음'})`); }
+        if (_fr) {
+          // ★기존 카드 분기가 먼저 만든 답(예: "8월 만기 14명 카드를 띄울게요")이 남으면
+          //   화면엔 표가 뜨는데 말은 딴소리가 된다 → 표 기준으로 다시 쓴다.
+          out.action = 'open_full_roster'; out.roster = _fr;
+          out.kind = '📇 고객명단';
+          delete out.customers; delete out.customer; delete out.label;   // 카드 잔재 제거(카드가 같이 뜨지 않게)
+          out.text = _fr.focusLabel
+            ? `${_fr.focusLabel} 표로 띄웠어요. (전체 ${_fr.total}명 중)`
+            : `고객 명단 ${_fr.total}명 표로 띄웠어요.`;
+          console.log(`[🎬명단표] ${_fr.total}명 · 칸 ${_fr.cols.length}개 · 강조 ${_fr.hiCount}명 (${_fr.focusLabel || '없음'})`);
+        }
       } catch (e) { console.log('[🎬명단표] 실패(대화는 그대로 진행):', e.message); }
     }
     // 🎬 촬영 B-2: "우측으로 밀어봐"·"아래로 내려봐" → 화면이 명단 표를 민다(손 안 대고 말로).
