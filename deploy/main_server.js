@@ -441,6 +441,7 @@ sheetsCrud.init({
 // require 조차 되지 않고, 아래 한 줄은 통째로 건너뛴다 = 기존 동작 100% 그대로.
 // 켜지면 명단 관문이 촬영용 샘플 80명으로 바뀐다(구글 시트 접근 0 · 실제 고객 무접촉 · 시트 쓰기 차단).
 const FILMING = process.env.FILMING_MODE === '1';
+const FILM_ROSTER_FILE = 'genya_customer_list_80.xlsx';   // [명단·연결]에 보일 촬영용 파일 이름
 let filmFull = null;
 if (FILMING) { require('./filming_roster').enable(sheetsCrud); filmFull = require('./filming_fullscreen'); }
 // 🔌 B-8 훅(엄마2 재인덱싱 구독 지점): 지금은 로그만. 엄마2가 sheetsCrud.onWrite(cb)로 Pinecone 재인덱싱 연결.
@@ -3480,7 +3481,7 @@ async function orderHandler(req, res) {
       // 🎬 촬영 모드: 카드 작업 중 대화에서도 명단(80명)을 들고 답한다. 라이브면 빈 문자열.
       let _fb2 = '';
       if (FILMING && filmFull) { try { _fb2 = filmFull.brainContext(await sheetsCrud.loadTable(null)); } catch (e) {} }
-      const text = await askClaude(sys + _fb2, hist.concat([{ role: 'user', content: q }]), 8192, { admin: _admin, webSearch: true });
+      const text = await askClaude(sys + _fb2, hist.concat([{ role: 'user', content: q }]), FILMING ? 1400 : 8192, { admin: _admin, webSearch: !FILMING });
       out = { kind: '💬 지니야', text, engine: _lastAskModel || pickedModel(q, { admin: _admin }) };
     } else if (/보내|발송|알림톡|결재|승인|올려\s*(줘|둬|둘|놔|주세요)|초안.{0,10}(올려|결재|발송|보내|저장)/.test(q)) {
       // 🗂️ Step 2-C: 발송·결재 의도 → 결재함 도구 루프(저장→승인→하드가드 발송). "발송 못 한다" 오답 원천 제거.
@@ -3546,7 +3547,8 @@ async function orderHandler(req, res) {
       if (FILMING && filmFull) {
         try { _filmBrain = filmFull.brainContext(await sheetsCrud.loadTable(null)); } catch (e) {}
       }
-      const text = await askClaude(sysP + _filmBrain, hist.concat([{ role: 'user', content: q }]), 8192, { admin: _admin, webSearch: true });
+      // 🎬 촬영은 속도가 생명이라 웹검색을 끈다(검색이 붙으면 몇 초씩 더 걸린다). 라이브는 그대로 켠 채.
+      const text = await askClaude(sysP + _filmBrain, hist.concat([{ role: 'user', content: q }]), FILMING ? 1400 : 8192, { admin: _admin, webSearch: !FILMING });
       out = { kind: '💬 지니야', text, engine: _lastAskModel || pickedModel(q, { admin: _admin }) };
       if (uid && personalMem.configured()) personalMem.saveMemoryAsync({ ownerId: uid, scope: memScope, customerId: cust, source: 'dialog', text: q + '\n→ ' + text, summary: (cust ? cust + '님 ' : '') + q });
     }
@@ -3672,6 +3674,16 @@ app.post('/api/roster/import', async (req, res) => {
 // 📇 명단연결 패널용: 현재 회원 시트의 고객 목록 조회(읽기 전용). 기존 loadTable 활용·서버 저장 0.
 app.get('/api/roster/list', async (req, res) => {
   try {
+    // 🎬 촬영 모드: 구글 로그인 없이도 촬영용 80명이 "이미 업로드된 명단"으로 잡혀야 한다.
+    //    (전엔 로그인 관문에 막혀 [명단·연결]이 "–명 저장됨"으로 비어 보였다)
+    //    라이브면 아래 원래 관문을 그대로 탄다.
+    if (FILMING) {
+      const t0 = await sheetsCrud.loadTable(null);
+      // 드로어가 "어느 파일에서 올라온 명단인지" 묶어 보여주므로 파일명을 붙인다(표시용 · 명단 표엔 안 들어감).
+      const _src = '소스파일', _up = '업로드일';
+      const _rows = (t0.rows || []).map((r) => Object.assign({}, r, { [_src]: FILM_ROSTER_FILE, [_up]: _seoul().today }));
+      return res.json({ ok: true, count: _rows.length, header: (t0.header || []).concat([_src, _up]), rows: _rows });
+    }
     const ma = gateGoogle(req, res); if (!ma) return;
     const t = await sheetsCrud.loadTable(ma);
     res.json({ ok: true, count: (t.rows || []).length, header: t.header || [], rows: t.rows || [] });
