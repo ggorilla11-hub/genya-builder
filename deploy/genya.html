@@ -5394,7 +5394,7 @@ window.sendMsg=function(){
   s.appendChild(w); s.scrollTop=s.scrollHeight;
   var job=(GENYA_JOBS[CUR_JOB]||{}).label||'';
   try{ if(window.galaxyState) window.galaxyState('connecting'); }catch(e){}   /* 🎬 은하: 생각하는 중 */
-  fetch('/api/order',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({q:v,message:v,job:job,history:_histForSend(),activeSkill:(window._ACTIVE_SKILL||''),lastMentioned:(window._LAST_MENTIONED||[]),cardOpen:_isCardOpen(),findStats:(window._FIND_STATS||null),salesStats:(window._SALES_STATS||null)})})
+  fetch('/api/order',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({q:v,message:v,job:job,history:_histForSend(),activeSkill:(window._ACTIVE_SKILL||''),lastMentioned:(window._LAST_MENTIONED||[]),cardOpen:_isCardOpen(),findStats:(window._FIND_STATS||null),salesStats:(window._SALES_STATS||null),filmCur:(window._FILM_CUR||'')})})
    .then(function(r){return r.json();}).then(function(d){ w.remove();
      if(d&&d.needsConnect){ pushMsg('gen',(d.text||'구글 데이터 연결이 필요해요')+' <a href="#" onclick="connectGoogle();return false;" style="color:var(--teal-d);font-weight:700">연결하기 →</a>'); return; }
      var reply=(d&&(d.text||d.answer))||(d&&d.error)||'(응답 없음)';
@@ -5492,7 +5492,7 @@ function sheetWriteCommit(){
 function _apOpenBtnHtml(){ return '<div style="margin-top:7px"><button onclick="openApproval()" style="background:var(--teal);color:#fff;border:none;border-radius:9px;padding:8px 15px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit">🗂️ 결재함 열기 · 확인·승인 →</button></div>'; }
 // ★음성 액션 실행: 통화 중 결재/발송 발화를 텍스트처럼 /api/order로 보내 서버가 실제 처리. ★실제 등록 결과(서버 d.text)만 표시 → 등록 안 됐으면 "올렸다"고 안 함(환각 방지). Vapi FC 미사용.
 function _voiceExec(q){
-  fetch('/api/order',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({q:q, history:(typeof _histForSend==='function'?_histForSend():[]), lastMentioned:(window._LAST_MENTIONED||[]), cardOpen:_isCardOpen(), findStats:(window._FIND_STATS||null), salesStats:(window._SALES_STATS||null)})})
+  fetch('/api/order',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({q:q, history:(typeof _histForSend==='function'?_histForSend():[]), lastMentioned:(window._LAST_MENTIONED||[]), cardOpen:_isCardOpen(), findStats:(window._FIND_STATS||null), salesStats:(window._SALES_STATS||null), filmCur:(window._FILM_CUR||'')})})
     .then(function(r){return r.json();}).then(function(d){
       if(!d) return;
       if(d.text) pushMsg('gen', renderMd(d.text)); // 서버가 실제로 올렸을 때만 "결재함에 올렸어요"라고 답함(approval.create 결과)

@@ -3589,6 +3589,31 @@ async function orderHandler(req, res) {
         }
       } catch (e) { console.log('[🎬명단표] 실패(대화는 그대로 진행):', e.message); }
     }
+    // 🎬 촬영 B-6: 말로 항목 추가 — ★승인 버튼도, 구글 연결도 없이 즉시 반영.
+    //    내부 명단 수정만 여기로 온다. 고객에게 나가는 발송은 판별에서 제외돼 승인 하드가드를 그대로 탄다.
+    if (FILMING && filmFull && !out.action) {
+      try {
+        const _t3 = await sheetsCrud.loadTable(null);
+        const _nc3 = _t3.nameCol || '고객명';
+        const _names = (_t3.rows || []).map((r) => String(r[_nc3] || '').trim()).filter(Boolean);
+        const _af = filmFull.wantsAddField(q, _names);
+        if (_af) {
+          const 대상 = _af.대상 || String((req.body && req.body.filmCur) || '').trim();
+          const _r6 = require('./filming_roster').addField(대상, _af.칸, _af.값);
+          out.kind = '🗂️ 고객명단';
+          delete out.customers; delete out.customer; delete out.needsConnect; delete out.connectUrl;
+          if (_r6.ok) {
+            out.action = 'field_added'; out.added = _r6;
+            out.text = 대상
+              ? `${대상}님 명단에 '${_r6.칸}' 항목을 ${_r6.새칸 ? '새로 만들고 ' : ''}${_r6.값} 로 기록했어요. 바로 반영했습니다.`
+              : `명단에 '${_r6.칸}' 항목을 새로 만들었어요. 누구 것인지 말씀해 주시면 값을 넣을게요.`;
+          } else {
+            out.text = _r6.error || '항목을 추가하지 못했어요.';
+          }
+          console.log(`[🎬항목추가] ${대상 || '(대상없음)'} · ${_af.칸} = ${_af.값} · ${_r6.ok ? '반영됨' : _r6.error}`);
+        }
+      } catch (e) { console.log('[🎬항목추가] 실패:', e.message); }
+    }
     // 🎬 촬영 B-5: 카드 순회 — "다음"·"이전". 화면이 순서를 들고 카드를 넘긴다.
     //    ★서버는 순서(이름 배열)만 알려주고 상태는 안 갖는다(제로 인그레스 유지).
     if (FILMING && filmFull) {

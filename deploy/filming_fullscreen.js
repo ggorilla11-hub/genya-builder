@@ -75,6 +75,44 @@ function wantsStep(q) {
   return null;
 }
 
+/**
+ * ★B-6 · 말로 항목 추가 (2026-07-31 대표님 지시)
+ * "이영희 득남출산 컬럼 추가해 · 그냥 해" → 승인 버튼 없이 즉시 반영.
+ * ★내부 명단 수정만 해당한다. 고객에게 나가는 발송은 여기 안 걸린다(승인 유지).
+ * @returns {{칸:string, 대상:string, 값:string}|null}
+ */
+function wantsAddField(q, names) {
+  const s = String(q || '').trim();
+  if (!s) return null;
+  // ★발송은 절대 여기로 오면 안 된다(승인 필수 영역).
+  if (/문자|메일|이메일|카톡|알림톡|발송|보내|결재|승인해\s*줘/.test(s)) return null;
+  // 항목을 만들라는 말인가
+  if (!/(칸|컬럼|항목|필드)\s*(을|를)?\s*(추가|만들|생성|넣)|추가해|기록해|업데이트|적어|남겨/.test(s)) return null;
+
+  // 대상 고객: 문장에 이름이 있으면 그 사람. 없으면 화면이 알려준 "지금 보는 고객".
+  let 대상 = '';
+  (names || []).forEach((n) => { if (n && s.includes(n)) 대상 = n; });
+
+  // 항목 이름 뽑기: "○○ 컬럼/항목/칸 추가" 또는 "○○했으니 추가"
+  let 칸 = '';
+  // ★"출산했으니 컬럼 추가"를 먼저 본다 — 안 그러면 "출산했으니" 통째가 칸 이름이 된다(실측으로 잡음).
+  let m = s.match(/([가-힣]{2,10}?)\s*(?:했으니|해서|하셔서|하셨으니)/);
+  if (m) 칸 = m[1];
+  if (!칸) { m = s.match(/([가-힣A-Za-z0-9()·\s]{1,12}?)\s*(?:칸|컬럼|항목|필드)\s*(?:을|를)?\s*(?:추가|만들|생성|넣)/); if (m) 칸 = m[1]; }
+  if (!칸) { m = s.match(/([가-힣]{2,10})\s*(?:을|를)\s*(?:추가|기록|남겨|적어)/); if (m) 칸 = m[1]; }
+  if (!칸) return null;
+
+  // 대상 이름이 항목명에 섞여 들어온 경우 떼어낸다("이영희 득남출산 컬럼" → "득남출산")
+  if (대상) 칸 = 칸.split(대상).join('');
+  칸 = 칸.replace(/^(그냥|바로|지금|좀)\s*/g, '').replace(/님\s*$/, '').trim();
+  if (!칸 || 칸.length > 12) return null;
+
+  // 값: "오늘 날짜"면 오늘, 아니면 'O' 표시
+  const 오늘 = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
+  const 값 = /오늘|금일|today/.test(s) ? 오늘 : 오늘;   // 이벤트 기록은 날짜가 기본
+  return { 칸, 대상, 값 };
+}
+
 /** 오늘(한국시간) 'YYYY-MM'. 시험에서 날짜를 고정할 수 있게 인자로 덮어쓸 수 있다. */
 function _todayYM() { return new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 7); }
 
@@ -209,4 +247,4 @@ function brainContext(table, todayYM) {
   return s;
 }
 
-module.exports = { wantsRoster, wantsScroll, wantsStep, stepOrder, wantsMonth, build, brainContext, SHOW_COLS, _todayYM };
+module.exports = { wantsRoster, wantsScroll, wantsStep, stepOrder, wantsMonth, wantsAddField, build, brainContext, SHOW_COLS, _todayYM };

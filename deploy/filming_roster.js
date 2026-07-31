@@ -157,4 +157,36 @@ function enable(crud) {
   return { rows: SRC_ROWS.length, source: SRC_NAME };
 }
 
-module.exports = { HEADER, ROWS, table, enable, source: SRC_NAME };
+/**
+ * ★B-6 · 말로 항목(칸) 추가 — 촬영 모드 전용 (2026-07-31 대표님 지시)
+ * 예) "최동욱 출산했으니 컬럼 추가해서 오늘 날짜로" → '출산' 칸을 만들고 그 분만 오늘 날짜.
+ * ★촬영용 명단(메모리)에만 반영한다 — 실제 고객 시트·구글은 손대지 않는다.
+ * ★CSV 원본 파일도 안 고친다(서버를 껐다 켜면 원래대로).
+ * @returns {{ok:boolean, 칸:string, 대상:string, 값:string, 새칸:boolean, error?:string}}
+ */
+function addField(고객명, 칸, 값) {
+  칸 = String(칸 || '').trim();
+  고객명 = String(고객명 || '').trim();
+  값 = String(값 == null ? '' : 값);
+  if (!칸) return { ok: false, error: '어떤 항목인지 못 알아들었어요.' };
+
+  const nameIdx = SRC_HEADER.indexOf('고객명') >= 0 ? SRC_HEADER.indexOf('고객명') : 1;
+  const 있던칸 = SRC_HEADER.indexOf(칸);
+  let 새칸 = false;
+  let ci = 있던칸;
+  if (ci < 0) {                       // 없는 항목이면 맨 끝에 새로 만든다(기존 칸 위치는 안 건드림)
+    SRC_HEADER.push(칸);
+    SRC_ROWS.forEach((r) => { while (r.length < SRC_HEADER.length) r.push(''); });
+    ci = SRC_HEADER.length - 1;
+    새칸 = true;
+  }
+  if (!고객명) return { ok: true, 칸, 대상: '', 값: '', 새칸 };   // 칸만 만들고 값은 안 넣음
+
+  const row = SRC_ROWS.find((r) => String(r[nameIdx] || '').trim() === 고객명);
+  if (!row) return { ok: false, error: `명단에서 '${고객명}'님을 못 찾았어요.`, 칸, 새칸 };
+  while (row.length < SRC_HEADER.length) row.push('');
+  row[ci] = 값;
+  return { ok: true, 칸, 대상: 고객명, 값, 새칸 };
+}
+
+module.exports = { HEADER, ROWS, table, enable, addField, source: SRC_NAME };
