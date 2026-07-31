@@ -23,6 +23,9 @@ function wantsRoster(q) {
   const s = String(q || '');
   // ★"시트 보여줘"도 명단 요청이다(2026-07-31 대표님 지시). 촬영 모드에선 이 80명이 곧 시트다.
   if (!/명단|시트|스프레드시트|엑셀|고객\s*목록|고객\s*리스트|리스트|목록|만기|고객\s*전체|전체\s*고객/.test(s)) return false;
+  // ★"회사 상황 어때"·"뭐 챙겨야 해" 는 브리핑이지 표가 아니다(2026-07-31 촬영 씬1).
+  //   표를 띄우면 대표님이 원하신 "능동 제안"이 묻힌다.
+  if (/상황\s*어때|어떻게\s*돼|뭐\s*(챙겨|해야|할)|챙겨야|브리핑|보고해|요약/.test(s)) return false;
   // "띄워/보여/열어/올려/펼쳐" 같은 화면에 띄우라는 말이 있어야 전체 화면을 연다.
   // (그냥 "명단 몇 명이야" 같은 질문은 지금처럼 말로만 답한다)
   return /띄워|띄우|보여|열어|열어봐|펼쳐|크게|전체\s*화면|풀\s*화면|화면에/.test(s);
@@ -251,7 +254,50 @@ function brainContext(table, todayYM) {
     나머지.forEach((r) => { s += `  ${r[nameCol]} · ${r['가입상품'] || ''} · ${r['만기일'] || ''}\n`; });
   }
   s += '★이 명단에 없는 고객·값은 지어내지 마라. 명단에 없으면 "명단에 없어요"라고 말한다.\n';
+
+  // ★능동 제안 (2026-07-31 촬영 씬1) — 수동 도구가 아니라 진짜 비서로.
+  //   ★근거는 전부 위 명단의 실제 값이다. 없는 사실을 만들어 제안하지 않는다.
+  const d = new Date(Date.now() + 9 * 3600 * 1000);
+  const 일 = d.getUTCDate();
+  const 시기 = 일 <= 10 ? '월초' : (일 <= 20 ? '월중' : '월말');
+  s += '\n[지금 상황 — 먼저 챙길 것을 스스로 제안하라]\n';
+  s += `오늘은 ${d.toISOString().slice(0, 10)}, ★${시기}다.\n`;
+  if (곧만기.length) {
+    s += `${Number(ym.slice(5, 7))}월 만기가 ${곧만기.length}명 있다 — 갱신 상담을 놓치면 그대로 이탈이다.\n`;
+    s += `★"회사 상황 어때?"·"오늘 뭐 챙겨야 해?" 처럼 물으면 이렇게 답한다:\n`;
+    s += `  ① 지금 상태를 짧게 브리핑한다(관리 고객 ${table.rows.length}명, ${Number(ym.slice(5, 7))}월 만기 ${곧만기.length}명).\n`;
+    s += `  ② ★먼저 무엇을 하면 좋을지 ★스스로 제안한다. 나열만 하고 끝내지 마라.\n`;
+    s += `     예) "${시기}이니 ${Number(ym.slice(5, 7))}월 만기 ${곧만기.length}분부터 먼저 챙기시면 좋겠습니다. 지금 명단 띄워드릴까요?"\n`;
+    s += `  ③ 바로 할 수 있는 다음 행동 하나를 붙인다(명단 띄우기·카드 보기·안내 문자 초안 등).\n`;
+  }
+  s += '★제안은 위 명단의 사실에만 근거한다. 숫자·이름을 지어내지 않는다.\n';
+  s += '★답은 짧게. 표 나열 말고 사람이 말하듯 3~5줄.\n';
   return s;
 }
 
-module.exports = { wantsRoster, wantsScroll, wantsStep, stepOrder, wantsMonth, wantsAddField, build, brainContext, SHOW_COLS, _todayYM };
+/**
+ * ★능동 제안 (2026-07-31 촬영 씬1) — "지금 이걸 먼저 하세요" 한 줄.
+ * 브리핑 뒤에 덧붙인다. ★근거는 명단의 실제 값뿐이며 숫자·이름을 지어내지 않는다.
+ * 다가올 만기가 없으면 아무 말도 안 한다(억지 제안 금지).
+ */
+function suggest(table, todayYM) {
+  if (!table || !Array.isArray(table.rows) || !table.rows.length) return '';
+  const t = todayYM || _todayYM();
+  const ym = _nearestMonth(table.rows, t);
+  if (!ym) return '';
+  const 곧 = table.rows.filter((r) => String(r['만기일'] || '').startsWith(ym));
+  if (!곧.length) return '';
+
+  const d = new Date(Date.now() + 9 * 3600 * 1000);
+  const 일 = d.getUTCDate();
+  const 시기 = 일 <= 10 ? '월초' : (일 <= 20 ? '월중' : '월말');
+  const 달 = Number(ym.slice(5, 7));
+  const nameCol = table.nameCol || '고객명';
+  const 앞 = 곧.slice(0, 3).map((r) => r[nameCol]).join('·');
+
+  return `⭐ 팀장 제안 · 지금 ${시기}이니 ${달}월 만기 ${곧.length}분부터 먼저 챙기시면 좋겠습니다`
+    + `(${앞}${곧.length > 3 ? ' 외 ' + (곧.length - 3) + '분' : ''}).`
+    + ` 갱신 상담은 만기 전에 닿아야 놓치지 않습니다 — "만기 ${곧.length}명 띄워" 하시면 바로 보여드릴게요.`;
+}
+
+module.exports = { wantsRoster, wantsScroll, wantsStep, stepOrder, wantsMonth, wantsAddField, build, brainContext, suggest, SHOW_COLS, _todayYM };

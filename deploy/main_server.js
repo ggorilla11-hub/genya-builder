@@ -3123,7 +3123,12 @@ async function orderHandler(req, res) {
     const _newEvt = _parseNewEvent(q);
     if (_newEvt) console.log(`[📅일정등록 감지] "${_newEvt.title}" ${_newEvt.표시} · q="${String(q).slice(0, 40)}" · ★발송 아님(내 캘린더)`);
     const _reSchedWord = /(일정|스케줄)/;
+    // ★명단 얘기는 일정(캘린더)으로 보지 않는다(2026-07-31 촬영 씬1).
+    //   "이번달 챙길 사람 있어?"·"오늘 뭐 챙겨야 해?" 가 '달·오늘' 때문에 일정으로 오인돼
+    //   "구글 캘린더 연결하세요"로 새던 것을 막는다.
+    const _reRoster = /만기|명단|고객|챙길|챙겨|시트|갱신|상담\s*대상|누구.*챙/;
     const _isSchedAsk = !/(카드|스캔)/.test(q) && !/이벤트/.test(q) && !/(결재|결제|발송|알림톡|승인)/.test(q)
+      && !_reRoster.test(q)
       && !_reBook.test(q) && !_reNotSched.test(q)
       && (((_reSched.test(q) || _reWhen.test(q)) && _reAskW.test(q))
         || (_reSchedWord.test(q) && q.replace(/\s/g, '').length <= 20));
@@ -3219,6 +3224,15 @@ async function orderHandler(req, res) {
       const _sc = briefScope(q);
       const b = await buildBrief(ma, req, _sc);
       out = { kind: _sc.k === 'all' ? '📊 회사 상황' : ('📊 ' + _sc.t), text: b.text, mentioned: b.mentioned };
+      // 🎬 촬영 씬1: 브리핑 끝에 ★먼저 할 일을 스스로 제안한다(수동 도구가 아니라 비서).
+      //    ★기존 고정 틀(22블록)은 한 글자도 안 건드리고 ★뒤에 한 줄 덧붙이기만 한다.
+      if (FILMING && filmFull) {
+        try {
+          const _bt = await sheetsCrud.loadTable(null);
+          const _sug = filmFull.suggest(_bt);
+          if (_sug) out.text = String(out.text || '') + '\n\n' + _sug;
+        } catch (e) { console.log('[🎬능동제안] 실패(브리핑은 그대로):', e.message); }
+      }
     } else if (_isPromoCmd) {
       // 화면이 홍보 패널을 열고 실제 /api/promo/draft를 돌린다. 결과가 나온 뒤에만 원고가 표시된다(거짓 완료 금지).
       const _topic = q.replace(_rePromo, ' ').replace(/글|문구|원고|콘텐츠|써줘|써|쓰|만들어줘|만들|생성해줘|생성|작성해줘|작성|뽑아줘|뽑아|해줘|좀|용|로|를|을|의/g, ' ').replace(/\s+/g, ' ').trim();
@@ -3519,7 +3533,10 @@ async function orderHandler(req, res) {
       if (!canData) { out = needConnect; } else { const s = await connectors.sheet(ma); out = { kind: '🔌 시트 커넥터', text: `7월 만기 ${s.july만기.length}명 · 임박순 ${s.임박순.join(' → ')}\n자산가: ${s.자산가.join(', ')}` }; }
     } else if (/증권|드라이브|서류|파일.*찾/.test(q)) {
       if (!canData) { out = needConnect; } else { const d = await connectors.drive(q.replace(/찾아줘|보여줘|줘/g, '').trim() || '증권', ma); out = { kind: '🔌 드라이브 커넥터', text: d.length ? d.map((f) => '📄 ' + f.name).join('\n') : '해당 파일 없음' }; }
-    } else if (!_webQuery && /일정|브리핑|오늘.*(뭐|일정)|아침/.test(q)) {
+    // ★"이번달 챙길 사람"·"만기 누구" 처럼 ★명단 얘기는 캘린더로 보내지 않는다(2026-07-31).
+    //   전엔 "이번달"의 '달'만 보고 일정으로 오인해 "구글 캘린더 연결하세요"로 샜다.
+    } else if (!_webQuery && /일정|브리핑|오늘.*(뭐|일정)|아침/.test(q)
+               && !/만기|명단|고객|챙길|챙겨|시트|갱신|상담\s*대상/.test(q)) {
       if (!canData) { out = needConnect; } else { const c = await connectors.calendar(ma); out = { kind: '🔌 캘린더 커넥터', text: c.map((e) => `${e.time} ${e.title}${e.prep[0] ? ' → ' + e.prep[0] : ''}`).join('\n') || '오늘 일정 없음' }; }
     } else {
       // ★워크스페이스 대화 = 하이브리드 라우터(askClaude) + 히스토리(-10) + 직업 페르소나
