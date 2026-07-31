@@ -364,6 +364,9 @@ async function saveSolapiKeys(email, apiKey, apiSecret, sender) {
   return { ok: true, keyHint: String(apiKey).slice(0, 4), sender: String(sender || '').replace(/[^0-9]/g, '') };
 }
 async function loadSolapiKeys(email) {
+  // 🎬 촬영: 메모리 보관함을 먼저 본다(로그인·Firestore·TOKEN_ENC_KEY 없이도 문자 발송이 되게).
+  //    라이브면 FILMING=false 라 이 줄이 통째로 없는 것과 같다.
+  if (FILMING) { try { const k = require('./filming_solapi').load(); if (k) return k; } catch (e) {} }
   if (!email) return null;
   try {
     const r = await _tokFs().projects.databases.documents.runQuery({ parent: _tokDB, requestBody: { structuredQuery: {
@@ -385,7 +388,8 @@ async function loadSolapiKeys(email) {
 // 문자 발송 크리덴셜 우선순위: 회원 서버 암호화 저장 우선 → env 폴백(대표님 테스트용). ★키 로그 금지.
 async function _resolveSolapi(email) {
   let apiKey = '', apiSecret = '', from = '';
-  if (email) { try { const sk = await loadSolapiKeys(email); if (sk) { apiKey = sk.apiKey; apiSecret = sk.apiSecret; from = String(sk.sender || '').replace(/[^0-9]/g, ''); } } catch (e) {} }
+  // 🎬 촬영은 비로그인이라 email 이 없다 → 그래도 키 조회를 하게 한다(메모리 보관함을 보러 간다).
+  if (email || FILMING) { try { const sk = await loadSolapiKeys(email); if (sk) { apiKey = sk.apiKey; apiSecret = sk.apiSecret; from = String(sk.sender || '').replace(/[^0-9]/g, ''); } } catch (e) {} }
   if (!apiKey) apiKey = process.env.SOLAPI_API_KEY || '';
   if (!apiSecret) apiSecret = process.env.SOLAPI_API_SECRET || '';
   if (!from) from = String(process.env.SOLAPI_SENDER || process.env.SOLAPI_FROM || '').replace(/[^0-9]/g, '');
@@ -4185,10 +4189,17 @@ app.post('/api/connect/solapi/save', async (req, res) => {
 app.post('/api/settings/solapi', async (req, res) => {
   try {
     const uid = ((sessionOf(req) || {}).email) || '';
-    if (!uid) return res.json({ ok: false, needsLogin: true, message: '로그인이 필요해요.' });
     const key = String((req.body && req.body.key) || '').trim();
     const secret = String((req.body && req.body.secret) || '').trim();
     const sender = String((req.body && req.body.sender) || '').replace(/[^0-9]/g, '');
+    // 🎬 촬영: 로그인 없이 메모리 보관함에 저장한다(구글·Firestore 무접촉).
+    //    ★발신번호가 수신 화이트리스트로도 걸려 승인해도 대표님 폰 한 곳으로만 나간다.
+    if (FILMING) {
+      const fr = require('./filming_solapi').save(key, secret, sender);
+      if (!fr.ok) return res.json({ ok: false, message: fr.error });
+      return res.json({ ok: true, keyMasked: fr.keyHint + '••••••••', sender: fr.sender, filming: true });
+    }
+    if (!uid) return res.json({ ok: false, needsLogin: true, message: '로그인이 필요해요.' });
     if (!key || !secret || !sender) return res.json({ ok: false, message: 'API Key·Secret·발신번호를 모두 입력해 주세요.' });
     const r = await saveSolapiKeys(uid, key, secret, sender);
     if (!r.ok) return res.json({ ok: false, message: r.error || '저장 실패' });
@@ -4199,6 +4210,12 @@ app.post('/api/settings/solapi', async (req, res) => {
 app.get('/api/settings/solapi', async (req, res) => {
   try {
     const uid = ((sessionOf(req) || {}).email) || '';
+    // 🎬 촬영: 로그인 없이도 등록 여부를 보여준다(화면이 "로그인 후 등록"으로 막지 않게).
+    if (FILMING) {
+      const k = require('./filming_solapi').load();
+      if (!k) return res.json({ ok: true, registered: false, filming: true });
+      return res.json({ ok: true, registered: true, keyMasked: String(k.apiKey).slice(0, 4) + '••••••••', sender: k.sender, filming: true });
+    }
     if (!uid) return res.json({ ok: true, registered: false, needsLogin: true });
     const sk = await loadSolapiKeys(uid);
     if (!sk) return res.json({ ok: true, registered: false });
