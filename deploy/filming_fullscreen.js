@@ -21,7 +21,8 @@ const SHOW_COLS = ['번호', '고객명', '가입상품', '보험사', '만기�
 /** "명단 띄워봐" 류인가 — 말투 흔들려도 잡히게 넓게 본다. */
 function wantsRoster(q) {
   const s = String(q || '');
-  if (!/명단|고객\s*목록|고객\s*리스트|리스트|목록|만기/.test(s)) return false;
+  // ★"시트 보여줘"도 명단 요청이다(2026-07-31 대표님 지시). 촬영 모드에선 이 80명이 곧 시트다.
+  if (!/명단|시트|스프레드시트|엑셀|고객\s*목록|고객\s*리스트|리스트|목록|만기|고객\s*전체|전체\s*고객/.test(s)) return false;
   // "띄워/보여/열어/올려/펼쳐" 같은 화면에 띄우라는 말이 있어야 전체 화면을 연다.
   // (그냥 "명단 몇 명이야" 같은 질문은 지금처럼 말로만 답한다)
   return /띄워|띄우|보여|열어|열어봐|펼쳐|크게|전체\s*화면|풀\s*화면|화면에/.test(s);
@@ -176,4 +177,36 @@ function stepOrder(table, q, todayYM) {
   return 대상.map((r) => String(r[nameCol] || '').trim()).filter(Boolean);
 }
 
-module.exports = { wantsRoster, wantsScroll, wantsStep, stepOrder, wantsMonth, build, SHOW_COLS, _todayYM };
+/**
+ * ★촬영 모드 두뇌 주입 (2026-07-31 대표님 지시)
+ * 촬영 모드에선 이 80명이 곧 지니야의 시트다. 그래서 일반 대화에서도
+ * "시트가 없어요"·"업로드하세요"·"조회 결과가 없어요" 같은 말을 하면 안 된다.
+ * → 시스템 프롬프트에 붙일 명단 사실을 만들어 준다. ★값은 명단에서 그대로 읽는다(지어내지 않음).
+ */
+function brainContext(table, todayYM) {
+  if (!table || !Array.isArray(table.rows) || !table.rows.length) return '';
+  const today = todayYM || _todayYM();
+  const ym = _nearestMonth(table.rows, today);
+  const 곧만기 = ym ? table.rows.filter((r) => String(r['만기일'] || '').startsWith(ym)) : [];
+  const nameCol = table.nameCol || '고객명';
+  const 줄 = (r) => (table.header || []).map((h) => `${h}:${r[h] || ''}`).join(' · ');
+
+  let s = '\n[고객 명단 — 지금 연결되어 있는 실제 데이터]\n';
+  s += `당신(지니야)에게는 고객 명단이 ★이미 연결돼 있다. 전체 ${table.rows.length}명, 항목 ${(table.header || []).length}개(${(table.header || []).join('·')}).\n`;
+  s += `★"시트가 없다"·"연결해 달라"·"업로드해 달라"·"조회 결과가 이 대화에 없다"는 말을 절대 하지 마라 — 명단은 아래에 다 있다.\n`;
+  if (곧만기.length) {
+    s += `다가오는 만기: ${Number(ym.slice(5, 7))}월 ${곧만기.length}명 — ${곧만기.map((r) => r[nameCol]).join(', ')}\n`;
+    s += '그 ' + 곧만기.length + '명의 전체 값:\n';
+    곧만기.forEach((r, i) => { s += `  ${i + 1}) ${줄(r)}\n`; });
+  }
+  // 나머지는 이름·상품·만기일만(프롬프트가 너무 길어지지 않게). 물어보면 이 안에서 답한다.
+  const 나머지 = table.rows.filter((r) => !곧만기.includes(r));
+  if (나머지.length) {
+    s += `나머지 ${나머지.length}명(이름 · 가입상품 · 만기일):\n`;
+    나머지.forEach((r) => { s += `  ${r[nameCol]} · ${r['가입상품'] || ''} · ${r['만기일'] || ''}\n`; });
+  }
+  s += '★이 명단에 없는 고객·값은 지어내지 마라. 명단에 없으면 "명단에 없어요"라고 말한다.\n';
+  return s;
+}
+
+module.exports = { wantsRoster, wantsScroll, wantsStep, stepOrder, wantsMonth, build, brainContext, SHOW_COLS, _todayYM };

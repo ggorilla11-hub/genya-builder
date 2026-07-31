@@ -3477,7 +3477,10 @@ async function orderHandler(req, res) {
       const job = String((req.body && req.body.job) || req.query.job || '');
       const hist = Array.isArray(req.body && req.body.history) ? req.body.history.slice(-10) : [];
       const sys = genyaPersona(job, { email: (sessionOf(req) || {}).email }) + `\n[현재 작업] 지금 사용자는 "${SKILL_CTX[activeSkill]}" 작업을 진행 중이다. 앞서 지니야가 안내한 내용(예: 사진·파일 업로드 요청)을 기억한 채 맥락을 유지하고 그 작업을 이어서 돕는다. 맥락을 잃고 "해당 파일 없음" 같은 엉뚱한 답을 하지 마라. 파일이 필요하면 화면 아래 ＋ 버튼으로 올려달라고 자연스럽게 안내한다. ★단, 이 대화에는 실제 파일·데이터가 첨부돼 있지 않다. 사용자가 아직 파일(엑셀·명단·사진)을 올리지 않았으면 올라온 척(가짜 인원수·명단·수치, 예 "방금 올려주신 명단 13명")을 절대 만들지 말고, "아직 파일을 못 받았어요. ＋ 버튼으로 올려주시면 바로 분석할게요"라고 정직히 안내한다.`;
-      const text = await askClaude(sys, hist.concat([{ role: 'user', content: q }]), 8192, { admin: _admin, webSearch: true });
+      // 🎬 촬영 모드: 카드 작업 중 대화에서도 명단(80명)을 들고 답한다. 라이브면 빈 문자열.
+      let _fb2 = '';
+      if (FILMING && filmFull) { try { _fb2 = filmFull.brainContext(await sheetsCrud.loadTable(null)); } catch (e) {} }
+      const text = await askClaude(sys + _fb2, hist.concat([{ role: 'user', content: q }]), 8192, { admin: _admin, webSearch: true });
       out = { kind: '💬 지니야', text, engine: _lastAskModel || pickedModel(q, { admin: _admin }) };
     } else if (/보내|발송|알림톡|결재|승인|올려\s*(줘|둬|둘|놔|주세요)|초안.{0,10}(올려|결재|발송|보내|저장)/.test(q)) {
       // 🗂️ Step 2-C: 발송·결재 의도 → 결재함 도구 루프(저장→승인→하드가드 발송). "발송 못 한다" 오답 원천 제거.
@@ -3537,7 +3540,13 @@ async function orderHandler(req, res) {
       const sysP = genyaPersona(job, { email: uid }) + calCtx
         + (recentEvents ? ('\n[지금 이 방에서 최근 일어난 일 — 실제 발생] 아래는 이 지니야 화면에서 실제로 일어난 이벤트다. "방금 올린/만든/한 것"을 물으면 이걸 근거로 인지하고 답한다(안 보인다고 하지 마라). 단 파일 속 개별 세부(고객별 값)는 실제 분석 결과가 있을 때만 말한다.\n' + recentEvents) : '')
         + (memCtx ? ('\n[' + memWho + ' 기억] 아래는 ' + memWho + '의 과거 대화·자료 요약이다. 관련되면 근거로 활용하되 없는 값은 지어내지 마라.\n' + memCtx) : '');
-      const text = await askClaude(sysP, hist.concat([{ role: 'user', content: q }]), 8192, { admin: _admin, webSearch: true });
+      // 🎬 촬영 모드: 이 80명이 곧 지니야의 시트다. 일반 대화에서도 명단을 들고 답하게 한다
+      //    ("시트가 없어요"·"업로드하세요"·"조회 결과가 없어요" 라고 말하지 않게). 라이브면 아무것도 안 붙는다.
+      let _filmBrain = '';
+      if (FILMING && filmFull) {
+        try { _filmBrain = filmFull.brainContext(await sheetsCrud.loadTable(null)); } catch (e) {}
+      }
+      const text = await askClaude(sysP + _filmBrain, hist.concat([{ role: 'user', content: q }]), 8192, { admin: _admin, webSearch: true });
       out = { kind: '💬 지니야', text, engine: _lastAskModel || pickedModel(q, { admin: _admin }) };
       if (uid && personalMem.configured()) personalMem.saveMemoryAsync({ ownerId: uid, scope: memScope, customerId: cust, source: 'dialog', text: q + '\n→ ' + text, summary: (cust ? cust + '님 ' : '') + q });
     }
