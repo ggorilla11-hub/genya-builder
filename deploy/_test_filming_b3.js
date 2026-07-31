@@ -59,7 +59,10 @@ const mr = gh.match(/maxR=Math\.min\(W,H\)\*(0\.\d+)/);
 ok('★크기가 시안 원값(0.375)보다 확실히 큼', mr && Number(mr[1]) >= 0.47, mr ? mr[1] : '못 찾음');
 // ★★"꽉 채워 잘리진 않게" — maxR 은 캔버스 반지름 대비 비율이라 0.5를 넘으면 무조건 잘린다.
 ok('★★잘리지 않는다(maxR ≤ 0.5)', mr && Number(mr[1]) <= 0.5, mr ? mr[1] + ' → ' + (Number(mr[1]) * 200).toFixed(0) + '%' : '못 찾음');
-ok('★캔버스가 좌측 열 폭을 다 쓴다(안쪽 여백 상쇄)', /id="galaxyWrap" style="display:none;margin:0 -15px 14px;"/.test(gh));
+// ★★대표님 지적: 은하 박스만 좌우 벽에 붙어 답답했다(음수 마진으로 열 여백을 상쇄했던 탓).
+//   좌우 여백은 아래 다른 박스와 똑같아야 한다 → 음수 마진 금지.
+ok('★★좌우 여백이 다른 박스와 같다(음수 마진 없음)',
+  /id="galaxyWrap" style="display:none;margin:0 0 14px;"/.test(gh) && !/margin:0 -\d+px/.test(gh));
 ok('★세로 압축 완화(0.84 → 0.89) — 더 원에 가깝게', /Math\.sin\(st\.ang\)\*R\*0\.89;/.test(gh));
 ok('★별 밝기 강화(투명도 상향)', /Math\.min\(1,b\*1\.35\)/.test(gh) && /Math\.min\(1,b\*1\.25\)/.test(gh) && /Math\.min\(1,b\*1\.12\)/.test(gh));
 ok('★흐린 별도 보이게 최소 밝기 상향', /var bright=\(0\.5\+tw\*0\.62\)\*\(0\.55\+st\.depth\*0\.55\);/.test(gh));

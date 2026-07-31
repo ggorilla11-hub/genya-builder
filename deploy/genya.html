@@ -768,9 +768,11 @@
       <div class="col col-l">
         <div class="col-scroll">
           <!-- 🎬 B-3 · 자비스 은하 홀로그램 (촬영 모드에서만 보인다. 평소엔 display:none 그대로 · 자리도 안 차지) -->
-          <!-- ★좌우 -15px = 좌측 열의 안쪽 여백(15px)만 상쇄해 은하가 열 폭을 다 쓰게 한다.
-               이 블록에만 준 값이라 아래 다른 항목들은 여백 그대로다. -->
-          <div id="galaxyWrap" style="display:none;margin:0 -15px 14px;">
+          <!-- ★좌우 여백은 아래 다른 박스(일정관리 비서 등)와 똑같이 둔다.
+               전엔 크기를 키우려고 -15px 로 좌측 열 여백을 상쇄했는데,
+               그 바람에 이 박스만 좌우 벽에 붙어 답답했다(실측: 다른 박스 좌189·우391 / 은하 좌174·우406).
+               → 상쇄를 원복. margin 0 이면 좌측 열 padding 15px 이 그대로 적용돼 정렬이 통일된다. -->
+          <div id="galaxyWrap" style="display:none;margin:0 0 14px;">
             <!-- ★시안 파일(jarvis_hologram_teal.html)의 canvas 원문 그대로 -->
             <canvas id="jarvisHolo" width="600" height="440" style="width:100%;display:block;border-radius:12px;background:#04060d;"></canvas>
             <!-- 상태 문구는 화면에 안 보인다(대표님 지시: 박스 문구 삭제). 은하 움직임만으로 상태를 보여준다.
@@ -6126,8 +6128,8 @@ document.addEventListener('keydown', function(e){ if(e.key==='Escape') closeFull
   var 촬영 = true;                                  // 통합③: 촬영=크게 · 실제=작게
   cv0.width = cv0.height = 560;                     // 정사각형(권장)
   cv0.style.height = 'auto';
-  /* ★존재감 강화(대표님 지시): 좌측 열 폭을 남김없이 쓴다.
-     전엔 250px 상한 때문에 열(232px)보다 작은 202px만 차지해 작아 보였다. */
+  /* 좌우 여백은 다른 박스와 같게 두고(위 galaxyWrap margin 0), 그 안에서 폭을 다 쓴다.
+     상한은 넉넉히 둬서 실제 폭은 좌측 열이 정한다(현재 202px). */
   cv0.style.maxWidth = (촬영 ? 340 : 190) + 'px';
   cv0.style.width = '100%';
   cv0.style.margin = '0';
