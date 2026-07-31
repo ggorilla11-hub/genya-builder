@@ -30,8 +30,8 @@ const r = ff.build(table, '명단 띄워봐', TODAY);
 ok('표가 만들어짐', !!r);
 ok('★80명 전부 들어감(스크롤로 다 보임)', r.rows.length === 80, r.rows.length + '명');
 ok('전체 인원 표기', r.subtitle === '전체 80명', r.subtitle);
-ok('★지시하신 핵심 5칸', r.cols.join(',') === '번호,고객명,가입상품,보험사,만기일', r.cols.join(','));
-ok('20칸을 다 넣지 않음(좁아서 안 읽히는 것 방지)', r.cols.length === 5, r.cols.length + '칸');
+ok('★맨 앞은 지시하신 5칸 순서 그대로', r.cols.slice(0, 5).join(',') === '번호,고객명,가입상품,보험사,만기일', r.cols.slice(0, 5).join(','));
+ok('★칸을 전부 보낸다(가로로 밀어서 보게 · 2026-07-31 지시)', r.cols.length === table.header.length, r.cols.length + '칸');
 
 // ═══ [3] 8월 만기 8명 상단 강조 ═══
 console.log('\n[3] ★8월 만기 8명 상단 강조');
@@ -84,17 +84,50 @@ const _b = gh.indexOf('function openFullRoster(r)');
 const blk = gh.slice(_b, gh.indexOf('function closeFullRoster', _b));
 ok('★★전체 화면을 꽉 채우지 않는다(오버레이 제거)',
   !/id="fullRoster"/.test(gh) && !/position:fixed;inset:0;z-index:99999/.test(gh));
-ok('★★대화창 본문 중간에 카드로 뜬다(말풍선처럼)', /pushMsg\('gen', card\)/.test(blk));
-ok('★하얀 배경 카드', /background:#fff;/.test(blk));
-ok('★헤더만 옅은 색(엑셀·구글시트 느낌)', /background:#F5F7FA/.test(blk));
+ok('★★대화창 본문 안에 카드로 뜬다', /chatScroll/.test(blk) && /appendChild\(d\)/.test(blk));
+ok('★하얀 배경 카드(우측 카드와 같은 --card)', /background:var\(--card\)/.test(blk));
+ok('★헤더만 옅은 색(엑셀·구글시트 느낌)', /background:#f7f9fb/.test(blk));
 ok('★촌스러운 형광초록 안 씀', !/#3DDC97/.test(blk) && !/rgba\(61,220,151/.test(blk));
-ok('★강조는 차분한 초록(옅은 배경 + 왼쪽 띠)', /#F2FBF7/.test(blk) && /#2FB27C/.test(blk) && /#0B6B4F/.test(blk));
+ok('★강조는 은은한 민트(옅은 배경 + 볼드 + 왼쪽 띠)',
+  /background:'\+bg/.test(blk) && /var\(--teal-l\)/.test(blk) && /var\(--teal-d\);font-weight:700/.test(blk) && /border-left:3px solid '\+\(hi\?'var\(--teal\)'/.test(blk));
 ok('★가로형 표 — 컬럼이 가로(thead), 행이 세로로 쌓임(tbody)', /<thead><tr>/.test(blk) && /<tbody>/.test(blk));
-ok('줄무늬로 읽기 쉽게', /ri % 2 \? '#FBFCFD' : '#FFFFFF'/.test(blk));
+ok('줄무늬로 읽기 쉽게', /ri % 2 \? '#fbfcfd' : '#fff'/.test(blk));
 ok('머리행 고정(스크롤해도 칸 이름 보임)', /position:sticky;top:0/.test(blk));
 ok('★카드 높이 제한 — 대화창을 안 밀어냄', /max-height:340px;overflow:auto/.test(blk));
-ok('★칸이 많아도 안 깨짐(가로 스크롤)', /white-space:nowrap/.test(blk));
-ok('★전체 인원을 카드 안에서 다 볼 수 있다고 안내', /명 전부 보실 수 있어요/.test(blk));
+ok('★전체 칸·인원을 밀어서 볼 수 있다고 안내', /표를 좌우로 밀면 나머지 칸이/.test(blk));
+
+// ═══ [7-2] ★본문 폭 꽉 + 가로 스크롤 (2026-07-31 지시) ═══
+console.log('\n[7-2] ★본문 폭 꽉 채우고 가로 스크롤');
+ok('★★말풍선 폭 제한(88%)을 벗어나 본문을 꽉 채운다',
+  /d\.style\.maxWidth = '100%'/.test(blk) && /chatScroll/.test(blk) && !/pushMsg\('gen', card\)/.test(blk));
+ok('★★가로 스크롤이 실제로 생긴다(표가 폭보다 넓어야 스크롤바가 뜬다)',
+  /width:max-content;min-width:100%/.test(blk) && /max-height:340px;overflow:auto/.test(blk));
+ok('★칸 값이 줄바꿈으로 눌리지 않는다', /white-space:nowrap/.test(blk));
+ok('★밀어도 번호·고객명은 왼쪽에 고정(어느 줄인지 안 놓치게)',
+  /position:sticky;left:0/.test(blk) && /position:sticky;left:46px/.test(blk));
+ok('★우측 카드와 같은 색 변수를 쓴다(톤앤매너 통일)',
+  /var\(--line\)/.test(blk) && /var\(--ink\)/.test(blk) && /var\(--gray\)/.test(blk)
+  && /var\(--teal-l\)/.test(blk) && /var\(--teal-d\)/.test(blk));
+ok('★임의로 고른 색을 안 쓴다(우측 카드 톤에서 벗어난 값 없음)',
+  !/#F5F7FA/.test(blk) && !/#2FB27C/.test(blk) && !/#0B6B4F/.test(blk) && !/#F2FBF7/.test(blk));
+
+// ═══ [7-3] ★칸 20개 전부 (2026-07-31 지시) ═══
+console.log('\n[7-3] ★칸을 전부 보낸다 (가로로 넘겨보게)');
+const 전부 = ff.build(table, '명단 띄워봐', TODAY);
+ok('★★핵심 5칸만이 아니라 명단의 칸을 전부 보낸다', 전부.cols.length === table.header.length,
+  전부.cols.length + '칸 / 명단 ' + table.header.length + '칸');
+ok('★앞 5칸은 지시하신 순서 그대로', 전부.cols.slice(0, 5).join(',') === '번호,고객명,가입상품,보험사,만기일', 전부.cols.slice(0, 5).join(','));
+ok('★나머지 칸도 빠짐없이(중복 없이)', new Set(전부.cols).size === 전부.cols.length && table.header.every((h) => 전부.cols.includes(h)));
+ok('★명단에 없는 칸은 만들지 않음', 전부.cols.every((c) => table.header.includes(c)));
+
+// ═══ [7-4] ★촬영 모드는 크롬으로 열린다 (2026-07-31 지시) ═══
+console.log('\n[7-4] ★촬영모드_켜기.bat → 크롬으로 열림');
+const ob = fs.readFileSync(path.join(__dirname, '_filming_open.bat'), 'utf8');
+ok('★★크롬 경로를 직접 찾아 실행한다', /Google\\Chrome\\Application\\chrome\.exe/.test(ob) && /start "" "%CHROME%"/.test(ob));
+ok('설치 위치 3곳을 다 본다(64비트·32비트·사용자)',
+  /%ProgramFiles%/.test(ob) && /%ProgramFiles\(x86\)%/.test(ob) && /%LocalAppData%/.test(ob));
+ok('★크롬이 없으면 기본 브라우저로라도 열어 촬영이 안 멈춘다', /Chrome not found/.test(ob) && /start "" "http:\/\/localhost:8080\/"/.test(ob));
+ok('★본 파일이 이 열기 파일을 부른다', /start "" \/min "%~dp0_filming_open\.bat"/.test(fs.readFileSync(path.join(__dirname, '촬영모드_켜기.bat'), 'latin1')));
 ok('옛 닫기 호출이 남아 있어도 안 터진다', /function closeFullRoster\(\)\{\}/.test(gh));
 // (ESC 닫기는 전체화면일 때만 의미가 있었다. 카드는 대화 기록의 일부라 닫을 게 없다.)
 

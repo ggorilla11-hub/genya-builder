@@ -143,7 +143,7 @@ ok('★모니터 통째가 아님(좌측 열 안, 최대 250px)', /maxWidth = \(
 ok('★촬영=크게(250) · 실제=작게(168)', /var 촬영 = true;/.test(gh) && /window\.galaxyBig = function\(on\)\{ 촬영 = !!on;/.test(gh));
 // 명단은 이제 전체화면이 아니라 대화창 안 카드다 → 좌측 은하와 애초에 겹치지 않는다.
 ok('★명단과 은하가 겹치지 않는다(명단=대화창 카드 · 은하=좌측 열)',
-  !/id="fullRoster"/.test(gh) && /pushMsg\('gen', card\)/.test(gh) && !/galaxyWrap[^>]*z-index/.test(gh));
+  !/id="fullRoster"/.test(gh) && /genya-roster-card/.test(gh) && !/galaxyWrap[^>]*z-index/.test(gh));
 
 // ═══ [6] ★메인(교육생) 무접촉 ═══
 console.log('\n[6] ★메인·교육생 기능 그대로');

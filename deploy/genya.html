@@ -6050,56 +6050,73 @@ function openFullRoster(r){
   if(!r || !r.cols || !r.rows) return;
   var esc = function(s){ return String(s==null?'':s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); };
 
-  /* ── 머리: 제목 · 인원 · 강조 뱃지 ── */
+  /* ★색·폰트는 우측 1/3 카드(.tool)와 같은 것을 쓴다 — 화면 전체 톤앤매너 통일.
+     --line(#e7ecf1) 테두리 · --ink(#16202e) 글자 · --gray(#67788c) 보조 ·
+     --teal-l(#e7f6f0) 옅은 민트 · --teal-bd(#bfe6d6) 민트 테두리 · --teal-d(#0f7a5c) 진한 민트 */
   var head =
-    '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:14px 16px 12px;border-bottom:1px solid #E8ECF3;">'
-    + '<span style="font-size:15px;font-weight:800;color:#0F1A35;letter-spacing:-.2px;">📇 ' + esc(r.title || '고객 명단') + '</span>'
-    + '<span style="font-size:13px;color:#8A94A6;font-weight:600;">' + esc(r.subtitle || '') + '</span>'
+    '<div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;padding:11px 13px;border-bottom:1px solid var(--line);">'
+    + '<span style="font-size:13.5px;font-weight:800;color:var(--ink);letter-spacing:-.2px;">📇 ' + esc(r.title || '고객 명단') + '</span>'
+    + '<span style="font-size:12px;color:var(--gray);font-weight:600;">' + esc(r.subtitle || '') + '</span>'
     + (r.focusLabel
-        ? '<span style="font-size:12px;font-weight:700;color:#0B6B4F;background:#E4F6EE;border:1px solid #BFE7D6;padding:3px 10px;border-radius:999px;">' + esc(r.focusLabel) + '</span>'
+        ? '<span style="font-size:11.5px;font-weight:700;color:var(--teal-d);background:var(--teal-l);border:1px solid var(--teal-bd);padding:2px 9px;border-radius:999px;">' + esc(r.focusLabel) + '</span>'
         : '')
     + '</div>';
 
-  /* ── 가로형 표: 컬럼이 가로로, 행이 세로로 쌓인다 (엑셀·구글시트 느낌) ── */
+  /* ── 가로형 표: 컬럼이 가로로, 행이 세로로 쌓인다. 칸이 20개라 가로로 밀어서 본다. ── */
   var th = '<thead><tr>';
-  r.cols.forEach(function(c){
-    var w = (c==='번호') ? 'width:52px;' : (c==='고객명' ? 'width:96px;' : '');
-    th += '<th style="'+w+'text-align:left;padding:9px 14px;font-size:12.5px;color:#5F6B7E;font-weight:700;'
-        + 'white-space:nowrap;position:sticky;top:0;background:#F5F7FA;border-bottom:1px solid #DDE3EC;">'+esc(c)+'</th>';
+  r.cols.forEach(function(c, i){
+    /* 앞 두 칸(번호·고객명)은 가로로 밀어도 왼쪽에 고정 — 어느 고객 줄인지 안 놓치게 */
+    var 고정 = (i===0) ? 'left:0;z-index:3;' : (i===1 ? 'left:46px;z-index:3;' : 'z-index:2;');
+    var w = (i===0) ? 'width:46px;' : (i===1 ? 'width:82px;' : '');
+    th += '<th style="'+w+'text-align:left;padding:8px 12px;font-size:11.5px;color:var(--gray);font-weight:700;'
+        + 'white-space:nowrap;position:sticky;top:0;'+고정+'background:#f7f9fb;border-bottom:1px solid var(--line);'
+        + (i<2 ? 'border-right:1px solid var(--line);' : '') + '">'+esc(c)+'</th>';
   });
   th += '</tr></thead>';
 
   var tb = '<tbody>';
   r.rows.forEach(function(row, ri){
-    /* 강조행(가장 가까운 만기) = 아주 옅은 초록 + 왼쪽 띠. 형광색은 안 쓴다(촌스러움). */
+    /* 강조행(가장 가까운 만기) = 옅은 민트 + 볼드. 형광색은 안 쓴다. */
     var hi = !!row._hi;
-    var bg = hi ? '#F2FBF7' : (ri % 2 ? '#FBFCFD' : '#FFFFFF');   /* 줄무늬 = 표 읽기 쉽게 */
-    tb += '<tr style="background:'+bg+';border-bottom:1px solid #EEF1F6;">';
+    var bg = hi ? 'var(--teal-l)' : (ri % 2 ? '#fbfcfd' : '#fff');   /* 줄무늬 = 읽기 쉽게 */
+    tb += '<tr style="border-bottom:1px solid var(--line-2);">';
     r.cols.forEach(function(c,i){
-      var style = 'padding:9px 14px;font-size:13.5px;white-space:nowrap;'
-                + (hi ? 'color:#0B6B4F;font-weight:700;' : 'color:#2B3648;font-weight:500;');
-      if(i===0) style += 'border-left:3px solid '+(hi?'#2FB27C':'transparent')+';';
+      var 고정 = (i===0) ? 'position:sticky;left:0;z-index:1;' : (i===1 ? 'position:sticky;left:46px;z-index:1;' : '');
+      var style = 'padding:8px 12px;font-size:12.5px;white-space:nowrap;background:'+bg+';'+고정
+                + (hi ? 'color:var(--teal-d);font-weight:700;' : 'color:var(--ink);font-weight:500;')
+                + (i<2 ? 'border-right:1px solid var(--line);' : '');
+      if(i===0) style += 'border-left:3px solid '+(hi?'var(--teal)':'transparent')+';';
       tb += '<td style="'+style+'">'+esc(row[c])+'</td>';
     });
     tb += '</tr>';
   });
   tb += '</tbody>';
 
-  /* ── 카드: 대화창 폭 안에서 가로 스크롤(컬럼 많아도 안 깨짐) · 세로는 최대 높이까지만 ── */
+  /* ── 카드: ★본문 폭을 꽉 채우고, 아래에 가로 스크롤바가 나온다(칸 20개를 밀어서 봄) ── */
   var card =
-    '<div style="border:1px solid #E3E8F0;border-radius:12px;background:#fff;overflow:hidden;'
-    + 'box-shadow:0 2px 10px rgba(15,26,53,.06);margin:2px 0 4px;">'
+    '<div class="genya-roster-card" style="border:1px solid var(--line);border-radius:12px;background:var(--card);'
+    + 'box-shadow:0 1px 3px rgba(11,31,58,.05);margin:4px 0 6px;overflow:hidden;">'
     + head
+    /* overflow:auto → 가로·세로 둘 다 스크롤. table 을 max-content 로 둬야 칸이 안 눌리고 넘친다. */
     + '<div style="max-height:340px;overflow:auto;">'
-    + '<table style="width:100%;border-collapse:collapse;font-family:Pretendard,\'맑은 고딕\',sans-serif;">' + th + tb + '</table>'
+    + '<table style="width:max-content;min-width:100%;border-collapse:collapse;font-family:inherit;">' + th + tb + '</table>'
     + '</div>'
-    + '<div style="padding:8px 16px;font-size:11.5px;color:#98A2B3;background:#FCFDFE;border-top:1px solid #EEF1F6;">'
-    +   '표 안에서 스크롤하면 ' + (r.total || r.rows.length) + '명 전부 보실 수 있어요.'
+    + '<div style="padding:7px 13px;font-size:11px;color:var(--gray-l);background:#fcfdfe;border-top:1px solid var(--line-2);">'
+    +   '칸 ' + r.cols.length + '개 · ' + (r.total || r.rows.length) + '명 — 표를 좌우로 밀면 나머지 칸이, 위아래로 밀면 나머지 분들이 보여요.'
     + '</div>'
     + '</div>';
 
-  /* 대화창에 지니야 말풍선처럼 붙인다. pushMsg 가 있으면 그대로 쓰고, 없으면 조용히 넘어간다. */
-  try{ if(typeof pushMsg === 'function') pushMsg('gen', card); }catch(e){}
+  /* ★말풍선(max-width 88% · 좌우 여백)에 넣으면 좁아진다 → 대화창에 직접 붙여 폭을 꽉 채운다. */
+  try{
+    var s = document.getElementById('chatScroll');
+    if(!s) return;
+    var d = document.createElement('div');
+    d.className = 'msg gen genya-roster-wrap';
+    d.style.maxWidth = '100%';        /* .msg 의 88% 제한 해제 */
+    d.style.display = 'block';        /* 아바타 없이 표만 — 폭을 온전히 쓴다 */
+    d.innerHTML = card;
+    s.appendChild(d); s.scrollTop = s.scrollHeight;
+  }catch(e){}
 }
 /* 전체 화면이 아니라 카드라 따로 닫을 게 없다. 예전 호출부가 남아 있어도 안 터지게 빈 함수로 둔다. */
 function closeFullRoster(){}

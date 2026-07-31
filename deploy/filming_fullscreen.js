@@ -14,7 +14,8 @@
 // ─────────────────────────────────────────────────────────────
 'use strict';
 
-// 촬영에 보여줄 핵심 칸 (20칸 다 넣으면 좁아서 안 읽힌다 — 상세는 개별 카드에서)
+// ★맨 앞에 오는 칸(대표님이 먼저 보길 원하는 순서). 나머지 칸은 이 뒤에 원래 순서대로 다 붙는다.
+//   (전엔 이 5칸만 보냈는데, 2026-07-31 지시로 ★20칸 전부 보내고 가로 스크롤로 넘겨보게 바뀜)
 const SHOW_COLS = ['번호', '고객명', '가입상품', '보험사', '만기일'];
 
 /** "명단 띄워봐" 류인가 — 말투 흔들려도 잡히게 넓게 본다. */
@@ -62,8 +63,10 @@ function wantsMonth(q, rows, todayYM) {
 function build(table, q, todayYM) {
   if (!table || !Array.isArray(table.rows) || !table.rows.length) return null;
   const header = table.header || [];
-  // 명단에 실제로 있는 칸만 쓴다(없는 칸을 지어내지 않는다)
-  const cols = SHOW_COLS.filter((c) => header.includes(c));
+  // ★칸을 전부 보낸다. 핵심 5칸을 앞으로 당기고, 나머지는 명단에 있는 순서 그대로 뒤에 붙인다.
+  //   명단에 없는 칸은 만들지 않는다(지어내기 금지).
+  const 앞 = SHOW_COLS.filter((c) => header.includes(c));
+  const cols = 앞.concat(header.filter((h) => h && !앞.includes(h)));
   if (cols.length < 2) return null;
 
   const all = table.rows;
