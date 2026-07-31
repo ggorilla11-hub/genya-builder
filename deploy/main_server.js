@@ -436,6 +436,10 @@ sheetsCrud.init({
   signSecret: process.env.CRUD_SIGN_SECRET || process.env.TOKEN_ENC_KEY || process.env.ANTHROPIC_API_KEY || 'genya-crud-dev',
   demoTitle: DEMO_TITLE, sheetTab: SHEET_TAB,
 });
+// 🛡️ 2층 안전망(엄마2 · 2026-07-31 승인): 관문에서 탈락한 말이 "뜻은 명단 조회"면 도구를 쥐어준다.
+//    ★관문(기존 분기 조건)은 무접촉. 판정은 빠른 모델(Sonnet)로 YES/NO 한 낱말만.
+const rosterGate = require('./roster_gate');
+rosterGate.init({ anthropic: _anthropic, model: MODEL_SIMPLE, sheetsCrud });
 // ═══ 🎬 촬영 모드 (2026-07-31 대표님 승인 · 홍보 쇼츠 B-1) ═══
 // 환경변수 FILMING_MODE=1 일 때만 켜진다. 라이브(메인·교육생)엔 이 변수가 없으므로
 // require 조차 되지 않고, 아래 한 줄은 통째로 건너뛴다 = 기존 동작 100% 그대로.
@@ -443,7 +447,12 @@ sheetsCrud.init({
 const FILMING = process.env.FILMING_MODE === '1';
 const FILM_ROSTER_FILE = 'genya_customer_list_80.xlsx';   // [명단·연결]에 보일 촬영용 파일 이름
 let filmFull = null;
-if (FILMING) { require('./filming_roster').enable(sheetsCrud); filmFull = require('./filming_fullscreen'); }
+if (FILMING) {
+  require('./filming_roster').enable(sheetsCrud);
+  filmFull = require('./filming_fullscreen');
+  // 🎬 씬5·6: 결재함도 촬영용 메모리로(구글 시트 무접촉). 라이브면 이 줄이 안 돌아 기존 경로 그대로.
+  try { require('./filming_approval').enable(approval); } catch (e) { console.log('[🎬촬영결재함] 못 켬:', e.message); }
+}
 // 🔌 B-8 훅(엄마2 재인덱싱 구독 지점): 지금은 로그만. 엄마2가 sheetsCrud.onWrite(cb)로 Pinecone 재인덱싱 연결.
 sheetsCrud.onWrite((ev) => { try { if (process.env.LOCAL_STAGING === '1') console.log('[crud→B8] write event', JSON.stringify(ev)); } catch (e) {} });
 const CAL_ID = process.env.CAL_ID || 'ggorilla11@gmail.com';
@@ -3164,7 +3173,14 @@ async function orderHandler(req, res) {
         : _isFindVague ? '발굴 되묻기' : _isOpenInflow ? '유입전환 열기' : _isOpenFind ? '발굴리드 열기' : '새로고침'}`
         + ` · q="${String(q).slice(0, 40)}" · ★발송 아님(내부 동작)`);
     }
-    if (_isFindRun) {
+    if (canSheet && await rosterGate.wantsPolicy(q)) {
+      // 📄 증권 텍스트 해석(1단계 · 엄마2 · 2026-07-31 승인) — 대표가 증권 내용을 ★글로 붙여넣은 경우.
+      //    ★맨 앞에 둔 이유: 증권 글 안에 "만기·3월·고객 이름"이 들어 있어 카드·명단 분기가 먼저 가로채
+      //      "3월 만기 6명 카드를 띄울게요" 같은 엉뚱한 답이 나갔다(2026-07-31 실측).
+      //    ★아주 좁게만 켜진다: 40자 이상 + 보험 낱말이 있고 + ★두뇌가 "실제 증권 내용"이라고 판정할 때만.
+      //      짧은 말·결재·발송이 섞인 말은 판정조차 안 한다 → 그 외 모든 말에는 이 줄이 ★없는 것과 같다.
+      out = await rosterGate.answer(q, { ma, history: (req.body && req.body.history) || [] });
+    } else if (_isFindRun) {
       // 화면이 [지금 발굴] 버튼과 ★똑같은 함수를 탄다. 끝나면 채널별 건수를 대화에 보고한다.
       out = { kind: '🔍 발굴', action: 'run_find', channel: _findCh,
         text: _findCh ? `${_findCh} 중심으로 지금 발굴할게요. 잠시만요.`
@@ -3451,8 +3467,15 @@ async function orderHandler(req, res) {
         const text = await askClaude(sysG, hist.concat([{ role: 'user', content: q }]), 8192, { admin: _admin });
         out = { kind: '💬 지니야', text, engine: _lastAskModel || pickedModel(q, { admin: _admin }) };
       }
+    } else if (canSheet && await rosterGate.wants(q, { canSheet, expiryWord: /만기|임박|갱신/.test(q), toolIntent: _toolIntent })) {
+      // 🛡️ 2층 안전망(앞자리) — 조건으로 사람을 고르거나 세는 질문은 ★코드가 센다.
+      //    왜: 바로 아래 옛 분기는 두뇌에게 ★상위 30명만 주고 세라고 시킨다. 그래서
+      //        "연소득 5천 이상 몇 명이야?" 에 "30명 중 20명"이라고 답했다(실제 53명 · 2026-07-31 실측).
+      //    ★"만기·임박·갱신"은 아래 옛 분기가 잘 하고 있으므로 ★건드리지 않고 그대로 넘긴다(기존 보존).
+      out = await rosterGate.answer(q, { ma, history: (req.body && req.body.history) || [] });
     } else if (!_toolIntent && canSheet && /명단|만기|임박|목록|리스트|몇\s*명|인원|전체|자산가|고객\s*(목록|전체|누구|정리|명단)/.test(q) && !/([가-힣]{2,4})\s*님?\s*(정보|연락처|추가|삭제|수정|등록|빼|지워|변경|바꿔)/.test(q)) {
       // 📇 명단 전체·만기 = 실제 시트 데이터를 먼저 조회해 LLM 프롬프트에 주입(고수 채택·Function Calling 미호출 원천 해결). 개별 이름은 아래 sheetsCrud read_row.
+      //  ※아래 두뇌 주입은 ★상위 30명만 준다 → 조건으로 "몇 명"을 세는 질문은 위 2층 안전망이 먼저 가져간다.
       const job = String((req.body && req.body.job) || req.query.job || '');
       const hist = Array.isArray(req.body && req.body.history) ? req.body.history.slice(-10) : [];
       const uid = (sessionOf(req) || {}).email || '';
@@ -3500,7 +3523,10 @@ async function orderHandler(req, res) {
     } else if (/보내|발송|알림톡|결재|승인|올려\s*(줘|둬|둘|놔|주세요)|초안.{0,10}(올려|결재|발송|보내|저장)/.test(q)) {
       // 🗂️ Step 2-C: 발송·결재 의도 → 결재함 도구 루프(저장→승인→하드가드 발송). "발송 못 한다" 오답 원천 제거.
       // ★3단계: 발송 단어 없이 "결재함에 올려줘/초안 올려둬"만 해도 실제 저장되게 트리거 보강(환각=말만 하고 안 올림 차단).
-      if (!canData) { out = needConnect; }
+      // ★촬영 모드는 명단(80명)이 이미 있으므로 구글 연결 관문을 통과시킨다(2026-07-31 씬5).
+      //   전엔 "결재함에 올려줘" 가 "구글 데이터 연결 필요"로 막혀 초안이 아예 안 올라갔다.
+      //   ★라이브는 canSheet === canData 라 동작이 완전히 같다. 발송 하드가드는 무접촉.
+      if (!canSheet) { out = needConnect; }
       else {
         const hist = Array.isArray(req.body && req.body.history) ? req.body.history.slice(-10) : [];
         await _attachPrefs(ma); // ★문자 동반 토글·상호 부착(create 채널·_dispatch 서명용)
@@ -3538,6 +3564,11 @@ async function orderHandler(req, res) {
     } else if (!_webQuery && /일정|브리핑|오늘.*(뭐|일정)|아침/.test(q)
                && !/만기|명단|고객|챙길|챙겨|시트|갱신|상담\s*대상/.test(q)) {
       if (!canData) { out = needConnect; } else { const c = await connectors.calendar(ma); out = { kind: '🔌 캘린더 커넥터', text: c.map((e) => `${e.time} ${e.title}${e.prep[0] ? ' → ' + e.prep[0] : ''}`).join('\n') || '오늘 일정 없음' }; }
+    } else if (await rosterGate.wants(q, { canSheet })) {
+      // 🛡️ 2층 안전망 — 여기까지 왔다는 건 ★위의 어떤 분기에도 안 걸렸다는 뜻이다(기존 동작 무영향).
+      //    그 말의 뜻이 명단 조회면(예: "생일이 8월인 사람"·"8월에 태어난 고객"·"돈 많이 버는 분")
+      //    일반 대화로 흘려보내지 않고 ★명단 도구로 보낸다. 낱말이 달라도 뜻으로 통과한다.
+      out = await rosterGate.answer(q, { ma, history: (req.body && req.body.history) || [] });
     } else {
       // ★워크스페이스 대화 = 하이브리드 라우터(askClaude) + 히스토리(-10) + 직업 페르소나
       //   ★v4.0 Step2-A: 로그인 대표면 개인화 기억(대표 네임스페이스)에서 유사 Top-K를 꺼내 프롬프트에 주입,
@@ -4552,7 +4583,11 @@ app.post('/api/campaign/send', async (req, res) => {
 });
 
 app.post('/api/approval/create', async (req, res) => { try { const ma = gateGoogle(req, res); if (!ma) return; ma._email = (sessionOf(req) || {}).email || ''; await _attachPrefs(ma); res.json(await approval.create(ma, req.body || {})); } catch (e) { res.status(500).json({ ok: false, error: e.message }); } });
-app.get('/api/approval/list', async (req, res) => { try { const ma = gateGoogle(req, res); if (!ma) return; res.json(await approval.list(ma, { status: req.query.status })); } catch (e) { res.status(500).json({ ok: false, error: e.message }); } });
+app.get('/api/approval/list', async (req, res) => { try {
+  // 🎬 촬영: 결재함이 메모리라 로그인 없이도 조회된다(씬6). 라이브면 아래 원래 관문 그대로.
+  if (FILMING) return res.json(await approval.list(null, { status: req.query.status }));
+  const ma = gateGoogle(req, res); if (!ma) return; res.json(await approval.list(ma, { status: req.query.status }));
+} catch (e) { res.status(500).json({ ok: false, error: e.message }); } });
 // ── ⭐ 대시보드 카드에서 바로 승인·발송 (결재함 "화면 단계"만 생략 · 게이트는 그대로) ──
 //   왜: 대시보드는 이미 대표가 문구를 눈으로 보고 있는 화면이다. 거기서 결재함으로 또 보내 또 승인하면 이중 확인이다.
 //   ★그러나 게이트는 하나도 안 뺀다. 뺀 것은 "결재함 화면을 한 번 더 거치는 절차"뿐이다:

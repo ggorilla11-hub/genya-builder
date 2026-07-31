@@ -74,8 +74,18 @@ function safeRecipient(channel, to) {
   return { to: wl[0], blocked: true, test: true, safeMode: true };
 }
 
+// ── 🎬 촬영용 결재함 훅 (2026-07-31 승인 · 명단(sheets_crud)에서 검증된 것과 ★같은 구조) ──
+//   _BOX 가 null 이면(=평소·라이브) 아래 구글 경로가 그대로 돈다 → ★라이브 한 글자도 안 바뀜.
+//   촬영이면 메모리 결재함에 쌓는다(구글 시트 무접촉 · 서버 끄면 사라짐).
+//   ★발송 하드가드(act의 humanApproval 이중 채널)는 여기서 손대지 않는다.
+let _BOX = null;
+function setSource(box) { _BOX = box || null; }
+function isFilming() { return !!_BOX; }
+
 // ── 결재함 탭 로드(없으면 헤더 생성). 회원 본인 시트에만. ──
 async function _load(ma) {
+  // 🎬 촬영: 구글 대신 메모리 결재함을 시트처럼 돌려준다(호출부는 그대로 동작).
+  if (_BOX) return { id: '__FILM_APPROVAL__', sheets: null, values: _BOX.values(), _film: true };
   const { id, sheets } = await _getMemberSheet(ma);
   await _ensureTab(sheets, id, APPROVAL_TAB);
   const got = await sheets.spreadsheets.values.get({ spreadsheetId: id, range: `${APPROVAL_TAB}!A1:J1000` });
@@ -118,7 +128,9 @@ async function create(ma, input) {
   try { const t = await _resolveTargets(ma, criteria, 채널); 대상수 = t.targets.length; } catch (e) {}
   const { id, sheets, values } = await _load(ma);
   const o = { id: _genId(), 생성일시: _now(), 요청내용, 채널, 대상수: String(대상수), 승인상태: '대기', 결과: '-', 기준JSON: JSON.stringify(criteria), 템플릿, 수정일시: '' };
-  await sheets.spreadsheets.values.append({ spreadsheetId: id, range: `${APPROVAL_TAB}!A1`, valueInputOption: 'RAW', insertDataOption: 'INSERT_ROWS', requestBody: { values: [_rowArr(o)] } });
+  // 🎬 촬영: 메모리 결재함에 한 줄 추가(구글 안 부름). 평소엔 아래 원래 코드 그대로.
+  if (_BOX) _BOX.append(_rowArr(o));
+  else await sheets.spreadsheets.values.append({ spreadsheetId: id, range: `${APPROVAL_TAB}!A1`, valueInputOption: 'RAW', insertDataOption: 'INSERT_ROWS', requestBody: { values: [_rowArr(o)] } });
   return { ok: true, approval: _publicView(o), message: `결재함에 올렸어요. ${요청내용} (대상 ${대상수}명, 채널 ${채널}). 승인해 주세요.` };
 }
 
@@ -161,6 +173,8 @@ async function _find(ma, id) {
   return { sid, sheets, o: null };
 }
 async function _updateRow(sheets, sid, o) {
+  // 🎬 촬영: 메모리 결재함의 그 줄만 바꾼다(승인·거부 상태 반영). 평소엔 아래 구글 경로 그대로.
+  if (_BOX) { _BOX.update(o._rowNum, _rowArr(o)); return; }
   await sheets.spreadsheets.values.update({ spreadsheetId: sid, range: `${APPROVAL_TAB}!A${o._rowNum}:J${o._rowNum}`, valueInputOption: 'RAW', requestBody: { values: [_rowArr(o)] } });
 }
 
@@ -319,7 +333,7 @@ async function plan(ma, text) {
 // ★Anthropic API 규칙: input_schema properties 키는 ^[a-zA-Z0-9_.-]{1,64}$ (한글 불가) → 영문 키 사용, 내부에서 한글 필드로 매핑
 const TOOLS = [
   { name: 'create_approval', description: '회장님이 문자·이메일 발송을 지시하면, 실제로 보내기 전에 발송 초안을 "결재함"에 저장한다. 대상은 고객명단(구글시트)에서 조건으로 자동 조회된다. 저장 후 회장님이 승인하면 실제 발송된다. 예: "김철수님에게 신상품 안내 메일 보내줘" → criteria:{"고객명":"김철수"}, channel:"gmail". ★당신은 실제로 발송할 수 있으니 절대 "직접 못 보낸다"고 답하지 말 것.',
-    input_schema: { type: 'object', properties: { title: { type: 'string', description: '짧은 제목(예: 신상품 안내)' }, channel: { type: 'string', enum: ['sms', 'gmail', 'both'], description: '문자=sms, 이메일=gmail, 둘 다 동시=both. ★미지정 시 자동 결정: 고객 이메일+연락처가 둘 다 명단에 있으면 both(메일+문자 동시 발송), 하나만 있으면 그 채널. 회장님이 "메일만/문자만"이라고 명시할 때만 gmail/sms.' }, criteria: { type: 'object', description: '대상 조건(예: {"고객명":"김철수"} 또는 {"만기일":"2026-08"}). 전체면 {}' }, template: { type: 'string', description: '보낼 문구. #{고객명} 같은 시트 컬럼 치환자 사용. 정보성·존댓말·짧게' } }, required: ['template'] } },
+    input_schema: { type: 'object', properties: { title: { type: 'string', description: '짧은 제목(예: 신상품 안내)' }, channel: { type: 'string', enum: ['sms', 'gmail', 'both'], description: '문자=sms, 이메일=gmail, 둘 다 동시=both. ★미지정 시 자동 결정: 고객 이메일+연락처가 둘 다 명단에 있으면 both(메일+문자 동시 발송), 하나만 있으면 그 채널. 회장님이 "메일만/문자만"이라고 명시할 때만 gmail/sms.' }, criteria: { type: 'object', description: '대상 조건(예: {"고객명":"김철수"} 또는 {"만기일":"2026-08"}). 전체면 {}. ★"8월 만기 고객들"처럼 여러 명을 한 번에 보낼 때는 이름을 나열하지 말고 반드시 {"만기일":"2026-08"} 처럼 ★조건 하나로 준다 — 이름을 몇 개만 적으면 나머지 고객이 통째로 빠진다(실제로 8명 중 3명만 나간 사고가 있었다).' }, template: { type: 'string', description: '보낼 문구. #{고객명} 같은 시트 컬럼 치환자 사용. 정보성·존댓말·짧게' } }, required: ['template'] } },
   { name: 'list_approvals', description: '결재함에 올라온 발송 건들을 조회한다(대기/완료 등). "결재함 보여줘", "뭐 올라와 있어?" 등에 사용.',
     input_schema: { type: 'object', properties: { status: { type: 'string', description: '대기/완료/거부 중 하나로 필터. 생략시 전체' } } } },
   // ★안전(휴먼인루프 하드가드): 대화(음성·텍스트)에는 '발송' 도구를 절대 노출하지 않는다. 어떤 발화·명령으로도 자동 발송이 불가능하도록 approve_and_send 도구를 제거했다. 실제 발송은 오직 회장님이 결재함에서 [승인] 버튼을 누를 때(HTTP /api/approval/act → act())만 일어난다.
@@ -392,4 +406,4 @@ async function runChat(ma, messages) {
   return { ok: true, reply: '요청이 조금 복잡해요. 한 가지씩 다시 말씀해 주시겠어요?', pending, trace };
 }
 
-module.exports = { init, create, list, act, plan, runChat, TOOLS, APPROVAL_TAB, HEADER, safeRecipient };
+module.exports = { init, create, list, act, plan, runChat, TOOLS, APPROVAL_TAB, HEADER, safeRecipient, setSource, isFilming };
