@@ -6109,7 +6109,9 @@ function openFullRoster(r){
     + '<table style="width:max-content;min-width:100%;border-collapse:collapse;font-family:inherit;">' + th + tb + '</table>'
     + '</div>'
     + '<div style="padding:7px 13px;font-size:11px;color:var(--gray-l);background:#fcfdfe;border-top:1px solid var(--line-2);">'
-    +   '칸 ' + r.cols.length + '개 · ' + (r.total || r.rows.length) + '명 — 말로 "우측으로 밀어봐"·"아래로 내려봐" 하셔도 됩니다.'
+    +   (r.picked ? (r.rows.length + '명 · 칸 ' + r.cols.length + '개 (전체 ' + r.total + '명 중)')
+                  : (r.rows.length + '명 · 칸 ' + r.cols.length + '개'))
+    +   ' — 말로 "우측으로 밀어봐"·"아래로 내려봐" 하셔도 됩니다.'
     + '</div>'
     + '</div>';
 
@@ -6133,9 +6135,24 @@ function openFullRoster(r){
     d.style.width = '100%';
     d.style.boxSizing = 'border-box';
     d.style.display = 'block';           /* 아바타 없이 표만 — 폭을 온전히 쓴다 */
-    d.style.overflow = 'hidden';         /* ★어떤 경우에도 본문 밖으로 안 삐져나가게 */
+    /* ★overflow:hidden 을 주면 안 된다 — 가로뿐 아니라 ★세로까지 잘라 표가 통째로 사라졌다.
+       (1600x900 실측: 카드 412px 인데 감싼 자리는 158px 로 눌려 있었다)
+       가로 침범은 위의 min-width:0 + 카드의 max-width:100% 로 이미 막힌다. */
+    d.style.maxWidth = '100%';
     d.innerHTML = card;
-    s.appendChild(d); s.scrollTop = s.scrollHeight;
+    s.appendChild(d);
+    /* ★표가 한눈에 들어오게 — 표의 ★윗줄을 대화창 맨 위로 올린다.
+       (맨 아래로만 내리면 위쪽 인사말에 밀려 표가 두어 줄만 보였다 — 1600x900 실측) */
+    var 맞추기 = function(){
+      try{
+        /* offsetTop 은 기준(offsetParent)이 달라 빗나갔다 → 화면 좌표 차이로 정확히 계산한다. */
+        var 차 = d.getBoundingClientRect().top - s.getBoundingClientRect().top;
+        s.scrollTop = Math.max(0, s.scrollTop + 차 - 8);   /* 표 윗줄이 대화창 상단에 오게 */
+      }catch(e){ s.scrollTop = s.scrollHeight; }
+    };
+    맞추기();
+    setTimeout(맞추기, 60);                        /* 그림 그려진 뒤 한 번 더(높이 확정 후) */
+    setTimeout(맞추기, 260);
   }catch(e){}
 }
 

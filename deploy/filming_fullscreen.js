@@ -107,23 +107,33 @@ function build(table, q, todayYM) {
 
   // 강조 대상: 특정 달을 물었으면 그 달, 아니면 "앞으로 가장 가까운 만기 달"
   const hiMonth = month || _nearestMonth(all, today);
-  const rows = all.map((r, i) => {
+
+  // ★"만기"를 물으면 그 달 사람만 뽑는다(2026-07-31 대표님 정정: "만기 8명 띄워" → 8명만).
+  //   "명단 띄워봐"처럼 만기 얘기가 없으면 전체를 보여주고 다가올 만기만 강조한다.
+  const 만기질의 = /만기|갱신|임박/.test(String(q || ''));
+  const 대상 = (만기질의 && hiMonth)
+    ? all.filter((r) => String(r['만기일'] || '').startsWith(hiMonth))
+    : all;
+  const 골랐나 = 대상.length !== all.length;
+
+  const rows = 대상.map((r, i) => {
     const o = {};
     cols.forEach((c) => { o[c] = String(r[c] || ''); });
     if (!o['번호']) o['번호'] = String(i + 1);
     o._hi = !!(hiMonth && String(r['만기일'] || '').startsWith(hiMonth));
     return o;
   });
-  // 강조 대상이 위로 오게(순서는 이미 그렇지만, 흩어져 있어도 촬영에서 바로 보이게)
-  rows.sort((a, b) => (b._hi ? 1 : 0) - (a._hi ? 1 : 0) || Number(a['번호'] || 0) - Number(b['번호'] || 0));
+  // 강조 대상이 위로 오게(전체를 보여줄 때만 의미 있다)
+  if (!골랐나) rows.sort((a, b) => (b._hi ? 1 : 0) - (a._hi ? 1 : 0) || Number(a['번호'] || 0) - Number(b['번호'] || 0));
 
   const hiCount = rows.filter((r) => r._hi).length;
   const 달표기 = hiMonth ? `${Number(hiMonth.slice(5, 7))}월` : '';
   return {
-    title: '고객 명단',
-    subtitle: `전체 ${all.length}명`,
-    focusLabel: hiCount ? `${달표기} 만기 ${hiCount}명` : '',
+    title: 골랐나 ? `${달표기} 만기 고객` : '고객 명단',
+    subtitle: 골랐나 ? `${rows.length}명` : `전체 ${all.length}명`,
+    focusLabel: (!골랐나 && hiCount) ? `${달표기} 만기 ${hiCount}명` : '',
     cols, rows, total: all.length, hiCount,
+    picked: 골랐나, month: hiMonth || '',
   };
 }
 

@@ -3571,8 +3571,8 @@ async function orderHandler(req, res) {
           out.action = 'open_full_roster'; out.roster = _fr;
           out.kind = '📇 고객명단';
           delete out.customers; delete out.customer; delete out.label;   // 카드 잔재 제거(카드가 같이 뜨지 않게)
-          out.text = _fr.focusLabel
-            ? `${_fr.focusLabel} 표로 띄웠어요. (전체 ${_fr.total}명 중)`
+          out.text = _fr.picked
+            ? `${_fr.title} ${_fr.rows.length}명 표로 띄웠어요.`          // "8월 만기 고객 8명 표로 띄웠어요."
             : `고객 명단 ${_fr.total}명 표로 띄웠어요.`;
           console.log(`[🎬명단표] ${_fr.total}명 · 칸 ${_fr.cols.length}개 · 강조 ${_fr.hiCount}명 (${_fr.focusLabel || '없음'})`);
         }

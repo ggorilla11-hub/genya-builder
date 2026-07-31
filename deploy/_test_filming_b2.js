@@ -46,10 +46,17 @@ ok('강조 이름표에 "8월 만기 8명"', /8월 만기 8명/.test(r.focusLabe
 console.log('\n[4] "8월 만기 띄워봐" (음성으로도 같은 길)');
 const r8 = ff.build(table, '8월 만기 띄워봐', TODAY);
 ok('8월을 알아들음', ff.wantsMonth('8월 만기 띄워봐', table.rows, TODAY) === '2026-08', String(ff.wantsMonth('8월 만기 띄워봐', table.rows, TODAY)));
-ok('★8월 만기 8명이 강조되어 맨 위', r8.rows.slice(0, 8).every((x) => x._hi) && r8.rows.filter((x) => x._hi).length === 8);
-ok('전체 80명은 그대로 스크롤로 볼 수 있음', r8.rows.length === 80, r8.rows.length + '명');
+// ★2026-07-31 대표님 시나리오 정정: "만기 ○○ 띄워" → 그 달 사람만. 전체 80명이 아니다.
+ok('★★"8월 만기 띄워봐" → 8명만 (전체 80명 X)', r8.rows.length === 8, r8.rows.length + '명');
+ok('★그 8명이 지시하신 분들', r8.rows.map((x) => x['고객명']).join(',') === AUG8.join(','), r8.rows.map((x) => x['고객명']).join(','));
+ok('★제목·인원 표기도 8명 기준', r8.title === '8월 만기 고객' && r8.subtitle === '8명', r8.title + ' / ' + r8.subtitle);
+ok('★골라낸 표라고 표시(picked)', r8.picked === true);
+ok('★원본 인원(80명)은 그대로 알고 있다', r8.total === 80, String(r8.total));
 const r11 = ff.build(table, '11월 만기 띄워봐', TODAY);
-ok('다른 달(11월)을 물으면 그 달이 강조됨', (r11.focusLabel || '').indexOf('11월') === 0, r11.focusLabel);
+ok('다른 달(11월)을 물으면 그 달 사람만', r11.picked === true && r11.title.indexOf('11월') === 0 && r11.rows.every((x) => String(x['만기일']).slice(5, 7) === '11'), r11.title + ' · ' + r11.rows.length + '명');
+const r전체 = ff.build(table, '명단 띄워봐', TODAY);
+ok('★"명단 띄워봐"는 여전히 전체 80명', r전체.rows.length === 80 && r전체.picked !== true, r전체.rows.length + '명');
+ok('★전체일 때만 8명 강조 뱃지', /8월 만기 8명/.test(r전체.focusLabel || ''), r전체.focusLabel);
 
 // ═══ [4-2] ★지난 만기를 "챙길 고객"으로 강조하지 않는가 (시험이 잡아낸 결함) ═══
 console.log('\n[4-2] ★지난 만기를 강조하지 않는가');
@@ -123,8 +130,14 @@ ok('★명단에 없는 칸은 만들지 않음', 전부.cols.every((c) => table
 // ═══ [7-5] ★본문 폭 안에만 · 공중에 뜬 느낌 (2026-07-31 지시) ═══
 console.log('\n[7-5] ★우측 구글 4종 침범 금지 · 부양감');
 ok('★★카드가 본문 폭을 절대 안 넘는다', /max-width:100%;box-sizing:border-box;/.test(blk));
-ok('★★감싼 자리도 폭에 묶여 있다(삐져나옴 차단)',
-  /d\.style\.width = '100%'/.test(blk) && /d\.style\.boxSizing = 'border-box'/.test(blk) && /d\.style\.overflow = 'hidden'/.test(blk));
+// ★★overflow:hidden 은 절대 쓰면 안 된다 — 가로뿐 아니라 ★세로까지 잘라 표가 통째로 사라졌다
+//   (1600x900 실측: 카드 412px 인데 감싼 자리는 158px). 가로는 min-width:0 으로 막는다.
+ok('★★감싼 자리에 overflow:hidden 이 없다(표가 잘려 사라지던 결함)',
+  /d\.style\.width = '100%'/.test(blk) && /d\.style\.boxSizing = 'border-box'/.test(blk) && !/d\.style\.overflow = 'hidden'/.test(blk));
+ok('★★우측 침범은 min-width:0 으로 막는다(grid 칸이 안 늘어나게)',
+  /s\.style\.minWidth = '0';/.test(blk) && /_cc\.style\.minWidth = '0';/.test(blk));
+ok('★표가 뜨면 표 윗줄이 대화창 맨 위로 온다(한눈에 보이게)',
+  /d\.getBoundingClientRect\(\)\.top - s\.getBoundingClientRect\(\)\.top/.test(blk));
 ok('★넘치는 칸은 카드 안쪽 가로 스크롤로 처리', /genya-roster-scroll" style="max-width:100%;max-height:340px;overflow:auto/.test(blk));
 ok('★★살짝 공중에 뜬 느낌(큰 그림자 두 겹)',
   /box-shadow:0 10px 26px rgba\(11,31,58,\.13\), 0 3px 8px rgba\(11,31,58,\.07\)/.test(blk));
