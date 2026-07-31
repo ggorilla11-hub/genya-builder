@@ -146,18 +146,17 @@ ok('★명단과 은하가 겹치지 않는다(명단=대화창 카드 · 은하
   !/id="fullRoster"/.test(gh) && /genya-roster-card/.test(gh) && !/galaxyWrap[^>]*z-index/.test(gh));
 
 // ═══ [6] ★메인(교육생) 무접촉 ═══
-console.log('\n[6] ★메인·교육생 기능 그대로');
-ok('★촬영 모드에서만 켜진다(window.__FILMING)', /if\(!window\.__FILMING\) return;/.test(blk));
-ok('★평소엔 화면에 자리도 안 차지(display:none 그대로)', /id="galaxyWrap" style="display:none/.test(gh));
-ok('★__FILMING 은 서버가 넣어준다', /window\.__FILMING=' \+ \(FILMING \? 'true' : 'false'\)/.test(ms));
-ok('★라이브면 false 가 들어간다(FILMING 은 환경변수로만 true)', /const FILMING = process\.env\.FILMING_MODE === '1';/.test(ms));
-// ★촬영 아님 → return 이 시안 코드(별 생성 for문·frame())보다 ★위에 있어야 한다.
-//   그래야 라이브에서 별 2600개 계산도, 애니메이션도 아예 시작되지 않는다.
-const _게이트 = blk.indexOf('if(!window.__FILMING) return;');
-ok('★평소엔 별 계산조차 안 함(게이트가 별 생성보다 위)',
-  _게이트 >= 0 && _게이트 < blk.indexOf('for(var i=0;i<N;i++)'), '게이트=' + _게이트 + ' · 별생성=' + blk.indexOf('for(var i=0;i<N;i++)'));
-ok('★평소엔 애니메이션도 시작 안 함(게이트가 frame() 호출보다 위)',
-  _게이트 >= 0 && _게이트 < blk.lastIndexOf('frame();'));
+console.log('\n[6] ★라이브에서도 켜지되, 데이터엔 손대지 않는가');
+// ★2026-07-31 대표님 결정: 홀로그램은 라이브에도 켠다(순수 시각 효과).
+ok('★촬영 전용 게이트가 없다(라이브도 켜짐)', !/if\(!window\.__FILMING\) return;/.test(gh));
+ok('★그래도 데이터는 안 읽는다', !/loadTable|\/api\/order|고객명|만기일/.test(blk));
+ok('★서버에 아무것도 안 부른다', !/fetch\(/.test(blk));
+ok('★__FILMING 은 서버가 넣어준다(크기 구분용으로만 남김)', /window\.__FILMING=' \+ \(FILMING \? 'true' : 'false'\)/.test(ms));
+ok('★FILMING 은 환경변수로만 true', /const FILMING = process\.env\.FILMING_MODE === '1';/.test(ms));
+// ★라이브에서도 켜지므로, 대신 ★가볍게 도는지를 확인한다(2026-07-31 대표님 결정).
+ok('★화면 요소가 없으면 조용히 끝난다(다른 화면에서 안 터짐)', /if\(!wrap \|\| !cv0\) return;/.test(blk));
+ok('★별 개수는 시안대로 2600 (더 늘리지 않음 — 모바일 배려)', /var N=2600/.test(blk));
+ok('★점 찍기는 가장 가벼운 방식', /ctx\.fillRect\(x,y,sz,sz\);/.test(blk));
 
 // ═══ [7] 지어내지 않는가 (폐기된 홀로그램과 다른 점) ═══
 console.log('\n[7] ★값을 지어내지 않는가 (2026-07-27 폐기 사고 재발 방지)');
@@ -169,7 +168,9 @@ ok('★숫자·이름을 만들어 표시하지 않는다(표시는 상태 이�
 console.log('\n[8] 촬영 중 버벅이지 않는가');
 ok('점 찍기는 가장 가벼운 방식(fillRect)', /ctx\.fillRect\(x,y,sz,sz\);/.test(blk));
 ok('별 2600개 = 촬영에 충분히 가벼운 수', /var N=2600/.test(blk));
-ok('★캔버스가 화면 폭에 맞게 조정됨(시안 주석 3번)', /cv0\.width = cv0\.height = 560;/.test(gh));
+ok('★캔버스 크기 — 큰 화면 560 · 작은 화면(폰) 360으로 가볍게', /cv0\.width = cv0\.height = _작은화면 \? 360 : 560;/.test(gh));
+ok('★작은 화면 기준은 700px 미만(폰)', /var _작은화면 = \(window\.innerWidth \|\| 1024\) < 700;/.test(gh));
+ok('★높이는 자동 — 폰에서 세로로 안 늘어난다', /cv0\.style\.height = 'auto';/.test(gh));
 ok('★촬영=250px · 실제=168px (시안 주석 4번)', /\(촬영 \? 250 : 168\) \+ 'px'/.test(gh));
 
 console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');

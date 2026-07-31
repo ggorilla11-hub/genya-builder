@@ -6259,7 +6259,7 @@ function closeFullRoster(){}
      2) 실제 Vapi 음성 연동 → setJarvisState('listen'/'think'/'speak'/'idle')
      3) 실제 모드=작게 · 촬영 모드=조금 크게
 
-   ★촬영 모드(window.__FILMING)에서만 켠다. 라이브에선 별 계산조차 안 한다.
+   ★2026-07-31부터 라이브에서도 켠다(대표님 결정). 촬영은 조금 더 크게 그릴 뿐이다.
    ★데이터를 아예 안 읽는다 — 2026-07-27 폐기된 "LLM이 값을 지어내던 홀로그램"과 다르다.
    ─────────────────────────────────────────────────────────────── */
 (function(){
@@ -6267,13 +6267,18 @@ function closeFullRoster(){}
   var cv0  = document.getElementById('jarvisHolo');
   var lbl  = document.getElementById('galaxyLbl');
   if(!wrap || !cv0) return;
-  /* ★촬영 모드에서만. 평소(라이브·교육생)엔 여기서 끝 — 아래 시안 코드는 실행조차 안 된다. */
-  if(!window.__FILMING) return;
+  /* ★2026-07-31 대표님 결정: 라이브에도 켠다 — "지니야가 살아 있다"는 신호를 고객·설계사에게도.
+     순수 시각 효과다: 데이터를 안 읽고, 서버에 아무것도 안 부르고, 발송·명단과 무관하다.
+     (전에는 여기에 촬영 전용 게이트가 있어 라이브에선 별 계산조차 안 했다) */
 
   /* 통합①: 배치 영역에 맞게 캔버스 크기 조정(시안 주석 3번 — 정사각형 권장).
      내부 해상도를 표시 크기보다 크게 잡아 선명하게. 시안 스크립트가 W,H를 읽기 ★전에 정한다. */
-  var 촬영 = true;                                  // 통합③: 촬영=크게 · 실제=작게
-  cv0.width = cv0.height = 560;                     // 정사각형(권장)
+  /* ★대표님 결정: 라이브도 촬영과 ★동일하게 작동한다(크기·배치·상태 전부 같게). */
+  var 촬영 = true;
+  /* ★모바일 배려: 폰은 화면도 작고 힘도 약하다 → 캔버스 해상도를 낮춰 가볍게 돈다.
+     별 개수(2600)는 그대로 두고 그리는 크기만 줄인다(모양은 동일). */
+  var _작은화면 = (window.innerWidth || 1024) < 700;
+  cv0.width = cv0.height = _작은화면 ? 360 : 560;    // 정사각형(권장)
   cv0.style.height = 'auto';
   /* 좌우 여백은 다른 박스와 같게 두고(위 galaxyWrap margin 0), 그 안에서 폭을 다 쓴다.
      상한은 넉넉히 둬서 실제 폭은 좌측 열이 정한다(현재 202px). */
@@ -6282,8 +6287,8 @@ function closeFullRoster(){}
   cv0.style.margin = '0';
 
   wrap.style.display = '';
-  /* ★촬영 모드에서는 좌측 프로필 박스 묶음을 숨긴다 — 그 자리를 자비스 홀로그램이 대신한다.
-     (평소·교육생 화면에서는 이 줄이 아예 실행되지 않아 전부 그대로 보인다) */
+  /* 좌측 프로필 박스 묶음을 숨기고 그 자리를 자비스 홀로그램이 대신한다.
+     ★2026-07-31부터 라이브에서도 같이 적용된다(대표님 "두 모드 동일 작동" 결정). */
   try{ var pb = document.getElementById('profileBoxes'); if(pb) pb.style.display='none'; }catch(e){}
 
   /* ══════ 여기부터 ↓ 시안 원문 (deploy/jarvis_hologram_teal.html) ══════ */
