@@ -456,9 +456,22 @@ const FILM_ROSTER_FILE = 'genya_customer_list_80.xlsx';   // [명단·연결]에
 // 🎬 촬영용 설정(상호명·문자 동반) — 로그인·Firestore 없이 메모리에만. 서버 끄면 사라진다.
 let _FILM_PREFS = { smsCompanion: true, bizName: '' };
 let filmFull = null;
+// ★2026-07-31 대표 결정(나): 전체화면 명단 표("보여줘")·카드 순회("다음")·명단 밀기는 라이브·촬영 두 모드 다 쓴다.
+//   filming_fullscreen은 순수 표시 로직(데이터는 loadTable로 받음) → 라이브 명단(91명)에도 그대로 동작. 데이터·발송 무접촉.
+try { filmFull = require('./filming_fullscreen'); } catch (e) { console.log('[명단표] 모듈 못 읽음:', e.message); }
+// ★라이브 안전선(2026-08-01 대표님 승인) — 이 판별기는 라우터 ★맨 끝에서 답을 덮어쓴다.
+//   "목록·리스트·만기"라는 낱말만 보고 잡으면 ★발굴·결재·약관·유입 목록까지 고객 명단 표로 덮인다(실측 7건).
+//   → 다른 화면 얘기가 섞였는데 "명단·시트·고객목록"이라고 못 박지 않았으면 ★건드리지 않는다(현상 유지).
+//   못 알아들으면 넓히지 말고 멈춘다(성경 6-9). 촬영 모드는 예전 그대로 넓게 잡는다.
+function rosterSafe(q) {
+  if (FILMING) return true;
+  const s = String(q || '');
+  const 다른화면 = /발굴|리드|채널|결재|승인|반려|약관|유입|전환|매출|캘린더|일정|할\s*일|알림|메일|문자|카톡/.test(s);
+  const 명단못박음 = /명단|고객\s*목록|고객\s*리스트|고객\s*전체|전체\s*고객|시트|스프레드시트|엑셀/.test(s);
+  return !다른화면 || 명단못박음;
+}
 if (FILMING) {
   require('./filming_roster').enable(sheetsCrud);
-  filmFull = require('./filming_fullscreen');
   // 🎬 씬5·6: 결재함도 촬영용 메모리로(구글 시트 무접촉). 라이브면 이 줄이 안 돌아 기존 경로 그대로.
   try { require('./filming_approval').enable(approval); } catch (e) { console.log('[🎬촬영결재함] 못 켬:', e.message); }
 }
@@ -3644,8 +3657,11 @@ async function orderHandler(req, res) {
       try { out.mentioned = await _namesInText(out.text); } catch (e) {}
     }
     // 🎬 촬영 B-2: "명단 띄워봐"면 화면 가득 큰 표로 띄우라는 신호를 함께 보낸다(음성·텍스트 같은 길).
-    //    ★FILMING=false(라이브)면 이 블록은 통째로 건너뛴다 → 메인·교육생 응답에 아무것도 안 붙는다.
-    if (FILMING && filmFull && filmFull.wantsRoster(q)) {
+    //    ★2026-08-01 대표님 결정: ★라이브에서도 켠다(전체 명단·만기 고객을 큰 표로). 순수 표시 로직이라 데이터·발송 무접촉.
+    //    ★단 라이브에선 rosterSafe()로 좁힌다 — 발굴·결재·약관 목록을 명단 표가 덮지 않게.
+    //    ★★개인정보 관문: 기존 명단 경로는 전부 canSheet로 막혀 있는데 이 블록만 안 막혀 있었다.
+    //      그대로 열면 ★로그인 안 한 사람이 "명단 보여줘"만 해도 전체 명단(연락처·증권번호)이 JSON으로 나간다.
+    if (filmFull && canSheet && filmFull.wantsRoster(q) && rosterSafe(q)) {
       try {
         const _ft = await sheetsCrud.loadTable(null);
         const _fr = filmFull.build(_ft, q);
