@@ -147,8 +147,10 @@ async function list(ma, opts) {
   const raws = [];
   for (let i = 1; i < values.length; i++) { const r = values[i]; if (!r || !r[0]) continue; raws.push(_obj(r, i + 1)); }
   raws.reverse(); // 최신순
-  // ★Fix2C: 미리보기에 실제 이름 치환(검수용·읽을 때만 계산·시트 저장 안 함). 로스터 1회 로드(SA).
-  let table = null; try { table = await crud.loadTable(null); } catch (e) {}
+  // ★Fix2C: 미리보기에 실제 이름 치환(검수용·읽을 때만 계산·시트 저장 안 함). 로스터 1회 로드.
+  //   ★각자 명단 격리(2026-08-01): null(=SA 공용) → ★본인 명단(ma).
+  //   전엔 결재함 미리보기의 이름이 ★남의 공용 명단에서 치환될 수 있었다(발송 대상은 이미 ma라 안전했지만 보이는 이름이 어긋났다).
+  let table = null; try { table = await crud.loadTable(ma); } catch (e) {}
   const items = raws.map((o) => { const v = _publicView(o); v.미리보기 = _previewFor(o, table); return v; });
   const filtered = opts.status ? items.filter((x) => x.승인상태 === opts.status) : items;
   return { ok: true, count: filtered.length, 대기: items.filter((x) => x.승인상태 === '대기').length, items: filtered };
@@ -376,10 +378,11 @@ function systemPrompt() {
 4. 말투: 따뜻하고 쉽게. '클로드'·'AI' 같은 말은 쓰지 않는다.`;
 }
 // ═══ 명단 주입(큰불 수정) ═══ 질의 속 고객을 실제 시트에서 찾아 컨텍스트로 주입.
-//   loadTable(null)=서비스계정 읽기(회원 OAuth·데이터스코프 없어도 동작). 실패해도 '' 반환(대화 안 끊김).
-async function _rosterContext(userText) {
+//   ★각자 명단 격리(2026-08-01): 회원 토큰(ma)이 오면 ★본인 명단에서만 찾는다.
+//   ma가 없으면(비로그인·데모) 예전처럼 SA 읽기. 실패해도 '' 반환(대화 안 끊김).
+async function _rosterContext(userText, ma) {
   try {
-    const table = await crud.loadTable(null); // 🔑 SA 읽기(회원 로그인 무관)
+    const table = await crud.loadTable(ma || null); // 회원이면 본인 명단 · 없으면 SA(공유 데모)
     if (!table || !Array.isArray(table.rows) || !table.rows.length) return '';
     const header = table.header || [];
     // 질의에서 한글 이름 후보 추출(2~4자, '님' 허용)
@@ -407,7 +410,7 @@ async function runChat(ma, messages) {
   // ★큰불수정: Claude 호출 전에 명단(SA)에서 질의 속 고객의 실제 데이터를 읽어 시스템 프롬프트에 주입.
   //   → 안내문에 실제 만기일·상품 반영. 연락처는 승인 발송 시 criteria 재조회로 자동 사용(_dispatch·PII 미저장).
   let sysBase = systemPrompt();
-  try { const last = (messages || []).slice().reverse().find((x) => (x.role || 'user') !== 'assistant'); const rctx = await _rosterContext((last && (last.content || last.text)) || ''); if (rctx) sysBase += rctx; } catch (e) {}
+  try { const last = (messages || []).slice().reverse().find((x) => (x.role || 'user') !== 'assistant'); const rctx = await _rosterContext((last && (last.content || last.text)) || '', ma); if (rctx) sysBase += rctx; } catch (e) {}
   const trace = []; let pending = null;
   for (let hop = 0; hop < 5; hop++) {
     let r;
