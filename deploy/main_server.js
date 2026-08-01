@@ -5055,7 +5055,11 @@ const CONNECT_SCOPES = {
   //   ★참석자 초대는 코드에서 아예 안 만든다(아래 등록 코드에 attendees 없음 · sendUpdates:'none')
   //     → 권한이 생겨도 ★밖으로 나가는 메일은 0이다.
   calendar: ['https://www.googleapis.com/auth/calendar.readonly', 'https://www.googleapis.com/auth/calendar.events'],
-  sheets: ['https://www.googleapis.com/auth/spreadsheets'],
+  // ★각자 명단 격리(2026-08-01): drive.file 필수.
+  //   시트 연결에 spreadsheets 만 있으면 ★드라이브 권한이 하나도 없어 drive.files.list 가 통째로 실패한다
+  //   → 학생이 "시트 연결"을 해도 명단이 안 뜬다(연결하라는 안내만 반복된다).
+  //   ★drive.file = "이 앱이 만든 파일만" → 본인이 올린 명단 시트만 보이고 남의 것은 아예 안 보인다(격리에 딱 맞다).
+  sheets: ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive.file'],
   drive: ['https://www.googleapis.com/auth/drive.file'],
   gmail: ['https://www.googleapis.com/auth/gmail.readonly', 'https://www.googleapis.com/auth/gmail.compose', 'https://www.googleapis.com/auth/gmail.send'],
 };
