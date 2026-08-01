@@ -158,13 +158,25 @@ async function _loadTableRaw(ma) {
   // 🎬 촬영 모드(FILMING_MODE=1)에서만 켜지는 갈림길. 평소엔 _SOURCE=null 이라 아래 원래 코드 그대로 탄다.
   //    켜지면 구글을 아예 안 부른다 → 실제 고객 시트 접근 0(섞일 길이 없음).
   if (_SOURCE) return _SOURCE(ma);
-  // 🔑 시트 접근 = 서비스 계정(ma 없어도 동작). 로그인 OAuth는 사용자 인증 전용으로 별개 유지.
-  const auth = await getServiceAuth();
-  console.log('[🔑인증] 시트 접근: 서비스 계정 사용'); // 이 줄이 찍히면 SA 접근(토큰만료 무관). 안 찍히면 아직 OAuth 경로.
+  // 🔑 시트 접근 인증 — ★2026-08-01 각자 명단 격리(대표님 지시).
+  //   전에는 ★무조건 서비스계정(SA)이었다 → SA에 공유된 시트 하나를 ★모든 회원이 같이 봤다.
+  //   (service_auth.js:4 주석이 "회원이 여럿이 되면 반드시 바꿔야 한다"고 미리 경고하던 그 문제)
+  //   이제: 회원 토큰이 있으면 ★그 회원 본인 드라이브를 본다 → A는 A 명단, B는 B 명단.
+  //   비로그인·데모는 SA 그대로 → 기존 공유 데모 경로 무접촉.
+  //   ★아래 drive·sheets 클라이언트가 이 auth를 그대로 쓰므로 읽기·쓰기가 함께 격리된다.
+  const _useMember = !!ma;
+  const auth = _useMember ? ma : await getServiceAuth();
+  console.log(_useMember ? '[🔑인증] 시트 접근: 회원 본인 토큰 (각자 명단 격리)' : '[🔑인증] 시트 접근: 서비스 계정 (공유 데모)');
   const drive = google.drive({ version: 'v3', auth });
   const sheets = google.sheets({ version: 'v4', auth });
+  // ★공유된 남의 시트 함정 차단(2026-08-01 대표님 지시 ①):
+  //   회원 토큰으로 이름만 찾으면, 남이 같은 이름 시트를 공유해 뒀을 때 ★그게 잡힐 수 있다
+  //   (그리고 여러 개면 첫 번째가 잡혀 ★비결정적이다). "본인이 소유한 것"으로 못 박는다.
+  //   ★단 SA(비로그인·데모) 경로에는 붙이면 안 된다 — 데모 시트는 SA 소유가 아니라
+  //     SA에 ★공유된 것이라, 'me' in owners 를 붙이면 데모가 통째로 안 잡힌다(기존 경로 보존).
+  const _ownerOnly = _useMember ? " and 'me' in owners" : '';
   const f = await drive.files.list({
-    q: `mimeType='application/vnd.google-apps.spreadsheet' and name='${_DEMO_TITLE}' and trashed=false`,
+    q: `mimeType='application/vnd.google-apps.spreadsheet' and name='${_DEMO_TITLE}' and trashed=false${_ownerOnly}`,
     fields: 'files(id)',
   });
   const id = (f.data.files || [])[0] && f.data.files[0].id;

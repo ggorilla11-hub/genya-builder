@@ -101,10 +101,23 @@ async function importRoster(ma, input) {
     return { ok: true, needsConfirm: true, header, headerRow, groupTitleRow, count: rows.length, 신규, 중복, 중복명단, preview: rows.slice(0, 5), message: `${_hMsg}${rows.length}명을 읽었어요 (신규 ${신규}명, 이미 있음 ${중복}명). 새로 교체할까요, 기존에 추가할까요?` };
   }
 
-  // 2) 저장 — 🔑 SA로 전환: 회원 OAuth 대신 서비스 계정으로 시트 찾기+쓰기(loadTable이 SA 사용, {id, sheets(SA클라)} 반환). ma 없어도 동작.
+  // 2) 저장 — 🔑 인증은 loadTable이 정한다(2026-08-01 각자 명단 격리):
+  //      회원 토큰(ma) 있으면 → 그 회원 본인 시트 · 없으면(비로그인·데모) → SA 공유 시트.
+  //      {id, sheets(그 인증으로 만든 클라)} 를 그대로 받아 쓰므로 쓰기도 같은 곳으로 간다.
   const _st = await crud.loadTable(ma);
-  const id = _st.id, sheets = _st.sheets;
-  if (!id) return { ok: false, message: `'${_TITLE}' 시트를 찾지 못했어요. 서비스 계정에 시트가 공유됐는지 확인해 주세요.` };
+  let id = _st.id, sheets = _st.sheets;
+  // ★회원 시트 생성(대표님 지시 ②): 로그인 회원인데 아직 명단 시트가 없으면(첫 업로드)
+  //   ★그 회원 토큰으로 '지니야빌더_데모_명단' + '고객명단' 탭을 새로 만들고 거기에 쓴다.
+  //   왜 필요한가: 읽기를 회원 토큰으로 바꾼 순간, 처음 온 교육생은 본인 드라이브에 시트가 없어
+  //   id=null 이 되고 예전 코드는 "시트를 찾지 못했어요"로 끝나 ★업로드가 통째로 막힌다.
+  //   생성은 _getMemberSheet(=main_server의 findOrCreateMemberSheet · 회원 토큰으로 create) 재사용.
+  //   ★비로그인·데모(ma 없음)는 이 분기가 아예 안 켜진다 → 기존 SA 경로 그대로.
+  if (!id && ma && _getMemberSheet) {
+    const _made = await _getMemberSheet(ma);   // 회원 본인 드라이브에 생성(없으면 만들고, 있으면 그것)
+    id = _made.id; sheets = _made.sheets;
+    console.log('[📇명단] 회원 본인 시트 준비됨(첫 업로드 · 각자 명단 격리)'); // ★시트ID·개인정보는 안 남긴다
+  }
+  if (!id) return { ok: false, message: `'${_TITLE}' 시트를 찾지 못했어요. 구글 시트 연결을 확인해 주세요.` };
   await _ensureTab(sheets, id, _TAB);
   const mode = input.mode === 'append' ? 'append' : 'replace';
   // ★파일별 관리용 메타 태깅: 각 행에 소스파일·업로드일 기록(컬럼 없으면 추가). 기존 컬럼 무접촉.

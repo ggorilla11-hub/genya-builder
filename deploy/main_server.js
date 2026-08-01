@@ -1813,7 +1813,8 @@ async function buildBrief(ma, req, scope) {
   const mentioned = [];
   const push = (n) => { if (n && mentioned.indexOf(n) < 0) mentioned.push(n); };
   let t = null;
-  try { t = await sheetsCrud.loadTable(null); } catch (e) {}
+  // ★각자 명단 격리: 브리핑에 나가는 만기·생일 고객은 ★본인 명단에서만. (ma는 이 함수의 인자로 이미 있다)
+  try { t = await sheetsCrud.loadTable(ma); } catch (e) {}
   const rows = (t && t.rows) || [];
   const keys = Object.keys(rows[0] || {}).filter((k) => k !== '_rowNum');
   const nameOf = (r) => _rowName(t, r);
@@ -2028,9 +2029,10 @@ function _linkOwnLine(draft, link) {
 }
 
 /** 이 글에 나온 사람 중 ★명단에 실제로 있는 이름만 (지어내기 차단) */
-async function _namesInText(text) {
+async function _namesInText(text, ma) {
   let t = null;
-  try { t = await sheetsCrud.loadTable(null); } catch (e) { return []; }
+  // ★각자 명단 격리: "실제로 있는 이름인가"도 ★본인 명단 기준으로 본다(ma 없으면 예전대로 SA).
+  try { t = await sheetsCrud.loadTable(ma || null); } catch (e) { return []; }
   const rows = (t && t.rows) || [];
   const out = [];
   for (const r of rows) {
@@ -2191,7 +2193,9 @@ app.get('/api/diag/card', async (req, res) => {
   const q = String(req.query.q || '상담 대기 4명 카드 보여줘');
   const me = !!sessionOf(req);
   try {
-    const t = await sheetsCrud.loadTable(null);
+    // ★진단은 실제와 ★같은 길을 타야 한다(성경 6-7). 실제 대화가 회원 토큰으로 읽게 됐으니 진단도 같이 바꾼다.
+    //   안 그러면 진단은 SA 공용 명단을 보고 "된다"는데 실제 화면은 본인 명단이라 ★진단이 거짓말한다.
+    const t = await sheetsCrud.loadTable(memberAuth(req));
     const rows = (t && t.rows) || [];
     const keys = Object.keys(rows[0] || {});
     // ★실제 대화가 쓰는 것과 같은 트리거 함수 — "말한 대로 실제로 도는지"를 여기서 확인한다
@@ -3112,7 +3116,8 @@ async function orderHandler(req, res) {
     let _isNameShow = false, _nameShowNames = [], _nameShowTable = null;
     // 값비싼 명단 읽기를 아무 말에나 하지 않도록, 기존 트리거가 꺼졌을 때만 본다.
     if (!_isCardCmd && !_isCardClose && !_isBriefAsk && /(보여|띄워|띄우|열어|불러|보자|둘|셋|모두|전부|양쪽)/.test(q)) {
-      try { _nameShowTable = await sheetsCrud.loadTable(null); } catch (e) { _nameShowTable = null; }
+      // ★각자 명단 격리(2026-08-01): null(=SA 공용) 대신 ★회원 본인 토큰. 로그인 안 했으면 ma가 null이라 예전 그대로.
+      try { _nameShowTable = await sheetsCrud.loadTable(ma); } catch (e) { _nameShowTable = null; }
       // ★진단창구와 ★같은 함수로 판정한다("진단은 되는데 실제는 안 됨" 방지)
       _nameShowNames = _nameShowNamesOf(q, _nameShowTable, (req.body && req.body.lastMentioned) || []);
       _isNameShow = _nameShowNames.length > 0;
@@ -3389,7 +3394,7 @@ async function orderHandler(req, res) {
       //   "강수연 카드 닫아"처럼 이름을 함께 말하면 그 카드만.
       let who = '';
       try {
-        const t = await sheetsCrud.loadTable(null);
+        const t = await sheetsCrud.loadTable(ma);   // ★각자 명단 격리: 본인 명단에서만 이름을 찾는다
         for (const r of ((t && t.rows) || [])) { const n = _rowName(t, r); if (n && n.length >= 2 && q.indexOf(n) >= 0) { who = n; break; } }
       } catch (e) {}
       // ★2026-07-27 대표님 실측: "발굴 카드 닫아"라고 해도 발굴 팝업이 안 닫혔다.
@@ -3399,7 +3404,7 @@ async function orderHandler(req, res) {
         text: who ? (who + ' 고객 카드를 닫았어요.') : '카드를 닫았어요.' };
     } else if (_isCardCmd) {
       let t = null;
-      try { t = await sheetsCrud.loadTable(null); } catch (e) {}
+      try { t = await sheetsCrud.loadTable(ma); } catch (e) {}   // ★각자 명단 격리: 본인 명단으로 카드를 그린다
       // ★① 말 속의 이름을 ★전부★ 찾는다 — "강수연·오정서 카드"가 1장만 뜨던 문제(2026-07-27)
       //    전에는 첫 이름 하나만 보고 끝냈다. 1명이든 여러 명이든 똑같이 처리한다.
       const _named = [];
@@ -3654,7 +3659,7 @@ async function orderHandler(req, res) {
     //   → 시트를 갖고 있는 ★서버가 직접 알려준다. 브리핑에 나온 이름 중 명단에 실제 있는 것만.
     //   ★서버 저장 0 — 응답에 실어 보내고 끝.
     if (out && typeof out.text === 'string' && out.text.length > 4) {
-      try { out.mentioned = await _namesInText(out.text); } catch (e) {}
+      try { out.mentioned = await _namesInText(out.text, ma); } catch (e) {}
     }
     // 🎬 촬영 B-2: "명단 띄워봐"면 화면 가득 큰 표로 띄우라는 신호를 함께 보낸다(음성·텍스트 같은 길).
     //    ★2026-08-01 대표님 결정: ★라이브에서도 켠다(전체 명단·만기 고객을 큰 표로). 순수 표시 로직이라 데이터·발송 무접촉.
@@ -3663,7 +3668,10 @@ async function orderHandler(req, res) {
     //      그대로 열면 ★로그인 안 한 사람이 "명단 보여줘"만 해도 전체 명단(연락처·증권번호)이 JSON으로 나간다.
     if (filmFull && canSheet && filmFull.wantsRoster(q) && rosterSafe(q)) {
       try {
-        const _ft = await sheetsCrud.loadTable(null);
+        // ★각자 명단 격리(2026-08-01 대표님 승인): 전체화면 표도 ★본인 명단을 띄운다.
+        //   전엔 null(=SA 공용)이라 학생이 "명단 보여줘" 하면 ★남의 공용 명단이 통째로 떴다.
+        //   촬영 모드는 _SOURCE가 먼저 가로채므로 샘플 그대로(동작 불변).
+        const _ft = await sheetsCrud.loadTable(ma);
         const _fr = filmFull.build(_ft, q);
         if (_fr) {
           // ★기존 카드 분기가 먼저 만든 답(예: "8월 만기 14명 카드를 띄울게요")이 남으면
@@ -3695,7 +3703,7 @@ async function orderHandler(req, res) {
       }
       if (_st) {
         try {
-          const _t2 = await sheetsCrud.loadTable(null);
+          const _t2 = await sheetsCrud.loadTable(ma);   // ★각자 명단 격리: 카드 순회도 본인 명단
           const _order = filmFull.stepOrder(_t2, q);
           // 화면이 카드를 그릴 수 있게 그 사람들의 행도 같이 보낸다(촬영용 가짜 데이터).
           const _nc = _t2.nameCol || '고객명';
@@ -3741,7 +3749,10 @@ const VIP_EMAIL = 'ggorilla11@gmail.com';
 const DEMO_FRESH_EMAIL = 'ggorilla66@gmail.com';
 async function findOrCreateMemberSheet(ma) {
   const drive = google.drive({ version: 'v3', auth: ma }), sheets = google.sheets({ version: 'v4', auth: ma });
-  const f = await drive.files.list({ q: `mimeType='application/vnd.google-apps.spreadsheet' and name='${DEMO_TITLE}' and trashed=false`, fields: 'files(id)' });
+  // ★'me' in owners (2026-08-01): 이 함수는 ★회원 토큰으로 시트를 찾고 없으면 만든다.
+  //   이름만으로 찾으면 남이 같은 이름 시트를 공유해 뒀을 때 그게 잡혀 ★남의 시트에 명단을 써버린다.
+  //   (읽기는 본인 것만 보는데 쓰기가 남의 것으로 가면 격리가 통째로 뚫린다) → 본인 소유로 못 박는다.
+  const f = await drive.files.list({ q: `mimeType='application/vnd.google-apps.spreadsheet' and name='${DEMO_TITLE}' and trashed=false and 'me' in owners`, fields: 'files(id)' });
   let id = (f.data.files || [])[0] && f.data.files[0].id;
   if (!id) { const c = await sheets.spreadsheets.create({ requestBody: { properties: { title: DEMO_TITLE }, sheets: [{ properties: { title: SHEET_TAB } }] }, fields: 'spreadsheetId' }); id = c.data.spreadsheetId; }
   return { id, sheets };
