@@ -5872,6 +5872,11 @@ window.addFile=function(){ doOCR(); };
         <div id="ghList" style="margin-top:8px"></div>
         <input type="file" id="ghFile" accept=".xlsx,.xls,.csv" style="display:none" onchange="ghPick(this)">
         <button class="gh-btn" onclick="document.getElementById('ghFile').click()">명단 파일 올리기 (엑셀·CSV)</button>
+        <!-- 📥 명단 다운로드 (2026-08-01 · 부트캠프 4일차) — 올리기의 반대쪽. 수정까지 끝난 ★지금 명단을 내 PC로 받는다.
+             ★서버에 파일을 남기지 않는다(메모리 → 브라우저 직송). 실패하면 가짜 파일 대신 사유를 그대로 띄운다. -->
+        <button class="gh-btn ghost" id="ghDlBtn" onclick="ghDownload('xlsx')">📥 명단 다운로드 (엑셀)</button>
+        <div style="font-size:11px;color:#8a94a6;margin-top:6px;line-height:1.5">지금 저장된 <b>최신 명단</b>을 내 컴퓨터로 받아요. 수정한 내용까지 그대로 들어갑니다. · <a href="javascript:void(0)" onclick="ghDownload('csv')" style="color:#8a6d3b;font-weight:700;text-decoration:none">CSV로 받기</a></div>
+        <div id="ghDlMsg" style="display:none;font-size:12px;margin-top:7px;line-height:1.55"></div>
         <div id="ghPv"></div>
       </div>
       <div class="gh-sec">연결 상태</div>
@@ -5897,6 +5902,43 @@ window.addFile=function(){ doOCR(); };
   window.ghSolapiStatus=function(){ var el=document.getElementById('ghSolapi'); if(!el)return; fetch('/api/settings/solapi',{credentials:'include',cache:'no-store'}).then(function(r){return r.json();}).then(function(d){ if(d&&d.registered){ el.innerHTML='✅ 등록됨 · Key <b>'+esc(d.keyMasked||'••••')+'</b> · 발신 <b>'+esc(d.sender||'')+'</b>'; el.style.color='#0f766e'; } else if(d&&d.needsLogin){ el.textContent='로그인 후 등록할 수 있어요.'; el.style.color='#c0392b'; } else { el.textContent='아직 미등록 — 아래 버튼으로 등록하세요.'; el.style.color='#c0392b'; } }).catch(function(){ el.textContent=''; }); };
   window.genyaHub=function(){document.getElementById('ghOv').style.display='block';setTimeout(function(){document.getElementById('ghOv').classList.add('on');},10);ghLoad();ghSolapiStatus();};
   window.ghClose=function(){document.getElementById('ghOv').classList.remove('on');setTimeout(function(){document.getElementById('ghOv').style.display='none';},220);};
+  // ── 📥 명단 다운로드 (2026-08-01 · 부트캠프 4일차) ─────────────────────────
+  //   무엇을·왜: 교육생이 명단을 올리고 고친 뒤, ★그 최신 명단을 자기 PC로 받는다.
+  //   ★정직 원칙: 서버가 파일이 아니라 JSON(안내)을 주면 그 사유를 그대로 보여준다.
+  //     빈 명단·권한 없음일 때 ★빈 엑셀을 만들어 주지 않는다(가짜 파일 0).
+  //   서버 응답은 메모리 Buffer라 서버 디스크에 명단이 남지 않는다.
+  function _ghFileName(cd){                       // Content-Disposition에서 한글 파일명 꺼내기
+    if(!cd) return '';
+    var m=/filename\*=UTF-8''([^;]+)/i.exec(cd);
+    if(m){ try{ return decodeURIComponent(m[1]); }catch(e){} }
+    m=/filename="([^"]+)"/i.exec(cd);
+    return m?m[1]:'';
+  }
+  window.ghDownload=async function(fmt){
+    var csv=(fmt==='csv'), btn=document.getElementById('ghDlBtn'), msg=document.getElementById('ghDlMsg');
+    var old=btn?btn.textContent:'';
+    function say(t,bad){ if(!msg)return; msg.style.display='block'; msg.innerHTML=esc(t); msg.style.color=bad?'#c0392b':'#0f766e'; }
+    if(msg) msg.style.display='none';
+    if(btn){ btn.disabled=true; btn.textContent='명단을 내려받는 중…'; }
+    try{
+      var r=await fetch('/api/roster/export?fmt='+(csv?'csv':'xlsx'),{credentials:'include',cache:'no-store'});
+      var ct=r.headers.get('content-type')||'';
+      if(ct.indexOf('application/json')>=0){       // ★파일이 아니라 안내 — 사유를 그대로 전한다
+        var d={}; try{ d=await r.json(); }catch(e){}
+        say(d.message||d.error||'명단을 내려받지 못했어요.',true);
+        return;
+      }
+      if(!r.ok){ say('명단을 내려받지 못했어요 (오류 '+r.status+')',true); return; }
+      var bl=await r.blob();
+      if(!bl||!bl.size){ say('빈 파일이 와서 저장하지 않았어요. 잠시 뒤 다시 눌러 주세요.',true); return; }
+      var nm=_ghFileName(r.headers.get('content-disposition'))||('고객명단.'+(csv?'csv':'xlsx'));
+      var a=document.createElement('a'); a.href=URL.createObjectURL(bl); a.download=nm;
+      document.body.appendChild(a); a.click();
+      setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); },1200);
+      say('✅ '+nm+' 내려받았어요 — 다운로드 폴더를 확인하세요.');
+    }catch(e){ say('명단을 내려받지 못했어요: '+(e&&e.message||e),true); }
+    finally{ if(btn){ btn.disabled=false; btn.textContent=old||'📥 명단 다운로드 (엑셀)'; } }
+  };
   window.ghLoad=async function(){
     // 명단 수
     try{var s=await api('/api/sheets');document.getElementById('ghCount').textContent=(s&&typeof s.total==='number')?s.total:(s&&(s.needsGoogle||s.needsConnect)?'–':'0');}catch(e){document.getElementById('ghCount').textContent='–';}

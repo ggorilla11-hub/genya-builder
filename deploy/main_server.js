@@ -3789,6 +3789,96 @@ app.get('/api/roster/list', async (req, res) => {
     res.json({ ok: true, count: (t.rows || []).length, header: t.header || [], rows: t.rows || [] });
   } catch (e) { if (scopeGate(e, res, 'sheets')) return; res.status(500).json({ ok: false, error: e.message }); }
 });
+// ═══════════════════════════════════════════════════════════════
+// 📥 명단 다운로드 (2026-08-01 · 부트캠프 4일차) — ★추가만. 기존 경로 무접촉.
+// ═══════════════════════════════════════════════════════════════
+// 무엇을·왜: 교육생이 명단을 올리고 고친 뒤 ★그 최신 명단을 자기 PC로 받는다.
+//   지금까지 [내 자료함]에는 "지니야가 만든 문서"만 모여서 명단 자체는 못 받았다.
+//
+// ★안전 4가지 (2026-08-01 대표님 지시 · CTO 검증 대상)
+//  ① 개인정보 관문 — canSheet(로그인 + 시트권한). orderHandler:3035와 ★완전히 같은 기준.
+//     로그인 안 한 사람이 이 주소를 직접 때려도 명단이 ★한 글자도 안 나간다.
+//  ② ★본인 명단만 — loadTable이 잡은 시트를 ★요청자 본인 구글 토큰으로 실제로 열어본다.
+//     열리면 본인이 권한 가진 시트 → 내보낸다. 안 열리면 남의 명단 → 403으로 막는다.
+//     ★내가 짠 낱말 조건이 아니라 ★구글 권한이 직접 막는 구조라 샐 길이 없다.
+//     왜 이렇게: service_auth.js:4 주석대로 loadTable은 SA '이름 검색'이라 회원이 여럿이면 섞일 수 있다.
+//     그렇다고 다른 함수로 읽으면 "화면에 보이는 명단 ≠ 받는 파일"이 된다(성경 6-9) →
+//     ★읽기는 화면과 같은 loadTable로 하고, 권한만 본인 토큰으로 한 겹 더 확인한다.
+//  ③ 빈 명단·권한 없음 → ★파일 대신 사유 JSON. 빈 엑셀·가짜 파일 0.
+//  ④ 서버 디스크 저장 0 · 로그에 고객 값 0 — 메모리 Buffer로 만들어 attachment로 흘려보내고 소멸.
+//     (main_server.js:2648 "고객 데이터로 문서 생성 시 절대 SKILL_OUT에 쓰지 말 것"을 지킨다)
+app.get('/api/roster/export', async (req, res) => {
+  try {
+    // ── ① 개인정보 관문 ──────────────────────────────────────────
+    const _ma = memberAuth(req);
+    const _canSheet = !!(_ma && hasDataScope(req)) || FILMING;   // ★orderHandler의 canSheet와 같은 식
+    if (!_canSheet) {
+      console.log('[📥명단다운로드] 거부 — 로그인·시트권한 없음 (내보낸 명단 0바이트)');
+      return res.status(401).json({
+        ok: false, needsGoogle: true, needsConnect: true, connectUrl: '/auth/google/connect',
+        message: '명단을 받으려면 구글 로그인과 시트 연결이 필요해요. [명단·연결]에서 연결해 주세요.',
+      });
+    }
+    // ── 명단 읽기: 화면([명단·연결]·명단 표)과 ★똑같은 함수 ──────
+    const table = await sheetsCrud.loadTable(FILMING ? null : _ma);
+    // ── ② 본인 명단만: 그 시트를 ★요청자 본인 토큰으로 열어본다 ──
+    //     (촬영 모드는 구글 무접촉 샘플이라 시트 자체가 없다 → 확인할 대상이 없다)
+    if (!FILMING && table && table.id) {
+      try {
+        await google.sheets({ version: 'v4', auth: _ma })
+          .spreadsheets.get({ spreadsheetId: table.id, fields: 'spreadsheetId' });
+      } catch (e) {
+        console.log('[📥명단다운로드] 거부 — 본인 권한 없는 시트 (남의 명단 차단)');
+        return res.status(403).json({
+          ok: false, notMine: true,
+          message: '이 명단은 본인 계정의 시트가 아니라 내려받을 수 없어요. [명단 파일 올리기]로 본인 명단을 올린 뒤 받아 주세요.',
+        });
+      }
+    }
+    // ── ③ 빈 명단이면 파일을 만들지 않는다 ───────────────────────
+    const header = ((table && table.header) || []).filter((h) => String(h == null ? '' : h).trim());
+    const rows = (table && table.rows) || [];
+    if (!header.length || !rows.length) {
+      return res.json({
+        ok: false, empty: true, count: rows.length,
+        message: `아직 내려받을 명단이 없어요 (지금 ${rows.length}명). 먼저 [명단 파일 올리기]로 명단을 올려 주세요.`,
+      });
+    }
+    // ── 표 만들기: 화면에 보이는 칸 그대로. _rowNum 같은 내부 값은 header에 없어 자동으로 빠진다 ──
+    const aoa = [header, ...rows.map((r) => header.map((h) => String(r[h] == null ? '' : r[h])))];
+    const csv = String(req.query.fmt || '').toLowerCase() === 'csv';
+    // ★파일명 날짜: _seoul().today는 "2026년 8월 1일 토요일"(사람용 문장)이라 파일명에 못 쓴다 —
+    //   실측에서 "고객명단_80명_2026년 8월 1일 토요일.xlsx"로 나왔다. 한국시간 y/mo/d 숫자로 만든다.
+    const _s = _seoul();
+    const _d = `${_s.y}${String(_s.mo).padStart(2, '0')}${String(_s.d).padStart(2, '0')}`;
+    const fname = `고객명단_${rows.length}명_${_d}.${csv ? 'csv' : 'xlsx'}`;
+    let buf, mime;
+    if (csv) {
+      const cell = (v) => (/[",\r\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v);
+      const text = aoa.map((r) => r.map(cell).join(',')).join('\r\n');
+      buf = Buffer.concat([Buffer.from([0xEF, 0xBB, 0xBF]), Buffer.from(text, 'utf8')]); // ★BOM — 엑셀에서 한글 안 깨지게
+      mime = 'text/csv; charset=utf-8';
+    } else {
+      const XLSX = require('xlsx');                                      // 이미 쓰는 부품(4137·4445줄)
+      const ws = XLSX.utils.aoa_to_sheet(aoa);
+      ws['!cols'] = header.map((h, i) => ({ wch: i === 0 ? 22 : 18 }));   // excel_skill.makeSheet와 같은 폭 규칙
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, SHEET_TAB);
+      buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });         // ★④ 파일 저장 대신 메모리
+      mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    }
+    res.setHeader('Content-Type', mime);
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private'); // 개인정보 캐시 금지
+    res.setHeader('Content-Disposition',
+      `attachment; filename="roster.${csv ? 'csv' : 'xlsx'}"; filename*=UTF-8''${encodeURIComponent(fname)}`);
+    console.log(`[📥명단다운로드] ${rows.length}명 · 칸 ${header.length}개 · ${csv ? 'CSV' : '엑셀'} ${buf.length}B (서버 저장 0 · 값 로그 0)`);
+    res.send(buf);                                                       // 응답 후 메모리에서 소멸
+  } catch (e) {
+    if (scopeGate(e, res, 'sheets')) return;
+    console.log('[📥명단다운로드] 실패:', e.message);
+    res.status(500).json({ ok: false, error: '명단을 만들지 못했어요: ' + e.message });
+  }
+});
 // 📇 파일별 삭제: 특정 소스파일에서 온 행만 제거. 개별 고객 아님·파일 단위.
 //   ★안전 원칙 3가지(2026-07-25 사고 예방 개편):
 //   ①쓰기도 서비스계정(SA)으로 — 시트 읽기·업로드가 이미 SA다. 회원 OAuth로 쓰면 권한 불일치로 실패한다.
