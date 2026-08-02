@@ -2943,7 +2943,7 @@ function _genyaSilentSave(nm, msg){
 // ===== 2차 시나리오 팝업 (기술 엮기 = 해자) =====
 function openScenario(jobKey, idx){
   const j = GENYA_JOBS[jobKey] || GENYA_JOBS.insurance;
-  const p = j.pains[idx]; if(p&&p.icon==='radar'){ discoveryPanel(); return; } if(p&&p.icon==='megaphone'){ openWarehouse(); return; } if(p&&p.icon==='reminder'){ openReminder(); return; } if(p&&p.icon==='claim'){ openClaim(); return; } if(p&&p.icon==='approval'){ openApproval(); return; } const s = p.sc; // ★2026-07-18 원칙(대표=교육생 모든 기능+전용 추가): !_isRep 제거 → 대표님도 동일 발굴모달. 대표 전용은 얹기만(미구현·자리)
+  const p = j.pains[idx]; if(p&&p.icon==='radar'){ discoveryPanel(); return; } if(p&&p.icon==='megaphone'){ openPromoSimV8(); return; }  /* ★2026-08-02 데모: 신기획 시뮬레이터 오버레이. 되돌리려면 openWarehouse() 로. openWarehouse는 그대로 살아있음 */ if(p&&p.icon==='reminder'){ openReminder(); return; } if(p&&p.icon==='claim'){ openClaim(); return; } if(p&&p.icon==='approval'){ openApproval(); return; } const s = p.sc; // ★2026-07-18 원칙(대표=교육생 모든 기능+전용 추가): !_isRep 제거 → 대표님도 동일 발굴모달. 대표 전용은 얹기만(미구현·자리)
   const steps = s.steps.map(st=>
     '<div class="sc-step"><div class="sn">'+ic(st.ic)+'</div><div class="sx"><div class="st">'+st.st+'</div><div class="sd">'+st.sd+'</div></div></div>'
   ).join('');
@@ -3385,6 +3385,32 @@ function toast(msg){
 }
 function closeModal(){ document.getElementById('modalBack').classList.remove('on'); }
 function showModal(html){ document.getElementById('modalBox').innerHTML=html; document.getElementById('modalBack').classList.add('on'); }
+
+// ══ ★[2026-08-02 부트캠프 데모] 홍보마케팅비서 → 신기획 시뮬레이터(v8) 전체화면 오버레이 ══════════
+//   목적: 교육생에게 "새 홍보마케팅 기획"을 화면으로 보여준다. 오늘은 ★화면 덮어 보여주기만★ — 실제 백엔드 연결은 다음 단계.
+//   ★기존 홍보 로직 무접촉: openWarehouse()·openPromo()·runPromo()·/api/promo·/api/promo/draft 는 한 줄도 안 건드렸다.
+//     아래 함수는 그냥 덮개다. 닫으면(✕ 또는 ESC) 원래 화면 그대로 돌아온다.
+//   ★되돌리기: pains 클릭의 icon==='megaphone' 호출을 openPromoSimV8() → openWarehouse() 로 되돌리면 끝(이 함수는 안 불릴 뿐).
+//   시뮬레이터 파일: deploy/downloads/promo_sim_v8.html (기존 /downloads 정적 라우트 재사용 · 새 라우트 0개)
+function openPromoSimV8(){
+  if(document.getElementById('promoSimV8')) return;                       // 두 번 눌러도 하나만
+  var ov=document.createElement('div');
+  ov.id='promoSimV8';
+  ov.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;z-index:99999;background:#0a1310;display:flex;flex-direction:column';
+  ov.innerHTML='<div style="flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;background:#0f1b17;border-bottom:1px solid #2a3d36">'
+    +'<span style="font-size:13px;font-weight:800;color:#22c7b8">⬢ 홍보마케팅비서 · 신기획 시뮬레이터</span>'
+    +'<button type="button" id="promoSimV8X" style="cursor:pointer;background:#1a2c26;border:1px solid #2a3d36;color:#e8f0ec;border-radius:8px;padding:7px 15px;font-size:13px;font-weight:700;font-family:inherit">✕ 닫기</button>'
+    +'</div>'
+    +'<iframe src="/downloads/promo_sim_v8.html" title="홍보마케팅비서 신기획 시뮬레이터" style="flex:1 1 auto;width:100%;border:0;background:#0a1310"></iframe>';
+  document.body.appendChild(ov);
+  document.getElementById('promoSimV8X').onclick=closePromoSimV8;
+  document.addEventListener('keydown',_promoSimV8Esc);
+}
+function _promoSimV8Esc(e){ if(e&&e.key==='Escape') closePromoSimV8(); }
+function closePromoSimV8(){
+  document.removeEventListener('keydown',_promoSimV8Esc);
+  var ov=document.getElementById('promoSimV8'); if(ov&&ov.parentNode) ov.parentNode.removeChild(ov);
+}
 
 // 📣 홍보마케팅비서 — 한줄카피 넣으면 지니야가 쇼츠 원고를 만든다(발행창고 1단계). ★대원칙②: 명칭 "홍보마케팅비서"로 통일.
 // ★[3] 통합모달 — 캠페인(대표님만·[4]) + 초안 만들기(작동) + 검수·발행(준비중). 한 화면에서 흐름을 보여준다.
