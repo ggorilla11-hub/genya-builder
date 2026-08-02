@@ -1075,6 +1075,13 @@ promoSkill.init({ anthropic: _anthropic, model: WS_CHAT_MODEL, sessionOf });
 app.use('/api/promo2', promoSkill.router);
 app.use('/api/promo', promoSkill.router);   // 같은 라우터를 이 이름으로도 연다. 위의 draft·expand가 먼저 등록돼 있어 그대로 이긴다(무접촉).
 
+// ═══ 📥 Phase 1-A 신청 캡처 — 공개 폼이 보낸 신청을 「신청수집」 시트에 받아 적는다 (독립 모듈) ═══
+//   지금까지는 신청을 ★읽어 집계만 했다. 받아 적는 곳이 없어 "누구의 신청인지" 못 갈랐다.
+//   ★이 파일이 바뀌는 건 아래 3줄 + 유입전환 안의 rep 갈래 몇 줄뿐이다. 발송·격리 명단 무접촉.
+const applySheet = require('./apply_sheet');
+applySheet.init({ sessionOf });
+app.use('/api/apply', applySheet.router);   // POST /submit(공개) · GET /my-link(로그인) · GET /diag
+
 // ═══ 📥 진단 유입 — 진단·상담 신청자를 표로 (이름·연락처·과정·금액·신청일 + 합계) ═══
 //   ★기존 공개 주소(jenya /api/prospect/leads)에 금액·연락처를 실으면 인터넷에 그대로 노출된다.
 //     그래서 로그인 게이트가 있는 여기에 새로 만든다.
@@ -1299,8 +1306,10 @@ async function _inflowHandler(req, res) {
     const auth = await getServiceAuth();
     const sheets = google.sheets({ version: 'v4', auth });
     const tg = _inflowTargets(req);              // ★연결한 시트 여러 개를 모두 읽는다
+    tg.list = applySheet.withApplySheet(tg.list);   // 📥 Phase 1-A: 「신청수집」 시트도 함께 읽는다(뒤에 붙이기만·기존 목록 무접촉)
     const isVip = String(s.email || '').toLowerCase() === VIP_EMAIL;
     const myName = String((s.nick || s.name || '')).replace(/님$/, '').trim();
+    const myRep = applySheet.repCodeOf(s.email);    // 📥 신청수집 시트에서 내 신청을 가려낼 코드
     const out = [];
     const files = [];                            // 파일별 결과(어디서 매출이 나는지)
     const missSet = new Set();
@@ -1346,13 +1355,16 @@ async function _inflowHandler(req, res) {
       const head = rows[0].map((h) => String(h || '').trim());
       const iName = _pickCol(head, ['이름', '성명', '신청자', '고객명', '성함', '참가자']);
       const iPhone = _pickCol(head, ['연락처', '휴대폰', '전화', '전화번호', '핸드폰', '휴대전화', '연락처(휴대폰)']);
-      const iCourse = _pickCol(head, ['상품명', '과정', '과정명', '강의명', '신청과정', '프로그램', '구분', '종류']);
+      const iCourse = _pickCol(head, ['상품명', '과정', '과정명', '강의명', '신청과정', '프로그램', '구분', '종류', '관심']);
       const iAmt = _pickCol(head, ['금액', '결제금액', '신청금액', '입금액', '결제액', '수강료', '가격']);
       const iDate = _pickCol(head, ['신청일시', '신청일', '접수시각', '신청시각', '결제일', '결제일시', '등록일', 'timestamp', '타임스탬프']);
       const iAgent = _pickCol(head, ['유입설계사', 'agent', '설계사', '담당', '담당자', '추천인']);
       const iPaid = _pickCol(head, ['결제여부', '결제상태', '입금여부', '상태', '결제']);
       const iFree = _pickCol(head, ['유무료']);
-      const iSrc = _pickCol(head, ['유입경로', 'source', '경로', '유입']);
+      const iSrc = _pickCol(head, ['유입경로', 'source', '경로', '유입', 'utm_source']);
+      // 📥 Phase 1-A: 「신청수집」 시트는 ★이름이 아니라 rep 코드로 주인을 가른다(이 칸이 있으면 그 시트다)
+      const iRep = _pickCol(head, ['rep_id', 'rep', '회원코드']);
+      const 신청수집탭 = iRep >= 0;
       // ★한 문서에는 신청 표가 아닌 탭(메모·설정·원본 등)도 섞여 있다 — 조용히 넘긴다(경고로 도배하지 않는다)
       if (iName < 0 && iPhone < 0 && iCourse < 0 && iAmt < 0) { 탭건너뜀++; continue; }
       탭읽음++;
@@ -1365,10 +1377,15 @@ async function _inflowHandler(req, res) {
       for (let r = 1; r < rows.length; r++) {
         const row = rows[r]; const g = (i) => (i >= 0 ? String(row[i] == null ? '' : row[i]).trim() : '');
         if (!g(iName) && !g(iPhone) && !g(iCourse)) continue;             // 빈 행
-        if (!isVip) { if (!myName || g(iAgent) !== myName) continue; }    // ★남의 신청자는 안 보인다
+        // ★남의 신청자는 안 보인다 — 신청수집 시트는 rep 코드로, 기존 시트는 이름(유입설계사)으로 가른다
+        if (!isVip) {
+          if (신청수집탭) { if (!myRep || g(iRep) !== myRep) continue; }
+          else if (!myName || g(iAgent) !== myName) continue;
+        }
+        // 📥 신청수집은 ★신청일 뿐 결제가 아니다 — 결제 칸이 없다고 결제완료(0원)로 세면 건수·객단가가 틀어진다
         mine.push({ 이름: g(iName), 연락처: g(iPhone), 과정: g(iCourse), 금액: _wonNum(g(iAmt)),
-          신청일: g(iDate), 유무료: g(iFree), 결제: iPaid < 0 ? 'Y' : g(iPaid), 유입경로: g(iSrc),
-          _파일: label, _결제칸없음: iPaid < 0 });
+          신청일: g(iDate), 유무료: g(iFree), 결제: 신청수집탭 ? '' : (iPaid < 0 ? 'Y' : g(iPaid)), 유입경로: g(iSrc),
+          _파일: label, _결제칸없음: !신청수집탭 && iPaid < 0 });
       }
       const isPaid = (x) => /^(y|예|완료|결제완료|o|입금|입금완료|성공|결제됨)$/i.test(String(x.결제 || '').trim());
       const p = mine.filter(isPaid);

@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>신청 폼 — Phase 1-A 목업</title>
+<!--
+  ═══════════════════════════════════════════════════════════════
+  apply_sim.html · Phase 1-A 공개 신청 폼 ★목업(화면만)
+  무엇을·왜: 방문자가 이름·연락처·관심만 넣으면, 그 신청이 "누구(회원)의 것인지"
+             rep 코드로 갈려서 신청수집 시트에 쌓이게 하려는 것. 지금은 그 화면만 본다.
+  ★백엔드 0 — 제출해도 아무 데도 보내지 않는다(fetch 코드가 이 파일에 없다).
+  ★기존 라우트 0개 추가 — /downloads 정적 라우트를 그대로 쓴다. main_server.js 무접촉.
+  ★서버 저장 0 원칙: 실제 배선 때도 서버는 받아서 시트로 흘려보내고 즉시 버린다.
+  ═══════════════════════════════════════════════════════════════
+-->
+<style>
+  :root{
+    --bg:#0a1310;--panel:#0f1b17;--card:#16241f;--card2:#1a2c26;
+    --ink:#e8f0ec;--soft:#8aa89c;--line:#2a3d36;
+    --teal:#22c7b8;--teal-d:#1a9e91;--gold:#d4a95a;--warn:#e08a6b;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{font-family:'Malgun Gothic','Apple SD Gothic Neo',system-ui,sans-serif;
+       background:var(--bg);color:var(--ink);line-height:1.6;padding:14px 12px 50px;}
+  .wrap{max-width:460px;margin:0 auto;}
+
+  /* ── 목업 표시 — 진짜 폼과 헷갈리지 않게 항상 맨 위 ── */
+  .mock{background:rgba(224,138,107,.12);border:1px solid rgba(224,138,107,.45);
+        border-radius:10px;padding:10px 12px;margin-bottom:14px;font-size:12px;color:var(--warn);}
+  .mock b{color:#f3b79c;}
+
+  .hd{display:flex;align-items:center;gap:8px;margin-bottom:4px;}
+  .hd .tag{font-size:13px;font-weight:800;color:var(--teal);}
+  h1{font-size:19px;font-weight:900;margin:6px 0 4px;line-height:1.35;}
+  h1 .hl{color:var(--teal);}
+  .sub{font-size:12.5px;color:var(--soft);margin-bottom:14px;}
+
+  /* ── URL 꼬리표 — 방문자에겐 안 보여도 되지만 목업이라 보여준다 ── */
+  .utm{background:var(--panel);border:1px dashed var(--teal-d);border-radius:10px;
+       padding:10px 12px;margin-bottom:14px;font-size:11.5px;}
+  .utm .t{font-weight:800;color:var(--teal);margin-bottom:6px;font-size:11.5px;}
+  .utm .row{display:flex;justify-content:space-between;gap:8px;padding:2px 0;}
+  .utm .k{color:var(--soft);}
+  .utm .v{font-family:Consolas,monospace;color:var(--ink);word-break:break-all;text-align:right;}
+  .utm .v.none{color:var(--warn);}
+
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 14px;}
+  label.f{display:block;margin-bottom:13px;}
+  label.f .lb{display:block;font-size:12px;font-weight:700;color:var(--soft);margin-bottom:6px;}
+  label.f .lb .req{color:var(--teal);margin-left:3px;}
+  input[type=text],input[type=tel]{width:100%;background:var(--panel);border:1px solid var(--line);
+    border-radius:9px;padding:12px;font-size:15px;color:var(--ink);font-family:inherit;}
+  input:focus{outline:none;border-color:var(--teal);}
+  input::placeholder{color:#5d7268;}
+
+  /* 관심 — 세 개뿐이라 버튼형이 폰에서 제일 빠르다 */
+  .pick{display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px;}
+  .pick button{background:var(--panel);border:1px solid var(--line);border-radius:9px;
+    padding:12px 4px;font-size:13px;font-weight:700;color:var(--soft);cursor:pointer;font-family:inherit;}
+  .pick button.on{border-color:var(--teal);background:rgba(34,199,184,.12);color:var(--teal);}
+
+  .agree{display:flex;gap:9px;align-items:flex-start;margin:4px 0 10px;font-size:12px;color:var(--soft);line-height:1.55;}
+  .agree input{margin-top:2px;width:17px;height:17px;flex-shrink:0;accent-color:var(--teal);}
+  .agree b{color:var(--ink);font-weight:700;}
+  .agree .opt{color:var(--gold);}
+  .privacy{font-size:11px;color:#6f8a7e;background:var(--panel);border-radius:8px;padding:9px 11px;margin-bottom:12px;line-height:1.6;}
+
+  .go{width:100%;background:var(--teal);color:#04211d;border:0;border-radius:10px;
+      padding:15px;font-size:16px;font-weight:900;cursor:pointer;font-family:inherit;margin-top:2px;}
+  .go:disabled{background:#274740;color:#6f8a7e;cursor:not-allowed;}
+  .err{color:var(--warn);font-size:12px;margin-top:9px;display:none;}
+
+  /* ── 제출 후: 시트에 쌓일 한 줄 ── */
+  .done{display:none;margin-top:14px;}
+  .done .ok{background:rgba(34,199,184,.1);border:1px solid var(--teal-d);border-radius:10px;
+            padding:13px;font-size:13px;font-weight:700;color:var(--teal);margin-bottom:12px;}
+  .sheet{background:var(--card2);border:1px solid var(--line);border-radius:10px;overflow:hidden;}
+  .sheet .st{padding:10px 12px;border-bottom:1px solid var(--line);font-size:12px;font-weight:800;color:var(--gold);}
+  .sheet table{width:100%;border-collapse:collapse;font-size:11.5px;}
+  .sheet td{padding:8px 12px;border-bottom:1px solid rgba(42,61,54,.6);vertical-align:top;}
+  .sheet td.k{color:var(--soft);width:105px;white-space:nowrap;}
+  .sheet td.v{font-family:Consolas,monospace;word-break:break-all;}
+  .sheet td.v.empty{color:#5d7268;font-style:italic;font-family:inherit;}
+  .sheet tr:last-child td{border-bottom:0;}
+
+  .note{font-size:11.5px;color:var(--soft);line-height:1.75;margin-top:16px;
+        border-top:1px solid var(--line);padding-top:14px;}
+  .note b{color:var(--gold);}
+  .note ul{margin:6px 0 0 16px;}
+  .note li{margin-bottom:4px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="mock">
+    ★<b>목업입니다.</b> 제출해도 <b>아무 데도 보내지 않습니다</b> — 이 파일에는 전송 코드가 없습니다.
+    화면·흐름만 확인하신 뒤 승인해 주시면 그때 시트로 연결합니다.
+  </div>
+
+  <div class="hd"><span class="tag">⬢ 오원트금융연구소</span></div>
+  <h1>1분이면 됩니다 —<br><span class="hl">필요한 것만</span> 알려주세요</h1>
+  <div class="sub">이름과 연락처, 관심 있는 것 하나만 골라주시면 담당자가 직접 연락드립니다.</div>
+
+  <div class="utm">
+    <div class="t">🔖 이 링크가 물고 온 정보 <span style="font-weight:400;color:var(--soft)">(방문자에겐 안 보일 부분)</span></div>
+    <div class="row"><span class="k">rep (회원 코드)</span><span class="v" id="vRep">–</span></div>
+    <div class="row"><span class="k">utm_source</span><span class="v" id="vSrc">–</span></div>
+    <div class="row"><span class="k">utm_campaign</span><span class="v" id="vCmp">–</span></div>
+    <div class="row" style="margin-top:6px;border-top:1px solid var(--line);padding-top:6px">
+      <span class="k">시험용 주소</span>
+      <span class="v" style="color:var(--teal)">?rep=os01&amp;utm_source=shorts&amp;utm_campaign=bootcamp8</span>
+    </div>
+  </div>
+
+  <div class="card" id="formArea">
+    <label class="f">
+      <span class="lb">이름<span class="req">*</span></span>
+      <input type="text" id="fName" placeholder="홍길동" autocomplete="name">
+    </label>
+
+    <label class="f">
+      <span class="lb">연락처<span class="req">*</span></span>
+      <input type="tel" id="fPhone" placeholder="010-1234-5678" inputmode="numeric" autocomplete="tel">
+    </label>
+
+    <div class="f">
+      <span class="lb" style="display:block;font-size:12px;font-weight:700;color:var(--soft);margin-bottom:6px">
+        무엇이 궁금하세요?<span class="req" style="color:var(--teal);margin-left:3px">*</span></span>
+      <div class="pick">
+        <button type="button" data-v="강의">📚 강의</button>
+        <button type="button" data-v="상담">💬 상담</button>
+        <button type="button" data-v="진단">📊 진단</button>
+      </div>
+    </div>
+
+    <div class="privacy">
+      수집 항목은 <b style="color:var(--ink)">이름·연락처·관심</b> 세 가지뿐입니다.
+      상담 연락 목적으로만 쓰고, 목적을 다하면 파기합니다. 주민번호·주소·이메일은 받지 않습니다.
+    </div>
+
+    <label class="agree">
+      <input type="checkbox" id="fAgree">
+      <span><b>[필수]</b> 개인정보 수집·이용에 동의합니다.</span>
+    </label>
+    <label class="agree">
+      <input type="checkbox" id="fAd">
+      <span><span class="opt">[선택]</span> 광고·마케팅 정보 수신에 동의합니다. (동의하지 않아도 신청됩니다)</span>
+    </label>
+
+    <button class="go" id="goBtn">신청하기</button>
+    <div class="err" id="err">이름·연락처·관심을 넣고 [필수] 동의에 체크해 주세요.</div>
+  </div>
+
+  <div class="done" id="doneArea">
+    <div class="ok">✅ 접수됐습니다. 담당자가 곧 연락드립니다.<br>
+      <span style="font-weight:400;font-size:12px;color:var(--soft)">— 목업이라 실제로는 아무 데도 안 갔습니다.</span></div>
+    <div class="sheet">
+      <div class="st">📗 「신청수집」 시트에 이렇게 한 줄 쌓입니다</div>
+      <table>
+        <tr><td class="k">발행번호</td><td class="v empty" id="oNo">(지금은 안 씀)</td></tr>
+        <tr><td class="k">rep_id</td><td class="v" id="oRep">–</td></tr>
+        <tr><td class="k">이름</td><td class="v" id="oName">–</td></tr>
+        <tr><td class="k">연락처</td><td class="v" id="oPhone">–</td></tr>
+        <tr><td class="k">관심</td><td class="v" id="oWant">–</td></tr>
+        <tr><td class="k">utm_source</td><td class="v" id="oSrc">–</td></tr>
+        <tr><td class="k">utm_campaign</td><td class="v" id="oCmp">–</td></tr>
+        <tr><td class="k">시각</td><td class="v" id="oAt">–</td></tr>
+      </table>
+    </div>
+    <button class="go" style="margin-top:12px;background:var(--card2);color:var(--ink)" onclick="location.reload()">다시 해보기</button>
+  </div>
+
+  <div class="note">
+    <b>이 목업에서 확인해 주실 것</b>
+    <ul>
+      <li>폼이 <b>이름·연락처·관심</b> 셋만 받습니다 — 더 받을 것이 있나요?</li>
+      <li><b>rep 코드</b>가 주소에서 그대로 잡혀 시트 한 줄로 들어갑니다(이메일 노출 없음).</li>
+      <li><b>발행번호</b>는 지시대로 지금 안 만들고, 캠페인 구분은 <b>utm_campaign</b>이 합니다.</li>
+      <li>★<b>결정이 남은 것 2가지</b> — ① <b>rep 없이</b> 들어온 신청을 어디로 보낼지(대표님 앞으로? 거부?)
+          ② <b>광고 수신동의</b>를 시트 9번째 칸으로 남길지(남겨야 나중에 문자 발송의 법적 근거가 됩니다).</li>
+    </ul>
+  </div>
+
+</div>
+
+<script>
+// ★이 파일에는 fetch·XHR이 없다. 어디로도 보내지 않는다(목업).
+(function(){
+  var $ = function(id){ return document.getElementById(id); };
+  var qs = new URLSearchParams(location.search);
+
+  // ── 주소에서 꼬리표 읽기 ────────────────────────────────
+  //    없으면 "없음"이라고 정직히 보여준다(있는 척 채우지 않는다).
+  var rep = (qs.get('rep')  || '').trim();
+  var src = (qs.get('utm_source')   || '').trim();
+  var cmp = (qs.get('utm_campaign') || '').trim();
+  function show(el, v){
+    var e = $(el);
+    e.textContent = v || '없음';
+    if(!v) e.classList.add('none');
+  }
+  show('vRep', rep); show('vSrc', src); show('vCmp', cmp);
+
+  // ── 연락처 자동 하이픈 ──────────────────────────────────
+  var ph = $('fPhone');
+  ph.addEventListener('input', function(){
+    var v = ph.value.replace(/[^0-9]/g,'').slice(0,11);
+    if(v.length > 7)      v = v.replace(/(\d{3})(\d{4})(\d{1,4})/,'$1-$2-$3');
+    else if(v.length > 3) v = v.replace(/(\d{3})(\d{1,4})/,'$1-$2');
+    ph.value = v;
+  });
+
+  // ── 관심 고르기 ─────────────────────────────────────────
+  var want = '';
+  Array.prototype.forEach.call(document.querySelectorAll('.pick button'), function(b){
+    b.addEventListener('click', function(){
+      Array.prototype.forEach.call(document.querySelectorAll('.pick button'), function(x){ x.classList.remove('on'); });
+      b.classList.add('on');
+      want = b.getAttribute('data-v');
+    });
+  });
+
+  // ── 제출 ────────────────────────────────────────────────
+  $('goBtn').addEventListener('click', function(){
+    var name  = $('fName').value.trim();
+    var phone = $('fPhone').value.trim();
+    var ok    = name && phone.replace(/[^0-9]/g,'').length >= 10 && want && $('fAgree').checked;
+    if(!ok){ $('err').style.display = 'block'; return; }
+    $('err').style.display = 'none';
+
+    // 시각 — 한국시간 분 단위(시트에 쌓일 형식 그대로)
+    var at = new Date(Date.now() + 9*3600e3).toISOString().replace('T',' ').slice(0,16);
+
+    $('oRep').textContent   = rep || '(없음 — 어디로 보낼지 미정)';
+    $('oName').textContent  = name;
+    $('oPhone').textContent = phone;
+    $('oWant').textContent  = want + ($('fAd').checked ? '  [광고수신 동의]' : '  [광고수신 미동의]');
+    $('oSrc').textContent   = src || '(없음)';
+    $('oCmp').textContent   = cmp || '(없음)';
+    $('oAt').textContent    = at;
+
+    $('formArea').style.display = 'none';
+    $('doneArea').style.display = 'block';
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+})();
+</script>
+</body>
+</html>
