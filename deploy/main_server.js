@@ -3769,7 +3769,9 @@ async function findOrCreateMemberSheet(ma) {
   // ★'me' in owners (2026-08-01): 이 함수는 ★회원 토큰으로 시트를 찾고 없으면 만든다.
   //   이름만으로 찾으면 남이 같은 이름 시트를 공유해 뒀을 때 그게 잡혀 ★남의 시트에 명단을 써버린다.
   //   (읽기는 본인 것만 보는데 쓰기가 남의 것으로 가면 격리가 통째로 뚫린다) → 본인 소유로 못 박는다.
-  const f = await drive.files.list({ q: `mimeType='application/vnd.google-apps.spreadsheet' and name='${DEMO_TITLE}' and trashed=false and 'me' in owners`, fields: 'files(id)' });
+  // ★2026-08-02 응급: orderBy 없이 files[0]이면 같은 이름 시트가 여러 개일 때 ★비결정적이라
+  //   읽기(sheets_crud_skill._loadTableRaw)와 여기(쓰기·프로필)가 ★서로 다른 시트를 잡았다. 같은 기준으로 맞춘다.
+  const f = await drive.files.list({ q: `mimeType='application/vnd.google-apps.spreadsheet' and name='${DEMO_TITLE}' and trashed=false and 'me' in owners`, fields: 'files(id)', orderBy: 'modifiedTime desc' });
   let id = (f.data.files || [])[0] && f.data.files[0].id;
   if (!id) { const c = await sheets.spreadsheets.create({ requestBody: { properties: { title: DEMO_TITLE }, sheets: [{ properties: { title: SHEET_TAB } }] }, fields: 'spreadsheetId' }); id = c.data.spreadsheetId; }
   return { id, sheets };
