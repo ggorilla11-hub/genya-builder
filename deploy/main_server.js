@@ -5045,6 +5045,12 @@ app.get(['/privacy', '/privacy.html', '/개인정보처리방침'], (req, res) =
 app.get('/crud-test', (req, res) => res.sendFile(path.join(__dirname, 'crud_test.html'))); // 🗂️ Step 2-B 로컬 실측 콘솔(로컬 전용)
 app.get('/approval-test', (req, res) => res.sendFile(path.join(__dirname, 'approval_test.html'))); // 🗂️ Step 2-C 결재함 로컬 실측 콘솔
 app.get('/approval', (req, res) => res.sendFile(path.join(__dirname, 'approval.html'))); // 🗂️ Step 2-C 결재함 정식 페이지(Task B · genya.html 무접촉 독립 · ASCII 정식주소)
+// 📥 공개 신청 페이지 — ★로그인 없음(방문자용). ?rep=&utm_source=&utm_campaign= 은 화면이 읽어 서버로 보낸다.
+//   ★캐시 금지: 안 걸면 배포해도 방문자가 옛 화면을 본다(캠페인 화면에서 실제로 겪은 문제).
+app.get('/apply', (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.sendFile(path.join(__dirname, 'apply.html'));
+});
 // 📣 캠페인 발송 화면 — ★독립 페이지(genya.html 무접촉). 로그인해야 열린다.
 app.get(['/campaign', '/캠페인'], (req, res) => {
   if (!sessionOf(req)) return res.redirect('/login');
