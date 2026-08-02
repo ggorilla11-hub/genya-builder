@@ -397,7 +397,7 @@
 
       <!-- ② 콘텐츠 -->
       <div class="pcol s2">
-        <div class="ph"><span class="pt">② 콘텐츠생성</span><span class="status" id="st2">대기</span></div>
+        <div class="ph" style="cursor:pointer" onclick="runStage2Real()" title="누르면 ① 원고로 콘텐츠를 만듭니다"><span class="pt">② 콘텐츠생성 ▶</span><span class="status" id="st2">대기</span></div>
         <div class="progwrap" id="prog2"><div class="ptop"><span class="plabel">콘텐츠 생성 중…</span><span class="pctrl"><button onclick="pauseResume(2)" id="pr2">일시정지</button><button class="stop" onclick="stopGen(2)">중지</button></span></div><div class="pbar"><div class="fill" id="fill2"></div></div><div class="ppct" id="pct2">0%</div></div>
         <div class="pb" id="pb2">
           <div class="item draggable" draggable="true" data-kind="단문" data-ct="단문" data-ic="📱" onclick="toggleC(this)"><span class="dot"></span><span class="ic">📱</span><span class="nm">단문</span><span class="use">보기·끌기</span></div><div class="detail" id="c-단문"></div>
@@ -534,14 +534,11 @@
   </div></div></div>
 
 <script>
-const WON={
-  '단문':'📱 카톡 단문\n\n국민연금만으론 노후 30년이 부족합니다.\nAI비서 만들기로 당신의 세일즈를 업그레이드하세요.\n무료 진단 → ohwant.net/bootcamp',
-  '장문':'📝 블로그 장문\n\n[제목] AI비서로 세일즈를 업그레이드하는 3가지 방법\n\n1. 리드 발굴 자동화\n2. 콘텐츠 자동 생성 (한 줄 = 카피 60개)\n3. 채널 자동 배포\n\n지금 부트캠프에서 만들어보세요.',
-  '쇼츠원고':'🎬 쇼츠 대본\n\n씬1: 국민연금 68만원 시대?\n씬2: 왜 다들 조급해할까요?\n씬3: 그럼 얼마 필요할까요?\n씬4: 내 예상 수령액은?\n씬5: 늦기 전에 확인하세요.',
-  '카드뉴스원고':'🖼️ 카드뉴스 (5장)\n1장: 노후 준비 지금 시작?\n2장: 국민연금 68만원의 진실\n3장: 필요 노후자금 계산법\n4장: AI가 대신 계산\n5장: 무료 진단 받기',
-  '오디오원고':'🎙️ 오디오 원고\n안녕하세요. 오늘은 노후 준비 이야기입니다.\n국민연금 평균 68만원, 알고 계셨나요?',
-  '이미지원고':'🎨 이미지 지시문\n딥네이비 배경 골드 텍스트.\n"국민연금 68만원 시대" 헤드라인.'
-};
+// ★2026-08-02 배선: 여기 있던 ★예시 원고(가짜)를 지웠다. 데모는 없다 — 진짜만 쓴다.
+//   이제 이 통에는 ★서버(/api/promo2/expand12)가 실제로 만든 원고만 담긴다.
+//   생성 전에는 비어 있고, 항목이 done 이 아니라서 열리지도 않는다(있는 척 안 함).
+const WON={};
+const WURL={};   // 원고 종류별 꼬리표(UTM) 붙은 도착지 주소
 // 채널: SNS·텍스트·쇼츠·팟캐스트·롱폼 + 독립(카톡·유튜브커뮤니티)
 const CH_DEF=[
   {ic:'📷',nm:'SNS',subs:['인스타','페북','쓰레드']},
@@ -568,7 +565,11 @@ function saveNewUrl(){const u=uaUrl.value.trim();if(!u){alert('URL을 입력하�
 // 한줄메시지 저장↔수정
 let msgSaved=false;
 function msgSaveToggle(){
-  if(!msgSaved){msgInput.disabled=true;msgBtn.textContent='수정';msgSaved=true;pipeMsg.textContent='"'+msgInput.value+'"';runPipeline();}
+  if(!msgSaved){
+    if(!msgInput.value.trim()){alert('한줄메시지를 넣어 주세요.');return;}
+    msgInput.disabled=true;msgBtn.textContent='수정';msgSaved=true;pipeMsg.textContent='"'+msgInput.value+'"';
+    runStage1Real();          // ★2026-08-02 배선: 가짜 진행바가 아니라 ★진짜 원고 엔진을 부른다
+  }
   else{msgInput.disabled=false;msgBtn.textContent='저장 · 확정';msgSaved=false;}
 }
 // ① A/B 카피 생성 (여러 버전 → 추천)
@@ -589,8 +590,28 @@ function pickAB(el,txt){document.querySelectorAll('.ab-item').forEach(x=>x.class
 // ② 재사용 템플릿
 function saveTemplate(id){alert('이 배포를 템플릿으로 저장했습니다.\n다음 캠페인에서 [템플릿 불러오기]로 복제할 수 있어요.');}
 
-// 원고 미리보기
-function toggleW(el){const k=el.dataset.kind,d=document.getElementById('w-'+k);if(!el.classList.contains('done'))return;const open=d.classList.contains('show');document.querySelectorAll('#pb1 .detail').forEach(x=>x.classList.remove('show'));if(!open){d.innerHTML='<span class="copy" onclick="event.stopPropagation()">📋 복사</span><div class="dtext">'+(WON[k]||'생성됨')+'</div>';d.classList.add('show');}}
+// 원고 미리보기 — ★진짜 원고를 보여주고 복사도 실제로 된다
+function _esc(s){return String(s==null?'':s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+function toggleW(el){
+  const k=el.dataset.kind,d=document.getElementById('w-'+k);
+  if(!el.classList.contains('done'))return;
+  const open=d.classList.contains('show');
+  document.querySelectorAll('#pb1 .detail').forEach(x=>x.classList.remove('show'));
+  if(open)return;
+  const txt=WON[k]||'';
+  const url=WURL[k]||'';
+  d.innerHTML='<span class="copy" onclick="copyWon(event,\''+k+'\')">📋 복사</span>'
+    +'<div class="dtext">'+_esc(txt)+'</div>'
+    +(url?'<div style="font-size:10px;color:var(--soft);margin-top:6px;word-break:break-all">'+_esc(url)+'</div>':'')
+    +'<div style="font-size:10px;color:var(--soft);margin-top:4px">'+txt.length+'자</div>';
+  d.classList.add('show');
+}
+function copyWon(ev,k){
+  ev.stopPropagation();
+  const t=(WON[k]||'')+(WURL[k]?'\n\n'+WURL[k]:'');
+  navigator.clipboard.writeText(t).then(()=>{ev.target.textContent='✓ 복사됨';setTimeout(()=>{ev.target.textContent='📋 복사';},1500);})
+    .catch(()=>{ev.target.textContent='복사 실패';});
+}
 
 // 콘텐츠 미리보기 (변환결과) + AI 수정
 function toggleC(el){
@@ -599,13 +620,23 @@ function toggleC(el){
   const open=d.classList.contains('show');
   document.querySelectorAll('#pb2 .detail').forEach(x=>x.classList.remove('show'));
   if(open)return;
+  // ★2026-08-02 배선: 여기 있던 ★가짜 미리보기(씬1~5·카드1~5 그림)를 지웠다.
+  //   진짜 만든 것만 보여주고, 아직 못 만드는 것은 ★못 만든다고 말한다.
   let pv='';
-  if(ct==='단문')pv='<div class="dtext">'+WON['단문']+'</div>';
-  else if(ct==='장문')pv='<div class="dtext">'+WON['장문']+'</div>';
-  else if(ct==='쇼츠')pv='<div class="cpreview"><div class="shots">'+[1,2,3,4,5].map(i=>'<div class="shot">씬'+i+'<br>▶</div>').join('')+'</div><div class="frame">🎬 쇼츠영상 (15초) — 자막·전환 적용됨</div></div>';
-  else if(ct==='카드')pv='<div class="cpreview"><div class="cards">'+[1,2,3,4,5].map(i=>'<div class="cardt">카드 '+i+'</div>').join('')+'</div></div>';
-  else if(ct==='오디오')pv='<div class="cpreview"><div class="audio">🎙️<div class="wave"></div><span style="font-size:10px">2:14</span></div></div>';
-  else if(ct==='이미지')pv='<div class="cpreview"><div class="imgbox">🖼️ 생성 이미지 (1080×1080)</div></div>';
+  if(ct==='단문')pv='<div class="dtext">'+_esc(WON['단문']||'')+'</div>';
+  else if(ct==='장문')pv='<div class="dtext">'+_esc((WON['장문']||'').slice(0,600))+(((WON['장문']||'').length>600)?'…':'')+'</div>'
+    +'<div style="margin-top:8px"><button class="save" onclick="event.stopPropagation();dlBlog()">📝 블로그 HTML 내려받기</button></div>';
+  else if(ct==='카드'){
+    const cs=(MADE.cards||[]);
+    pv=cs.length
+      ? '<div class="cpreview"><div class="cards">'+cs.map((c,i)=>'<img src="'+c.url+'" alt="카드 '+(i+1)+'" style="width:72px;height:72px;border-radius:8px;object-fit:cover">').join('')+'</div></div>'
+        +'<div style="font-size:11px;color:var(--soft);margin-top:6px">실제로 그린 PNG '+cs.length+'장이에요.</div>'
+        +'<div style="margin-top:6px"><button class="save" onclick="event.stopPropagation();dlCardsZip()">📦 카드 '+cs.length+'장 ZIP 내려받기</button></div>'
+      : '<div class="dtext">아직 안 만들었어요. ② 콘텐츠생성을 눌러 주세요.</div>';
+  }
+  else if(ct==='쇼츠')pv='<div class="dtext">🎬 쇼츠 <b>영상</b>은 아직 못 만들어요(다음 단계).\n지금은 ① 원고의 쇼츠 대본까지 나와 있어요.\n\n'+_esc((WON['쇼츠원고']||'').slice(0,400))+'</div>';
+  else if(ct==='오디오')pv='<div class="dtext">🎙️ 오디오 <b>파일</b>은 아직 못 만들어요(다음 단계).\n지금은 ① 원고의 팟캐스트 대본까지 나와 있어요.\n\n'+_esc((WON['오디오원고']||'').slice(0,400))+'</div>';
+  else if(ct==='이미지')pv='<div class="dtext">🎨 이미지 <b>파일</b>은 아직 못 만들어요(다음 단계).\n지금은 ① 원고의 그림 지시문까지 나와 있어요.\n\n'+_esc((WON['이미지원고']||'').slice(0,400))+'</div>';
   d.innerHTML=pv+'<div class="revise"><input placeholder="수정 지시 (예: 더 짧게, 밝은 톤)" onkeydown="if(event.key===\'Enter\')doRevise(this,\''+nm+'\')"><button onclick="doRevise(this.previousElementSibling,\''+nm+'\')">AI 수정</button></div><div class="revise-log" id="rl-'+nm+'"></div>';
   d.classList.add('show');
 }
@@ -625,6 +656,189 @@ function runStage(stage,onDone){
     for(let i=0;i<idx&&i<items.length;i++){items[i].classList.add('done');if(stage===1&&!items[i].querySelector('.go'))items[i].querySelector('.use').innerHTML='<span class="go">✓ 보기</span>';}
     if(gen[stage].pct>=100){clearInterval(gen[stage].timer);items.forEach(it=>it.classList.add('done'));fill.style.width='100%';pct.textContent='100%';setTimeout(()=>{prog.classList.remove('show');st.textContent='완료 ✓';st.style.color='var(--teal)';if(onDone)onDone();},400);}
   },50);
+}
+// ═══════════════════════════════════════════════════════════════════
+// ★2026-08-02 실전 배선 — ① 원고생성을 ★진짜 엔진(/api/promo2/expand12)에 건다.
+//   엔진은 이미 12/12로 검증돼 있다. 여기서는 ★부르고 받아 채우기만 한다(백엔드 무접촉).
+//   같은 오리진이라 로그인 세션(쿠키)이 그대로 실린다 — credentials:'same-origin'.
+// ═══════════════════════════════════════════════════════════════════
+// 엔진이 주는 12종 ↔ 화면 항목. 앞 6개는 ★대표님이 만드신 기존 항목에 그대로 꽂고,
+// 뒤 6개는 화면에 없던 것이라 같은 모양으로 만들어 붙인다(12종을 하나도 안 버린다).
+const ENG12=[
+  {kind:'threads',    slot:'단문',      ic:'📱', use:'카톡·스레드용'},
+  {kind:'blog',       slot:'장문',      ic:'📝', use:'블로그용'},
+  {kind:'shorts',     slot:'쇼츠원고',   ic:'🎬', use:'쇼츠용'},
+  {kind:'cardnews',   slot:'카드뉴스원고',ic:'🖼️', use:'카드뉴스용'},
+  {kind:'podcast',    slot:'오디오원고',  ic:'🎙️', use:'팟캐스트용'},
+  {kind:'image',      slot:'이미지원고',  ic:'🎨', use:'이미지용'},
+  {kind:'cafe',       slot:'카페글',     ic:'💬', use:'커뮤니티용'},
+  {kind:'brunch',     slot:'브런치',     ic:'✍️', use:'감성 에세이'},
+  {kind:'linkedin',   slot:'링크드인',    ic:'💼', use:'B2B'},
+  {kind:'longform',   slot:'롱폼대본',    ic:'▶️', use:'10분 영상'},
+  {kind:'infographic',slot:'인포그래픽',  ic:'📊', use:'디자이너 전달'},
+  {kind:'newsletter', slot:'뉴스레터',    ic:'📧', use:'이메일'}
+];
+let GEN12=null;                    // 서버가 실제로 만든 결과(원본 그대로 보관)
+
+// 화면에 없던 종류는 같은 모양으로 만들어 붙인다
+function ensureSlot(s){
+  let el=document.querySelector('#pb1 .item[data-kind="'+s.slot+'"]');
+  if(el)return el;
+  const pb=document.getElementById('pb1');
+  el=document.createElement('div');
+  el.className='item';el.dataset.kind=s.slot;el.setAttribute('onclick','toggleW(this)');
+  el.innerHTML='<span class="dot"></span><span class="ic">'+s.ic+'</span><span class="nm">'+s.slot+'</span><span class="use">'+s.use+'</span>';
+  const d=document.createElement('div');d.className='detail';d.id='w-'+s.slot;
+  pb.appendChild(el);pb.appendChild(d);
+  return el;
+}
+
+function _stage1Msg(html,color){
+  const st=document.getElementById('st1');
+  st.innerHTML=html;st.style.color=color||'var(--gold)';
+}
+
+async function runStage1Real(){
+  const prog=document.getElementById('prog1'),fill=document.getElementById('fill1'),pct=document.getElementById('pct1');
+  ENG12.forEach(ensureSlot);
+  document.querySelectorAll('#pb1 .item').forEach(it=>it.classList.remove('done'));
+  prog.classList.add('show');
+  _stage1Msg('원고 만드는 중…');
+  gen[1].paused=false;gen[1].pct=0;
+
+  // 실제로 60초쯤 걸린다(12종 동시 생성 실측). 다 될 때까지 천천히 올리고, 응답이 오면 100%로 맞춘다.
+  clearInterval(gen[1].timer);
+  gen[1].timer=setInterval(()=>{
+    if(gen[1].paused)return;
+    if(gen[1].pct<92)gen[1].pct+=0.7;
+    fill.style.width=gen[1].pct+'%';pct.textContent=Math.floor(gen[1].pct)+'%';
+  },500);
+
+  const copy=msgInput.value.trim();
+  const landing=(document.getElementById('autoUrl').textContent||'').trim();
+  const service=(document.getElementById('cb1').value||'강의')+' · '+(document.getElementById('cb2').value||'');
+  const content=(document.getElementById('titleInput').value||'').trim();
+  const key=((document.getElementById('cb2').value||'campaign')+'').replace(/[^A-Za-z0-9가-힣_-]/g,'')||'campaign';
+
+  try{
+    const r=await fetch('/api/promo2/expand12',{
+      method:'POST',
+      headers:{'Content-Type':'application/json; charset=utf-8'},
+      credentials:'same-origin',                 // ★로그인 세션이 실려야 엔진이 열린다
+      body:JSON.stringify({key:key,copy:copy,copyNo:1,
+        campaign:{service:service,content:content,landing:landing}})
+    });
+    const j=await r.json().catch(()=>({}));
+    clearInterval(gen[1].timer);
+
+    if(r.status===401){
+      prog.classList.remove('show');
+      _stage1Msg('로그인 필요','var(--red)');
+      alert('원고 엔진은 로그인이 필요해요.\n지니야빌더에 로그인하신 뒤 다시 눌러 주세요.');
+      msgInput.disabled=false;msgBtn.textContent='저장 · 확정';msgSaved=false;
+      return;
+    }
+    if(!r.ok||!j.ok){
+      // ★실패를 성공으로 둔갑시키지 않는다
+      prog.classList.remove('show');
+      _stage1Msg('실패','var(--red)');
+      alert('원고를 만들지 못했어요.\n'+((j&&j.error)||('서버 응답 '+r.status)));
+      msgInput.disabled=false;msgBtn.textContent='저장 · 확정';msgSaved=false;
+      return;
+    }
+
+    GEN12=j;
+    let 성공=0,실패=0;
+    ENG12.forEach(s=>{
+      const hit=(j.results||[]).find(x=>x.kind===s.kind);
+      const el=ensureSlot(s);
+      if(hit&&hit.text&&!hit.error){
+        WON[s.slot]=hit.text; WURL[s.slot]=hit.url||'';
+        el.classList.add('done');
+        const u=el.querySelector('.use'); if(u)u.innerHTML='<span class="go">✓ 보기 '+hit.chars+'자</span>';
+        성공++;
+      }else{
+        // 못 만든 것은 ★못 만들었다고 둔다(열리지 않는다)
+        const u=el.querySelector('.use'); if(u)u.textContent='실패';
+        실패++;
+      }
+    });
+
+    fill.style.width='100%';pct.textContent='100%';
+    setTimeout(()=>{prog.classList.remove('show');},400);
+    _stage1Msg('완료 ✓ '+성공+'/12'+(실패?(' <span style="color:var(--red)">실패 '+실패+'</span>'):''),'var(--teal)');
+    if(j.saveError)console.log('[원고] 시트 저장 안 됨 — '+j.saveError);
+    document.getElementById('st2').textContent='② 콘텐츠생성 누르세요';
+  }catch(e){
+    clearInterval(gen[1].timer);
+    prog.classList.remove('show');
+    _stage1Msg('실패','var(--red)');
+    alert('원고를 만들지 못했어요 — '+e.message);
+    msgInput.disabled=false;msgBtn.textContent='저장 · 확정';msgSaved=false;
+  }
+}
+// ═══ ② 콘텐츠 — ★기존 생성 함수를 그대로 부른다(새로 만들지 않는다) ═══════
+//   블로그 HTML·카드뉴스 PNG·ZIP 은 지니야빌더 화면(genya.html)에 ★이미 있고 되던 것이다.
+//   이 시뮬은 같은 서버가 주는 iframe 이라 부모의 그 함수를 그대로 쓸 수 있다.
+//   ★그리기·압축 로직을 여기 복사하지 않는다 — 두 군데 두면 한쪽만 낡는다(CLAUDE.md 6-10).
+function _host(){                       // 부모 화면(genya.html)의 기존 함수들
+  try{ if(window.parent&&window.parent!==window&&typeof window.parent._whCardBytes==='function')return window.parent; }catch(e){}
+  return null;
+}
+function _cardLines(text){              // 카드뉴스 원고를 장별로 자른다(부모 화면과 같은 규칙)
+  let l=String(text||'').split(/\r?\n/).map(s=>s.trim()).filter(s=>/^\d+장\s*[:：]/.test(s));
+  if(!l.length)l=String(text||'').split(/\r?\n/).filter(Boolean).slice(0,10);
+  return l.map(s=>s.replace(/^\d+장\s*[:：]\s*/,''));
+}
+let MADE={};                            // 만들어진 콘텐츠(카드 PNG 등)
+
+async function runStage2Real(){
+  if(!GEN12){alert('먼저 ① 원고를 만들어 주세요.\n한줄메시지를 넣고 [저장 · 확정]을 누르시면 됩니다.');return;}
+  const host=_host();
+  if(!host){alert('콘텐츠 만들기는 지니야빌더 화면 안에서 열어야 작동해요.\n(홍보마케팅비서 카드로 여시면 됩니다)');return;}
+
+  const prog=document.getElementById('prog2'),fill=document.getElementById('fill2'),pct=document.getElementById('pct2'),st=document.getElementById('st2');
+  prog.classList.add('show');st.textContent='만드는 중…';st.style.color='var(--gold)';
+  fill.style.width='10%';pct.textContent='10%';
+
+  // ★부모의 기존 함수들이 쓰는 그 통에 ★우리 결과를 그대로 넣는다 → whBlogHtml() 등이 바로 돈다
+  host.WH_GEN={copy:GEN12.copy,results:GEN12.results,saved:GEN12.saved,saveError:GEN12.saveError};
+
+  try{
+    // 카드뉴스 PNG — ★부모의 _whCardBytes 가 실제로 그린다
+    const card=(GEN12.results||[]).find(x=>x.kind==='cardnews');
+    MADE.cards=[];
+    if(card&&card.text){
+      const lines=_cardLines(card.text);
+      for(let i=0;i<lines.length;i++){
+        const u8=await host._whCardBytes(lines[i]);
+        MADE.cards.push({name:'카드뉴스_'+(i+1)+'.png',data:u8,
+          url:URL.createObjectURL(new Blob([u8],{type:'image/png'}))});
+        fill.style.width=(10+70*(i+1)/lines.length)+'%';pct.textContent=Math.floor(10+70*(i+1)/lines.length)+'%';
+      }
+    }
+    fill.style.width='100%';pct.textContent='100%';
+
+    // 만들어진 것만 done 으로 켠다 — 안 만든 건 안 켠다(있는 척 금지)
+    const 켬={'단문':!!WON['단문'],'장문':!!WON['장문'],'카드뉴스':MADE.cards.length>0};
+    document.querySelectorAll('#pb2 .item').forEach(it=>{
+      const nm=it.dataset.kind;
+      if(켬[nm]){it.classList.add('done');const u=it.querySelector('.use');if(u)u.innerHTML='<span class="go">✓ 보기</span>';}
+      else{it.classList.remove('done');const u=it.querySelector('.use');if(u)u.textContent='아직 없음';}
+    });
+    setTimeout(()=>{prog.classList.remove('show');},400);
+    st.textContent='완료 ✓ 블로그·카드 '+MADE.cards.length+'장';st.style.color='var(--teal)';
+  }catch(e){
+    prog.classList.remove('show');
+    st.textContent='실패';st.style.color='var(--red)';
+    alert('콘텐츠를 만들지 못했어요 — '+e.message);
+  }
+}
+function dlBlog(){ const h=_host(); if(h&&typeof h.whBlogHtml==='function')h.whBlogHtml(); else alert('지니야빌더 화면 안에서 열어 주세요.'); }
+function dlCardsZip(){
+  const h=_host(); if(!h||!MADE.cards||!MADE.cards.length){alert('먼저 ② 콘텐츠를 만들어 주세요.');return;}
+  const files=MADE.cards.map(c=>({name:c.name,data:c.data}));
+  h._whDownloadBlob(h._whZip(files),'카드뉴스_'+Date.now()+'.zip');
 }
 function pauseResume(s){gen[s].paused=!gen[s].paused;document.getElementById('pr'+s).textContent=gen[s].paused?'계속':'일시정지';}
 function stopGen(s){clearInterval(gen[s].timer);document.getElementById('prog'+s).classList.remove('show');document.getElementById('st'+s).textContent='중지됨';document.getElementById('st'+s).style.color='var(--red)';}
