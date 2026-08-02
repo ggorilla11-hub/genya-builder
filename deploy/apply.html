@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>신청하기 · 오원트금융연구소</title>
+<meta name="robots" content="noindex">
+<!--
+  ═══════════════════════════════════════════════════════════════
+  apply.html · Phase 1-A 공개 신청 폼 ★진짜(배선됨)
+  무엇을·왜: 방문자가 이름·연락처·관심만 넣으면 POST /api/apply/submit 으로 보내고,
+             그 신청이 rep 코드로 「신청수집」 시트에 쌓인다.
+  ★화면만이다. 검증·폭주차단·시트쓰기는 전부 서버(apply_sheet.js)가 한다 — 무접촉.
+  ★서버가 준 사유를 ★그대로 보여준다. 실패를 성공으로 둔갑시키지 않는다(CLAUDE.md 6-7).
+  ★화면 원본은 downloads/apply_sim.html(대표님 승인 목업). 디자인을 그대로 쓴다.
+  ═══════════════════════════════════════════════════════════════
+-->
+<style>
+  :root{
+    --bg:#0a1310;--panel:#0f1b17;--card:#16241f;--card2:#1a2c26;
+    --ink:#e8f0ec;--soft:#8aa89c;--line:#2a3d36;
+    --teal:#22c7b8;--teal-d:#1a9e91;--gold:#d4a95a;--warn:#e08a6b;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{font-family:'Malgun Gothic','Apple SD Gothic Neo',system-ui,sans-serif;
+       background:var(--bg);color:var(--ink);line-height:1.6;padding:18px 12px 50px;}
+  .wrap{max-width:460px;margin:0 auto;}
+
+  .hd{display:flex;align-items:center;gap:8px;margin-bottom:4px;}
+  .hd .tag{font-size:13px;font-weight:800;color:var(--teal);}
+  h1{font-size:19px;font-weight:900;margin:6px 0 4px;line-height:1.35;}
+  h1 .hl{color:var(--teal);}
+  .sub{font-size:12.5px;color:var(--soft);margin-bottom:16px;}
+
+  /* 꼬리표 확인칸 — ?debug=1 일 때만 보인다(방문자에겐 안 보임) */
+  .utm{display:none;background:var(--panel);border:1px dashed var(--teal-d);border-radius:10px;
+       padding:10px 12px;margin-bottom:14px;font-size:11.5px;}
+  .utm.on{display:block;}
+  .utm .t{font-weight:800;color:var(--teal);margin-bottom:6px;}
+  .utm .row{display:flex;justify-content:space-between;gap:8px;padding:2px 0;}
+  .utm .k{color:var(--soft);}
+  .utm .v{font-family:Consolas,monospace;word-break:break-all;text-align:right;}
+  .utm .v.none{color:var(--warn);}
+
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 14px;}
+  label.f{display:block;margin-bottom:13px;}
+  label.f .lb,.lb{display:block;font-size:12px;font-weight:700;color:var(--soft);margin-bottom:6px;}
+  .lb .req{color:var(--teal);margin-left:3px;}
+  input[type=text],input[type=tel]{width:100%;background:var(--panel);border:1px solid var(--line);
+    border-radius:9px;padding:12px;font-size:15px;color:var(--ink);font-family:inherit;}
+  input:focus{outline:none;border-color:var(--teal);}
+  input::placeholder{color:#5d7268;}
+
+  .pick{display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px;}
+  .pick button{background:var(--panel);border:1px solid var(--line);border-radius:9px;
+    padding:12px 4px;font-size:13px;font-weight:700;color:var(--soft);cursor:pointer;font-family:inherit;}
+  .pick button.on{border-color:var(--teal);background:rgba(34,199,184,.12);color:var(--teal);}
+
+  .agree{display:flex;gap:9px;align-items:flex-start;margin:4px 0 10px;font-size:12px;color:var(--soft);line-height:1.55;}
+  .agree input{margin-top:2px;width:17px;height:17px;flex-shrink:0;accent-color:var(--teal);}
+  .agree b{color:var(--ink);font-weight:700;}
+  .agree .opt{color:var(--gold);}
+  .privacy{font-size:11px;color:#6f8a7e;background:var(--panel);border-radius:8px;padding:9px 11px;margin-bottom:12px;line-height:1.6;}
+
+  .go{width:100%;background:var(--teal);color:#04211d;border:0;border-radius:10px;
+      padding:15px;font-size:16px;font-weight:900;cursor:pointer;font-family:inherit;margin-top:2px;}
+  .go:disabled{background:#274740;color:#8aa89c;cursor:progress;}
+  .msg{display:none;margin-top:11px;font-size:12.5px;border-radius:9px;padding:10px 12px;line-height:1.6;}
+  .msg.on{display:block;}
+  .msg.bad{background:rgba(224,138,107,.12);border:1px solid rgba(224,138,107,.45);color:var(--warn);}
+
+  /* 접수 완료 */
+  .done{display:none;}
+  .done .ok{background:rgba(34,199,184,.1);border:1px solid var(--teal-d);border-radius:12px;
+            padding:22px 16px;text-align:center;}
+  .done .ok .ic{font-size:34px;margin-bottom:8px;}
+  .done .ok .t{font-size:17px;font-weight:900;color:var(--teal);margin-bottom:6px;}
+  .done .ok .d{font-size:13px;color:var(--soft);line-height:1.7;}
+
+  .foot{font-size:11px;color:#6f8a7e;text-align:center;margin-top:18px;line-height:1.7;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="hd"><span class="tag">⬢ 오원트금융연구소</span></div>
+  <h1>1분이면 됩니다 —<br><span class="hl">필요한 것만</span> 알려주세요</h1>
+  <div class="sub">이름과 연락처, 관심 있는 것 하나만 골라주시면 담당자가 직접 연락드립니다.</div>
+
+  <div class="utm" id="utmBox">
+    <div class="t">🔖 링크가 물고 온 정보 <span style="font-weight:400;color:var(--soft)">(확인용 · ?debug=1)</span></div>
+    <div class="row"><span class="k">rep</span><span class="v" id="vRep">–</span></div>
+    <div class="row"><span class="k">utm_source</span><span class="v" id="vSrc">–</span></div>
+    <div class="row"><span class="k">utm_campaign</span><span class="v" id="vCmp">–</span></div>
+  </div>
+
+  <div class="card" id="formArea">
+    <label class="f">
+      <span class="lb">이름<span class="req">*</span></span>
+      <input type="text" id="fName" placeholder="홍길동" autocomplete="name" maxlength="40">
+    </label>
+
+    <label class="f">
+      <span class="lb">연락처<span class="req">*</span></span>
+      <input type="tel" id="fPhone" placeholder="010-1234-5678" inputmode="numeric" autocomplete="tel" maxlength="13">
+    </label>
+
+    <div class="f">
+      <span class="lb">무엇이 궁금하세요?<span class="req">*</span></span>
+      <div class="pick">
+        <button type="button" data-v="강의">📚 강의</button>
+        <button type="button" data-v="상담">💬 상담</button>
+        <button type="button" data-v="진단">📊 진단</button>
+      </div>
+    </div>
+
+    <div class="privacy">
+      수집 항목은 <b style="color:var(--ink)">이름·연락처·관심</b> 세 가지뿐입니다.
+      상담 연락 목적으로만 쓰고, 목적을 다하면 파기합니다. 주민번호·주소·이메일은 받지 않습니다.
+    </div>
+
+    <label class="agree">
+      <input type="checkbox" id="fAgree">
+      <span><b>[필수]</b> 개인정보 수집·이용에 동의합니다.</span>
+    </label>
+    <label class="agree">
+      <input type="checkbox" id="fAd">
+      <span><span class="opt">[선택]</span> 광고·마케팅 정보 수신에 동의합니다. (동의하지 않아도 신청됩니다)</span>
+    </label>
+
+    <button class="go" id="goBtn">신청하기</button>
+    <div class="msg" id="msg"></div>
+  </div>
+
+  <div class="done" id="doneArea">
+    <div class="ok">
+      <div class="ic" id="dIc">✅</div>
+      <div class="t" id="dTitle">접수됐습니다</div>
+      <div class="d" id="dDesc">담당자가 곧 연락드립니다.</div>
+    </div>
+  </div>
+
+  <div class="foot">오원트금융연구소 · 오상열 CFP</div>
+</div>
+
+<script>
+(function(){
+  var $ = function(id){ return document.getElementById(id); };
+  var qs = new URLSearchParams(location.search);
+
+  // ── 주소에서 꼬리표 읽기 (없으면 없는 대로 보낸다 — 서버가 미분류로 담는다) ──
+  var rep = (qs.get('rep')  || '').trim();
+  var src = (qs.get('utm_source')   || '').trim();
+  var cmp = (qs.get('utm_campaign') || '').trim();
+  if (qs.get('debug') === '1') {
+    $('utmBox').classList.add('on');
+    [['vRep', rep], ['vSrc', src], ['vCmp', cmp]].forEach(function(p){
+      var e = $(p[0]); e.textContent = p[1] || '없음'; if (!p[1]) e.classList.add('none');
+    });
+  }
+
+  // ── 연락처 자동 하이픈 ──
+  var ph = $('fPhone');
+  ph.addEventListener('input', function(){
+    var v = ph.value.replace(/[^0-9]/g,'').slice(0,11);
+    if(v.length > 7)      v = v.replace(/(\d{3})(\d{4})(\d{1,4})/,'$1-$2-$3');
+    else if(v.length > 3) v = v.replace(/(\d{3})(\d{1,4})/,'$1-$2');
+    ph.value = v;
+  });
+
+  // ── 관심 고르기 ──
+  var want = '';
+  Array.prototype.forEach.call(document.querySelectorAll('.pick button'), function(b){
+    b.addEventListener('click', function(){
+      Array.prototype.forEach.call(document.querySelectorAll('.pick button'), function(x){ x.classList.remove('on'); });
+      b.classList.add('on');
+      want = b.getAttribute('data-v');
+      hideMsg();
+    });
+  });
+
+  function showMsg(text){ var m = $('msg'); m.textContent = text; m.className = 'msg bad on'; }
+  function hideMsg(){ $('msg').className = 'msg'; }
+
+  function finish(icon, title, desc){
+    $('dIc').textContent = icon;
+    $('dTitle').textContent = title;
+    $('dDesc').textContent = desc;
+    $('formArea').style.display = 'none';
+    $('doneArea').style.display = 'block';
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  // ── 제출 ★여기가 목업과 다른 곳: 실제로 서버로 보낸다 ──
+  var busy = false;
+  $('goBtn').addEventListener('click', function(){
+    if (busy) return;
+    hideMsg();
+
+    // 화면에서도 한 번 본다(서버가 다시 본다 — 서버 판정이 최종이다)
+    var name  = $('fName').value.trim();
+    var phone = $('fPhone').value.trim();
+    if (!name)  { showMsg('이름을 넣어 주세요.'); return; }
+    if (phone.replace(/[^0-9]/g,'').length < 10) { showMsg('연락처를 다시 확인해 주세요.'); return; }
+    if (!want)  { showMsg('강의·상담·진단 중에서 하나를 골라 주세요.'); return; }
+    if (!$('fAgree').checked) { showMsg('개인정보 수집·이용 동의(필수)에 체크해 주세요.'); return; }
+
+    busy = true;
+    var btn = $('goBtn');
+    btn.disabled = true; btn.textContent = '접수 중…';
+
+    fetch('/api/apply/submit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json; charset=utf-8' },
+      body: JSON.stringify({
+        name: name, phone: phone, want: want,
+        rep: rep, utm_source: src, utm_campaign: cmp,
+        agree: $('fAgree').checked, ad: $('fAd').checked
+      })
+    }).then(function(r){
+      return r.json().catch(function(){ return {}; }).then(function(j){ return { status: r.status, j: j }; });
+    }).then(function(res){
+      var j = res.j || {};
+      if (res.status === 200 && j.ok) {
+        // ★중복이면 중복이라고 말한다(두 번 접수된 척하지 않는다)
+        if (j.중복) finish('📌', '이미 접수됐어요', j.안내 || '같은 번호로 접수된 신청이 있어요. 곧 연락드릴게요.');
+        else        finish('✅', '접수됐습니다', j.안내 || '담당자가 곧 연락드립니다.');
+        return;
+      }
+      if (res.status === 400) { showMsg(j.error || '입력을 다시 확인해 주세요.'); return; }   // 서버가 준 사유 그대로
+      if (res.status === 429) { showMsg(j.error || '요청이 너무 잦아요. 잠시 뒤 다시 시도해 주세요.'); return; }
+      // ★500 등 — 저장 안 됐다고 정직하게. 성공으로 둔갑시키지 않는다.
+      showMsg((j.error || '접수가 저장되지 않았어요.') + ' 잠시 뒤 다시 시도해 주세요.');
+    }).catch(function(){
+      // ★연결이 끊긴 것도 저장 안 됨으로 본다("보냈으니 됐겠지"라고 하지 않는다)
+      showMsg('연결이 끊겨 접수가 저장되지 않았어요. 잠시 뒤 다시 시도해 주세요.');
+    }).then(function(){
+      busy = false;
+      var b = $('goBtn'); if (b) { b.disabled = false; b.textContent = '신청하기'; }
+    });
+  });
+})();
+</script>
+</body>
+</html>
