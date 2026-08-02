@@ -4652,6 +4652,32 @@ function addToolAsk(){ window._ACTIVE_SKILL='add_tool'; pushMsg('gen','어떤 �
     try{ if(window.galaxyState) window.galaxyState(s); }catch(e){}   /* 🎬 은하: 대기·듣기·작업 — 음성 상태가 모이는 유일한 곳 */
   }
   function tip(t){ try{ toast(t); }catch(e){ console.log('[Vapi]',t); } }
+
+  // ══ ★★[2026-08-02] 음성 "정지" 강화 — 멈추라 하면 즉시 멈춘다 (엄마2) ═══════════════
+  //   왜: 촬영이 멈췄다. 지니야가 고객정보를 끝까지 읽는데 대표님이 "멈춰" 해도 안 멈췄다.
+  //   2겹으로 막는다. ①VAPI가 소리만 나도 즉시 끊게(아래 startCall) ②"멈춰"를 ★서버로 안 보내게(아래 판정).
+  //   ★②가 없으면 "멈춰"를 질문으로 받아 지니야가 새로 답을 만들어 ★다시 떠드는 루프가 생긴다.
+  var _STOP_PHRASES = ['멈춰','멈춰요','멈춰줘','그만','그만해','그만해요','스톱','스탑','정지','조용','조용히','됐어','됐어요'];
+  var _STOP_RE     = /(멈춰|멈춰요|멈춰줘|멈추|그만해|그만하|그만|스톱|스탑|정지|조용히|조용|됐어|됐어요|됐다)/;
+  var _NOT_STOP_RE = /그만둔|그만두|그만둬|그만뒀/;   // ★"그만둔 고객 명단" = 멈추라는 뜻이 아니다
+  //   ★넓히면 안 된다: 진짜 지시를 삼키면 대표님은 "또 안 되네" 하신다.
+  //     그래서 ①짧게 외친 말 ②문장 맨 앞 ③문장 맨 끝(읽는 도중 끼어든 경우)만 정지로 본다.
+  function _isStopUtter(s){
+    var t = String(s||'').replace(/[\s.,!?~·…"'’]/g,'');
+    if(!t) return false;
+    if(_NOT_STOP_RE.test(t)) return false;
+    if(t.length<=8 && _STOP_RE.test(t)) return true;                                  // ① "멈춰" "그만해" "됐어요"
+    if(/^(멈춰|멈추|그만해|그만하|그만|스톱|스탑|정지|조용)/.test(t)) return true;        // ② 맨 앞이 정지어
+    if(/(멈춰|멈춰요|그만해|그만|스톱|스탑|정지|조용히|조용)$/.test(t)) return true;      // ③ 맨 끝이 정지어
+    return false;
+  }
+  //  보내려고 대기 중이던 말까지 전부 버린다 — 멈추라 했는데 0.9초 뒤 앞말이 나가면 또 떠든다.
+  function _cancelPendingVoice(){
+    try{ clearTimeout(window._vTimer); }catch(e){}
+    window._vBuf=''; window._vBufAt=0; window._vLast=''; window._vLastAt=0;
+  }
+  try{ window._isStopUtter=_isStopUtter; }catch(e){}   // 시험에서 직접 부를 수 있게(라우터는 안 건드림)
+
   window.vapiToggle = async function(){ if(vapi){ stopCall(); } else { await startCall(); } };
   async function startCall(){
     if(_vapiConnecting) return;
@@ -4676,6 +4702,15 @@ function addToolAsk(){ window._ACTIVE_SKILL='add_tool'; pushMsg('gen','어떤 �
             try{ if(window.galaxySpeak) window.galaxySpeak(Math.min(9000, 900+t.length*95)); }catch(e){}  /* 🎬 은하: 지니야가 말하는 동안 잔잔한 호흡(글자 수만큼) */
           }
           else pushMsg('me', t.replace(/[<>]/g,''));                                              // role 미상이면 일단 사용자로 표시(누락 방지)
+          // ★★[정지 강화 2겹] 정지어는 ★여기서 끊는다 — 서버로 보내지 않는다.
+          //   보내면 "멈춰"를 질문으로 받아 지니야가 새 답을 만들고 ★또 떠든다(루프). 그래서 아예 안 보낸다.
+          //   ★아래 B안(무조건 서버로 보낸다)은 한 줄도 안 건드렸다 — 정지어일 때만 그 앞에서 되돌아간다.
+          if(r!=='assistant'&&r!=='bot'&&r!=='ai' && _isStopUtter(t)){
+            _cancelPendingVoice();                                   // 보내려고 대기 중이던 앞말까지 버린다
+            try{ console.log('[🎙️vapi] ★정지어 감지 → 서버로 안 보냄 · 대기중이던 말도 취소:', t); }catch(_){}
+            pushMsg('gen','⏹ 멈췄어요.');
+            return;
+          }
           // ★★B안 — 음성 관문 제거 (2026-07-31 대표님 승인 · 촬영 핵심)
           //   왜: 예전엔 정규식 6개에 맞는 말만 서버로 갔다. 그래서 "명단 띄워봐"·"다음"·"결재함 열어줘"·
           //       "우측으로 밀어봐"·"발굴 돌려"는 ★요청조차 안 가서 지니야가 말로만 답하고 화면은 그대로였다
@@ -4691,6 +4726,7 @@ function addToolAsk(){ window._ACTIVE_SKILL='add_tool'; pushMsg('gen','어떤 �
             window._vTimer=setTimeout(function(){
               var B=String(window._vBuf||'').trim(); window._vBuf='';
               if(!B) return;
+              if(_isStopUtter(B)) return;   // ★정지 강화: 조각들이 합쳐져 "…멈춰"가 된 경우도 안 보낸다(PC는 한 문장을 조각내 보낸다)
               // 같은 말이 곧바로 또 오면(SDK 재전송·메아리) 한 번만 처리한다
               if(B===window._vLast && (Date.now()-(window._vLastAt||0))<8000) return;
               window._vLast=B; window._vLastAt=Date.now();
@@ -4704,13 +4740,30 @@ function addToolAsk(){ window._ACTIVE_SKILL='add_tool'; pushMsg('gen','어떤 �
       // ★한 지니야 뇌: 로그인 세션 + Pinecone recall(엄마2)을 variableValues로 주입 → 통화 지니야가 텍스트 지니야와 같은 기억.
       var ctx={}; try{ ctx=await fetch('/api/vapi-context',{credentials:'include'}).then(function(r){return r.json();}); }catch(e){}
       // ★날짜 환각 근본수정: today 등 vapi-context 전체 필드를 variableValues로 넘겨야 프롬프트 {{today}}가 값을 받는다(clientData만 넘기면 today는 빈 값→음성이 24일 지어냄).
-      await vapi.start(vapiCfg.assistantId, { variableValues: {
+      var _vars = {
         user_id:(ctx.user_id||'guest'), user_name:(ctx.user_name||'대표님'), session_id:(ctx.session_id||''),
         recall:(ctx.recall||''), clientData:(ctx.clientData||''),
         today:(ctx.today||''), now:(ctx.now||''), thisWeek:(ctx.thisWeek||''),
         todaySchedule:(ctx.todaySchedule||''), pendingCount:String(ctx.pendingCount!=null?ctx.pendingCount:''),
         connectorStatus:(ctx.connectorStatus||''), bizName:(ctx.bizName||'')
-      } });
+      };
+      // ★★[정지 강화 1겹] 끼어들기 설정 — 대표님이 소리 내는 즉시 지니야가 말을 멈춘다.
+      //   numWords:0        = 전사(글자)를 안 기다리고 ★소리 감지(VAD)로 끊는다 — 문서상 50~100ms.
+      //   voiceSeconds:0.2  = 0.2초만 소리가 나면 끊는다(범위 0~0.5).
+      //   backoffSeconds:1.0= 끊긴 뒤 1초는 지니야 음성을 아예 막는다 — 바로 다시 안 떠든다(범위 0~10).
+      //   interruptionPhrases = 이 말이 들리면 ★파이프라인 즉시 비움(VAPI 문서 "Instant pipeline clear").
+      //   ★정직하게: 앞의 세 값은 VAPI 문서상 ★기본값과 같다. 그래도 명시로 박는 이유는
+      //     대시보드 어시스턴트에 다른 값이 들어 있으면 그게 이기기 때문이다(그게 안 멈춘 원인일 수 있다).
+      //     ★진짜 새로 생기는 힘은 interruptionPhrases 쪽이다.
+      var _stopPlan = { numWords:0, voiceSeconds:0.2, backoffSeconds:1.0, interruptionPhrases:_STOP_PHRASES };
+      try{
+        await vapi.start(vapiCfg.assistantId, { variableValues:_vars, stopSpeakingPlan:_stopPlan });
+      }catch(_e1){
+        // ★안전선: 서버가 새 칸을 거부하면 음성이 ★통째로 안 켜진다(촬영 직전에 최악).
+        //   그때는 예전과 똑같이 한 번 더 켠다 — 최악이어도 현상 유지. 바닥이 안 뚫린다.
+        try{ console.warn('[🎙️vapi] stopSpeakingPlan 거부됨 → 기존 방식으로 재시도 ·', (_e1&&_e1.message)||_e1); }catch(_){}
+        await vapi.start(vapiCfg.assistantId, { variableValues:_vars });
+      }
       _vapiConnecting=false; micState('recording');
     }catch(e){ _vapiConnecting=false; micState(''); vapi=null; tip('음성 연결 오류 · 잠시 후 다시'); }
   }
