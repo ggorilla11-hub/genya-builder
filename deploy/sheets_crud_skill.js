@@ -178,6 +178,11 @@ async function _loadTableRaw(ma) {
   const f = await drive.files.list({
     q: `mimeType='application/vnd.google-apps.spreadsheet' and name='${_DEMO_TITLE}' and trashed=false${_ownerOnly}`,
     fields: 'files(id)',
+    // ★2026-08-02 응급(391 vs 11 · 온보딩 반복): 같은 이름 시트가 여러 개면 orderBy 없이 files[0]을 잡아
+    //   ★어느 것이 잡힐지 정해져 있지 않았다. 읽기·쓰기·프로필이 각각 따로 찾아 ★서로 엇갈렸다
+    //   (읽을 땐 391명, 쓸 땐 11명 · 프로필을 못 찾아 온보딩이 반복).
+    //   → 세 곳이 ★같은 기준(최근 수정 순)으로 정렬해 ★같은 시트를 잡게 한다. 짝은 main_server.js findOrCreateMemberSheet.
+    orderBy: 'modifiedTime desc',
   });
   const id = (f.data.files || [])[0] && f.data.files[0].id;
   if (!id) return { id: null, gid: null, header: [], rows: [], nameCol: null, sheets };
