@@ -634,7 +634,20 @@ function toggleC(el){
         +'<div style="margin-top:6px"><button class="save" onclick="event.stopPropagation();dlCardsZip()">📦 카드 '+cs.length+'장 ZIP 내려받기</button></div>'
       : '<div class="dtext">아직 안 만들었어요. ② 콘텐츠생성을 눌러 주세요.</div>';
   }
-  else if(ct==='쇼츠')pv='<div class="dtext">🎬 쇼츠 <b>영상</b>은 아직 못 만들어요(다음 단계).\n지금은 ① 원고의 쇼츠 대본까지 나와 있어요.\n\n'+_esc((WON['쇼츠원고']||'').slice(0,400))+'</div>';
+  else if(ct==='쇼츠'){
+    const sh=MADE.shorts;
+    pv=sh
+      ? '<video src="'+sh.url+'" controls playsinline preload="metadata" '
+          +'style="width:168px;border-radius:10px;display:block;background:#0B2620"></video>'
+        +'<div style="font-size:11px;color:var(--soft);margin-top:6px">실제로 그려서 녹화한 세로 영상이에요 — '
+          +sh.scenes+'씬 · '+sh.secs+'초 · 1080×1920 · '+(sh.size/1048576).toFixed(1)+'MB</div>'
+        +'<div style="margin-top:6px"><button class="save" onclick="event.stopPropagation();dlShorts()">⬇️ 쇼츠 영상 내려받기(webm)</button></div>'
+        +'<div style="font-size:10px;color:var(--soft);margin-top:5px;line-height:1.6">'
+          +'· 유튜브 쇼츠는 이 파일 <b>그대로</b> 올라가요.<br>'
+          +'· 인스타·틱톡은 mp4가 필요해요 — <b>다음 단계</b>.<br>'
+          +'· 지금은 <b>소리 없는</b> 자막 영상이에요(목소리·배경음악은 다음 단계).</div>'
+      : '<div class="dtext">🎬 쇼츠 영상은 아직 안 만들었어요. ② 콘텐츠생성을 눌러 주세요.\n(5씬이면 녹화에 15초쯤 걸려요)\n\n'+_esc((WON['쇼츠원고']||'').slice(0,400))+'</div>';
+  }
   else if(ct==='오디오')pv='<div class="dtext">🎙️ 오디오 <b>파일</b>은 아직 못 만들어요(다음 단계).\n지금은 ① 원고의 팟캐스트 대본까지 나와 있어요.\n\n'+_esc((WON['오디오원고']||'').slice(0,400))+'</div>';
   else if(ct==='이미지')pv='<div class="dtext">🎨 이미지 <b>파일</b>은 아직 못 만들어요(다음 단계).\n지금은 ① 원고의 그림 지시문까지 나와 있어요.\n\n'+_esc((WON['이미지원고']||'').slice(0,400))+'</div>';
   d.innerHTML=pv+'<div class="revise"><input placeholder="수정 지시 (예: 더 짧게, 밝은 톤)" onkeydown="if(event.key===\'Enter\')doRevise(this,\''+nm+'\')"><button onclick="doRevise(this.previousElementSibling,\''+nm+'\')">AI 수정</button></div><div class="revise-log" id="rl-'+nm+'"></div>';
@@ -814,20 +827,33 @@ async function runStage2Real(){
         const u8=await host._whCardBytes(lines[i]);
         MADE.cards.push({name:'카드뉴스_'+(i+1)+'.png',data:u8,
           url:URL.createObjectURL(new Blob([u8],{type:'image/png'}))});
-        fill.style.width=(10+70*(i+1)/lines.length)+'%';pct.textContent=Math.floor(10+70*(i+1)/lines.length)+'%';
+        fill.style.width=(10+35*(i+1)/lines.length)+'%';pct.textContent=Math.floor(10+35*(i+1)/lines.length)+'%';
       }
     }
+
+    // 🎬 쇼츠 영상 — ★실시간 녹화라 씬 수 × 3초가 실제로 걸린다(5씬=15초)
+    //    실패해도 카드뉴스는 살린다. 못 만들었으면 ★못 만들었다고 둔다(있는 척 금지).
+    MADE.shorts=null; let 쇼츠오류='';
+    try{
+      st.textContent='쇼츠 영상 녹화 중… 이 탭을 그대로 두세요';
+      MADE.shorts=await _makeShorts(p=>{
+        const v=45+53*p; fill.style.width=v+'%'; pct.textContent=Math.floor(v)+'%';
+      });
+    }catch(e){ 쇼츠오류=e.message; console.log('[쇼츠] 못 만듦 — '+e.message); }
     fill.style.width='100%';pct.textContent='100%';
 
     // 만들어진 것만 done 으로 켠다 — 안 만든 건 안 켠다(있는 척 금지)
-    const 켬={'단문':!!WON['단문'],'장문':!!WON['장문'],'카드뉴스':MADE.cards.length>0};
+    const 켬={'단문':!!WON['단문'],'장문':!!WON['장문'],'카드뉴스':MADE.cards.length>0,'쇼츠영상':!!MADE.shorts};
     document.querySelectorAll('#pb2 .item').forEach(it=>{
       const nm=it.dataset.kind;
       if(켬[nm]){it.classList.add('done');const u=it.querySelector('.use');if(u)u.innerHTML='<span class="go">✓ 보기</span>';}
       else{it.classList.remove('done');const u=it.querySelector('.use');if(u)u.textContent='아직 없음';}
     });
     setTimeout(()=>{prog.classList.remove('show');},400);
-    st.textContent='완료 ✓ 블로그·카드 '+MADE.cards.length+'장';st.style.color='var(--teal)';
+    st.innerHTML='완료 ✓ 블로그·카드 '+MADE.cards.length+'장'
+      +(MADE.shorts?(' · 쇼츠 '+MADE.shorts.secs+'초')
+                   :(' <span style="color:var(--red)">· 쇼츠 실패'+(쇼츠오류?('('+_esc(쇼츠오류)+')'):'')+'</span>'));
+    st.style.color='var(--teal)';
   }catch(e){
     prog.classList.remove('show');
     st.textContent='실패';st.style.color='var(--red)';
@@ -840,6 +866,196 @@ function dlCardsZip(){
   const files=MADE.cards.map(c=>({name:c.name,data:c.data}));
   h._whDownloadBlob(h._whZip(files),'카드뉴스_'+Date.now()+'.zip');
 }
+// ═══════════════════════════════════════════════════════════════════
+// 🎬 쇼츠 1단계 — 자막 슬라이드 쇼츠 (자체·브라우저·조립형)
+//
+//   무엇을·왜: 쇼츠 "원고"는 이미 진짜로 나온다(엔진 5씬). 그런데 "영상"은 없어서
+//              ②콘텐츠의 [쇼츠영상] 칸이 계속 "아직 없음"으로 꺼져 있었다.
+//              그 칸을 ★진짜로 채운다.
+//
+//   ★자체 원칙: 생성 모델(TTS·AI이미지) 안 쓴다. 서버도 안 쓴다(ffmpeg 없음).
+//              브라우저 캔버스에 자막을 그려서 MediaRecorder 로 녹화한다 — 카드뉴스와 같은 방식.
+//
+//   ★왜 _whCardBytes 를 그대로 못 쓰나 (2026-08-03 · 대표님 승인 ①):
+//              카드뉴스는 SVG를 이미지로 ★비동기 로딩해서 그린다. 영상은 1초에 30장을
+//              그려야 해서 그 방식으로는 못 따라간다. 그래서 캔버스에 ★글씨를 직접 쓴다.
+//              색·틀·글꼴 규칙은 카드뉴스와 ★똑같이 쓴다(딥그린 + 골드테두리 + 흰 자막).
+//              카드뉴스 함수(_whCardBytes)는 ★한 글자도 안 건드린다.
+//
+//   ★나오는 파일은 webm 이다(mp4 아님 · 승인 ②). 크롬이 만들 수 있는 게 이것뿐.
+//              유튜브 쇼츠는 webm 그대로 올라간다. 인스타·틱톡은 mp4 필요 → 다음 단계.
+//   ★15초 영상은 15초 걸린다(실시간 녹화 · 승인 ③). 그래서 진행률을 보여준다.
+// ═══════════════════════════════════════════════════════════════════
+const SH={W:1080,H:1920,SEC:3,FPS:30,FADE:0.35};
+
+// ── 1. 원고 파싱 — 5씬의 [자막] 만 뽑는다 ────────────────────────────
+//   프롬프트 규칙(promo_prompts.js:28): 정확히 5씬 · 각 씬 [자막]16자 / [화면]25자
+//   ★못 찾으면 넓히지 않는다. 0으로 두고 "형식이 아니다"라고 말한다.
+//     (CLAUDE.md 6-9 — 조건이 안 먹으면 "0"이 아니라 "전체"가 되는 사고를 막는다.
+//      여기서 원고 전체를 자막으로 쓰면 16자 자막 자리에 1,000자가 들어간다.)
+function _shScenes(text){
+  const out=[];
+  String(text||'').split(/\r?\n/).forEach(l=>{
+    const i=l.indexOf('[자막]');
+    if(i<0)return;
+    const t=l.slice(i+4).replace(/^[\s:：\-]+/,'').trim();
+    if(t)out.push(t);
+  });
+  return out;
+}
+
+// ── 2. 슬라이드 한 장 그리기 (세로 1080×1920) ────────────────────────
+function _shRound(ctx,x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y); ctx.quadraticCurveTo(x+w,y,x+w,y+r);
+  ctx.lineTo(x+w,y+h-r); ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+  ctx.lineTo(x+r,y+h); ctx.quadraticCurveTo(x,y+h,x,y+h-r);
+  ctx.lineTo(x,y+r); ctx.quadraticCurveTo(x,y,x+r,y); ctx.closePath();
+}
+function _shWrap(ctx,txt,maxW){
+  const out=[]; let cur='';
+  String(txt).split(/\s+/).filter(Boolean).forEach(w=>{
+    const t=cur?cur+' '+w:w;
+    if(ctx.measureText(t).width>maxW&&cur){out.push(cur);cur=w;}else cur=t;
+  });
+  if(cur)out.push(cur);
+  // 띄어쓰기 없는 긴 한 덩어리는 글자 단위로 자른다(한국어에서 흔하다)
+  const fin=[];
+  out.forEach(l=>{
+    if(ctx.measureText(l).width<=maxW){fin.push(l);return;}
+    let c='';
+    for(const ch of l){ if(ctx.measureText(c+ch).width>maxW&&c){fin.push(c);c=ch;} else c+=ch; }
+    if(c)fin.push(c);
+  });
+  return fin;
+}
+function _shFrame(ctx,txt,i,total,alpha){
+  const W=SH.W,H=SH.H;
+  ctx.globalAlpha=1;
+  ctx.fillStyle='#0B2620'; ctx.fillRect(0,0,W,H);                 // 카드뉴스와 같은 딥그린
+  const g=ctx.createRadialGradient(W/2,H*0.42,60,W/2,H*0.42,W*0.95);
+  g.addColorStop(0,'rgba(242,178,62,0.12)'); g.addColorStop(1,'rgba(11,38,32,0)');
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+  ctx.strokeStyle='#F2B23E'; ctx.lineWidth=4;                     // 카드뉴스와 같은 골드 테두리
+  _shRound(ctx,44,44,W-88,H-88,28); ctx.stroke();
+
+  // 씬 진행 점 — 지금 몇 번째 씬인지 보이게
+  const n=total,d=18,gap=38,x0=W/2-((n-1)*gap)/2;
+  for(let k=0;k<n;k++){
+    ctx.beginPath(); ctx.arc(x0+k*gap,180,d/2,0,Math.PI*2);
+    ctx.fillStyle=(k===i)?'#F2B23E':'rgba(234,243,241,0.28)'; ctx.fill();
+  }
+
+  // 자막 — 페이드는 글자에만 준다(배경은 안 깜빡이게)
+  ctx.globalAlpha=alpha;
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.font='800 92px "Malgun Gothic","AppleSDGothicNeo","Noto Sans KR",sans-serif';
+  const lines=_shWrap(ctx,txt,W-220);
+  const lh=126, y0=H/2-(lines.length-1)*lh/2;
+  ctx.shadowColor='rgba(0,0,0,0.45)'; ctx.shadowBlur=18; ctx.shadowOffsetY=4;
+  ctx.fillStyle='#EAF3F1';
+  lines.forEach((l,k)=>ctx.fillText(l,W/2,y0+k*lh));
+  ctx.shadowBlur=0; ctx.shadowOffsetY=0;
+  ctx.globalAlpha=1;
+
+  ctx.font='600 40px "Malgun Gothic","Noto Sans KR",sans-serif';   // 카드뉴스와 같은 서명
+  ctx.fillStyle='#F2B23E';
+  ctx.fillText('오원트금융연구소',W/2,H-130);
+}
+
+// ── 2-b. 영상 길이 써넣기 ────────────────────────────────────────────
+//   왜: MediaRecorder 가 만든 webm 에는 ★길이가 안 적혀 있다(실측: duration = Infinity).
+//       재생은 되지만 탐색바가 안 잡히고, 올리는 곳에 따라 길이를 못 읽는다.
+//   무엇을: WebM 머리(Segment > Info)에 Duration 11바이트를 끼워 넣는다.
+//   ★안전선: 실측으로 확인한 구조(Segment 크기 = unknown · SeekHead·Cues 없음)에서만 손댄다.
+//            조금이라도 다르면 null 을 돌려 ★원본을 그대로 쓴다 — 고치려다 부수지 않는다.
+function _shWithDuration(u8, ms){
+  try{
+    let p=-1;                                        // Segment Info(0x1549A966) — 파일 앞 1KB 안에 있다
+    for(let i=0;i<Math.min(u8.length,1024)-4;i++)
+      if(u8[i]===0x15&&u8[i+1]===0x49&&u8[i+2]===0xA9&&u8[i+3]===0x66){p=i;break;}
+    if(p<0)return null;
+    const sz=u8[p+4];
+    if((sz&0x80)!==0x80)return null;                 // 크기가 1바이트 VINT 가 아니면 안 건드린다
+    const len=sz&0x7F, body=p+5, end=body+len;
+    for(let i=body;i<end-1;i++)                      // 이미 길이가 적혀 있으면 안 건드린다
+      if(u8[i]===0x44&&u8[i+1]===0x89)return null;
+    const newLen=len+11;
+    if(newLen>127)return null;                       // 크기 필드가 2바이트로 늘어나면 안 건드린다
+    const dur=new Uint8Array(11);                    // 4489(Duration) + 88(8바이트) + float64
+    dur[0]=0x44; dur[1]=0x89; dur[2]=0x88;
+    new DataView(dur.buffer).setFloat64(3,ms,false); // 단위는 TimecodeScale(1ms) 기준
+    const out=new Uint8Array(u8.length+11);
+    out.set(u8.subarray(0,end),0);
+    out.set(dur,end);
+    out.set(u8.subarray(end),end+11);
+    out[p+4]=0x80|newLen;
+    return out;
+  }catch(e){ return null; }
+}
+
+// ── 3. 녹화 — 캔버스 → MediaRecorder → webm ──────────────────────────
+async function _shRecord(scenes,onPct){
+  if(!window.MediaRecorder)throw new Error('이 브라우저는 영상 녹화를 지원하지 않아요(크롬으로 열어 주세요)');
+  const mime=['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm']
+    .find(m=>MediaRecorder.isTypeSupported(m));
+  if(!mime)throw new Error('이 브라우저는 webm 녹화를 지원하지 않아요(크롬으로 열어 주세요)');
+
+  const cv=document.createElement('canvas'); cv.width=SH.W; cv.height=SH.H;
+  const ctx=cv.getContext('2d');
+  _shFrame(ctx,scenes[0],0,scenes.length,1);        // 첫 프레임 미리 — 빈 화면으로 시작하지 않게
+
+  const rec=new MediaRecorder(cv.captureStream(SH.FPS),{mimeType:mime,videoBitsPerSecond:6000000});
+  const chunks=[];
+  rec.ondataavailable=e=>{ if(e.data&&e.data.size)chunks.push(e.data); };
+  const done=new Promise(res=>{ rec.onstop=()=>res(new Blob(chunks,{type:'video/webm'})); });
+  rec.start(200);
+
+  const total=scenes.length*SH.SEC*1000, t0=performance.now();
+  await new Promise(res=>{
+    (function tick(){
+      const el=performance.now()-t0;
+      if(el>=total){res();return;}
+      const i=Math.min(scenes.length-1,Math.floor(el/(SH.SEC*1000)));
+      const inS=(el-i*SH.SEC*1000)/1000;
+      // 씬 사이만 페이드한다.
+      //   ★첫 씬은 페이드인을 안 한다 — 첫 프레임이 투명하면 미리보기가 빈 화면으로 보이고,
+      //     쇼츠는 첫 0.3초가 승부라 자막이 처음부터 떠 있어야 한다(실측에서 확인).
+      //   ★마지막 씬은 페이드아웃을 안 한다 — 마지막은 CTA라 끝까지 남아 있어야 한다.
+      let a=1;
+      if(inS<SH.FADE&&i>0)a=inS/SH.FADE;
+      else if(inS>SH.SEC-SH.FADE&&i<scenes.length-1)a=Math.max(0,(SH.SEC-inS)/SH.FADE);
+      _shFrame(ctx,scenes[i],i,scenes.length,a);
+      if(onPct)onPct(el/total);
+      requestAnimationFrame(tick);
+    })();
+  });
+  rec.stop();
+  const blob=await done;
+  if(!blob||!blob.size)throw new Error('녹화된 내용이 비어 있어요');
+  const fixed=_shWithDuration(new Uint8Array(await blob.arrayBuffer()),total);   // 길이 써넣기
+  return fixed?new Blob([fixed],{type:'video/webm'}):blob;                        // 못 쓰면 원본 그대로
+}
+
+// ── 4. ②콘텐츠에서 부르는 입구 ───────────────────────────────────────
+async function _makeShorts(onPct){
+  const won=WON['쇼츠원고']||'';
+  const scenes=_shScenes(won);
+  if(!scenes.length)throw new Error('쇼츠 원고에서 [자막] 줄을 못 찾았어요 (원고 형식이 달라요)');
+  const blob=await _shRecord(scenes,onPct);
+  return { blob, url:URL.createObjectURL(blob), scenes:scenes.length,
+           secs:scenes.length*SH.SEC, size:blob.size, list:scenes };
+}
+function dlShorts(){
+  if(!MADE.shorts){alert('먼저 ② 콘텐츠를 만들어 주세요.');return;}
+  const h=_host();
+  const name='쇼츠_'+Date.now()+'.webm';
+  if(h&&typeof h._whDownloadBlob==='function'){ h._whDownloadBlob(MADE.shorts.blob,name); return; }
+  const a=document.createElement('a');            // 부모 화면 밖에서 열었을 때의 대비
+  a.href=MADE.shorts.url; a.download=name; document.body.appendChild(a); a.click();
+  setTimeout(()=>a.remove(),800);
+}
+
 function pauseResume(s){gen[s].paused=!gen[s].paused;document.getElementById('pr'+s).textContent=gen[s].paused?'계속':'일시정지';}
 function stopGen(s){clearInterval(gen[s].timer);document.getElementById('prog'+s).classList.remove('show');document.getElementById('st'+s).textContent='중지됨';document.getElementById('st'+s).style.color='var(--red)';}
 
