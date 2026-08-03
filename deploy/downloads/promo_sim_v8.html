@@ -785,17 +785,10 @@ function toggleC(el){
           +'· 지금은 <b>소리 없는</b> 자막 영상이에요(목소리·배경음악은 다음 단계).</div>'
       : '<div class="dtext">🎬 쇼츠 영상은 아직 안 만들었어요. ② 콘텐츠생성을 눌러 주세요.\n(5씬이면 녹화에 15초쯤 걸려요)\n\n'+_esc((WON['쇼츠원고']||'').slice(0,400))+'</div>';
   }
-  else if(ct==='오디오')pv='<div class="dtext">🎙️ 오디오 <b>파일</b>은 아직 못 만들어요(다음 단계).\n지금은 ① 원고의 팟캐스트 대본까지 나와 있어요.\n\n'+_esc((WON['오디오원고']||'').slice(0,400))+'</div>';
-  // ★2026-08-03: 이미지파일 안에 ★두 가지를 나눠 보여준다 — 이미지(png) · 인포그래픽
-  else if(ct==='이미지'){
-    const 그림=WON['이미지원고']||'', 인포=WON['인포그래픽']||'';
-    pv='<div style="font-size:11px;font-weight:800;color:var(--ink);margin-bottom:3px">🎨 이미지 (png)</div>'
-      +'<div class="dtext">'+(그림?_esc(그림.slice(0,350))+(그림.length>350?'…':''):'아직 없어요 — ① 원고를 먼저 만들어 주세요.')+'</div>'
-      +'<div style="font-size:10px;color:var(--soft);margin:4px 0 9px">그림 <b>파일</b>은 아직 못 만들어요(다음 단계). 지금은 그림 지시문까지예요.</div>'
-      +'<div style="font-size:11px;font-weight:800;color:var(--ink);margin-bottom:3px">📊 인포그래픽</div>'
-      +'<div class="dtext">'+(인포?_esc(인포.slice(0,350))+(인포.length>350?'…':''):'아직 없어요 — ① 원고를 먼저 만들어 주세요.')+'</div>'
-      +'<div style="font-size:10px;color:var(--soft);margin-top:4px">디자이너에게 그대로 넘기시면 되는 글이에요.</div>';
-  }
+  // ★2026-08-03 배치3: 오디오·이미지도 ★진짜 파일이 된다(만들기 전엔 원고까지만 정직히 보여준다).
+  //   미리보기를 만든 뒤 다시 그려야 해서 함수로 뺐다 — 아래 _audPv()·_imgPv() 참고.
+  else if(ct==='오디오')pv=_audPv();
+  else if(ct==='이미지')pv=_imgPv();
   // ★뉴스레터 — 복사 + ★직접 고쳐쓰기(고치면 WON 에 그대로 반영된다 · 2026-08-03)
   else if(ct==='뉴스레터'){
     const n=WON['뉴스레터']||'';
@@ -1123,6 +1116,164 @@ function _cardLines(text){              // 카드뉴스 원고를 장별로 자�
 }
 let MADE={};                            // 만들어진 콘텐츠(카드 PNG 등)
 
+// ═══════════════════════════════════════════════════════════════════
+// 🎨🎙️ 배치3-B — 이미지·오디오를 ★진짜 파일로 (서버 /api/media/*)
+//
+//   왜: 이미지는 "그림 지시문까지", 오디오는 "아직 못 만들어요(다음 단계)"였다.
+//       그 두 칸을 ★진짜로 채운다. 원고는 이미 나와 있으니 파일만 만들면 된다.
+//
+//   ★②콘텐츠생성에 끼워 넣지 않는다 — 누를 때마다 ★돈이 나가기 때문이다.
+//     각 칸의 [생성] 버튼을 눌렀을 때만, 비용을 먼저 알려 드리고 만든다.
+//   ★서버가 만들고 base64로 준다. 서버 디스크에는 아무것도 안 남는다(원칙4).
+//   ★대표님 계정에서만 열린다(서버가 판정) — 교육생 화면에선 정직히 "대표님만"이라고 말한다.
+// ═══════════════════════════════════════════════════════════════════
+const IMG_WON = 60, AUD_WON_PER_MAN = 21;   // 이미지 장당 원 · 음성 만 자당 원(대략)
+
+function _mediaBusy(kind, on, msg){
+  const b=document.getElementById(kind==='img'?'genImgBtn':'genAudBtn');
+  if(b){ b.disabled=!!on; b.textContent=on?(msg||'만드는 중…'):(kind==='img'?'🎨 이미지 만들기':'🎙️ 음성 만들기'); }
+}
+function _mediaErr(kind, msg){
+  const el=document.getElementById(kind==='img'?'genImgMsg':'genAudMsg');
+  if(el){ el.style.color='var(--red)'; el.textContent=msg; }
+}
+// 만든 뒤 그 칸을 다시 그린다(열려 있는 상태 그대로).
+function _repaint(kind){
+  const d=document.getElementById(kind==='img'?'c-이미지파일':'c-오디오파일');
+  if(d) d.innerHTML=(kind==='img'?_imgPv():_audPv());
+}
+
+// ── 🎨 이미지 ─────────────────────────────────────────────────────
+async function genImages(){
+  const 원고=WON['이미지원고']||'';
+  if(!원고){ alert('먼저 ① 원고를 만들어 주세요.'); return; }
+  const n=Math.min(3,(원고.match(/[A-Za-z]{40,}/g)||[1]).length||1);
+  if(!confirm('그림을 만들까요?\n\n· 최대 3장 · 한 장씩 순서대로 만들어요(1분쯤)\n· 비용 약 '+(IMG_WON*3)+'원 (대표님 계정에서 나갑니다)')) return;
+  _mediaBusy('img',true,'그리는 중… 1분쯤');
+  try{
+    const r=await fetch('/api/media/image',{method:'POST',credentials:'same-origin',
+      headers:{'Content-Type':'application/json'},body:JSON.stringify({text:원고})});
+    const j=await r.json();
+    if(!j||j.ok!==true){
+      // ★실패를 성공처럼 넘기지 않는다. 왜 안 됐는지 그대로 말한다.
+      _mediaBusy('img',false);
+      _mediaErr('img', (j&&j.error)||'이미지를 만들지 못했어요');
+      if(j&&j.code==='NO_PROMPT') _mediaErr('img','원고에서 영어 프롬프트를 찾지 못했어요 — 원고를 확인해 주세요.');
+      if(j&&j.code==='NOT_REP')   _mediaErr('img','이미지 만들기는 아직 대표님 계정에서만 됩니다.');
+      return;
+    }
+    MADE.images=(j.images||[]).map((im,i)=>{
+      const u8=Uint8Array.from(atob(im.base64),c=>c.charCodeAt(0));
+      return {name:'이미지_'+(i+1)+'.png',data:u8,prompt:im.prompt,
+        url:URL.createObjectURL(new Blob([u8],{type:'image/png'}))};
+    });
+    MADE.imageCost=j.비용원||0; MADE.imageNote=j.안내||'';
+    _mediaBusy('img',false); _repaint('img');
+  }catch(e){ _mediaBusy('img',false); _mediaErr('img','만들지 못했어요 — '+e.message); }
+}
+function dlImages(){
+  const h=_host(); if(!MADE.images||!MADE.images.length){alert('먼저 이미지를 만들어 주세요.');return;}
+  if(h&&typeof h._whZip==='function'&&MADE.images.length>1){
+    h._whDownloadBlob(h._whZip(MADE.images.map(m=>({name:m.name,data:m.data}))),'이미지_'+Date.now()+'.zip'); return;
+  }
+  MADE.images.forEach(m=>{ const a=document.createElement('a'); a.href=m.url; a.download=m.name;
+    document.body.appendChild(a); a.click(); a.remove(); });
+}
+function _imgPv(){
+  const 그림=WON['이미지원고']||'', 인포=WON['인포그래픽']||'', ims=MADE.images||[];
+  let h='<div style="font-size:11px;font-weight:800;color:var(--ink);margin-bottom:3px">🎨 이미지 (png)</div>';
+  if(ims.length){
+    // ★[15] 미리보기 실물화 — 진짜 나온 그림을 그대로 띄운다(그림 흉내가 아니다).
+    h+='<div class="cpreview"><div class="cards">'
+      +ims.map((m,i)=>'<img src="'+m.url+'" alt="이미지 '+(i+1)+'" title="'+_esc(m.prompt||'')+'" '
+        +'style="width:82px;height:123px;border-radius:8px;object-fit:cover">').join('')
+      +'</div></div>'
+      +'<div style="font-size:11px;color:var(--soft);margin-top:6px">실제로 만든 PNG <b>'+ims.length+'장</b>'
+      +' · 세로 1024×1536'+(MADE.imageCost?(' · 약 '+MADE.imageCost+'원 썼어요'):'')+'</div>'
+      +(MADE.imageNote?'<div style="font-size:10px;color:var(--red);margin-top:3px">'+_esc(MADE.imageNote)+'</div>':'')
+      +'<div style="margin-top:6px"><button class="save" onclick="event.stopPropagation();dlImages()">⬇️ 이미지 '+ims.length+'장 내려받기</button>'
+      +' <button class="save" id="genImgBtn" onclick="event.stopPropagation();genImages()" style="background:transparent;border:1px solid var(--line);color:var(--soft)">🔁 다시 만들기</button></div>'
+      +'<div id="genImgMsg" style="font-size:10px;margin-top:4px"></div>';
+  } else {
+    h+='<div class="dtext">'+(그림?_esc(그림.slice(0,350))+(그림.length>350?'…':''):'아직 없어요 — ① 원고를 먼저 만들어 주세요.')+'</div>';
+    if(그림){
+      h+='<div style="margin-top:6px"><button class="save" id="genImgBtn" onclick="event.stopPropagation();genImages()">🎨 이미지 만들기</button></div>'
+        +'<div style="font-size:10px;color:var(--soft);margin-top:4px">위 그림 지시문으로 <b>진짜 png</b>를 만들어요 · 최대 3장 · 약 '+(IMG_WON*3)+'원 · 1분쯤</div>'
+        +'<div id="genImgMsg" style="font-size:10px;margin-top:4px"></div>';
+    }
+  }
+  h+='<div style="font-size:11px;font-weight:800;color:var(--ink);margin:11px 0 3px">📊 인포그래픽</div>'
+    +'<div class="dtext">'+(인포?_esc(인포.slice(0,350))+(인포.length>350?'…':''):'아직 없어요 — ① 원고를 먼저 만들어 주세요.')+'</div>'
+    +'<div style="font-size:10px;color:var(--soft);margin-top:4px">디자이너에게 그대로 넘기시면 되는 글이에요.</div>';
+  return h;
+}
+
+// ── 🎙️ 오디오 ────────────────────────────────────────────────────
+async function genAudio(){
+  const 원고=WON['오디오원고']||'';
+  if(!원고){ alert('먼저 ① 원고를 만들어 주세요.'); return; }
+  const 예상=Math.max(1,Math.round(원고.length/4096));
+  if(!confirm('음성을 만들까요?\n\n· 원고 '+원고.length.toLocaleString()+'자 → mp3 약 '+예상+'개\n'
+    +'· 서버에 ffmpeg가 없어 ★하나로 못 이어요(조각별로 드려요)\n'
+    +'· 비용 약 '+Math.max(1,Math.round(원고.length/10000*AUD_WON_PER_MAN))+'원')) return;
+  _mediaBusy('aud',true,'읽는 중…');
+  try{
+    const r=await fetch('/api/media/tts',{method:'POST',credentials:'same-origin',
+      headers:{'Content-Type':'application/json'},body:JSON.stringify({text:원고})});
+    const j=await r.json();
+    if(!j||j.ok!==true){
+      _mediaBusy('aud',false);
+      _mediaErr('aud',(j&&j.error)||'음성을 만들지 못했어요');
+      if(j&&j.code==='NOT_REP') _mediaErr('aud','음성 만들기는 아직 대표님 계정에서만 됩니다.');
+      return;
+    }
+    MADE.audio=(j.parts||[]).map((p,i)=>{
+      const u8=Uint8Array.from(atob(p.base64),c=>c.charCodeAt(0));
+      return {name:'음성_'+String(i+1).padStart(2,'0')+'.mp3',data:u8,chars:p.chars,
+        head:String(p.text||'').replace(/\s+/g,' ').trim().slice(0,40),
+        url:URL.createObjectURL(new Blob([u8],{type:'audio/mpeg'}))};
+    });
+    MADE.audioCost=j.비용원||0; MADE.audioNote=j.안내||'';
+    _mediaBusy('aud',false); _repaint('aud');
+  }catch(e){ _mediaBusy('aud',false); _mediaErr('aud','만들지 못했어요 — '+e.message); }
+}
+function dlAudio(){
+  const h=_host(); if(!MADE.audio||!MADE.audio.length){alert('먼저 음성을 만들어 주세요.');return;}
+  if(h&&typeof h._whZip==='function'&&MADE.audio.length>1){
+    h._whDownloadBlob(h._whZip(MADE.audio.map(m=>({name:m.name,data:m.data}))),'음성_'+Date.now()+'.zip'); return;
+  }
+  MADE.audio.forEach(m=>{ const a=document.createElement('a'); a.href=m.url; a.download=m.name;
+    document.body.appendChild(a); a.click(); a.remove(); });
+}
+function _audPv(){
+  const 원고=WON['오디오원고']||'', au=MADE.audio||[];
+  if(au.length){
+    // ★[15] 미리보기 실물화 — 진짜 mp3를 ★그 자리에서 들어보실 수 있게 한다.
+    const 총자=au.reduce((a,x)=>a+x.chars,0);
+    return '<div style="font-size:11px;color:var(--soft);margin-bottom:6px">실제로 만든 mp3 <b>'+au.length+'개</b> · 총 '+총자.toLocaleString()+'자'
+      +(MADE.audioCost?(' · 약 '+MADE.audioCost+'원 썼어요'):'')+'</div>'
+      +au.map((m,i)=>'<div style="margin-bottom:7px">'
+        +'<div style="font-size:10px;color:var(--soft);margin-bottom:2px">'+(i+1)+'. '+_esc(m.head)+'… ('+m.chars.toLocaleString()+'자)</div>'
+        +'<audio controls preload="none" src="'+m.url+'" style="width:100%;height:32px"></audio></div>').join('')
+      +(MADE.audioNote?'<div style="font-size:10px;color:var(--red)">'+_esc(MADE.audioNote)+'</div>':'')
+      +'<div style="font-size:10px;color:var(--soft);margin:4px 0 6px;line-height:1.6">'
+      +'· 서버에 ffmpeg가 없어 <b>하나로 못 이어요</b> — 편집기에서 순서대로 붙이시면 돼요.</div>'
+      +'<div><button class="save" onclick="event.stopPropagation();dlAudio()">⬇️ 음성 '+au.length+'개 내려받기</button>'
+      +' <button class="save" id="genAudBtn" onclick="event.stopPropagation();genAudio()" style="background:transparent;border:1px solid var(--line);color:var(--soft)">🔁 다시 만들기</button></div>'
+      +'<div id="genAudMsg" style="font-size:10px;margin-top:4px"></div>';
+  }
+  let h='<div class="dtext">'+(원고?_esc(원고.slice(0,400))+(원고.length>400?'…':''):'아직 없어요 — ① 원고를 먼저 만들어 주세요.')+'</div>';
+  if(원고){
+    const 예상=Math.max(1,Math.round(원고.length/4096));
+    h+='<div style="margin-top:6px"><button class="save" id="genAudBtn" onclick="event.stopPropagation();genAudio()">🎙️ 음성 만들기</button></div>'
+      +'<div style="font-size:10px;color:var(--soft);margin-top:4px;line-height:1.6">'
+      +'위 대본을 <b>진짜 mp3</b>로 읽어 드려요 · '+원고.length.toLocaleString()+'자 → 약 '+예상+'개 · '
+      +'약 '+Math.max(1,Math.round(원고.length/10000*AUD_WON_PER_MAN))+'원</div>'
+      +'<div id="genAudMsg" style="font-size:10px;margin-top:4px"></div>';
+  }
+  return h;
+}
+
 async function runStage2Real(){
   if(!GEN12){alert('먼저 ① 원고를 만들어 주세요.\n한줄메시지를 넣고 [저장 · 확정]을 누르시면 됩니다.');return;}
   const host=_host();
@@ -1161,8 +1312,12 @@ async function runStage2Real(){
     fill.style.width='100%';pct.textContent='100%';
 
     // 만들어진 것만 done 으로 켠다 — 안 만든 건 안 켠다(있는 척 금지)
+    // ★2026-08-03 배치3-B: 이미지·오디오 칸도 켠다.
+    //   원고가 있으면 켠다 — 그래야 칸이 열리고 [만들기] 버튼을 보실 수 있다.
+    //   ★파일이 있다는 뜻이 아니다. 칸을 열면 "아직 안 만들었어요 + 만들기 버튼"이 정직히 보인다.
     const 켬={'단문':!!WON['단문'],'장문':!!WON['장문'],'카드뉴스':MADE.cards.length>0,
-              '쇼츠영상':!!MADE.shorts,'뉴스레터':!!WON['뉴스레터'],'롱폼':!!WON['롱폼대본']};
+              '쇼츠영상':!!MADE.shorts,'뉴스레터':!!WON['뉴스레터'],'롱폼':!!WON['롱폼대본'],
+              '이미지파일':!!(WON['이미지원고']||WON['인포그래픽']),'오디오파일':!!WON['오디오원고']};
     document.querySelectorAll('#pb2 .item').forEach(it=>{
       const nm=it.dataset.kind;
       if(켬[nm]){it.classList.add('done');const u=it.querySelector('.use');if(u)u.innerHTML='<span class="go">✓ 보기</span>';}
