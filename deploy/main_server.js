@@ -659,6 +659,9 @@ app.use('/downloads', express.static(path.join(__dirname, 'downloads')));
 // 🔐 허용계정 게이트(등록된 계정만 로그인) — 독립 모듈. 여기서는 ★부르기만 한다.
 //   VIP 지정은 VIP_EMAIL이 정의된 뒤에 allowlist.init(...)으로 넘긴다(아래 참조).
 const allowlist = require('./login_allowlist');
+// 🎨🎙️ 배치3 — 이미지·음성 생성. 독립 모듈(라우터만 꽂는다). init은 VIP_EMAIL 정의 뒤에서 한다.
+const imageGen = require('./image_gen');
+const ttsGen = require('./tts');
 
 const SESSION_ABS_MS = 30 * 24 * 60 * 60 * 1000;  // 절대 만료 30일
 const SESSION_IDLE_MS = 7 * 24 * 60 * 60 * 1000;  // 유휴 만료 7일(접속할 때마다 리셋)
@@ -3868,6 +3871,25 @@ const PROFILE_TAB = '지니야_프로필';
 const VIP_EMAIL = 'ggorilla11@gmail.com';
 // 🔐 허용계정 게이트에 VIP를 알려준다 → 어떤 고장(시트 오류·SA 권한·캐시 없음)에도 대표님은 잠기지 않는다.
 allowlist.init({ vipEmail: VIP_EMAIL });
+// 🎨🎙️ 이미지·음성 생성(배치3) — 독립 모듈 2개를 ★꽂기만 한다. 원고 생성 로직·RAG는 무접촉.
+//   ★비용 게이트는 서버가 판정한다(대표님 계정만) — 화면 게이트는 우회되므로 믿지 않는다.
+//   ★만든 파일은 디스크에 안 쓰고 base64로 브라우저에 바로(원칙4).
+//   ★비용은 기존 일 임계(COST_THRESHOLD_KRW)에 함께 집계 → /api/usage 한 곳에서 보신다.
+{
+  const _isRepReq = (req) => String((sessionOf(req) || {}).email || '').toLowerCase() === VIP_EMAIL;
+  const _billKrw = (model, krw) => {
+    try {
+      const d = _kstDate();
+      if (_usage.date !== d) { _usage.date = d; _usage.krw = 0; _usage.calls = 0; _usage.byModel = {}; _usage.alerted = false; }
+      _usage.krw += krw; _usage.calls += 1; _usage.byModel[model] = (_usage.byModel[model] || 0) + krw;
+      if (_usage.krw > DAILY_COST_THRESHOLD_KRW && !_usage.alerted) { _usage.alerted = true; console.warn(`⚠️ 지니야 일 사용량 ${Math.round(_usage.krw)}원 — 임계값(${DAILY_COST_THRESHOLD_KRW}원) 초과 (회장님 확인 필요)`); }
+    } catch (e) {}
+  };
+  imageGen.init({ isRep: _isRepReq, bill: _billKrw });
+  ttsGen.init({ isRep: _isRepReq, bill: _billKrw });
+  app.use('/api/media', imageGen.router);
+  app.use('/api/media', ttsGen.router);
+}
 async function findOrCreateMemberSheet(ma) {
   const drive = google.drive({ version: 'v3', auth: ma }), sheets = google.sheets({ version: 'v4', auth: ma });
   // ★'me' in owners (2026-08-01): 이 함수는 ★회원 토큰으로 시트를 찾고 없으면 만든다.
