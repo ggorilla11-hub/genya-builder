@@ -120,6 +120,22 @@
   .addattach{font-size:12px;font-weight:700;color:var(--gold);border:1px dashed var(--gold);border-radius:8px;padding:9px;text-align:center;cursor:pointer;margin-top:7px;}
   .attach-hint{font-size:10px;color:var(--soft);text-align:center;margin-top:5px;line-height:1.5;}
 
+  /* ★2026-08-03 대표님 자료 직접 입력 (2번 +내 자료 · 3번 +완성 원고) */
+  .ownwrap{display:none;margin-top:7px;background:#f2efe6;border:1px solid var(--line);border-radius:8px;padding:10px;}
+  .ownwrap.show{display:block;}
+  .ownhead{font-size:10.5px;color:var(--soft);line-height:1.6;margin-bottom:8px;}
+  .ownit{margin-bottom:5px;}
+  .ownlb{font-size:11px;font-weight:700;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:7px 9px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;}
+  .ownlb.filled{border-color:var(--gold);background:rgba(212,169,90,.10);}
+  .ownlb .cnt{font-size:9.5px;font-weight:600;color:var(--soft);}
+  .ownta{display:none;width:100%;box-sizing:border-box;margin-top:4px;min-height:74px;font-size:11px;line-height:1.6;
+         font-family:inherit;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:8px;resize:vertical;}
+  .ownta.show{display:block;}
+  .ownbar{display:flex;gap:6px;margin-top:9px;}
+  .ownbar button{flex:1;font-size:11.5px;font-weight:800;color:#fff;background:var(--teal);border:none;border-radius:7px;padding:9px;cursor:pointer;}
+  .ownbar button.ghost{color:var(--soft);background:var(--panel);border:1px solid var(--line);flex:0 0 auto;padding:9px 12px;}
+  .ownmsg{font-size:10.5px;margin-top:7px;line-height:1.6;}
+
   /* 원고/콘텐츠 미리보기 펼침 */
   .detail{display:none;font-size:11.5px;color:var(--soft);background:#f2efe6;border:1px solid var(--line);border-radius:8px;padding:11px 13px;margin:-3px 0 7px;line-height:1.7;}
   .detail.show{display:block;}
@@ -393,6 +409,10 @@
           <div class="item" data-kind="오디오원고" onclick="toggleW(this)"><span class="dot"></span><span class="ic">🎙️</span><span class="nm">오디오원고</span><span class="use">팟캐스트용</span></div><div class="detail" id="w-오디오원고"></div>
           <div class="item" data-kind="이미지원고" onclick="toggleW(this)"><span class="dot"></span><span class="ic">🎨</span><span class="nm">이미지원고</span><span class="use">이미지용</span></div><div class="detail" id="w-이미지원고"></div>
         </div>
+        <!-- ★3번 · 완성 원고 직접 넣기 — 생성을 건너뛰고 대표님 원고를 그대로 ②로 넘긴다(서버 안 거침) -->
+        <div class="addattach" onclick="toggleOwnScripts()">＋ 완성 원고 직접 넣기</div>
+        <div class="attach-hint">이미 쓰신 원고가 있으면 생성 없이 바로 콘텐츠로</div>
+        <div class="ownwrap" id="ownWrap"></div>
       </div>
 
       <!-- ② 콘텐츠 -->
@@ -711,6 +731,77 @@ function ensureSlot(s){
 function _stage1Msg(html,color){
   const st=document.getElementById('st1');
   st.innerHTML=html;st.style.color=color||'var(--gold)';
+}
+
+// ═══ ★3번 · 완성 원고 직접 넣기 (2026-08-03) ══════════════════════════
+//   무엇을·왜: 대표님이 이미 쓰신 원고가 있으면 ★새로 만들 이유가 없다.
+//              붙여넣은 그대로 ②콘텐츠로 넘긴다 — 100% 대표님 글 + 지니야 제작 품질.
+//   ★서버를 아예 안 거친다(백엔드 0줄). ①이 채우는 그 통(GEN12·WON)을 화면에서 그대로 채운다.
+//     그래서 runStage2Real·whBlogHtml·쇼츠 렌더가 ★고칠 것 없이 그대로 돈다.
+//   ★넣은 것만 넘어간다. 안 넣은 칸은 있는 척하지 않는다(빈 채로 둔다).
+function toggleOwnScripts(){
+  const w=document.getElementById('ownWrap');
+  if(w.classList.contains('show')){ w.classList.remove('show'); return; }
+  if(!w.dataset.built){ _buildOwnScripts(w); w.dataset.built='1'; }
+  w.classList.add('show');
+}
+function _buildOwnScripts(w){
+  let h='<div class="ownhead">대표님이 쓰신 원고를 붙여넣으세요. 종류를 눌러 칸을 여시면 됩니다.<br>'
+       +'★넣은 것만 ②로 넘어갑니다. 안 넣은 칸은 비어 있는 채로 둡니다.</div>';
+  ENG12.forEach(function(s,i){
+    h+='<div class="ownit">'
+      +'<div class="ownlb" id="ownLb'+i+'" onclick="_ownToggle('+i+')">'
+        +'<span>'+s.ic+' '+s.slot+'</span><span class="cnt" id="ownCnt'+i+'">비어 있음</span></div>'
+      +'<textarea class="ownta" id="ownTa'+i+'" oninput="_ownCount('+i+')" '
+        +'placeholder="'+s.slot+' — 이미 쓰신 글을 그대로 붙여넣으세요"></textarea>'
+      +'</div>';
+  });
+  h+='<div class="ownbar"><button onclick="applyOwnScripts()">넣은 원고 적용 → ②로</button>'
+    +'<button class="ghost" onclick="_ownClear()">비우기</button></div>'
+    +'<div class="ownmsg" id="ownMsg"></div>';
+  w.innerHTML=h;
+}
+function _ownToggle(i){ document.getElementById('ownTa'+i).classList.toggle('show'); }
+function _ownCount(i){
+  const n=document.getElementById('ownTa'+i).value.trim().length;
+  document.getElementById('ownCnt'+i).textContent=n?(n+'자'):'비어 있음';
+  document.getElementById('ownLb'+i).classList.toggle('filled',n>0);
+}
+function _ownClear(){
+  ENG12.forEach(function(s,i){ const t=document.getElementById('ownTa'+i); if(t){ t.value=''; _ownCount(i); } });
+  document.getElementById('ownMsg').textContent='';
+}
+function applyOwnScripts(){
+  const msg=document.getElementById('ownMsg');
+  const landing=(document.getElementById('autoUrl').textContent||'').trim();
+  const results=[];
+  ENG12.forEach(function(s,i){
+    const t=document.getElementById('ownTa'+i); if(!t)return;
+    const txt=t.value.trim(); if(!txt)return;      // ★빈 칸은 넘기지 않는다
+    ensureSlot(s);
+    WON[s.slot]=txt; WURL[s.slot]=landing;
+    results.push({ kind:s.kind, label:s.slot, target:0, chars:txt.length, rate:0,
+                   inRange:true, fixed:'직접', banned:null, ms:0, url:landing, text:txt, error:null });
+  });
+  if(!results.length){
+    msg.innerHTML='<span style="color:var(--red)">아직 아무 원고도 안 넣으셨어요. 종류를 눌러 칸을 열고 붙여넣어 주세요.</span>';
+    return;
+  }
+  // ①이 서버에서 받아 채우던 통을 ★똑같은 모양으로 채운다
+  GEN12={ ok:true, copy:'(대표님이 직접 넣은 원고)', copyNo:1, results:results, saved:0,
+          saveError:'대표님이 직접 넣은 원고예요 — 시트에는 저장하지 않았어요',
+          요약:{ 성공:results.length, 실패:0, 범위안:results.length, 금지표현:[],
+                 사실자료:'직접 입력', 토큰:{ 입력:0, 출력:0 } } };
+
+  document.querySelectorAll('#pb1 .item').forEach(function(it){
+    if(!WON[it.dataset.kind])return;               // 안 넣은 것은 켜지 않는다
+    it.classList.add('done');
+    const u=it.querySelector('.use'); if(u)u.innerHTML='<span class="go">✓ 보기</span>';
+  });
+  _stage1Msg('직접 넣음 ✓ '+results.length+'종','var(--teal)');
+  document.getElementById('st2').textContent='② 콘텐츠생성 누르세요';
+  msg.innerHTML='<span style="color:var(--teal)">✓ '+results.length+'종 적용했어요. '
+    +'이제 <b>② 콘텐츠생성</b>을 누르시면 <b>이 원고 그대로</b> 카드·블로그·쇼츠를 만듭니다.</span>';
 }
 
 async function runStage1Real(){
