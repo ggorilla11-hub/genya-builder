@@ -344,6 +344,64 @@
   .lib-item input{flex:1;font-size:11.5px;font-family:monospace;padding:7px 10px;}
   .lib-item .lsave{font-size:11px;font-weight:700;color:#ffffff;background:var(--teal);border:none;border-radius:6px;padding:7px 12px;cursor:pointer;}
   @media(max-width:1000px){.pipeline,.pipeline.dist-open{grid-template-columns:1fr;}.dashgrid{grid-template-columns:repeat(3,1fr);}}
+
+  /* ═══ ★2026-08-03 가독성 — 글자를 한 단계 키우고 굵게 ═══════════════
+     왜: 10~12px 이 대부분이라 작았다. ★칸 크기·배치는 그대로 두고 글자만 키운다.
+     맨 아래에 두어 위 규칙을 덮는다(원래 값은 지우지 않았다 — 되돌리기 쉽게). */
+  body{font-weight:500;}
+  .hero h1{font-size:25px;}
+  .hero p{font-size:14px;font-weight:500;}
+  .goal{font-size:13px;font-weight:700;}
+  .vrow .lb{font-size:14px;font-weight:800;}
+  .vrow .lb .n{font-size:12px;}
+  .vrow .lb .opt{font-size:11px;font-weight:600;}
+  .r1 .num{font-size:12px;font-weight:600;}
+  .r2 .sep{font-size:13px;}
+  .r2 .diag-label{font-size:12px;font-weight:700;}
+  .combo,.title,.msg,input,select,textarea{font-size:13.5px;font-weight:600;}
+  .urlrow .lbl{font-size:11.5px;font-weight:700;}
+  .urlrow .url{font-size:13px;font-weight:600;}
+  .urlrow button{font-size:12px;font-weight:700;}
+  .urladd-form .save{font-size:13px;}
+  .r3 .save{font-size:14px;}
+  .r3 .abbtn{font-size:13px;font-weight:700;}
+  .paths{font-size:12.5px;font-weight:600;}
+  .arrow-down{font-size:17px;font-weight:700;}
+  .pipe-t{font-size:14px;font-weight:800;}
+  .pipe-t .msg{font-size:13px;}
+  .pcol .ph .pt{font-size:14.5px;font-weight:800;}
+  .pcol .ph .status{font-size:11.5px;font-weight:700;}
+  .progwrap .plabel{font-size:12px;font-weight:700;}
+  .progwrap .ppct{font-size:11.5px;font-weight:800;}
+  .progwrap .pctrl button{font-size:11.5px;font-weight:700;}
+  .item{font-size:14px;font-weight:700;}
+  .item .ic{font-size:15px;}
+  .item .use{font-size:11.5px;font-weight:600;}
+  .item.done .go{font-size:12px;font-weight:800;}
+  .detail{font-size:13px;font-weight:500;line-height:1.75;}
+  .detail .copy{font-size:11.5px;font-weight:700;}
+  .addattach{font-size:13px;}
+  .attach-hint{font-size:11.5px;font-weight:600;}
+  .ownhead{font-size:12px;font-weight:600;}
+  .ownlb{font-size:12.5px;font-weight:800;}
+  .ownlb .cnt{font-size:11px;font-weight:700;}
+  .ownta{font-size:12.5px;font-weight:500;}
+  .ownbar button{font-size:13px;}
+  .ownmsg{font-size:12px;font-weight:600;}
+  .ch .nm{font-size:14px;font-weight:800;}
+  .ch .sub{font-size:11px;font-weight:600;}
+  .dropzone{font-size:12px;font-weight:600;}
+  .dropped{font-size:12px;font-weight:700;}
+  .subch .sn{font-size:13.5px;font-weight:800;}
+  .subch .ast{font-size:11px;font-weight:700;}
+  .subch .aconn{font-size:11.5px;font-weight:700;}
+  .addsub{font-size:12.5px;font-weight:700;}
+  .whenbtn{font-size:13px;font-weight:700;}
+  .savebtn{font-size:14px;font-weight:800;}
+  .fpv-title{font-size:13px;font-weight:800;}
+  .fpv-head{font-size:12.5px;font-weight:700;}
+  .fpv-content{font-size:12.5px;font-weight:500;}
+  .fpv-url{font-size:11.5px;font-weight:600;}
 </style>
 </head>
 <body>
@@ -359,9 +417,9 @@
     <div class="vrow">
       <div class="lb"><span class="n">1</span>제목 · 날짜</div>
       <div class="r1">
-        <div class="datewrap"><input type="date" value="2026-08-02" id="dateInput"><button class="calbtn" onclick="dateInput.showPicker&&dateInput.showPicker()">📅</button></div>
+        <div class="datewrap"><input type="date" id="dateInput"><button class="calbtn" onclick="dateInput.showPicker&&dateInput.showPicker()">📅</button></div>
         <input class="title" id="titleInput" placeholder="캠페인 제목" value="부트캠프 8월 오픈">
-        <span class="num">발행 번호 #2026-0802-013</span>
+        <span class="num" id="pubNo">발행 번호</span>
       </div>
     </div>
 
@@ -437,6 +495,8 @@
           <div class="item draggable" draggable="true" data-kind="이미지파일" data-ct="이미지" data-ic="🎨" onclick="toggleC(this)"><span class="dot"></span><span class="ic">🎨</span><span class="nm">이미지파일</span><span class="use">보기·끌기</span></div><div class="detail" id="c-이미지파일"></div>
           <!-- ★2026-08-03 대표님 기획: 콘텐츠 7종 — 뉴스레터 추가 -->
           <div class="item draggable" draggable="true" data-kind="뉴스레터" data-ct="뉴스레터" data-ic="📧" onclick="toggleC(this)"><span class="dot"></span><span class="ic">📧</span><span class="nm">뉴스레터</span><span class="use">보기·끌기</span></div><div class="detail" id="c-뉴스레터"></div>
+          <!-- ★2차 배치1: 롱폼 추가 (원고엔 롱폼대본이 있는데 콘텐츠엔 자리가 없었다) -->
+          <div class="item draggable" draggable="true" data-kind="롱폼" data-ct="롱폼" data-ic="▶️" onclick="toggleC(this)"><span class="dot"></span><span class="ic">▶️</span><span class="nm">롱폼</span><span class="use">보기·끌기</span></div><div class="detail" id="c-롱폼"></div>
           <div id="attachList"></div>
           <div class="addattach" onclick="attachInput.click()">＋ 관련자료 추가 (직접 업로드)</div>
           <input type="file" id="attachInput" style="display:none" multiple accept="image/*,video/*,audio/*" onchange="doAttach(this)">
@@ -588,7 +648,31 @@ function onCb1(){const v=cb1.value;cb2.innerHTML='';if(v==='추가'){cb2.innerHT
 function onCb2(){if(cb2.value==='추가')cb2add.classList.add('show');else{cb2add.classList.remove('show');buildUrl();}}
 function doCb2Add(){const i=cb2add.querySelector('input'),v=i.value.trim();if(!v)return;const o=document.createElement('option');o.textContent=v;o.selected=true;cb2.insertBefore(o,cb2.querySelector('[value="추가"]'));i.value='';cb2add.classList.remove('show');buildUrl();}
 function doCb3Add(){const i=cb3add.querySelector('input'),v=i.value.trim();if(!v)return;const o=document.createElement('option');o.textContent=v;o.selected=true;cb3.insertBefore(o,cb3.querySelector('[value="추가"]'));i.value='';cb3add.classList.remove('show');buildUrl();}
-function buildUrl(){if(cb3.value==='추가'){cb3add.classList.add('show');return;}else cb3add.classList.remove('show');const map={'부트캠프':'bootcamp','일반인':'class','전문가':'expert','재무상담':'consult'};const slug=map[cb2.value]||(cb2.value||'landing').toLowerCase();autoUrl.textContent='https://ohwant.net/'+slug+'?utm=insta_0802';}
+// ── ★2026-08-03 · 오늘 날짜 자동 ────────────────────────────────────
+//   왜: 날짜가 2026-08-02 로 박혀 있어 매일 손으로 고쳐야 했다.
+function _오늘(){
+  const d=new Date();
+  const p=function(n){ return String(n).padStart(2,'0'); };
+  return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate());
+}
+function _오늘압축(){ return _오늘().replace(/-/g,'').slice(2); }   // 260803
+
+// ── ★URL 대>중>소 3단 계층 ──────────────────────────────────────────
+//   대(cb1 강의·상담) → 중(cb2 세부) → 소(cb3 진단 종류)
+//   ★경로(중)는 기존 그대로 둔다 — 바꾸면 살아 있던 링크가 죽는다.
+//     소(진단)는 ★쿼리로 덧붙인다. 진단 페이지 실제 주소 체계를 모르는 채
+//     경로를 지어내면 죽은 링크가 되기 때문이다(지어내지 않는다).
+const 중SLUG={'부트캠프':'bootcamp','일반인':'class','전문가':'expert','재무상담':'consult'};
+const 소SLUG={'표준진단':'standard','연금진단':'pension','부채진단':'debt','저축진단':'saving',
+              '투자진단':'invest','세금진단':'tax','부동산진단':'estate','보험진단':'insure'};
+function buildUrl(){
+  if(cb3.value==='추가'){cb3add.classList.add('show');return;}
+  cb3add.classList.remove('show');
+  const slug=중SLUG[cb2.value]||(cb2.value||'landing').toLowerCase();
+  const 진단=소SLUG[cb3.value]||(cb3.value||'').toLowerCase();
+  const utm='insta_'+_오늘압축();                    // ★날짜도 오늘로(하드코딩 0802 아님)
+  autoUrl.textContent='https://ohwant.net/'+slug+(진단?('?d='+진단+'&utm='+utm):('?utm='+utm));
+}
 function pickUrl(b){autoUrl.textContent=b.previousElementSibling.value+'?utm=insta_0802';lib.classList.remove('show');}
 // URL 추가 저장 → 자동 URL 변경
 function saveNewUrl(){const u=uaUrl.value.trim();if(!u){alert('URL을 입력하세요');return;}autoUrl.textContent=u+(u.includes('?')?'':'?utm=insta_0802');urlForm.classList.remove('show');uaTitle.value='';uaUrl.value='';}
@@ -695,6 +779,12 @@ function toggleC(el){
   else if(ct==='뉴스레터'){
     const n=WON['뉴스레터']||'';
     pv=n?('<div class="dtext">'+_esc(n)+'</div>')
+        :'<div class="dtext">아직 없어요 — ① 원고를 먼저 만들어 주세요.</div>';
+  }
+  else if(ct==='롱폼'){
+    const l=WON['롱폼대본']||'';
+    pv=l?('<div class="dtext">'+_esc(l.slice(0,700))+(l.length>700?'…':'')+'</div>'
+          +'<div style="font-size:10px;color:var(--soft);margin-top:6px">▶️ 10분 낭독 대본이에요. 영상 파일은 아직 못 만들어요(다음 단계).</div>')
         :'<div class="dtext">아직 없어요 — ① 원고를 먼저 만들어 주세요.</div>';
   }
   d.innerHTML=pv+'<div class="revise"><input placeholder="수정 지시 (예: 더 짧게, 밝은 톤)" onkeydown="if(event.key===\'Enter\')doRevise(this,\''+nm+'\')"><button onclick="doRevise(this.previousElementSibling,\''+nm+'\')">AI 수정</button></div><div class="revise-log" id="rl-'+nm+'"></div>';
@@ -809,7 +899,7 @@ function toggleOwnScripts(){
 function _buildOwnScripts(w){
   let h='<div class="ownhead">대표님이 쓰신 원고를 붙여넣으세요. 종류를 눌러 칸을 여시면 됩니다.<br>'
        +'★넣은 것만 ②로 넘어갑니다. 안 넣은 칸은 비어 있는 채로 둡니다.</div>';
-  ENG12.forEach(function(s,i){
+  ENG_S1.forEach(function(s,i){          // ★①원고생성과 같은 7종만 (2026-08-03)
     h+='<div class="ownit">'
       +'<div class="ownlb" id="ownLb'+i+'" onclick="_ownToggle('+i+')">'
         +'<span>'+s.ic+' '+s.slot+'</span><span class="cnt" id="ownCnt'+i+'">비어 있음</span></div>'
@@ -829,18 +919,18 @@ function _ownCount(i){
   document.getElementById('ownLb'+i).classList.toggle('filled',n>0);
 }
 function _ownClear(){
-  ENG12.forEach(function(s,i){ const t=document.getElementById('ownTa'+i); if(t){ t.value=''; _ownCount(i); } });
+  ENG_S1.forEach(function(s,i){ const t=document.getElementById('ownTa'+i); if(t){ t.value=''; _ownCount(i); } });
   document.getElementById('ownMsg').textContent='';
 }
 function applyOwnScripts(){
   const msg=document.getElementById('ownMsg');
   const landing=(document.getElementById('autoUrl').textContent||'').trim();
   const results=[];
-  ENG12.forEach(function(s,i){
+  ENG_S1.forEach(function(s,i){                    // ★7종만 (칸도 7개다)
     const t=document.getElementById('ownTa'+i); if(!t)return;
     const txt=t.value.trim(); if(!txt)return;      // ★빈 칸은 넘기지 않는다
-    if(s.stage1)ensureSlot(s);                     // ★①에 띄우는 7종만 자리를 만든다
-    WON[s.slot]=txt; WURL[s.slot]=landing;         // 나머지도 통에는 담는다(채널·콘텐츠에서 쓴다)
+    ensureSlot(s);
+    WON[s.slot]=txt; WURL[s.slot]=landing;
     results.push({ kind:s.kind, label:s.slot, target:0, chars:txt.length, rate:0,
                    inRange:true, fixed:'직접', banned:null, ms:0, url:landing, text:txt, error:null });
   });
@@ -859,12 +949,9 @@ function applyOwnScripts(){
     it.classList.add('done');
     const u=it.querySelector('.use'); if(u)u.innerHTML='<span class="go">✓ 보기</span>';
   });
-  // ★①에 뜨는 것과 다른 자리에서 쓰는 것을 ★갈라서 말한다(7종만 보이는데 12종이라 하면 헷갈린다)
-  const 여기=results.filter(function(r){ const s=ENG12.find(function(x){return x.kind===r.kind;}); return s&&s.stage1; }).length;
-  const 저기=results.length-여기;
-  _stage1Msg('직접 넣음 ✓ '+여기+'종'+(저기?(' <span style="color:var(--soft)">(+'+저기+'종은 채널·콘텐츠용)</span>'):''),'var(--teal)');
+  _stage1Msg('직접 넣음 ✓ '+results.length+'종','var(--teal)');
   document.getElementById('st2').textContent='② 콘텐츠생성 누르세요';
-  msg.innerHTML='<span style="color:var(--teal)">✓ 여기 '+여기+'종'+(저기?(' · 채널·콘텐츠에서 쓸 '+저기+'종'):'')+' 적용했어요. '
+  msg.innerHTML='<span style="color:var(--teal)">✓ '+results.length+'종 적용했어요. '
     +'이제 <b>② 콘텐츠생성</b>을 누르시면 <b>이 원고 그대로</b> 카드·블로그·쇼츠를 만듭니다.</span>';
 }
 
@@ -1019,7 +1106,7 @@ async function runStage2Real(){
 
     // 만들어진 것만 done 으로 켠다 — 안 만든 건 안 켠다(있는 척 금지)
     const 켬={'단문':!!WON['단문'],'장문':!!WON['장문'],'카드뉴스':MADE.cards.length>0,
-              '쇼츠영상':!!MADE.shorts,'뉴스레터':!!WON['뉴스레터']};   // ★콘텐츠 7종
+              '쇼츠영상':!!MADE.shorts,'뉴스레터':!!WON['뉴스레터'],'롱폼':!!WON['롱폼대본']};
     document.querySelectorAll('#pb2 .item').forEach(it=>{
       const nm=it.dataset.kind;
       if(켬[nm]){it.classList.add('done');const u=it.querySelector('.use');if(u)u.innerHTML='<span class="go">✓ 보기</span>';}
@@ -1367,7 +1454,20 @@ function showFinalPreview(sub){
 function addSub(idx){const n=prompt('추가할 세부 채널명');if(!n)return;const div=document.createElement('div');div.className='subch';div.innerHTML=`<span class="pick on" onclick="this.classList.toggle('on')"></span><span class="sn">${n}</span><span class="ast off">미연결</span><button class="aconn">연결</button>`;s4.querySelector('.addsub').before(div);}
 let whenMode='예약';
 function pickWhen(btn,mode){document.querySelectorAll('.whenbtn').forEach(b=>b.classList.remove('on'));btn.classList.add('on');whenMode=mode;document.getElementById('caldate').classList.toggle('show',mode==='예약');}
-function addChannel(){const n=prompt('추가할 채널명');if(!n)return;CH_DEF.push({ic:'✨',nm:n,subs:[n]});renderChannels();}
+// ★2026-08-03: 채널을 더할 때 renderChannels() 로 전부 다시 그리면
+//   ★이미 드래그해 둔 콘텐츠가 통째로 지워졌다(실제로 사라졌다).
+//   그래서 ★새 채널 한 칸만 뒤에 붙인다 — 기존 칸은 손대지 않는다.
+function addChannel(){
+  const n=prompt('추가할 채널명'); if(!n)return;
+  CH_DEF.push({ic:'✨',nm:n,subs:[n]});
+  const idx=CH_DEF.length-1, c=CH_DEF[idx];
+  const el=document.createElement('div'); el.className='ch'; el.id='ch-'+idx;
+  el.innerHTML='<div class="chh" onclick="clickCh('+idx+')"><span class="ic">'+c.ic+'</span>'
+    +'<span class="nm">'+_esc(c.nm)+'</span><span class="sub">드롭·클릭</span></div>'
+    +'<div class="dropzone" data-idx="'+idx+'"><span class="ph-txt">콘텐츠 드래그</span></div>';
+  channels.appendChild(el);
+  bindDrop();                       // 새 칸에도 드롭이 붙는다(기존 칸은 다시 붙어도 무해)
+}
 function saveDeploy(idx){
   const c=CH_DEF[idx];const picks=[...s4.querySelectorAll('.subch')].filter(s=>s.querySelector('.pick').classList.contains('on')).map(s=>s.querySelector('.sn').textContent);
   const z=document.querySelector('.dropzone[data-idx="'+idx+'"]');const tags=[...z.querySelectorAll('.dropped')].map(t=>t.dataset.kind);
@@ -1514,7 +1614,10 @@ function askGenya(){
   },1500);
 }
 
-onCb1();renderChannels();drawRadar('landing',null);
+// ★날짜·발행번호를 오늘로 세팅한 뒤 URL 을 만든다(하드코딩 대신)
+dateInput.value=_오늘();
+document.getElementById('pubNo').textContent='발행 번호 #'+_오늘().replace(/-/g,'').slice(0,4)+'-'+_오늘().replace(/-/g,'').slice(4)+'-001';
+onCb1();buildUrl();renderChannels();drawRadar('landing',null);
 </script>
   <div class="overlay" id="apiConnModal"><div class="modal"><div class="mh"><b>API 연결 — <span id="apiTargetName" style="color:var(--teal)"></span></b><span class="x" onclick="apiConnModal.classList.remove('show')">✕</span></div><div class="mb">    <div style="font-size:12px;color:var(--soft);line-height:1.7;margin-bottom:14px">이 채널로 자동 발행하려면 계정 연결이 필요해요. 아래 방법 중 하나로 연결하세요.</div>
     <div class="api-method"><b>① OAuth 로그인 (권장)</b><p>버튼을 누르면 해당 채널 로그인 창이 열리고, 권한을 허용하면 연결됩니다.</p><button class="api-go" onclick="doApiConnect()">계정 로그인으로 연결</button></div>
