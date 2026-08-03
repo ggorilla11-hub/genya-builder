@@ -551,6 +551,21 @@
 <!-- stage-nav(시뮬레이터 화면이동 바) 제거 — 제품에서는 실제 흐름(로그인→온보딩→메인)으로 이동 -->
 <div class="stage-nav" style="display:none"></div>
 
+<!-- ★[5] 로그인 ID 상시 표시 (2026-08-03 진입관문 사고)
+     [사고의 본질] 지금 내가 ★어떤 계정으로 들어와 있는지 화면 어디에도 안 나왔다.
+       그래서 대표님이 로그인한 적 없는 ggorilla66으로 자동 로그인돼 있는 것을 아무도 몰랐다.
+       공용 PC에서는 남의 세션이 복원돼 남의 고객명단이 보일 수도 있다.
+     [해결] 로그인한 순간부터 ★모든 화면(온보딩·메인 포함) 상단에 이메일을 띄운다.
+       옆에 [전환] = /switch(계정 선택창 강제)를 함께 둔다.
+     ※ 로그인 화면(0)에서는 숨는다 — 아직 신원이 없다. -->
+<div id="whoBadge" style="display:none;position:fixed;top:9px;right:12px;z-index:99999;align-items:center;gap:8px;
+     background:rgba(11,31,58,.9);color:#dbe7f5;border:1px solid rgba(255,255,255,.18);border-radius:999px;
+     padding:5px 7px 5px 12px;font-size:11.5px;line-height:1;box-shadow:0 4px 14px rgba(0,0,0,.22);backdrop-filter:blur(6px);max-width:76vw;">
+  <span style="opacity:.62;flex:none;">로그인</span>
+  <b id="whoBadgeEmail" style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></b>
+  <a href="/switch" title="다른 계정으로 로그인" style="flex:none;text-decoration:none;background:rgba(255,255,255,.13);color:#cfe0f2;border-radius:999px;padding:4px 9px;font-size:11px;">전환</a>
+</div>
+
 <div class="frame">
 
   <!-- 0. 로그인 -->
@@ -561,6 +576,12 @@
       <p class="lead">직원 없이 혼자 뛰는 당신에게,<br><b>기억하고 먼저 챙기는</b> AI 비서실장.</p>
       <button class="g-btn" onclick="location.href='/auth/google'"><svg viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>Google로 시작하기</button>
       <button class="g-btn" onclick="location.href='/auth/kakao'" style="background:#FEE500;color:#3a2a00;margin-top:11px;">💬 카카오로 시작하기</button>
+      <!-- ★[4] 다른 계정으로 로그인 (2026-08-03 진입관문 사고)
+           [사고] 이 브라우저에 남은 genya_rt 쿠키가 로그인 화면을 조용히 건너뛰고 이전 계정을 자동 복원했다.
+                  대표님은 계정을 고를 기회조차 없어 쿠키를 손으로 지우셔야 했다.
+           [해결] /switch = 세션·쿠키 완전 삭제 → 구글 계정 선택창(prompt=select_account) 강제.
+           ★교육장·공용 PC에서 반드시 필요하다. 상시 표시한다. -->
+      <button class="g-btn" onclick="location.href='/switch'" style="background:transparent;border:1px solid rgba(255,255,255,.34);color:#cfe0f2;margin-top:11px;font-size:13.5px;font-weight:500;">👤 다른 계정으로 로그인</button>
       <p class="foot"><b>데이터는 100% 당신 것</b> · 지니야 서버엔 저장하지 않아요.<br>당신의 구글 드라이브에만 안전하게 보관됩니다.<br><a href="/privacy" style="color:#6f92b4;">개인정보처리방침</a> · <a href="/terms" style="color:#6f92b4;">이용약관</a></p>
     </div></div>
   </div>
@@ -5120,11 +5141,27 @@ function _renderCompare(txt, names){
 // ★인증 게이트(라우팅) — 서버 세션이 유일한 로그인 판단 기준. localStorage로 로그인 판단 금지.
 //   서버가 주입한 window.__AUTHED로 로드 즉시 판정(레이스 제거) → /me로 재확인. 로그인 안 되면 무조건 로그인화면(0)만.
 var _AUTHED = (typeof window.__AUTHED !== 'undefined') ? !!window.__AUTHED : false;
+// ★[5] 로그인 ID 배지 — 이메일을 받으면 켜고, 로그인 화면(0)에서는 끈다.
+function _paintWho(email){
+  try{
+    var b=document.getElementById('whoBadge'), e=document.getElementById('whoBadgeEmail');
+    if(!b||!e) return;
+    if(email){ e.textContent=String(email); b.setAttribute('data-has','1'); }
+    else { b.setAttribute('data-has',''); }
+  }catch(err){}
+}
+function _whoBadgeVisible(show){
+  try{ var b=document.getElementById('whoBadge'); if(!b) return;
+    b.style.display=(show && b.getAttribute('data-has')==='1') ? 'flex' : 'none';
+  }catch(err){}
+}
 var _goReal = go;
 go = function(n){
   // ★로그인 안 된 상태에선 로그인화면(0) 외 어떤 화면도 못 감(메인 직접호출·콘솔도 차단)
   if(!_AUTHED && String(n) !== '0'){ _goReal(0); return; }
   _goReal(n);
+  // ★[5] 로그인 화면(0)에는 신원이 없으니 배지를 숨기고, 그 외 모든 화면엔 띄운다.
+  _whoBadgeVisible(String(n) !== '0');
   if(String(n)==='5'){ try{localStorage.setItem('genya_onboarded','1');localStorage.setItem('genya_job',CUR_JOB);localStorage.setItem('genya_nick',CUR_NICK);}catch(e){}
     // ★[3-1] 프로필 저장 완전화: 온보딩 완료(ONBOARD.profile 있음) 시에만 서버 저장(설문 상세+이름).
     //   재방문(profile null)엔 호출 안 함 — 서버가 A1부터 8필드 전체를 덮어쓰므로, 빈 값 저장 시 기존 상세가 날아가는 것 방지.
@@ -5293,8 +5330,9 @@ if(!_AUTHED) _goReal(0);
 //   예전엔 그 브라우저에 남은 직업(예: 공인중개사)이 계정 무관하게 메인으로 튀어나와 온보딩을 스킵했다.
 //   /me = 신원(email·이름·스코프) 채우기, /api/boot = 이 계정의 올바른 화면(login/onboarding/main).
 fetch('/me').then(function(r){return r.json();}).then(function(d){
-  if(!(d&&d.ok)){ _AUTHED=false; _goReal(0); return; }
+  if(!(d&&d.ok)){ _AUTHED=false; _whoBadgeVisible(false); _goReal(0); return; }
   _AUTHED=true; window._ME=d;
+  _paintWho(d.email); // ★[5] 로그인 ID 상시 표시 — 어떤 계정으로 들어와 있는지 항상 보이게
   var nick=null; try{nick=localStorage.getItem('genya_nick');}catch(e){}
   if(nick){var ni=document.getElementById('nickInput'); if(ni)ni.value=nick; CUR_NICK=nick;}
   // ★작업A: 구글 데이터 연결 복귀(connected=1) → 저장 상태 복원 + 원래 화면으로. (라우팅 전에 처리)
@@ -5311,7 +5349,7 @@ fetch('/me').then(function(r){return r.json();}).then(function(d){
   _bootRoute();
   if(typeof refreshConnState==='function') refreshConnState();
   setTimeout(function(){ try{ if(typeof renderOnboarding==='function') renderOnboarding(); }catch(e){} },900);
-}).catch(function(){ _AUTHED=false; _goReal(0); });
+}).catch(function(){ _AUTHED=false; _whoBadgeVisible(false); _goReal(0); });
 // 서버가 준 직업값(키 또는 라벨) → GENYA_JOBS 키로 변환
 function _resolveJobKey(job, label){
   if(job && GENYA_JOBS[job]) return job;
@@ -5322,7 +5360,11 @@ function _resolveJobKey(job, label){
 // ★계정별 권위 라우팅: /api/boot(서버) → login/onboarding/main. localStorage에 의존하지 않음.
 function _bootRoute(){
   fetch('/api/boot').then(function(r){return r.json();}).then(function(b){
-    if(!b||!b.loggedIn||b.route==='login'){ _AUTHED=false; _goReal(0); return; }
+    if(!b||!b.loggedIn||b.route==='login'){ _AUTHED=false; _whoBadgeVisible(false); _goReal(0); return; }
+    // ★[2-3] 조회 실패는 ★온보딩이 아니다. 오류·재연결 화면으로 보낸다.
+    //   [사고] 어제 교육생들이 온보딩을 반복한 진짜 원인이 이것이다 —
+    //          시트를 못 읽으면 "직업 없음"으로 뭉개져 전부 온보딩으로 떨어졌다.
+    if(b.route==='error'){ _showBootError(b); return; }
     if(b.route==='main'){
       // 서버가 준 직업으로 세팅(키/라벨 모두 허용). ★localStorage 값은 신뢰하지 않는다.
       var key=_resolveJobKey(b.job, b.jobLabel);
@@ -5334,9 +5376,34 @@ function _bootRoute(){
       _goReal(1);
     }
   }).catch(function(){
-    // 서버 조회 실패 시 안전기본 → 온보딩(★기본 직업 메인 직행 금지)
-    _goReal(1);
+    // ★2026-08-03: 예전엔 여기서 온보딩(1)으로 보냈다 → 서버·네트워크가 잠깐 흔들리면
+    //   멀쩡히 쓰던 분이 온보딩 첫 화면으로 떨어졌다. 조회 실패는 오류 화면이다.
+    _showBootError({ error:'FETCH_FAILED', reason:'서버에 닿지 못했어요' });
   });
+}
+// ★[2-3] 오류·재연결 화면 — "온보딩 안 함"과 ★완전히 다른 화면.
+//   여기서는 절대 온보딩을 시작하지 않는다. 되돌릴 길(다시 시도·재연결·계정 전환)만 준다.
+function _showBootError(b){
+  try{
+    var old=document.getElementById('bootErr'); if(old) old.parentNode.removeChild(old);
+    var why=(b&&b.reason)||'상태를 확인하지 못했어요';
+    var d=document.createElement('div');
+    d.id='bootErr';
+    d.setAttribute('style','position:fixed;inset:0;z-index:99998;background:#0B1F3A;color:#e8f0f8;'+
+      'display:flex;align-items:center;justify-content:center;padding:24px;text-align:center;font-family:inherit;');
+    d.innerHTML='<div style="max-width:420px;">'+
+      '<div style="font-size:38px;line-height:1;margin-bottom:14px;">🔌</div>'+
+      '<h2 style="font-size:19px;margin:0 0 10px;font-weight:700;">잠시 연결이 끊겼어요</h2>'+
+      '<p style="font-size:13.5px;line-height:1.75;color:#a9c2db;margin:0 0 6px;">'+_escOb(why)+'</p>'+
+      '<p style="font-size:12px;line-height:1.7;color:#7e9bb8;margin:0 0 22px;">'+
+        '설정은 그대로 있어요. <b style="color:#a9c2db;">처음부터 다시 만들지 않으셔도 됩니다.</b></p>'+
+      '<button onclick="location.reload()" style="width:100%;padding:13px;border:none;border-radius:12px;background:#1F7A8C;color:#fff;font-size:14px;font-weight:600;cursor:pointer;">다시 시도</button>'+
+      '<button onclick="location.href=\'/auth/google/connect\'" style="width:100%;margin-top:9px;padding:13px;border:1px solid rgba(255,255,255,.28);border-radius:12px;background:transparent;color:#cfe0f2;font-size:13.5px;cursor:pointer;">구글 다시 연결하기</button>'+
+      '<button onclick="location.href=\'/switch\'" style="width:100%;margin-top:9px;padding:13px;border:none;border-radius:12px;background:transparent;color:#7e9bb8;font-size:12.5px;cursor:pointer;">다른 계정으로 로그인</button>'+
+      '</div>';
+    document.body.appendChild(d);
+    _whoBadgeVisible(true); // ★어떤 계정에서 난 오류인지 보이게(이번 사고의 본질)
+  }catch(e){}
 }
 // ── 📄 약관창고 출처 표시 (2026-07-29 대표님 지시) ──
 //   [사고] 약관 검색은 성공해서 상품별 실제 조건까지 답했는데, 화면엔 그게 ★약관 근거라는 표시가 없었다.

@@ -348,6 +348,44 @@ async function deleteMemberTokens(email) {
   return n;
 }
 
+// ═══ 🎓 온보딩 완료 플래그 영속 (Firestore) — 2026-08-03 진입관문 사고 수정 ══════════
+//   [사고] 어제 대표님·교육생 전원이 온보딩을 반복했다.
+//   [원인] "온보딩 했나?"를 ★구글시트에서 프로필을 읽어서 판정했다.
+//          → 토큰이 죽어도, 시트를 못 찾아도, 네트워크가 끊겨도 전부 "직업 없음" = 온보딩.
+//          조회 실패가 곧 온보딩이 되는 구조였다(6-9와 같은 병: 조건이 안 먹으면 0이 아니라 전체가 된다).
+//   [수정] 온보딩 완료 사실을 ★이메일 키로 Firestore에 못 박는다. 이후 판정은 이 플래그만 본다.
+//          시트·토큰·네트워크가 어떻든 "한 번 마친 사람"은 다시 온보딩하지 않는다.
+//   ★저장하는 것: 이메일·완료시각·직업 라벨뿐. 고객 개인정보 0(원칙4 제로 인그레스 유지).
+const ONBOARD_COLL = 'genya_onboarding';
+// 온보딩 완료 기록. 베스트에포트(실패해도 온보딩 자체는 이미 끝났으므로 화면을 막지 않는다).
+async function saveOnboardedFlag(email, job) {
+  if (!email) return false;
+  try {
+    await _tokFs().projects.databases.documents.createDocument({ parent: _tokDB, collectionId: ONBOARD_COLL, requestBody: { fields: {
+      email: { stringValue: String(email).toLowerCase() },
+      onboardedAt: { stringValue: new Date().toISOString() },
+      job: { stringValue: String(job || '') },
+    } } });
+    console.log('[🎓온보딩완료] ' + String(email).toLowerCase() + ' · 직업=' + (job || '(없음)') + ' → durable 기록');
+    return true;
+  } catch (e) { console.warn('[🎓온보딩완료] durable 기록 실패(무시):', e.message); return false; }
+}
+// 온보딩 플래그 조회. ★"없음(null)"과 "조회 실패(throw)"를 반드시 구분한다 —
+//   조회 실패를 없음으로 뭉개면 그게 바로 이번 사고다. 실패는 던지고, 부르는 쪽이 오류 화면으로 보낸다.
+async function loadOnboardedFlag(email) {
+  if (!email) return null;
+  const r = await _tokFs().projects.databases.documents.runQuery({ parent: _tokDB, requestBody: { structuredQuery: {
+    from: [{ collectionId: ONBOARD_COLL }],
+    where: { fieldFilter: { field: { fieldPath: 'email' }, op: 'EQUAL', value: { stringValue: String(email).toLowerCase() } } },
+    limit: 20,
+  } } });
+  const rows = (r.data || []).filter((x) => x.document).map((x) => x.document.fields || {});
+  if (!rows.length) return null;
+  rows.sort((a, b) => String((b.onboardedAt || {}).stringValue || '').localeCompare(String((a.onboardedAt || {}).stringValue || '')));
+  const f = rows[0];
+  return { onboardedAt: (f.onboardedAt && f.onboardedAt.stringValue) || '', job: (f.job && f.job.stringValue) || '' };
+}
+
 // ═══ 📱 회원 솔라피 키 서버 암호화 저장 (Firestore · AES-256-GCM · TOKEN_ENC_KEY 재사용) ═══
 //   ★비용원칙: 문자 비용=회원 자비. ★시트 평문 저장 금지(공유/링크 유출 시 남이 회원 계정으로 발송=요금폭탄) → 서버 암호화.
 //   ★키 로그 절대 금지. Secret은 저장 후 다시 노출 안 함(마스킹=앞 4자리+••••••••).
@@ -609,48 +647,90 @@ app.get('/api/vapi-context', async (req, res) => {
 // ★카톡 발송기(watcher) 배포 zip — 교육생이 각자 PC에 설치. 공개 정적(개인정보·키·명단 미포함 zip만 배치). zip은 별도 생성.
 app.use('/downloads', express.static(path.join(__dirname, 'downloads')));
 
+// ═══ ⏱️ 세션 수명 정책 (2026-08-03 대표님 승인) ══════════════════════════════════
+//   [문제] genya_rt 쿠키 만료가 ★1년이었다. 고객 개인정보(명단)를 다루는 서비스인데
+//          노트북을 잃어버리면 1년 동안 열려 있었다. 게다가 이 쿠키가 로그인 화면을
+//          ★조용히 건너뛰고 이전 세션을 복원해, 대표님은 계정을 고를 기회조차 없었다.
+//   [정책] 절대 30일 / 유휴 7일(슬라이딩). 근거 = NIST SP 800-63B AAL1.
+//          · 접속할 때마다 유휴 7일이 다시 시작된다 → 매일 쓰면 한 달에 한 번 로그인.
+//          · 최초 로그인으로부터 30일이 지나면 무조건 재로그인.
+//   [기존 쿠키 구제 — 대표님 승인] 예전 쿠키엔 발급시각이 없다. 없으면 '지금 발급'으로 본다
+//          → 배포해도 ★아무도 로그아웃되지 않는다. 배포 후 첫 접속일이 기산일이 된다.
+const SESSION_ABS_MS = 30 * 24 * 60 * 60 * 1000;  // 절대 만료 30일
+const SESSION_IDLE_MS = 7 * 24 * 60 * 60 * 1000;  // 유휴 만료 7일(접속할 때마다 리셋)
+const SESSION_SLIDE_MS = 60 * 60 * 1000;          // 쿠키 갱신은 1시간에 한 번만(헤더 낭비 방지)
+const SESSION_MAXAGE = Math.floor(SESSION_ABS_MS / 1000); // 쿠키 Max-Age(초) — 서버가 최종 판정하되 브라우저도 30일 넘겨 갖고 있지 않게
+
 // ★세션 복원: 재배포·15분 슬립으로 메모리(sessions)가 비어도, 암호화 쿠키(genya_rt)에서
 //   refresh_token 복원 → 세션 재구성. ★서버 저장 0(쿠키=사용자 브라우저 것) · SA/Firestore 불필요.
 //   대표님·교육생이 15분마다 재로그인하던 무한반복의 근본 해결.
+//   ★[3-2] 2026-08-03: 자동 복원 ★전에 서버가 유효기간을 재검증한다. 통과 못 하면 복원하지 않는다.
 app.use(async (req, res, next) => {
   try {
+    const m = /(?:^|;\s*)genya_rt=([^;]+)/.exec(req.headers.cookie || '');
+    if (!m) return next();
+    let p = null;
+    try { p = JSON.parse(_dec(decodeURIComponent(m[1])) || '{}'); } catch (e) { p = null; }
+    if (!p || !(p.email || p.rt)) return next();
+
+    // ── [3-2] 유효성 재검증 ──
+    const now = Date.now();
+    const iat = Number(p.iat) || now; // 발급시각 없는 옛 쿠키 = 지금 발급으로 구제(아무도 안 끊김)
+    const la = Number(p.la) || now;   // 마지막 접속시각 없는 옛 쿠키도 동일
+    const expired = (now - iat > SESSION_ABS_MS) ? '절대만료 30일 경과'
+      : (now - la > SESSION_IDLE_MS) ? '유휴만료 7일 미접속' : '';
+    if (expired) {
+      // ── [3-3] 검증 실패 → 쿠키 즉시 폐기 + 로그인 화면 유지 ──
+      //   ★온보딩으로 보내지 않는다. 세션이 없으면 /api/boot 이 route:'login'을 준다.
+      killSession(req, res);
+      console.log('[⏱️세션만료] ' + String(p.email || '(이메일없음)') + ' · ' + expired + ' → 쿠키 폐기·재로그인 요구');
+      return next();
+    }
+
     let sid = sidOf(req);
-    // ★근본수정: 예전엔 sid(genya_sid)가 있을 때만 복원 → genya_sid(세션쿠키) 유실 시 genya_rt(1년치 email)가 있어도 복원 불가("치매").
+    const cookies = [];
+    const _sec = process.env.RENDER ? '; Secure' : '';
+    // ★근본수정: 예전엔 sid(genya_sid)가 있을 때만 복원 → genya_sid(세션쿠키) 유실 시 genya_rt(email)가 있어도 복원 불가("치매").
     //   이제 세션이 없으면(sid 유실 or sessions에 없음) genya_rt로 복원하고, sid가 유실됐으면 새로 발급·영속 재설정 → uid 항상 유지.
     if (!(sid && sessions.get(sid))) {
-      const m = /(?:^|;\s*)genya_rt=([^;]+)/.exec(req.headers.cookie || '');
-      if (m) {
-        const p = JSON.parse(_dec(decodeURIComponent(m[1])) || '{}');
-        // ★다운로드함 버그 수정: rt 없어도 email 있으면 세션 복원(email 기반 기능=mem·프로필 유지).
-        //   rt 있으면 구글토큰까지 복원(캘린더·시트 등), 없으면 email만(memberAuth는 tokens 없으면 null → 데이터기능은 정직히 구글연결 요구).
-        if (p && (p.email || p.rt)) {
-          const _sess = { email: p.email || '', name: '', scope: p.scope || '', provider: 'google', restored: true };
-          if (p.rt) _sess.tokens = { refresh_token: p.rt };
-          // ★Task A 세션 안정성: 쿠키에 rt가 없지만 이메일이 있으면 durable(Firestore)에서 커넥터 복원.
-          //   → 쿠키 유실·좁아짐·타기기·키회전에도, 한 번이라도 [구글 연결]한 이메일이면 재로그인 즉시 커넥터 자동 유지.
-          // ★2026-07-27 캘린더 사고 수정: 예전엔 "토큰이 없을 때만" durable을 읽었다.
-          //   그런데 쿠키에 토큰은 있고 ★권한(scope)만 좁은 경우가 있다(로그인은 openid·email·profile만 받는다).
-          //   그러면 캘린더·시트·드라이브가 통째로 막힌다("어제 되던 캘린더가 오늘 안 됨"의 원인).
-          //   → 토큰이 없거나 ★데이터 권한이 없으면 durable(Firestore)에서 보강한다. 이메일 기반이라 본인 것만 온다.
-          const _hasData = /calendar|spreadsheets|\/drive/.test(_sess.scope || '');
-          if ((!_sess.tokens || !_hasData) && _sess.email) {
-            try {
-              const _dur = await loadMemberToken(_sess.email);
-              if (_dur && _dur.refresh_token) {
-                if (!_sess.tokens) _sess.tokens = { refresh_token: _dur.refresh_token };
-                if ((_dur.scope || '').split(' ').length > (_sess.scope || '').split(' ').length) _sess.scope = _dur.scope;
-              }
-            } catch (e) {}
+      // ★다운로드함 버그 수정: rt 없어도 email 있으면 세션 복원(email 기반 기능=mem·프로필 유지).
+      //   rt 있으면 구글토큰까지 복원(캘린더·시트 등), 없으면 email만(memberAuth는 tokens 없으면 null → 데이터기능은 정직히 구글연결 요구).
+      const _sess = { email: p.email || '', name: '', scope: p.scope || '', provider: 'google', restored: true };
+      if (p.rt) _sess.tokens = { refresh_token: p.rt };
+      // ★Task A 세션 안정성: 쿠키에 rt가 없지만 이메일이 있으면 durable(Firestore)에서 커넥터 복원.
+      //   → 쿠키 유실·좁아짐·타기기·키회전에도, 한 번이라도 [구글 연결]한 이메일이면 재로그인 즉시 커넥터 자동 유지.
+      // ★2026-07-27 캘린더 사고 수정: 예전엔 "토큰이 없을 때만" durable을 읽었다.
+      //   그런데 쿠키에 토큰은 있고 ★권한(scope)만 좁은 경우가 있다(로그인은 openid·email·profile만 받는다).
+      //   그러면 캘린더·시트·드라이브가 통째로 막힌다("어제 되던 캘린더가 오늘 안 됨"의 원인).
+      //   → 토큰이 없거나 ★데이터 권한이 없으면 durable(Firestore)에서 보강한다. 이메일 기반이라 본인 것만 온다.
+      const _hasData = /calendar|spreadsheets|\/drive/.test(_sess.scope || '');
+      if ((!_sess.tokens || !_hasData) && _sess.email) {
+        try {
+          const _dur = await loadMemberToken(_sess.email);
+          if (_dur && _dur.refresh_token) {
+            if (!_sess.tokens) _sess.tokens = { refresh_token: _dur.refresh_token };
+            if ((_dur.scope || '').split(' ').length > (_sess.scope || '').split(' ').length) _sess.scope = _dur.scope;
           }
-          if (!sid) { // ★genya_sid 유실(세션쿠키 소멸 등) → 새 sid 발급 + 영속 재설정 → 이후 요청부터 세션·uid 유지
-            sid = crypto.randomBytes(18).toString('hex');
-            try { res.setHeader('Set-Cookie', `genya_sid=${sid}; HttpOnly; Path=/; SameSite=Lax; Max-Age=31536000${process.env.RENDER ? '; Secure' : ''}`); } catch (e) {}
-          }
-          sessions.set(sid, _sess);
-          req._sid = sid; // ★★핵심: 복원/재발급한 sid를 이번 요청에 즉시 반영 → sessionOf(req)가 같은 요청에서 uid를 잡는다(재배포 후 첫 대화부터 인지).
-        }
+        } catch (e) {}
       }
+      if (!sid) { // ★genya_sid 유실(세션쿠키 소멸 등) → 새 sid 발급 + 영속 재설정 → 이후 요청부터 세션·uid 유지
+        sid = crypto.randomBytes(18).toString('hex');
+        cookies.push(`genya_sid=${sid}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${SESSION_MAXAGE}${_sec}`);
+      }
+      sessions.set(sid, _sess);
+      req._sid = sid; // ★★핵심: 복원/재발급한 sid를 이번 요청에 즉시 반영 → sessionOf(req)가 같은 요청에서 uid를 잡는다(재배포 후 첫 대화부터 인지).
     }
+
+    // ── 슬라이딩 갱신: 접속했으니 유휴 7일을 다시 시작한다. 1시간에 한 번만 쓴다(매 요청 헤더 낭비 방지).
+    //   옛 쿠키(iat/la 없음)는 여기서 처음으로 시각이 새겨진다 = 기산 시작.
+    if (!p.iat || !p.la || (now - la) > SESSION_SLIDE_MS) {
+      try {
+        const _payload = Object.assign({}, p, { iat: iat, la: now });
+        const enc = _enc(JSON.stringify(_payload));
+        if (enc) cookies.push(`genya_rt=${encodeURIComponent(enc)}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${SESSION_MAXAGE}${_sec}`);
+      } catch (e) {}
+    }
+    if (cookies.length) { try { res.setHeader('Set-Cookie', cookies); } catch (e) {} }
   } catch (e) {}
   next();
 });
@@ -3759,11 +3839,15 @@ app.get('/api/memory/delete', async (req, res) => { try { const ma = gateGoogle(
 // ── 🎓 온보딩: 회원 프로필(직업·설문) = 회원 본인 구글시트에만 저장(원칙1) ──
 //   ★회원 OAuth는 SA와 달리 자기 드라이브에 시트 생성 가능 → 없으면 만들어줌(진짜 다회원).
 const PROFILE_TAB = '지니야_프로필';
-// ★계정별 역할(대표 지시): 두 이메일을 서버 상수로 구분한다.
-//   VIP_EMAIL      = 오상열 대표 본사 VIP → 저장된 보험설계사 세팅 복원, 온보딩 스킵.
-//   DEMO_FRESH_EMAIL = 대표 시연/체험용 → 항상 "처음 들어온 신규"처럼 온보딩부터.
+// ★계정별 역할(대표 지시): VIP 하나만 남긴다.
+//   VIP_EMAIL = 오상열 대표 본사 VIP → 로그인 후 무조건 메인(온보딩 없음).
+//     ※ 이 상수는 온보딩 말고도 ★관리자 판정(_isAdmin)·★실발송 게이트(_campaignLive)·
+//        밤샘 발굴 배분에 쓰인다. 절대 지우지 않는다.
+// ★2026-08-03 제거: DEMO_FRESH_EMAIL('ggorilla66@gmail.com' = 항상 온보딩).
+//   [사고] 이 하드코딩이 대표님을 매번 온보딩으로 되돌려 부트캠프 교육이 진행되지 못했다.
+//   [원칙] 이메일로 동작을 가르지 않는다. 온보딩 여부는 ★완료 플래그(durable)로만 판정한다.
+//   대표 결정: ggorilla66은 교육생과 100% 동일 취급 · 데모 초기화 수단은 만들지 않는다.
 const VIP_EMAIL = 'ggorilla11@gmail.com';
-const DEMO_FRESH_EMAIL = 'ggorilla66@gmail.com';
 async function findOrCreateMemberSheet(ma) {
   const drive = google.drive({ version: 'v3', auth: ma }), sheets = google.sheets({ version: 'v4', auth: ma });
   // ★'me' in owners (2026-08-01): 이 함수는 ★회원 토큰으로 시트를 찾고 없으면 만든다.
@@ -4015,8 +4099,18 @@ app.get('/api/profile', async (req, res) => {
 //   ★버그 수정: 예전엔 클라이언트가 브라우저 localStorage(genya_job)로 화면을 정해,
 //     계정과 무관하게 그 브라우저에 남은 직업(예: 공인중개사) 메인으로 직행 → 온보딩 스킵.
 //     로그아웃/다른 계정도 같은 localStorage를 봐서 똑같이 오염됐다.
-//   → 이제 "이 로그인 계정"의 상태를 서버가 정한다. route: login | onboarding | main.
+//   → 이제 "이 로그인 계정"의 상태를 서버가 정한다. route: login | onboarding | main | error.
 //   ★절대 기본 직업으로 메인 직행 금지. 저장값 없으면 온보딩.
+//
+// ═══ 2026-08-03 진입관문 사고 수정 — 3분기로 가른다 ═══
+//   [사고] 어제 대표님·교육생 전원이 온보딩을 반복해 부트캠프가 진행되지 못했다.
+//   [원인] 온보딩 여부를 ★구글시트 프로필로 판정했다. 시트를 못 읽으면 곧바로 온보딩이었다.
+//          토큰 만료·시트 못 찾음·네트워크 끊김 — 전부 "온보딩"으로 뭉개졌다.
+//   [원칙] ① 온보딩 여부는 ★완료 플래그(durable)로만 판정한다. 이메일로 판정하지 않는다.
+//          ② "조회 실패"와 "온보딩 안 함"은 ★절대 같은 것이 아니다. 실패는 오류 화면으로 보낸다.
+//   [1회 마이그레이션 — 대표님 승인] 어제까지 온보딩을 마친 분들은 플래그가 없다.
+//     플래그가 없을 때 ★딱 한 번만 시트를 보고, 직업이 있으면 플래그를 심고 메인으로 보낸다.
+//     그 뒤로는 영원히 플래그만 본다. (이게 없으면 기존 회원 전원이 온보딩을 다시 하게 된다)
 app.get('/api/boot', async (req, res) => {
   try {
     const s = sessionOf(req);
@@ -4024,26 +4118,52 @@ app.get('/api/boot', async (req, res) => {
     if (!s && FILMING) return res.json({ ok: true, loggedIn: true, email: '촬영용@example.com', route: 'main', job: 'insurance', vip: true });
     if (!s) return res.json({ ok: true, loggedIn: false, route: 'login' });
     const email = String(s.email || '').toLowerCase();
-    // 시연/체험용 계정: 항상 온보딩부터(교육생처럼)
-    if (email === DEMO_FRESH_EMAIL) return res.json({ ok: true, loggedIn: true, email, route: 'onboarding' });
-    // 본사 VIP(대표): 저장된 보험설계사 세팅 복원, 온보딩 스킵(스코프 유무와 무관하게 보장)
+    // 본사 VIP(대표): 로그인 후 무조건 메인(온보딩 없음). ★로그인 관문 자체는 VIP도 똑같이 통과해야 한다.
     if (email === VIP_EMAIL) return res.json({ ok: true, loggedIn: true, email, route: 'main', job: 'insurance', vip: true });
-    // 일반 회원: 서버 저장 프로필(회원 본인 구글시트)로 분기
+
+    // ── ① 온보딩 완료 플래그(durable) = 유일한 판정 근거 ──
+    let flag = null;
+    try { flag = await loadOnboardedFlag(email); }
+    catch (e) {
+      // ★조회 실패 → 오류·재연결 화면. 온보딩으로 보내지 않는다(이게 이번 사고의 핵심).
+      console.warn('[🧭boot] 온보딩 플래그 조회 실패 — 오류 화면으로:', e.message);
+      return res.json({ ok: true, loggedIn: true, email, route: 'error', error: 'FETCH_FAILED', reason: '온보딩 기록을 조회하지 못했어요' });
+    }
+    if (flag) return res.json({ ok: true, loggedIn: true, email, route: 'main', jobLabel: flag.job || '', onboarded: true, onboardedAt: flag.onboardedAt });
+
+    // ── ② 플래그 없음 + 데이터 권한 있음 → 1회 마이그레이션(기존 회원 구제) ──
     const ma = memberAuth(req);
     if (ma && hasDataScope(req)) {
+      let p = null;
       try {
         const { id, sheets } = await findOrCreateMemberSheet(ma);
         let rows = []; try { const g = await sheets.spreadsheets.values.get({ spreadsheetId: id, range: `${PROFILE_TAB}!A1:B20` }); rows = g.data.values || []; } catch (e) {}
-        const p = {}; rows.forEach((r) => { if (r[0]) p[r[0]] = r[1] || ''; });
-        if (p['직업']) return res.json({ ok: true, loggedIn: true, email, route: 'main', jobLabel: p['직업'], profile: p });
-      } catch (e) {}
+        p = {}; rows.forEach((r) => { if (r[0]) p[r[0]] = r[1] || ''; });
+      } catch (e) {
+        // ★시트 조회 자체가 실패 = 판정 불가. 온보딩이 아니라 오류 화면.
+        console.warn('[🧭boot] 프로필 시트 조회 실패 — 오류 화면으로:', e.message);
+        return res.json({ ok: true, loggedIn: true, email, route: 'error', error: 'FETCH_FAILED', reason: '프로필 시트를 읽지 못했어요' });
+      }
+      if (p && p['직업']) {
+        await saveOnboardedFlag(email, p['직업']); // 베스트에포트 · 다음부터는 시트를 안 본다
+        console.log('[🧭boot] 기존 회원 1회 마이그레이션: ' + email + ' · 직업=' + p['직업']);
+        return res.json({ ok: true, loggedIn: true, email, route: 'main', jobLabel: p['직업'], profile: p, onboarded: true, migrated: true });
+      }
     }
-    // 저장값 없음/조회 불가 → 온보딩(신규). ★기본 직업 메인 직행 금지.
-    return res.json({ ok: true, loggedIn: true, email, route: 'onboarding' });
+    // ── ③ 플래그 없음 + 시트에도 직업 없음(또는 아직 구글 연결 전) → 진짜 신규 = 온보딩 ──
+    return res.json({ ok: true, loggedIn: true, email, route: 'onboarding', onboarded: false });
   } catch (e) { res.json({ ok: true, loggedIn: false, route: 'login', error: e.message }); }
 });
 app.get('/api/profile/save', async (req, res) => {
-  try { const ma = gateGoogle(req, res); if (!ma) return; const { id, sheets } = await findOrCreateMemberSheet(ma);
+  try { const ma = gateGoogle(req, res); if (!ma) return;
+    // ★[2-1] 온보딩 완료 = 여기서 확정된다. 플래그를 ★시트 쓰기보다 먼저 durable에 남긴다.
+    //   시트 쓰기가 실패해도 "온보딩은 마쳤다"는 사실이 남아야 온보딩이 반복되지 않는다.
+    //   (시트 실패 → 플래그 없음 → 다시 온보딩 = 어제 사고의 구조를 그대로 되살리는 길)
+    try {
+      const _em = String((sessionOf(req) || {}).email || '').toLowerCase();
+      if (_em && req.query.job) await saveOnboardedFlag(_em, String(req.query.job || ''));
+    } catch (e) { console.warn('[🎓온보딩완료] 플래그 기록 실패(계속 진행):', e.message); }
+    const { id, sheets } = await findOrCreateMemberSheet(ma);
     await ensureTab(sheets, id, PROFILE_TAB);
     const rows = [['직업', String(req.query.job || '')], ['이름', String(req.query.nick || '')], ['하는일', String(req.query.work || '')], ['주고객', String(req.query.clients || '')], ['반복업무', String(req.query.pain || '')], ['맡길기능', String(req.query.tasks || '')], ['철칙', String(req.query.rule || '')], ['설문방식', String(req.query.mode || '')], ['생성일', new Date().toISOString().slice(0, 10)]];
     await sheets.spreadsheets.values.update({ spreadsheetId: id, range: `${PROFILE_TAB}!A1`, valueInputOption: 'RAW', requestBody: { values: rows } });
@@ -4999,6 +5119,26 @@ app.get('/api/diag/token-store', async (req, res) => {
     res.json(out);
   } catch (e) { out.에러 = e.message; out.진단 = '❌ Firestore 왕복 실패'; res.json(out); }
 });
+// 🩺 온보딩 완료 플래그 저장소 자가진단 — 더미 이메일로 저장→복원 왕복(개인정보 0).
+//   ★이 계층이 죽어 있으면 온보딩이 ★영원히 반복된다(어제 사고 그대로). 배포 후 여기부터 확인한다.
+//   ★새 컬렉션(genya_onboarding)에 서비스계정이 실제로 쓸 수 있는지가 핵심 — "될 것 같다"가 아니라 "됐다".
+app.get('/api/diag/onboard-store', async (req, res) => {
+  const out = { 계층: 'durable(Firestore genya_onboarding) · 이메일키 온보딩 완료 플래그', TOKEN_ENC_KEY: !!_encKey(), SA설정: !!(KEY_FILE && KEY_FILE !== '{}') };
+  if (!out.SA설정) { out.진단 = '⚠️ GOOGLE_SA_JSON 미설정 — 온보딩 플래그 영속 불가(온보딩이 반복된다)'; return res.json(out); }
+  const email = 'diag-onboard-' + crypto.randomBytes(4).toString('hex') + '@genya.local'; // ★회차 고유값(6-11 ③: 같은 이름이면 지난 회차를 집는다)
+  try {
+    out.신규_플래그없음 = (await loadOnboardedFlag(email)) === null; // 새 사람은 반드시 null이어야 온보딩으로 간다
+    out.저장 = await saveOnboardedFlag(email, '진단용직업');
+    const back = await loadOnboardedFlag(email);
+    out.복원 = !!back;
+    out.직업일치 = !!(back && back.job === '진단용직업');
+    out.시각기록 = !!(back && back.onboardedAt);
+    out.진단 = (out.신규_플래그없음 && out.저장 && out.직업일치 && out.시각기록)
+      ? '✅ 온보딩 플래그 실작동 — 한 번 마친 사람은 재배포·시트오류·토큰만료에도 다시 온보딩하지 않는다(더미문서 1건 잔존·무해)'
+      : '⚠️ 왕복 불일치 — 온보딩이 반복될 수 있다';
+    res.json(out);
+  } catch (e) { out.에러 = e.message; out.진단 = '❌ Firestore 왕복 실패 — 온보딩이 반복된다'; res.json(out); }
+});
 app.get('/api/status', (req, res) => {
   // ★실제 상태를 정직 반영(런타임 확인 가능한 것 위주)
   res.json({
@@ -5149,17 +5289,23 @@ app.get('/auth/google/callback', async (req, res) => {
     //   preserved rt(=tokens.refresh_token 없음)일 땐 저장 생략 → 중복 문서 누적 방지. 베스트에포트(실패해도 로그인 안 끊김).
     if (tokens.refresh_token && ui.data.email) { try { await saveMemberToken(ui.data.email, tokens.refresh_token, scope); } catch (e) { console.warn('saveMemberToken 실패(무시):', e.message); } }
     const _sec = process.env.RENDER ? '; Secure' : '';
-    const cookies = [`genya_sid=${s}; HttpOnly; Path=/; SameSite=Lax; Max-Age=31536000${_sec}`]; // ★영속(1년): 세션쿠키였으면 브라우저 닫을때 소멸→uid유실("치매") → Max-Age로 영속화
+    // ★영속: 세션쿠키였으면 브라우저 닫을때 소멸→uid유실("치매") → Max-Age로 영속화.
+    //   ★2026-08-03: 1년 → 30일(SESSION_MAXAGE). 유휴 7일은 서버가 판정한다.
+    const cookies = [`genya_sid=${s}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${SESSION_MAXAGE}${_sec}`];
     // ★refresh_token(+scope,email)을 암호화해 사용자 쿠키에. 서버 저장 0·재시작 생존.
     //   ★다운로드함 버그 수정: 예전엔 refresh_token 있을 때만 genya_rt 저장 → 재로그인(구글이 rt 안 줌)은 미저장 →
     //     재배포로 sessions Map 비면 복원 불가 → mem "로그인 필요". 이제 email 있으면 항상 저장(rt는 있으면 함께).
     //     mem은 구글토큰 불필요·email(uid)만 필요하므로, email만 복원돼도 다운로드함이 산다.
     if (ui.data.email) {
       try {
-        const _payload = { email: (ui.data.email || '').toLowerCase(), scope };
+        // ★2026-08-03: iat(최초 발급)·la(마지막 접속)를 새긴다 → 절대 30일 / 유휴 7일 판정의 근거.
+        //   ★같은 계정 재로그인이면 iat를 ★이어받지 않는다 — 실제로 계정 선택창을 거쳐 다시 인증했으므로
+        //     30일 시계는 그때부터 새로 돈다(재인증이 곧 기산점. NIST AAL1 취지).
+        const _now = Date.now();
+        const _payload = { email: (ui.data.email || '').toLowerCase(), scope, iat: _now, la: _now };
         if (tok.refresh_token) _payload.rt = tok.refresh_token;
         const enc = _enc(JSON.stringify(_payload));
-        if (enc) cookies.push(`genya_rt=${encodeURIComponent(enc)}; HttpOnly; Path=/; SameSite=Lax; Max-Age=31536000${_sec}`);
+        if (enc) cookies.push(`genya_rt=${encodeURIComponent(enc)}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${SESSION_MAXAGE}${_sec}`);
       } catch (e) {}
     }
     // ★새 genya_rt를 못 쓴 경우(이메일 없음·암호화키 없음)엔 남의 옛 genya_rt를 반드시 지운다.
@@ -5286,7 +5432,7 @@ app.get('/auth/kakao/callback', async (req, res) => {
     if (_prevK && String(_prevK.email || '').toLowerCase() !== String(email || '').toLowerCase()) { const _psid = sidOf(req); if (_psid) sessions.delete(_psid); req._sid = null; }
     sessions.set(s, { email, name, provider: 'kakao' }); // s.tokens(구글) 없음
     const _secK = process.env.RENDER ? '; Secure' : '';
-    const kcookies = [`genya_sid=${s}; HttpOnly; Path=/; SameSite=Lax; Max-Age=31536000${_secK}`]; // ★영속(1년)
+    const kcookies = [`genya_sid=${s}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${SESSION_MAXAGE}${_secK}`]; // ★영속(30일 — 2026-08-03 세션정책)
     // ★남의 genya_rt(구글 1년 쿠키)가 남아 있으면 삭제 — 안 지우면 서버 재시작 뒤
     //   복원 미들웨어가 이 브라우저를 그 사람 계정으로 되돌린다.
     { const re = _rtCookieEmail(req); if (re && re !== String(email || '').toLowerCase()) kcookies.push(`genya_rt=; HttpOnly; Path=/; SameSite=Lax; ${_COOKIE_GONE}${_secK}`); }
