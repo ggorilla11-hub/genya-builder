@@ -908,7 +908,19 @@ async function runStage1Real(){
 
     fill.style.width='100%';pct.textContent='100%';
     setTimeout(()=>{prog.classList.remove('show');},400);
-    _stage1Msg('완료 ✓ '+성공+'/12'+(실패?(' <span style="color:var(--red)">실패 '+실패+'</span>'):''),'var(--teal)');
+    // ★대표님 자산(책·상담·강의)을 실제로 썼는지 ★있는 그대로 보여준다.
+    //   썼으면 몇 곳·어느 책인지, 못 썼으면 왜 못 썼는지. 있는 척하지 않는다.
+    let ragTxt='';
+    if(j.rag&&j.rag.썼나){
+      const 책=(j.rag.참조||[]).map(function(u){return u.book;});
+      const 고유=책.filter(function(v,i){return 책.indexOf(v)===i;});
+      ragTxt=' · <span style="color:var(--gold)" title="'+_esc(고유.join(' / '))+'">📚 대표님 자료 '
+        +(j.rag.참조||[]).length+'곳</span>';
+      console.log('[대표님 자산] '+(j.rag.참조||[]).map(function(u){return u.book+'('+u.score+')';}).join(' · '));
+    }else if(j.rag&&j.rag.이유){
+      ragTxt=' · <span style="color:var(--soft)">📚 '+_esc(j.rag.이유)+'</span>';
+    }
+    _stage1Msg('완료 ✓ '+성공+'/12'+(실패?(' <span style="color:var(--red)">실패 '+실패+'</span>'):'')+ragTxt,'var(--teal)');
     if(j.saveError)console.log('[원고] 시트 저장 안 됨 — '+j.saveError);
     document.getElementById('st2').textContent='② 콘텐츠생성 누르세요';
   }catch(e){

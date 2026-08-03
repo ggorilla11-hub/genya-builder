@@ -17,6 +17,7 @@
 
 const P = require('./promo_prompts');
 const U = require('./promo_utm');
+const AUTHOR = require('./author_rag');   // ★대표님 자산 검색(책·상담·강의) — 2번 통로에 얹는다
 
 let _anthropic = null;
 let _MODEL = 'claude-sonnet-5';   // ★대표 절대규칙: 모든 LLM = Claude Sonnet. 날짜접미사 금지.
@@ -340,6 +341,24 @@ router.post('/expand12', async (req, res) => {
     }
     if (!copy) return res.status(400).json({ ok: false, error: '한줄카피를 입력해 주세요' });
 
+    // ★대표님 자산(책·상담·강의 2,766청크)에서 근거를 찾아 2번 통로(source)에 싣는다.
+    //   ★대표님이 [+ 내 자료]에 직접 넣으신 게 있으면 ★그걸 우선한다 — 검색이 대표님 선택을 밀어내지 않는다.
+    //   ★실패해도 원고는 그대로 만든다(author_rag 는 모든 실패를 빈 결과로 돌린다).
+    let rag = { 썼나: false, 이유: '', 참조: [] };
+    if (campaign.source && campaign.source.trim()) {
+      rag.이유 = '대표님이 직접 넣으신 자료를 씁니다(검색 안 함)';
+    } else if (!AUTHOR.configured()) {
+      rag.이유 = '검색 열쇠가 없어 대표님 자산을 못 씁니다';
+    } else {
+      const found = await AUTHOR.searchAsSource([copy, campaign.content].filter(Boolean).join(' '));
+      if (found.text) {
+        campaign.source = found.text;                       // ← 2번 통로에 그대로 얹는다
+        rag = { 썼나: true, 이유: '', 참조: found.used, 글자수: found.chars };
+      } else {
+        rag.이유 = '가까운 대목을 못 찾았어요(대표님 자산 없이 만듭니다)';
+      }
+    }
+
     const out = await generateAll(campaign, copy, copyNo);
 
     // 시트에 기록(실패해도 원고는 화면에 보여준다 — 거짓 성공 금지 위해 사실대로 알림)
@@ -352,7 +371,7 @@ router.post('/expand12', async (req, res) => {
       saveError = '시트 미연결 — 원고는 만들었지만 저장은 안 했어요(PROMO_SHEET_ID 등록 전)';
     }
 
-    res.json({ ok: true, copy: out.copy, copyNo, 요약: out.요약, saved, saveError,
+    res.json({ ok: true, copy: out.copy, copyNo, 요약: out.요약, saved, saveError, rag,
       results: out.results.map((r) => ({
         kind: r.kind, label: r.label, target: r.target, chars: r.chars, rate: r.rate,
         inRange: r.inRange, fixed: r.fixed, banned: r.banned, ms: r.ms,
