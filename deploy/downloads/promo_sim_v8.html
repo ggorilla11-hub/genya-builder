@@ -435,6 +435,8 @@
           <div class="item draggable" draggable="true" data-kind="카드뉴스" data-ct="카드" data-ic="🖼️" onclick="toggleC(this)"><span class="dot"></span><span class="ic">🖼️</span><span class="nm">카드뉴스</span><span class="use">보기·끌기</span></div><div class="detail" id="c-카드뉴스"></div>
           <div class="item draggable" draggable="true" data-kind="오디오파일" data-ct="오디오" data-ic="🎙️" onclick="toggleC(this)"><span class="dot"></span><span class="ic">🎙️</span><span class="nm">오디오파일</span><span class="use">보기·끌기</span></div><div class="detail" id="c-오디오파일"></div>
           <div class="item draggable" draggable="true" data-kind="이미지파일" data-ct="이미지" data-ic="🎨" onclick="toggleC(this)"><span class="dot"></span><span class="ic">🎨</span><span class="nm">이미지파일</span><span class="use">보기·끌기</span></div><div class="detail" id="c-이미지파일"></div>
+          <!-- ★2026-08-03 대표님 기획: 콘텐츠 7종 — 뉴스레터 추가 -->
+          <div class="item draggable" draggable="true" data-kind="뉴스레터" data-ct="뉴스레터" data-ic="📧" onclick="toggleC(this)"><span class="dot"></span><span class="ic">📧</span><span class="nm">뉴스레터</span><span class="use">보기·끌기</span></div><div class="detail" id="c-뉴스레터"></div>
           <div id="attachList"></div>
           <div class="addattach" onclick="attachInput.click()">＋ 관련자료 추가 (직접 업로드)</div>
           <input type="file" id="attachInput" style="display:none" multiple accept="image/*,video/*,audio/*" onchange="doAttach(this)">
@@ -680,7 +682,21 @@ function toggleC(el){
       : '<div class="dtext">🎬 쇼츠 영상은 아직 안 만들었어요. ② 콘텐츠생성을 눌러 주세요.\n(5씬이면 녹화에 15초쯤 걸려요)\n\n'+_esc((WON['쇼츠원고']||'').slice(0,400))+'</div>';
   }
   else if(ct==='오디오')pv='<div class="dtext">🎙️ 오디오 <b>파일</b>은 아직 못 만들어요(다음 단계).\n지금은 ① 원고의 팟캐스트 대본까지 나와 있어요.\n\n'+_esc((WON['오디오원고']||'').slice(0,400))+'</div>';
-  else if(ct==='이미지')pv='<div class="dtext">🎨 이미지 <b>파일</b>은 아직 못 만들어요(다음 단계).\n지금은 ① 원고의 그림 지시문까지 나와 있어요.\n\n'+_esc((WON['이미지원고']||'').slice(0,400))+'</div>';
+  // ★2026-08-03: 이미지파일 안에 ★두 가지를 나눠 보여준다 — 이미지(png) · 인포그래픽
+  else if(ct==='이미지'){
+    const 그림=WON['이미지원고']||'', 인포=WON['인포그래픽']||'';
+    pv='<div style="font-size:11px;font-weight:800;color:var(--ink);margin-bottom:3px">🎨 이미지 (png)</div>'
+      +'<div class="dtext">'+(그림?_esc(그림.slice(0,350))+(그림.length>350?'…':''):'아직 없어요 — ① 원고를 먼저 만들어 주세요.')+'</div>'
+      +'<div style="font-size:10px;color:var(--soft);margin:4px 0 9px">그림 <b>파일</b>은 아직 못 만들어요(다음 단계). 지금은 그림 지시문까지예요.</div>'
+      +'<div style="font-size:11px;font-weight:800;color:var(--ink);margin-bottom:3px">📊 인포그래픽</div>'
+      +'<div class="dtext">'+(인포?_esc(인포.slice(0,350))+(인포.length>350?'…':''):'아직 없어요 — ① 원고를 먼저 만들어 주세요.')+'</div>'
+      +'<div style="font-size:10px;color:var(--soft);margin-top:4px">디자이너에게 그대로 넘기시면 되는 글이에요.</div>';
+  }
+  else if(ct==='뉴스레터'){
+    const n=WON['뉴스레터']||'';
+    pv=n?('<div class="dtext">'+_esc(n)+'</div>')
+        :'<div class="dtext">아직 없어요 — ① 원고를 먼저 만들어 주세요.</div>';
+  }
   d.innerHTML=pv+'<div class="revise"><input placeholder="수정 지시 (예: 더 짧게, 밝은 톤)" onkeydown="if(event.key===\'Enter\')doRevise(this,\''+nm+'\')"><button onclick="doRevise(this.previousElementSibling,\''+nm+'\')">AI 수정</button></div><div class="revise-log" id="rl-'+nm+'"></div>';
   d.classList.add('show');
 }
@@ -708,20 +724,30 @@ function runStage(stage,onDone){
 // ═══════════════════════════════════════════════════════════════════
 // 엔진이 주는 12종 ↔ 화면 항목. 앞 6개는 ★대표님이 만드신 기존 항목에 그대로 꽂고,
 // 뒤 6개는 화면에 없던 것이라 같은 모양으로 만들어 붙인다(12종을 하나도 안 버린다).
+// ★2026-08-03 · 대표님 원래 기획대로 정리 — ①원고생성은 ★7종만 띄운다.
+//   stage1:false 인 5종은 ★안 만드는 게 아니다. 서버는 12종을 그대로 만들고(백엔드 무접촉),
+//   ①에 안 띄울 뿐이다. WON 에는 담기므로 ★다른 자리에서 그대로 쓴다:
+//     · 카페글·브런치 → ③채널 [텍스트]의 세부 채널에서 그 원고를 보여준다
+//     · 인포그래픽    → ②콘텐츠 [이미지파일]의 세부 옵션으로 보여준다
+//     · 뉴스레터      → ②콘텐츠 7번째 항목으로 보여준다
+//     · 링크드인      → 지금은 어디에도 안 띄운다(원고는 만들어져 WON 에 있다)
+//   ★그래서 promo_prompts 의 12종 정의를 지우지 않았다 — 지우면 위 네 자리가 빈다.
 const ENG12=[
-  {kind:'threads',    slot:'단문',      ic:'📱', use:'카톡·스레드용'},
-  {kind:'blog',       slot:'장문',      ic:'📝', use:'블로그용'},
-  {kind:'shorts',     slot:'쇼츠원고',   ic:'🎬', use:'쇼츠용'},
-  {kind:'cardnews',   slot:'카드뉴스원고',ic:'🖼️', use:'카드뉴스용'},
-  {kind:'podcast',    slot:'오디오원고',  ic:'🎙️', use:'팟캐스트용'},
-  {kind:'image',      slot:'이미지원고',  ic:'🎨', use:'이미지용'},
-  {kind:'cafe',       slot:'카페글',     ic:'💬', use:'커뮤니티용'},
-  {kind:'brunch',     slot:'브런치',     ic:'✍️', use:'감성 에세이'},
-  {kind:'linkedin',   slot:'링크드인',    ic:'💼', use:'B2B'},
-  {kind:'longform',   slot:'롱폼대본',    ic:'▶️', use:'10분 영상'},
-  {kind:'infographic',slot:'인포그래픽',  ic:'📊', use:'디자이너 전달'},
-  {kind:'newsletter', slot:'뉴스레터',    ic:'📧', use:'이메일'}
+  {kind:'threads',    slot:'단문',      ic:'📱', use:'카톡·스레드용', stage1:true},
+  {kind:'blog',       slot:'장문',      ic:'📝', use:'블로그용',      stage1:true},
+  {kind:'shorts',     slot:'쇼츠원고',   ic:'🎬', use:'쇼츠용',        stage1:true},
+  {kind:'cardnews',   slot:'카드뉴스원고',ic:'🖼️', use:'카드뉴스용',    stage1:true},
+  {kind:'podcast',    slot:'오디오원고',  ic:'🎙️', use:'팟캐스트용',    stage1:true},
+  {kind:'image',      slot:'이미지원고',  ic:'🎨', use:'이미지용',      stage1:true},
+  {kind:'longform',   slot:'롱폼대본',    ic:'▶️', use:'10분 영상',     stage1:true},
+  // ↓ ①원고생성에는 안 띄운다(위 주석의 자리에서 쓴다)
+  {kind:'cafe',       slot:'카페글',     ic:'💬', use:'커뮤니티용',    stage1:false},
+  {kind:'brunch',     slot:'브런치',     ic:'✍️', use:'감성 에세이',   stage1:false},
+  {kind:'infographic',slot:'인포그래픽',  ic:'📊', use:'디자이너 전달', stage1:false},
+  {kind:'newsletter', slot:'뉴스레터',    ic:'📧', use:'이메일',        stage1:false},
+  {kind:'linkedin',   slot:'링크드인',    ic:'💼', use:'B2B',          stage1:false}
 ];
+const ENG_S1=ENG12.filter(function(s){return s.stage1;});   // ①에 띄우는 7종
 let GEN12=null;                    // 서버가 실제로 만든 결과(원본 그대로 보관)
 
 // 화면에 없던 종류는 같은 모양으로 만들어 붙인다
@@ -813,8 +839,8 @@ function applyOwnScripts(){
   ENG12.forEach(function(s,i){
     const t=document.getElementById('ownTa'+i); if(!t)return;
     const txt=t.value.trim(); if(!txt)return;      // ★빈 칸은 넘기지 않는다
-    ensureSlot(s);
-    WON[s.slot]=txt; WURL[s.slot]=landing;
+    if(s.stage1)ensureSlot(s);                     // ★①에 띄우는 7종만 자리를 만든다
+    WON[s.slot]=txt; WURL[s.slot]=landing;         // 나머지도 통에는 담는다(채널·콘텐츠에서 쓴다)
     results.push({ kind:s.kind, label:s.slot, target:0, chars:txt.length, rate:0,
                    inRange:true, fixed:'직접', banned:null, ms:0, url:landing, text:txt, error:null });
   });
@@ -833,15 +859,18 @@ function applyOwnScripts(){
     it.classList.add('done');
     const u=it.querySelector('.use'); if(u)u.innerHTML='<span class="go">✓ 보기</span>';
   });
-  _stage1Msg('직접 넣음 ✓ '+results.length+'종','var(--teal)');
+  // ★①에 뜨는 것과 다른 자리에서 쓰는 것을 ★갈라서 말한다(7종만 보이는데 12종이라 하면 헷갈린다)
+  const 여기=results.filter(function(r){ const s=ENG12.find(function(x){return x.kind===r.kind;}); return s&&s.stage1; }).length;
+  const 저기=results.length-여기;
+  _stage1Msg('직접 넣음 ✓ '+여기+'종'+(저기?(' <span style="color:var(--soft)">(+'+저기+'종은 채널·콘텐츠용)</span>'):''),'var(--teal)');
   document.getElementById('st2').textContent='② 콘텐츠생성 누르세요';
-  msg.innerHTML='<span style="color:var(--teal)">✓ '+results.length+'종 적용했어요. '
+  msg.innerHTML='<span style="color:var(--teal)">✓ 여기 '+여기+'종'+(저기?(' · 채널·콘텐츠에서 쓸 '+저기+'종'):'')+' 적용했어요. '
     +'이제 <b>② 콘텐츠생성</b>을 누르시면 <b>이 원고 그대로</b> 카드·블로그·쇼츠를 만듭니다.</span>';
 }
 
 async function runStage1Real(){
   const prog=document.getElementById('prog1'),fill=document.getElementById('fill1'),pct=document.getElementById('pct1');
-  ENG12.forEach(ensureSlot);
+  ENG_S1.forEach(ensureSlot);            // ★①에 띄우는 7종만 자리를 만든다
   document.querySelectorAll('#pb1 .item').forEach(it=>it.classList.remove('done'));
   prog.classList.add('show');
   _stage1Msg('원고 만드는 중…');
@@ -893,6 +922,11 @@ async function runStage1Real(){
     let 성공=0,실패=0;
     ENG12.forEach(s=>{
       const hit=(j.results||[]).find(x=>x.kind===s.kind);
+      // ★①에 안 띄우는 5종 — 통(WON)에는 담는다. 채널·콘텐츠 세부에서 그대로 쓴다.
+      if(!s.stage1){
+        if(hit&&hit.text&&!hit.error){ WON[s.slot]=hit.text; WURL[s.slot]=hit.url||''; }
+        return;
+      }
       const el=ensureSlot(s);
       if(hit&&hit.text&&!hit.error){
         WON[s.slot]=hit.text; WURL[s.slot]=hit.url||'';
@@ -920,7 +954,7 @@ async function runStage1Real(){
     }else if(j.rag&&j.rag.이유){
       ragTxt=' · <span style="color:var(--soft)">📚 '+_esc(j.rag.이유)+'</span>';
     }
-    _stage1Msg('완료 ✓ '+성공+'/12'+(실패?(' <span style="color:var(--red)">실패 '+실패+'</span>'):'')+ragTxt,'var(--teal)');
+    _stage1Msg('완료 ✓ '+성공+'/'+ENG_S1.length+(실패?(' <span style="color:var(--red)">실패 '+실패+'</span>'):'')+ragTxt,'var(--teal)');
     if(j.saveError)console.log('[원고] 시트 저장 안 됨 — '+j.saveError);
     document.getElementById('st2').textContent='② 콘텐츠생성 누르세요';
   }catch(e){
@@ -984,7 +1018,8 @@ async function runStage2Real(){
     fill.style.width='100%';pct.textContent='100%';
 
     // 만들어진 것만 done 으로 켠다 — 안 만든 건 안 켠다(있는 척 금지)
-    const 켬={'단문':!!WON['단문'],'장문':!!WON['장문'],'카드뉴스':MADE.cards.length>0,'쇼츠영상':!!MADE.shorts};
+    const 켬={'단문':!!WON['단문'],'장문':!!WON['장문'],'카드뉴스':MADE.cards.length>0,
+              '쇼츠영상':!!MADE.shorts,'뉴스레터':!!WON['뉴스레터']};   // ★콘텐츠 7종
     document.querySelectorAll('#pb2 .item').forEach(it=>{
       const nm=it.dataset.kind;
       if(켬[nm]){it.classList.add('done');const u=it.querySelector('.use');if(u)u.innerHTML='<span class="go">✓ 보기</span>';}
@@ -1301,12 +1336,33 @@ function pickSub(el){
   else{document.getElementById('finalpv').innerHTML='<div class="fpv-hint">세부 채널을 선택하면 최종 발행 미리보기가 여기 나타납니다</div>';}
 }
 // 최종 발행 미리보기
+// ★세부 채널 ↔ 그 채널에 쓸 원고 (2026-08-03)
+//   ①원고생성에서 뺀 ★카페글·브런치가 여기서 살아난다 — 채널 [텍스트]의 세부로.
+//   원고가 없으면 억지로 만들지 않고 "아직 없다"고 둔다.
+const SUB_WON={
+  '블로그':'장문', '카페':'카페글', '브런치':'브런치',
+  '인스타':'단문', '페북':'단문', '쓰레드':'단문',
+  '쇼츠':'쇼츠원고', '틱톡':'쇼츠원고', '릴스':'쇼츠원고',
+  '스포티파이':'오디오원고', '팟빵':'오디오원고',
+  '유튜브':'롱폼대본', '네이버TV':'롱폼대본',
+  '카카오톡 채널':'단문', '유튜브 커뮤니티':'단문'
+};
 function showFinalPreview(sub){
   const z=document.querySelector('.dropzone[data-idx="'+curCh+'"]');
   const tags=z?[...z.querySelectorAll('.dropped')].map(t=>t.dataset.kind):[];
   const fp=document.getElementById('finalpv');
-  let body=tags.length?tags.map(t=>'· '+t).join('<br>'):'(콘텐츠를 드래그하세요)';
-  fp.innerHTML=`<div class="fpv-title">📱 ${sub} 발행 미리보기</div><div class="fpv-body"><div class="fpv-frame"><div class="fpv-head">${sub} · 부트캠프 8월 오픈</div><div class="fpv-content">${body}</div><div class="fpv-url">🔗 ${autoUrl.textContent.split('?')[0].replace('https://','')}</div></div></div>`;
+  const slot=SUB_WON[sub], 원고=slot?(WON[slot]||''):'';
+  let body, 꼬리='';
+  if(원고){
+    body='<div style="text-align:left;white-space:pre-wrap;max-height:150px;overflow:auto;line-height:1.65">'
+        +_esc(원고.slice(0,500))+(원고.length>500?'…':'')+'</div>';
+    꼬리='<div style="font-size:10px;color:var(--soft);margin-top:5px">📄 '+slot+' 원고 '+원고.length+'자</div>';
+  }else if(slot){
+    body='<div style="color:var(--soft)">'+slot+' 원고가 아직 없어요 — ① 원고를 먼저 만들어 주세요.</div>';
+  }else{
+    body=tags.length?tags.map(t=>'· '+t).join('<br>'):'(콘텐츠를 드래그하세요)';
+  }
+  fp.innerHTML=`<div class="fpv-title">📱 ${sub} 발행 미리보기</div><div class="fpv-body"><div class="fpv-frame"><div class="fpv-head">${sub} · 부트캠프 8월 오픈</div><div class="fpv-content">${body}</div>${꼬리}<div class="fpv-url">🔗 ${autoUrl.textContent.split('?')[0].replace('https://','')}</div></div></div>`;
 }
 function addSub(idx){const n=prompt('추가할 세부 채널명');if(!n)return;const div=document.createElement('div');div.className='subch';div.innerHTML=`<span class="pick on" onclick="this.classList.toggle('on')"></span><span class="sn">${n}</span><span class="ast off">미연결</span><button class="aconn">연결</button>`;s4.querySelector('.addsub').before(div);}
 let whenMode='예약';
