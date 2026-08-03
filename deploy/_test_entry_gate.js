@@ -29,8 +29,9 @@
 const { spawn } = require('child_process');
 const path = require('path');
 const crypto = require('crypto');
+const fs = require('fs');
 
-let pass = 0, fail = 0;
+let pass = 0, fail = 0, 건너뜀 = 0;
 const T = async (name, fn) => {
   try { await fn(); console.log('  ✅ ' + name); pass++; }
   catch (e) { console.log('  ❌ ' + name + '  → ' + e.message); fail++; }
@@ -53,13 +54,45 @@ async function boot(cookie) {
   const r = await fetch(`http://localhost:${PORT}/api/boot`, { headers: cookie ? { Cookie: cookie } : {} });
   return { json: await r.json(), setCookie: r.headers.get('set-cookie') || '' };
 }
+// [7]용 — durable(Firestore)이 살아 있는 두 번째 서버
+const PORT2 = 8095;
+let srv2 = null;
+async function boot2(cookie) {
+  const r = await fetch(`http://localhost:${PORT2}/api/boot`, { headers: cookie ? { Cookie: cookie } : {} });
+  return { json: await r.json(), setCookie: r.headers.get('set-cookie') || '' };
+}
+// ★시험이 사고 상황을 ★진짜로 만들려면 Firestore에 직접 심어야 한다(서버가 심어주길 기다리면 시험이 못 돈다).
+//   서버와 ★같은 형식으로 쓴다 — 형식이 다르면 시험만 통과하고 실제론 안 되는 가짜 시험이 된다.
+function 파이어스토어(SA) {
+  const { google } = require('googleapis');
+  const auth = new google.auth.GoogleAuth({ credentials: JSON.parse(SA), scopes: ['https://www.googleapis.com/auth/datastore'] });
+  return { fs: google.firestore({ version: 'v1', auth }), db: `projects/${JSON.parse(SA).project_id}/databases/(default)/documents` };
+}
+let _fsClient = null;
+async function 플래그심기(email, job) {
+  const { fs: F, db } = _fsClient;
+  await F.projects.databases.documents.createDocument({ parent: db, collectionId: 'genya_onboarding', requestBody: { fields: {
+    email: { stringValue: email.toLowerCase() }, onboardedAt: { stringValue: new Date().toISOString() }, job: { stringValue: job },
+  } } });
+}
+async function 회원토큰심기(email, rt, scope) {
+  const { fs: F, db } = _fsClient;
+  const iv = crypto.randomBytes(12);
+  const c = crypto.createCipheriv('aes-256-gcm', KEY, iv);
+  const ct = Buffer.concat([c.update(rt, 'utf8'), c.final()]);
+  const enc = Buffer.concat([iv, c.getAuthTag(), ct]).toString('base64');
+  await F.projects.databases.documents.createDocument({ parent: db, collectionId: 'genya_member_tokens', requestBody: { fields: {
+    email: { stringValue: email.toLowerCase() }, enc: { stringValue: enc },
+    scope: { stringValue: scope }, timestamp: { stringValue: new Date().toISOString() },
+  } } });
+}
 const 신선 = (email, extra) => Object.assign({ email, scope: 'openid email profile', rt: '1//test-' + email, iat: Date.now(), la: Date.now() }, extra || {});
 
 (async function main() {
   const env = Object.assign({}, process.env, { PORT: String(PORT), TOKEN_ENC_KEY: KEY.toString('hex') });
   delete env.FILMING_MODE;
   const srv = spawn(process.execPath, [path.join(__dirname, 'main_server.js')], { cwd: __dirname, env, stdio: 'ignore' });
-  const 정리 = () => { try { srv.kill('SIGKILL'); } catch (e) {} };
+  const 정리 = () => { try { srv.kill('SIGKILL'); } catch (e) {} try { if (srv2) srv2.kill('SIGKILL'); } catch (e) {} };
   process.on('exit', 정리);
 
   console.log('\n🚪 진입 관문 시험 — 서버를 실제로 띄웁니다 …');
@@ -184,7 +217,84 @@ const 신선 = (email, extra) => Object.assign({ email, scope: 'openid email pro
     ok(/_paintWho\(d\.email\)/.test(html), '배지에 실제 이메일을 안 채움');
   });
 
-  console.log(`\n결과: ${pass}/${pass + fail} — ` + (fail ? `★${fail}개 실패` : '전부 통과'));
+  // ── [7] ★토큰 무효화 — 어제 교육을 망친 바로 그 지점 ─────────────
+  //   여기는 durable(Firestore)이 ★살아 있어야 의미가 있다. 그래야 "플래그는 읽히는데
+  //   구글 토큰만 죽은" 진짜 사고 상황을 만들 수 있다. → SA 키가 있을 때만 돈다.
+  console.log('\n[7] ★토큰 무효화 — 어제 교육을 망친 지점 (SA 키 필요)');
+  const SA_PATH = path.join(__dirname, '..', '..', 'genya-builder', 'server', 'google-key.json');
+  let SA = null;
+  try { SA = fs.readFileSync(SA_PATH, 'utf8'); JSON.parse(SA); } catch (e) { SA = null; }
+  if (!SA) {
+    console.log('  ⚠️ SA 키가 없어 [7]을 건너뜁니다 — ★통과로 세지 않습니다. (' + SA_PATH + ')');
+    건너뜀 += 4;
+  } else {
+    _fsClient = 파이어스토어(SA);
+    정리(); // 앞의 서버(SA 없음)는 내리고, durable이 살아 있는 서버로 다시 띄운다
+    await new Promise((s) => setTimeout(s, 800));
+    const env2 = Object.assign({}, process.env, { PORT: String(PORT2), TOKEN_ENC_KEY: KEY.toString('hex'), GOOGLE_SA_JSON: SA });
+    delete env2.FILMING_MODE;
+    srv2 = spawn(process.execPath, [path.join(__dirname, 'main_server.js')], { cwd: __dirname, env: env2, stdio: 'ignore' });
+    let 떴나2 = false;
+    for (let i = 0; i < 60; i++) {
+      try { const r = await fetch(`http://localhost:${PORT2}/health`); if (r.ok) { 떴나2 = true; break; } } catch (e) {}
+      await new Promise((s) => setTimeout(s, 1000));
+    }
+    if (!떴나2) { console.log('  ★durable 서버가 안 떴습니다 — [7] 시험 못 함(통과로 꾸미지 않음)'); fail++; }
+    else {
+      const 회차 = crypto.randomBytes(3).toString('hex'); // ★회차 고유값(6-11 ③: 같은 이름이면 지난 회차를 집는다)
+      const 죽은토큰 = '1//DEAD-' + 회차; // 구글이 절대 받아주지 않는 refresh_token
+      const 넓은권한 = 'openid email profile https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file';
+
+      // 7-1) ★근본 해결: 온보딩을 마친 사람(플래그 있음)은 토큰이 죽어도 온보딩으로 안 간다
+      await T('★①플래그 있는 사람은 토큰이 죽어도 메인 (시트를 아예 안 본다)', async () => {
+        const em = `done-${회차}@genya.local`;
+        await 플래그심기(em, '보험설계사');
+        const { json } = await boot2(쿠키만들기(신선(em, { rt: 죽은토큰, scope: 넓은권한 })));
+        ok(json.route === 'main', '★온보딩 마친 사람이 메인으로 안 감 = 어제 사고. 실제=' + JSON.stringify(json));
+        ok(json.jobLabel === '보험설계사', '직업이 안 복원됨: ' + JSON.stringify(json));
+      });
+
+      // 7-2) ★대표님이 "꼭 시험"하라 하신 것: 토큰이 죽어 시트를 못 읽는 경우
+      await T('★②플래그 없고 토큰이 죽어 시트를 못 읽으면 → 재연결 화면 (온보딩 아님)', async () => {
+        const em = `deadtok-${회차}@genya.local`;
+        const { json } = await boot2(쿠키만들기(신선(em, { rt: 죽은토큰, scope: 넓은권한 })));
+        ok(json.route === 'error', '★온보딩으로 떨어짐 = 어제 사고 재현. 실제=' + JSON.stringify(json));
+        ok(json.error === 'FETCH_FAILED', 'error=FETCH_FAILED 여야 함: ' + JSON.stringify(json));
+      });
+
+      // 7-3) ★이번에 막은 구멍: 쿠키에 토큰·권한이 없는 기존 회원
+      //   ※ 요구사항은 "온보딩으로 가지 않는다"이지 "어느 경로로 막느냐"가 아니다.
+      //     실제로는 복원 미들웨어가 durable 토큰을 먼저 되살려 ②에서 막히는 경우가 많다 — 그것도 정답이다.
+      //     경로를 단정하면 멀쩡한 코드를 실패로 읽는다(시험이 구현을 베끼면 안 된다).
+      await T('★③쿠키에 토큰·권한이 없는 기존 회원 → 재연결 화면 (★온보딩 아님)', async () => {
+        const em = `oldmember-${회차}@genya.local`;
+        await 회원토큰심기(em, '1//OLD-' + 회차, 넓은권한); // 과거에 구글 연결한 기존 회원
+        const { json } = await boot2(쿠키만들기({ email: em, scope: 'openid email profile', iat: Date.now(), la: Date.now() }));
+        ok(json.route !== 'onboarding', '★기존 회원이 온보딩으로 떨어짐 = 구멍 안 막힘. 실제=' + JSON.stringify(json));
+        ok(json.route === 'error', 'route=error 여야 함: ' + JSON.stringify(json));
+      });
+
+      // 7-3b) ★③ 분기를 ★직접 타는 경우 — durable 권한마저 좁아 복원해도 데이터 접근이 안 될 때
+      //   (넓은 권한이면 미들웨어가 되살려 ②로 가고, 좁으면 ②에 못 들어가 ③이 최후 방어선이 된다)
+      await T('★③-b durable 권한마저 좁은 기존 회원 → ③ 방어선이 재연결로 잡는다', async () => {
+        const em = `narrowscope-${회차}@genya.local`;
+        await 회원토큰심기(em, '1//NARROW-' + 회차, 'openid email profile'); // 데이터 권한 없음
+        const { json } = await boot2(쿠키만들기({ email: em, scope: 'openid email profile', iat: Date.now(), la: Date.now() }));
+        ok(json.route === 'error', '★③ 방어선이 안 잡음 = 온보딩으로 샘. 실제=' + JSON.stringify(json));
+        ok(json.reconnect === true, '③ 분기가 아님(재연결 안내 없음): ' + JSON.stringify(json));
+      });
+
+      // 7-4) ★역효과 확인: 진짜 신규는 그대로 가입할 수 있어야 한다
+      await T('★④진짜 신규(과거 기록 없음)는 정상적으로 온보딩으로 간다 (가입이 막히지 않는다)', async () => {
+        const em = `brandnew-${회차}@genya.local`;
+        const { json } = await boot2(쿠키만들기({ email: em, scope: 'openid email profile', iat: Date.now(), la: Date.now() }));
+        ok(json.route === 'onboarding', '★신규가 가입을 못 함 = 역효과. 실제=' + JSON.stringify(json));
+      });
+    }
+  }
+
+  console.log(`\n결과: ${pass}/${pass + fail} — ` + (fail ? `★${fail}개 실패` : '전부 통과')
+    + (건너뜀 ? ` · ★건너뜀 ${건너뜀}개(통과 아님)` : ''));
   정리();
   process.exit(fail ? 1 : 0);
 })();

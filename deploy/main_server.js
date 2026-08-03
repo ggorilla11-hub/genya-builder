@@ -4150,7 +4150,26 @@ app.get('/api/boot', async (req, res) => {
         return res.json({ ok: true, loggedIn: true, email, route: 'main', jobLabel: p['직업'], profile: p, onboarded: true, migrated: true });
       }
     }
-    // ── ③ 플래그 없음 + 시트에도 직업 없음(또는 아직 구글 연결 전) → 진짜 신규 = 온보딩 ──
+    // ── ③ ★토큰무효화 구멍 막기 (2026-08-03 · 어제 사고의 마지막 경로) ──
+    //   [구멍] 온보딩을 마쳤지만 아직 플래그가 없는 기존 회원이 ★토큰을 잃거나 권한이 좁아지면
+    //     ②(마이그레이션)를 아예 못 타고 그대로 온보딩으로 떨어졌다 = 어제 사고 재현.
+    //     ②의 시트 조회 ★실패는 이미 오류 화면으로 가는데, ②에 ★들어가지도 못하는 이 경로가 남아 있었다.
+    //   [판별] durable에 회원 토큰 기록이 있으면 "과거에 구글 연결한 사람" = 신규가 아니다.
+    //     온보딩을 마치려면 반드시 구글 연결을 거친다(/api/profile/save 가 gateGoogle 을 통과해야 한다)
+    //     → 이 판별은 정확하다. 진짜 신규는 기록이 없어 정상적으로 온보딩으로 간다.
+    //   ★여기 오는 조건을 "판정 자체를 못 한 경우"로 좁힌 이유:
+    //     시트를 ★성공적으로 읽었는데 직업이 없으면 그건 판정 성공(= 아직 온보딩 안 함)이다.
+    //     그 경우까지 막으면, 온보딩 도중 [구글 연결]만 마친 ★신규가 가입을 끝내지 못한다.
+    if (!(ma && hasDataScope(req))) {
+      let 과거연결 = null;
+      try { 과거연결 = await loadMemberToken(email); } catch (e) { 과거연결 = null; }
+      if (과거연결 && 과거연결.refresh_token) {
+        console.warn('[🧭boot] 기존 회원인데 구글 연결이 끊김 — 온보딩 아니라 재연결 화면으로: ' + email);
+        return res.json({ ok: true, loggedIn: true, email, route: 'error', error: 'FETCH_FAILED',
+          reason: '구글 연결이 끊겼어요 — 다시 연결하면 하시던 그대로 이어집니다', reconnect: true });
+      }
+    }
+    // ── ④ 플래그도 없고 과거 연결 기록도 없다 → 진짜 신규 = 온보딩 ──
     return res.json({ ok: true, loggedIn: true, email, route: 'onboarding', onboarded: false });
   } catch (e) { res.json({ ok: true, loggedIn: false, route: 'login', error: e.message }); }
 });
