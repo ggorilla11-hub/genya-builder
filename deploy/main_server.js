@@ -656,6 +656,10 @@ app.use('/downloads', express.static(path.join(__dirname, 'downloads')));
 //          · 최초 로그인으로부터 30일이 지나면 무조건 재로그인.
 //   [기존 쿠키 구제 — 대표님 승인] 예전 쿠키엔 발급시각이 없다. 없으면 '지금 발급'으로 본다
 //          → 배포해도 ★아무도 로그아웃되지 않는다. 배포 후 첫 접속일이 기산일이 된다.
+// 🔐 허용계정 게이트(등록된 계정만 로그인) — 독립 모듈. 여기서는 ★부르기만 한다.
+//   VIP 지정은 VIP_EMAIL이 정의된 뒤에 allowlist.init(...)으로 넘긴다(아래 참조).
+const allowlist = require('./login_allowlist');
+
 const SESSION_ABS_MS = 30 * 24 * 60 * 60 * 1000;  // 절대 만료 30일
 const SESSION_IDLE_MS = 7 * 24 * 60 * 60 * 1000;  // 유휴 만료 7일(접속할 때마다 리셋)
 const SESSION_SLIDE_MS = 60 * 60 * 1000;          // 쿠키 갱신은 1시간에 한 번만(헤더 낭비 방지)
@@ -685,6 +689,20 @@ app.use(async (req, res, next) => {
       killSession(req, res);
       console.log('[⏱️세션만료] ' + String(p.email || '(이메일없음)') + ' · ' + expired + ' → 쿠키 폐기·재로그인 요구');
       return next();
+    }
+
+    // ── 🔐 허용계정 게이트 (2026-08-03) — ★여기가 진짜 관문이다 ──
+    //   이미 로그인한 적 있는 사람은 콜백을 ★아예 안 거친다. 이 쿠키 하나로 세션이 되살아난다.
+    //   콜백에만 게이트를 달면 기존 로그인자들이 전부 그대로 들어와 게이트가 사실상 무효가 된다.
+    //   → 복원 ★전에 판정하고, 명단에 없으면 되살리지 않고 쿠키까지 폐기한다.
+    //   ※ 명단은 60초 캐시라 매 요청 시트를 읽지 않는다(구글 할당량·속도 보호).
+    if (allowlist.configured()) {
+      const _gate = await allowlist.check(p.email);
+      if (!_gate.allowed) {
+        killSession(req, res);
+        console.warn('[🔐허용게이트] 복원 차단 · ' + String(p.email || '(이메일없음)') + ' · 근거=' + _gate.source);
+        return next(); // 세션 없음 → /api/boot 이 route:'login'. 다시 로그인하면 콜백에서 차단 사유 화면을 본다.
+      }
     }
 
     let sid = sidOf(req);
@@ -3848,6 +3866,8 @@ const PROFILE_TAB = '지니야_프로필';
 //   [원칙] 이메일로 동작을 가르지 않는다. 온보딩 여부는 ★완료 플래그(durable)로만 판정한다.
 //   대표 결정: ggorilla66은 교육생과 100% 동일 취급 · 데모 초기화 수단은 만들지 않는다.
 const VIP_EMAIL = 'ggorilla11@gmail.com';
+// 🔐 허용계정 게이트에 VIP를 알려준다 → 어떤 고장(시트 오류·SA 권한·캐시 없음)에도 대표님은 잠기지 않는다.
+allowlist.init({ vipEmail: VIP_EMAIL });
 async function findOrCreateMemberSheet(ma) {
   const drive = google.drive({ version: 'v3', auth: ma }), sheets = google.sheets({ version: 'v4', auth: ma });
   // ★'me' in owners (2026-08-01): 이 함수는 ★회원 토큰으로 시트를 찾고 없으면 만든다.
@@ -5158,6 +5178,13 @@ app.get('/api/diag/onboard-store', async (req, res) => {
     res.json(out);
   } catch (e) { out.에러 = e.message; out.진단 = '❌ Firestore 왕복 실패 — 온보딩이 반복된다'; res.json(out); }
 });
+// 🩺 허용계정 게이트 자가진단 — 세션 불필요(대표님이 주소만 열면 바로 보인다).
+//   ★개인정보 보호: 이메일 목록은 안 내보내고 ★인원수만. 어떤 SA로 읽었는지·판정근거를 그대로 보여준다.
+//   여기가 "게이트 꺼짐"이면 아무나 로그인되고, "이메일 0개"면 전원 차단이다 — 배포 후 반드시 확인.
+app.get('/api/diag/allowlist', async (req, res) => {
+  try { res.json(await allowlist.diag()); }
+  catch (e) { res.json({ 진단: '❌ 진단 실패', 오류: e.message }); }
+});
 app.get('/api/status', (req, res) => {
   // ★실제 상태를 정직 반영(런타임 확인 가능한 것 위주)
   res.json({
@@ -5275,6 +5302,16 @@ app.get('/auth/google/callback', async (req, res) => {
     //   예전엔 대표님 세션이 남아 있는 브라우저에서 교육생이 로그인하면, 교육생 세션에
     //   대표님 refresh_token·scope가 그대로 들어가 대표님 캘린더·시트가 열렸다(회원 격리 붕괴).
     const _newEmail = String(ui.data.email || '').toLowerCase();
+    // ── 🔐 허용계정 게이트 (2026-08-03) ──
+    //   ★여기가 이메일이 확정되는 첫 지점이다. 세션·쿠키를 만들기 ★전에 막는다.
+    //   차단할 땐 killSession도 함께 부른다 — 세션만 안 만들면 브라우저에 남은 genya_rt로 되살아난다.
+    { const _gate = await allowlist.check(_newEmail);
+      if (!_gate.allowed) {
+        killSession(req, res);
+        console.warn('[🔐허용게이트] 차단 · ' + (_newEmail || '(이메일없음)') + ' · 근거=' + _gate.source);
+        return res.status(403).send(allowlist.blockedHtml(_newEmail, _gate.reason));
+      }
+    }
     const _prevSess = sessionOf(req);
     const _sameUser = !!(_prevSess && String(_prevSess.email || '').toLowerCase() === _newEmail);
     const _old = _sameUser ? _prevSess : null;
@@ -5444,6 +5481,14 @@ app.get('/auth/kakao/callback', async (req, res) => {
     const u = await ur.json();
     const email = (u.kakao_account && u.kakao_account.email) || `kakao_${u.id}`;
     const name = (u.properties && u.properties.nickname) || '카카오 회원';
+    // ── 🔐 허용계정 게이트 — ★카카오도 막는다. 구글만 막으면 이쪽으로 우회된다. ──
+    { const _gate = await allowlist.check(email);
+      if (!_gate.allowed) {
+        killSession(req, res);
+        console.warn('[🔐허용게이트] 차단(카카오) · ' + email + ' · 근거=' + _gate.source);
+        return res.status(403).send(allowlist.blockedHtml(email, _gate.reason));
+      }
+    }
     // 3) 세션 (★구글 토큰 없음 → 데이터 기능은 구글 연결 필요). 토큰만 메모리·회원 격리·저장0
     const s = crypto.randomBytes(16).toString('hex');
     // ★계정 오염 차단(2026-07-27): 다른 사람 세션이 남아 있으면 먼저 정리
