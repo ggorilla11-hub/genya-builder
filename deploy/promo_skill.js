@@ -211,6 +211,7 @@ async function generateAll(campaign, copy, copyNo) {
     service: campaign.service, content: campaign.content, tone: campaign.tone,
     url: U.buildUtm(campaign.landing, kindKey, campaign.campaignKey, copyNo),
     factBlock: block,
+    sourceBlock: P.sourceBlock(campaign.source),   // ★대표님 자료 — 없으면 빈 문자열(기존과 동일)
   });
 
   // 팟캐스트만 순차(앞부분이 필요), 나머지 11종은 동시에
@@ -326,6 +327,7 @@ router.post('/expand12', async (req, res) => {
         tone: String(b.campaign.tone || '도전·성장·긴급. 과장·허위·확정수익 표현 절대 금지.'),
         landing: String(b.campaign.landing),
         facts: String(b.campaign.facts || ''),
+        source: String(b.campaign.source || ''),   // ★대표님 자료(참고 원천) — facts 와 별개 통로
       };
     } else {
       campaign = await SHEET.findCampaign(key);

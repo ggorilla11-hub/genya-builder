@@ -388,8 +388,17 @@
     <!-- 3 -->
     <div class="vrow">
       <div class="lb"><span class="n">3</span>한줄메시지<span class="opt">선택 — 없이 바로 원고로 갈 수도</span></div>
-      <div class="r3"><input class="msg" id="msgInput" value="AI비서 만들기로 당신의 세일즈를 업그레이드하세요"><button class="abbtn" onclick="genAB()">A/B 카피</button><button class="save" id="msgBtn" onclick="msgSaveToggle()">저장 · 확정</button></div>
+      <div class="r3"><input class="msg" id="msgInput" value="AI비서 만들기로 당신의 세일즈를 업그레이드하세요"><button class="abbtn" onclick="genAB()">A/B 카피</button><button class="abbtn" id="srcBtn" onclick="toggleMySource()">＋ 내 자료</button><button class="save" id="msgBtn" onclick="msgSaveToggle()">저장 · 확정</button></div>
       <div class="abwrap" id="abwrap"></div>
+      <!-- ★2번 · 내 자료 — 대표님 기존 글·대본이 원고의 내용·근거·톤이 된다 -->
+      <div class="ownwrap" id="srcWrap">
+        <div class="ownhead">대표님이 쓰신 <b>칼럼·웨비나 대본·예전 원고</b>를 붙여넣으세요.<br>
+          ★한줄메시지가 <b>주제</b>라면, 이 자료는 원고의 <b>내용·근거·톤</b>이 됩니다.<br>
+          영상은 지금은 <b>대본 텍스트</b>로 붙여넣어 주세요(영상 파일 업로드는 다음 단계).</div>
+        <textarea class="ownta show" id="srcTa" style="min-height:120px" oninput="_srcCount()"
+          placeholder="예) 블로그 칼럼 원문 · 웨비나 대본 · 예전에 쓰신 원고를 그대로 붙여넣기"></textarea>
+        <div class="ownmsg" id="srcMsg">비어 있음 — 안 넣으시면 지금처럼 한줄메시지만으로 만듭니다.</div>
+      </div>
     </div>
 
     <div class="arrow-down">↓ 저장하면 원고 → 콘텐츠가 진행률 바로 자동 생성됩니다</div>
@@ -733,6 +742,32 @@ function _stage1Msg(html,color){
   st.innerHTML=html;st.style.color=color||'var(--gold)';
 }
 
+// ═══ ★2번 · 내 자료 (2026-08-03) ══════════════════════════════════════
+//   무엇을·왜: 원고가 일반 AI 수준이 아니라 ★대표님 글이 원천이 되게 한다.
+//              한줄메시지가 "주제"라면, 이 자료는 "내용·근거·톤"이다.
+//   ★서버로는 campaign.source 한 칸에 실어 보낸다(승인받은 백엔드 3줄).
+//     기존 facts(사실자료)·환각차단과는 ★완전히 별개 통로다 — 그쪽은 손대지 않았다.
+//   ★상한 6,000자 — 넘으면 토큰이 폭증해 12종 생성이 통째로 실패한다.
+//     자를 때는 ★자른 사실을 화면에 정직히 알린다(모르게 잘리지 않게).
+const SRC_MAX=6000;
+function toggleMySource(){
+  const w=document.getElementById('srcWrap'), b=document.getElementById('srcBtn');
+  const on=w.classList.toggle('show');
+  b.textContent=on?'− 내 자료 닫기':'＋ 내 자료';
+  if(on)document.getElementById('srcTa').focus();
+}
+function _srcCount(){
+  const n=(document.getElementById('srcTa').value||'').trim().length;
+  const m=document.getElementById('srcMsg');
+  if(!n){ m.style.color='var(--soft)'; m.textContent='비어 있음 — 안 넣으시면 지금처럼 한줄메시지만으로 만듭니다.'; return; }
+  if(n>SRC_MAX){ m.style.color='var(--red)';
+    m.innerHTML='<b>'+n+'자</b> — 너무 길어서 <b>앞 '+SRC_MAX+'자만</b> 보냅니다('+(n-SRC_MAX)+'자는 빠집니다).'; return; }
+  m.style.color='var(--teal)'; m.innerHTML='<b>'+n+'자</b> — 이 자료를 원천으로 12종을 만듭니다.';
+}
+function _mySource(){
+  return (document.getElementById('srcTa').value||'').trim().slice(0,SRC_MAX);
+}
+
 // ═══ ★3번 · 완성 원고 직접 넣기 (2026-08-03) ══════════════════════════
 //   무엇을·왜: 대표님이 이미 쓰신 원고가 있으면 ★새로 만들 이유가 없다.
 //              붙여넣은 그대로 ②콘텐츠로 넘긴다 — 100% 대표님 글 + 지니야 제작 품질.
@@ -832,7 +867,8 @@ async function runStage1Real(){
       headers:{'Content-Type':'application/json; charset=utf-8'},
       credentials:'same-origin',                 // ★로그인 세션이 실려야 엔진이 열린다
       body:JSON.stringify({key:key,copy:copy,copyNo:1,
-        campaign:{service:service,content:content,landing:landing}})
+        // ★source = 대표님 자료(2번). 안 넣으면 빈 문자열이라 서버는 기존과 똑같이 돈다.
+        campaign:{service:service,content:content,landing:landing,source:_mySource()}})
     });
     const j=await r.json().catch(()=>({}));
     clearInterval(gen[1].timer);

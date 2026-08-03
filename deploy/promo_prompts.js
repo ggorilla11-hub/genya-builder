@@ -82,6 +82,33 @@ const HOOKS = [
 ];
 const BERGER = '실용가치 · 감정 · 스토리 · 사회적화폐(아는 척하고 싶어지는 것) · 계기(자꾸 떠오르게 하는 것) · 공개성';
 
+// ── ★대표님 자료(참고 원천) 블록 — 2026-08-03 ────────────────────────
+//   무엇을·왜: 원고가 일반 AI 수준이 아니라 ★대표님 글이 원천이 되게 한다.
+//   ★facts(사실자료)와 ★완전히 별개 통로다. parseFacts·factBlock·환각차단은 손대지 않았다.
+//     facts = "키: 값" 형식만 받는 확인된 사실 목록 → 그대로 쓰라고 지시
+//     source = 대표님이 붙여넣은 ★자유 텍스트(칼럼·대본·원고) → 내용·근거·톤의 재료
+//   ★상한 6,000자 — 토큰이 폭증하면 12종 생성이 통째로 실패한다. 자르고 자른 사실을 화면에 알린다.
+const SOURCE_MAX = 6000;
+function sourceBlock(src) {
+  const s = String(src == null ? '' : src).trim();
+  if (!s) return '';                                   // 없으면 아무것도 안 붙인다(기존과 동일)
+  return [
+    '<대표님자료> ★아래는 회장님이 직접 주신 글이다. 이 글의 내용·근거·톤을 원천으로 삼아라.',
+    '  · 이 글에 있는 사실·표현·관점·말투를 우선해서 쓴다.',
+    '  · ★이 글은 "주제"가 아니라 "재료"다. 주제는 위의 한줄카피다.',
+    '  · ★그대로 베끼지 마라. 만들 종류의 형식에 맞게 다시 쓴다.',
+    '  · 이 글에 없는 사실을 새로 지어내지 마라.',
+    // ★아래 두 줄은 실측에서 나왔다(2026-08-03 A/B).
+    //   쇼츠처럼 글자 수가 빠듯한 종류에서 ①주제가 자료 쪽으로 넘어가고
+    //   ②자료의 서식(별표·머리기호)까지 따라 하는 일이 실제로 일어났다.
+    '  · ★★주제를 자료 쪽으로 갈아타지 마라. 자료에서 빌려 오는 것은 비유·근거·말투뿐이다.',
+    '     한줄카피의 주제어(무엇을 파는지)가 결과물에 ★반드시 남아 있어야 한다.',
+    '  · ★자료의 서식(별표·머리기호·줄바꿈 습관)을 따라 하지 마라. 형식은 위 구성 규칙만 따른다.',
+    s.slice(0, SOURCE_MAX),
+    '</대표님자료>',
+  ].join('\n');
+}
+
 function _common(url) {
   return [
     '공통: ① 과장·허위·확정수익 표현 금지(금융 콘텐츠다) ② 한줄카피에 없는 사실을 지어내지 않는다',
@@ -108,6 +135,7 @@ function systemFor(kind, ctx) {
     `★분량은 위 구성 규칙의 각 항목 글자수를 지켜서 채운다. 전체 합계는 약 ${kind.target}자다. 짧게 끝내지 말 것.`,
   ];
   if (kind.ch) lines.push(`채널 톤: ${kind.ch}`);   // ★품질기준서 §3·§5 — 채널마다 말투가 다르다
+  if (ctx.sourceBlock) lines.push(ctx.sourceBlock); // ★대표님 자료(참고 원천) — facts 와 별개 통로
   if (ctx.factBlock) lines.push(ctx.factBlock);   // ★환각 차단(B-1)
   return lines.concat(_common(ctx.url)).join('\n');
 }
@@ -136,6 +164,7 @@ function systemForPodcastPart(part, ctx, prev) {
   ];
   // ★품질기준서 §3 — 첫 문장이 훅이어야 한다. 도입(Part 1)에만 건다.
   if (part.no === 1) lines.push(`★첫 문장은 훅이다. 아래 셋 중 하나로 시작한다.\n   ${HOOKS.join('\n   ')}\n   "안녕하세요"로 시작하지 마라.`);
+  if (ctx.sourceBlock) lines.push(ctx.sourceBlock); // ★대표님 자료 — 팟캐스트도 같은 원천을 쓴다
   if (ctx.factBlock) lines.push(ctx.factBlock);   // ★환각 차단(B-1)
   lines.push(part.no === 3
     ? `마지막에 CTA를 넣는다. 도착지: ${ctx.url} · "1분 무료 진단" 중심.`
@@ -165,4 +194,5 @@ function inRange(kind, text) {
 module.exports = {
   KINDS, PODCAST, PODCAST_PARTS,
   systemFor, systemForPodcastPart, fixInstruction, inRange,
+  sourceBlock, SOURCE_MAX,           // ★대표님 자료(참고 원천)
 };
