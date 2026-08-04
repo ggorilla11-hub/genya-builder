@@ -436,12 +436,12 @@
         <span class="sep">→</span>
         <select class="combo" id="cb2" onchange="onCb2()"></select>
         <span class="addinput" id="cb2add"><input placeholder="새 항목" onkeydown="if(event.key==='Enter')doCb2Add()"><button onclick="doCb2Add()">추가</button></span>
-        <span class="sep">·</span><span class="diag-label">진단(독립):</span>
-        <select class="combo" id="cb3" onchange="buildUrl()"><option value="없음">없음(진단 안 씀)</option><option>연금</option><option>DESIRE</option><option>수입지출</option><option>자산부채</option><option>세금</option><option>부동산</option><option>보험</option><option>종합</option><option value="추가">＋ 추가</option></select>
+        <span class="sep">→</span><span class="diag-label">진단:</span>
+        <select class="combo" id="cb3" onchange="buildUrl()"><option>표준진단</option><option value="추가">＋ 추가</option></select>
         <span class="addinput" id="cb3add"><input placeholder="새 진단" onkeydown="if(event.key==='Enter')doCb3Add()"><button onclick="doCb3Add()">추가</button></span>
       </div>
       <div class="urlrow">
-        <span class="lbl">자동 URL</span><span class="url" id="autoUrl">https://ohwant.net/bootcamp</span>
+        <span class="lbl">자동 URL</span><span class="url" id="autoUrl">https://ohwant.net</span>
         <button onclick="openAutoUrl()" title="이 주소가 실제로 열리는지 새 탭에서 확인합니다">↗ 이 URL로 직접가기</button>
         <button onclick="lib.classList.add('show')">라이브러리</button>
         <button onclick="urlForm.classList.toggle('show')">URL 추가</button>
@@ -638,11 +638,22 @@
 
   <div class="overlay" id="lib"><div class="modal"><div class="mh"><b>URL 라이브러리 — 제목·URL 자유 입력</b><span class="x" onclick="lib.classList.remove('show')">✕</span></div><div class="mb">
     <div class="lib-grp">강의</div>
-    <div class="lib-item"><span class="nm">부트캠프</span><input value="https://ohwant.net/bootcamp"><button class="lsave" onclick="pickUrl(this)">저장</button></div>
-    <div class="lib-item"><span class="nm">일반인</span><input value="https://ohwant.net/class"><button class="lsave" onclick="pickUrl(this)">저장</button></div>
-    <div class="lib-item"><span class="nm">전문가</span><input value="https://ohwant.net/expert"><button class="lsave" onclick="pickUrl(this)">저장</button></div>
+    <div class="lib-item"><span class="nm">부트캠프(550만)</span><input value="https://genya-bootcamp.netlify.app"><button class="lsave" onclick="pickUrl(this)">저장</button></div>
+    <div class="lib-item"><span class="nm">일반인 · 재테크아카데미(110만)</span><input value="https://ohwant-class.netlify.app/재테크아카데미_진단.html"><button class="lsave" onclick="pickUrl(this)">저장</button></div>
+    <div class="lib-item"><span class="nm">전문가과정(220만)</span><input value="https://ohwant-class.netlify.app/전문가과정_진단.html"><button class="lsave" onclick="pickUrl(this)">저장</button></div>
     <div class="lib-grp">상담</div>
-    <div class="lib-item"><span class="nm">재무상담</span><input value="https://ohwant.net/consult"><button class="lsave" onclick="pickUrl(this)">저장</button></div>
+    <div class="lib-item"><span class="nm">재무상담</span><input value="https://ohwant-class.netlify.app/consult.html"><button class="lsave" onclick="pickUrl(this)">저장</button></div>
+    <div class="lib-grp">진단</div>
+    <div class="lib-item"><span class="nm">연금</span><input value="https://ohwant.net/pension"><button class="lsave" onclick="pickUrl(this)">저장</button></div>
+    <div class="lib-item"><span class="nm">DESIRE(부채)</span><input value="https://ohwant.net/debt"><button class="lsave" onclick="pickUrl(this)">저장</button></div>
+    <div class="lib-item"><span class="nm">수입지출</span><input value="https://ohwant.net/saving"><button class="lsave" onclick="pickUrl(this)">저장</button></div>
+    <div class="lib-item"><span class="nm">자산부채</span><input value="https://ohwant.net/asset"><button class="lsave" onclick="pickUrl(this)">저장</button></div>
+    <div class="lib-item"><span class="nm">세금</span><input value="https://ohwant.net/tax"><button class="lsave" onclick="pickUrl(this)">저장</button></div>
+    <div class="lib-item"><span class="nm">부동산</span><input value="https://ohwant.net/realestate"><button class="lsave" onclick="pickUrl(this)">저장</button></div>
+    <div class="lib-item"><span class="nm">보험</span><input value="https://ohwant.net/insurance"><button class="lsave" onclick="pickUrl(this)">저장</button></div>
+    <div class="lib-item"><span class="nm">종합</span><input value="https://ohwant.net/comprehensive"><button class="lsave" onclick="pickUrl(this)">저장</button></div>
+    <div class="lib-grp">표준 · 기본</div>
+    <div class="lib-item"><span class="nm">홈페이지(별도 랜딩 없을 때)</span><input value="https://ohwant.net"><button class="lsave" onclick="pickUrl(this)">저장</button></div>
   </div></div></div>
 
 <script>
@@ -665,9 +676,10 @@ const API_ON={'인스타':1,'페북':1,'유튜브':1,'쇼츠':1};
 const CB2={'강의':['부트캠프','일반인','전문가'],'상담':['재무상담'],'추가':[]};
 
 // 콤보
-function onCb1(){const v=cb1.value;cb2.innerHTML='';if(v==='추가'){cb2.innerHTML='<option>직접 입력</option>';cb2add.classList.add('show');}else{cb2add.classList.remove('show');(CB2[v]||[]).forEach(x=>cb2.innerHTML+=`<option>${x}</option>`);cb2.innerHTML+='<option value="추가">＋ 추가</option>';}buildUrl();}
-function onCb2(){if(cb2.value==='추가')cb2add.classList.add('show');else{cb2add.classList.remove('show');buildUrl();}}
-function doCb2Add(){const i=cb2add.querySelector('input'),v=i.value.trim();if(!v)return;const o=document.createElement('option');o.textContent=v;o.selected=true;cb2.insertBefore(o,cb2.querySelector('[value="추가"]'));i.value='';cb2add.classList.remove('show');buildUrl();}
+// ★배치5 — 대·중이 바뀌면 3단계 목록도 같이 바뀐다(강의는 표준진단 1개, 상담은 진단 8종까지)
+function onCb1(){const v=cb1.value;cb2.innerHTML='';if(v==='추가'){cb2.innerHTML='<option>직접 입력</option>';cb2add.classList.add('show');}else{cb2add.classList.remove('show');(CB2[v]||[]).forEach(x=>cb2.innerHTML+=`<option>${x}</option>`);cb2.innerHTML+='<option value="추가">＋ 추가</option>';}소갱신();buildUrl();}
+function onCb2(){if(cb2.value==='추가')cb2add.classList.add('show');else{cb2add.classList.remove('show');소갱신();buildUrl();}}
+function doCb2Add(){const i=cb2add.querySelector('input'),v=i.value.trim();if(!v)return;const o=document.createElement('option');o.textContent=v;o.selected=true;cb2.insertBefore(o,cb2.querySelector('[value="추가"]'));i.value='';cb2add.classList.remove('show');소갱신();buildUrl();}
 function doCb3Add(){const i=cb3add.querySelector('input'),v=i.value.trim();if(!v)return;const o=document.createElement('option');o.textContent=v;o.selected=true;cb3.insertBefore(o,cb3.querySelector('[value="추가"]'));i.value='';cb3add.classList.remove('show');buildUrl();}
 // ── ★2026-08-03 · 오늘 날짜 자동 ────────────────────────────────────
 //   왜: 날짜가 2026-08-02 로 박혀 있어 매일 손으로 고쳐야 했다.
@@ -678,34 +690,61 @@ function _오늘(){
 }
 function _오늘압축(){ return _오늘().replace(/-/g,'').slice(2); }   // 260803
 
-// ── ★URL 대>중>소 3단 계층 ──────────────────────────────────────────
-//   대(cb1 강의·상담) → 중(cb2 세부) → 소(cb3 진단 종류)
-//   ★중(강의·상담) 경로는 기존 그대로 둔다 — 바꾸면 살아 있던 링크가 죽는다.
-//
-//   ★2026-08-04 배치4 — 진단은 이제 ★쿼리(?d=)가 아니라 ★실제 경로다.
-//     전에는 진단 페이지의 실주소를 몰라 죽은 링크를 만들지 않으려고 ?d= 로 붙였다.
-//     대표님이 실주소 8개를 확정해 주셔서 경로로 바꾼다.
-//     진단은 ★독립이다 — 진단을 고르면 그 진단의 자기 주소로 간다(중 경로를 안 탄다).
-//       예) 연금 → https://ohwant.net/pension?utm=insta_260804
-//     "없음"을 고르면 예전처럼 대>중 경로(예 /bootcamp)로 간다.
-const 중SLUG={'부트캠프':'bootcamp','일반인':'class','전문가':'expert','재무상담':'consult'};
-const 소SLUG={
-  // ★대표님 확정 실경로 (2026-08-04)
-  '연금':'pension', 'DESIRE':'debt', '수입지출':'saving', '자산부채':'asset',
-  '세금':'tax', '부동산':'realestate', '보험':'insurance', '종합':'comprehensive',
-  // 옛 이름으로 저장돼 있던 것도 같은 실경로로 받아 준다(링크가 안 깨지게)
-  '연금진단':'pension','부채진단':'debt','저축진단':'saving','투자진단':'asset',
-  '세금진단':'tax','부동산진단':'realestate','보험진단':'insurance','표준진단':'comprehensive'
+// ── ★URL 라이브러리 (대>중>소 3단) ─────────────────────────────────
+//   ★2026-08-04 배치5 — 지어낸 주소를 버리고 ★실제로 살아 있는 주소만 쓴다.
+//     전에는 /bootcamp·/class·/expert 처럼 규칙으로 주소를 만들어 냈는데,
+//     그런 페이지가 없어서 전부 ★홈페이지로 떨어졌다(죽은 링크와 같다).
+//     이제 대표님이 확정해 주신 실주소만 표에 적고, 표에 없으면 지어내지 않는다.
+//   대(cb1) → 중(cb2) → 소(cb3 · 기본값 "표준진단")
+//   ★새 랜딩이 생기면 이 표에 한 줄 넣으면 끝이다(다른 코드는 안 건드린다).
+const 홈페이지='https://ohwant.net';
+const URL라이브러리={
+  '강의':{
+    // 강의 3종은 저마다 자기 랜딩이 있다. 세부 진단 랜딩은 아직 없어 "표준진단" 하나뿐.
+    '부트캠프':{'표준진단':'https://genya-bootcamp.netlify.app'},
+    '일반인'  :{'표준진단':'https://ohwant-class.netlify.app/재테크아카데미_진단.html'},
+    '전문가'  :{'표준진단':'https://ohwant-class.netlify.app/전문가과정_진단.html'},
+  },
+  '상담':{
+    '재무상담':{
+      '표준진단':'https://ohwant-class.netlify.app/consult.html',
+      '연금'    :'https://ohwant.net/pension',
+      'DESIRE'  :'https://ohwant.net/debt',
+      '수입지출':'https://ohwant.net/saving',
+      '자산부채':'https://ohwant.net/asset',
+      '세금'    :'https://ohwant.net/tax',
+      '부동산'  :'https://ohwant.net/realestate',
+      '보험'    :'https://ohwant.net/insurance',
+      '종합'    :'https://ohwant.net/comprehensive',
+    },
+  },
 };
+// 옛 이름으로 저장돼 있던 것도 같은 자리로 받아 준다(예전 화면에서 넘어온 값이 죽지 않게)
+const 옛이름={'연금진단':'연금','부채진단':'DESIRE','저축진단':'수입지출','투자진단':'자산부채',
+              '세금진단':'세금','부동산진단':'부동산','보험진단':'보험','종합진단':'종합','없음':'표준진단'};
+
+// 이 조합의 ★실주소. 표에 없으면 ★지어내지 않고 홈페이지로 보낸다.
+function _실주소(대,중,소){
+  const 중표=(URL라이브러리[대]||{})[중];
+  if(!중표) return 홈페이지;
+  const 키=중표[소]?소:(옛이름[소]||'표준진단');
+  return 중표[키]||홈페이지;
+}
+// 이 조합에서 고를 수 있는 3단계 목록(표가 곧 목록이다 — 두 군데서 따로 관리하지 않는다)
+function _소목록(대,중){ return Object.keys((URL라이브러리[대]||{})[중]||{'표준진단':1}); }
+
+// cb1·cb2 가 바뀌면 3단계 목록도 다시 그린다. 기본값은 언제나 "표준진단".
+function 소갱신(){
+  const 이전=cb3.value;
+  const 목록=_소목록(cb1.value,cb2.value);
+  cb3.innerHTML=목록.map(function(n){return '<option>'+n+'</option>';}).join('')+'<option value="추가">＋ 추가</option>';
+  cb3.value=(목록.indexOf(이전)>=0)?이전:'표준진단';   // 있던 선택은 지키고, 없으면 표준진단
+}
 function buildUrl(){
   if(cb3.value==='추가'){cb3add.classList.add('show');return;}
   cb3add.classList.remove('show');
-  const utm='insta_'+_오늘압축();                    // ★날짜도 오늘로(하드코딩 0802 아님)
-  const 고른진단=(cb3.value==='없음')?'':cb3.value;
-  // ★모르는 진단을 지어내지 않는다 — 표에 없으면 그때만 소문자 슬러그로 만든다
-  const 진단경로=고른진단?(소SLUG[고른진단]||고른진단.toLowerCase()):'';
-  const 경로=진단경로||(중SLUG[cb2.value]||(cb2.value||'landing').toLowerCase());
-  autoUrl.textContent='https://ohwant.net/'+경로+'?utm='+utm;
+  const base=_실주소(cb1.value,cb2.value,cb3.value);
+  autoUrl.textContent=base+(base.indexOf('?')>=0?'&':'?')+'utm=insta_'+_오늘압축();
 }
 // ★"이 URL로 직접가기" — 새 탭으로 열어 연결이 살아 있는지 눈으로 확인한다
 function openAutoUrl(){
@@ -713,9 +752,9 @@ function openAutoUrl(){
   if(!/^https?:\/\//.test(u)){alert('아직 열 수 있는 주소가 아닙니다: '+u);return;}
   window.open(u,'_blank','noopener');
 }
-function pickUrl(b){autoUrl.textContent=b.previousElementSibling.value+'?utm=insta_'+_오늘압축();lib.classList.remove('show');}
+function pickUrl(b){const u=b.previousElementSibling.value.trim();autoUrl.textContent=u+(u.indexOf('?')>=0?'&':'?')+'utm=insta_'+_오늘압축();lib.classList.remove('show');}
 // URL 추가 저장 → 자동 URL 변경
-function saveNewUrl(){const u=uaUrl.value.trim();if(!u){alert('URL을 입력하세요');return;}autoUrl.textContent=u+(u.includes('?')?'':'?utm=insta_'+_오늘압축());urlForm.classList.remove('show');uaTitle.value='';uaUrl.value='';}
+function saveNewUrl(){const u=uaUrl.value.trim();if(!u){alert('URL을 입력하세요');return;}autoUrl.textContent=u+(u.indexOf('?')>=0?'&':'?')+'utm=insta_'+_오늘압축();urlForm.classList.remove('show');uaTitle.value='';uaUrl.value='';}
 
 // 한줄메시지 저장↔수정
 let msgSaved=false;
