@@ -837,6 +837,14 @@ function toggleC(el){
           +'원고 '+sh.원고씬+'씬 + 저장·공유 CTA 1장 = <b>'+sh.scenes+'장</b> · <b>'+sh.secs+'초</b>'
           +'(평균 장당 '+sh.per+'초 · 훅은 더 짧고 CTA는 더 길어요) · 1080×1920 · '+(sh.size/1048576).toFixed(1)+'MB</div>'
         +'<div style="font-size:10px;color:var(--teal);margin-top:4px">✓ 품질기준 — 훅 첫 화면 · <b>상단 큰 자막</b> · 단어별 등장 · 움직이는 배경 · <b>내용에 맞는 그림</b> · 20~28초 · 끝에 저장·공유 CTA</div>'
+        // ★2안 — 배경 사진을 썼는지 ★정직히 밝힌다(안 썼으면 안 썼다고 말한다)
+        +'<div style="font-size:10px;margin-top:3px;color:'+(sh.배경장수?'var(--teal)':'var(--soft)')+'">'
+          +(sh.배경장수
+             ? ('🎬 <b>배경 사진 '+sh.배경장수+'장</b>(원고 내용 맞춤·켄번즈) · 약 '+sh.배경비용+'원'
+                +(sh.장면&&sh.장면.length?(' — '+_esc(sh.장면.join(' / '))):''))
+             : ('🎬 배경 사진 <b>없음</b> — 캔버스 배경으로 만들었어요'+(sh.배경사유?('('+_esc(sh.배경사유)+')'):'')))
+          +'</div>'
+        +(sh.cta?('<div style="font-size:10px;color:var(--soft);margin-top:3px">🔗 하단 CTA — <b>'+_esc(sh.cta)+'</b></div>'):'')
         // ★실측을 그대로 보여드린다 — "잘 만들었다"가 아니라 숫자로(끊긴 순간이 많으면 대표님이 바로 아신다)
         +(sh.stat?('<div style="font-size:10px;color:var(--soft);margin-top:3px">실측 — 그린 장수 '+sh.stat.frames
           +' · 끊긴 순간 '+sh.stat.lag+' · 한 장 평균 '+sh.stat.avgMs+'ms'
@@ -1803,7 +1811,7 @@ async function runStage2Real(){
       st.textContent='쇼츠 영상 녹화 중… 이 탭을 그대로 두세요';
       MADE.shorts=await _makeShorts(p=>{
         const v=45+53*p; fill.style.width=v+'%'; pct.textContent=Math.floor(v)+'%';
-      });
+      },m=>{ st.textContent=m; });        // ★2안 — 배경 사진 준비 상황을 그대로 보여 준다
     }catch(e){ 쇼츠오류=e.message; console.log('[쇼츠] 못 만듦 — '+e.message); }
     fill.style.width='100%';pct.textContent='100%';
 
@@ -1892,6 +1900,10 @@ const SH={
   FX_BUDGET:8,                 // ★안전선 — 한 프레임 8ms 넘으면 효과를 끈다
   CTA:'저장하고 오늘 시작하세요',      // ★마지막 씬 = 저장·공유 CTA (기준서 §1 CTA)
   CTA2:'가장 큰 고민은? 댓글로',       // 구체적 댓글 유도(일반 대비 83%↑)
+  // ★2안 — 사진 배경(켄번즈) · 하단 CTA 주소
+  KEN_Z:0.14, KEN_P:0.30,      // 켄번즈 — 줌 14% · 상하 이동(남는 폭의 30%)
+  CTA_Y:1400,                  // 하단 CTA 주소 줄(세이프존 1520 ★위 · 서명 1490과 안 겹치게)
+  IMG_WON:88,                  // 배경 사진 한 장 값(장면 2~3개 = 176~264원)
 };
 // 씬마다 배경 톤이 옮겨간다 — 딥그린 브랜드는 지키되, 카드뉴스의 "한 색 정지"와 갈린다
 const SH_TONE=[
@@ -2143,26 +2155,90 @@ function _shAt(plan,t){
   for(let k=0;k<plan.starts.length;k++) if(t>=plan.starts[k]) i=k;
   return i;
 }
+// ── 2-c-3. ★2안 「지니야 침투」 — 배경을 ★사진으로 ──────────────────
+//   원고를 읽고 만든 배경 사진(plan.bg)이 있으면 도형 배경 대신 그것을 깐다.
+//   ★없으면 지금까지의 캔버스 배경으로 그대로 만든다 — 배경이 없다고 쇼츠가 사라지면 안 된다.
+//
+//   켄번즈 = 사진에서 ★잘라낼 네모를 조금씩 옮겨 그린다(확대·상하 이동).
+//   화면을 덮는 최소 배율에서 시작하므로 어떤 줌·이동에서도 ★여백이 생기지 않는다.
+function _shCover(img,z,py){
+  const iw=img.naturalWidth||img.width, ih=img.naturalHeight||img.height;
+  const s=Math.max(SH.W/iw,SH.H/ih)*z;
+  const sw=Math.min(iw,SH.W/s), sh=Math.min(ih,SH.H/s);
+  const sx=(iw-sw)/2;
+  const sy=(ih-sh)/2 + py*(ih-sh)/2;          // py = -1~1 (남는 세로 폭 안에서만 움직인다)
+  return [sx,Math.max(0,Math.min(ih-sh,sy)),sw,sh];
+}
+function _shDrawPhoto(ctx,bg,q,al){
+  q=Math.max(0,Math.min(1,q));
+  const z=bg.dir>0?(1+SH.KEN_Z*q):(1+SH.KEN_Z*(1-q));      // 천천히 들어가거나 나온다
+  const py=bg.dir>0?(-SH.KEN_P+2*SH.KEN_P*q):(SH.KEN_P-2*SH.KEN_P*q);
+  const r=_shCover(bg.img,z,py);
+  ctx.globalAlpha=al;
+  ctx.drawImage(bg.img,r[0],r[1],r[2],r[3],0,0,SH.W,SH.H);
+  ctx.globalAlpha=1;
+}
+// 사진 위에 어둡게 깔아 준다 — 위(자막)와 아래(CTA)는 진하게, 가운데(주인공)는 옅게
+function _shVeil(ctx){
+  const g=ctx.createLinearGradient(0,0,0,SH.H);
+  g.addColorStop(0.00,'rgba(4,20,17,0.72)');
+  g.addColorStop(0.28,'rgba(4,20,17,0.52)');
+  g.addColorStop(0.55,'rgba(4,20,17,0.18)');
+  g.addColorStop(0.78,'rgba(4,20,17,0.55)');
+  g.addColorStop(1.00,'rgba(4,20,17,0.78)');
+  ctx.fillStyle=g; ctx.fillRect(0,0,SH.W,SH.H);
+}
+// 이 씬(0부터)을 덮는 배경 — 없으면 null
+function _shBgOf(plan,i){
+  if(!plan.bg||!plan.bg.length)return null;
+  const n=i+1;                                              // covers 는 1부터
+  for(const b of plan.bg) if(b.covers.indexOf(n)>=0)return b;
+  return plan.bg[plan.bg.length-1];                         // CTA 씬 등 → 마지막 배경
+}
+// 하단 CTA 줄 — ★배치5 URL 라이브러리가 만든 실주소를 그대로 박는다
+function _shCta(ctx,url){
+  if(!url)return;
+  const W=SH.W,y=SH.CTA_Y;
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.font='800 44px '+_shFONT;
+  const w=Math.min(W-100,ctx.measureText(url).width+80);
+  ctx.fillStyle='rgba(242,178,62,0.94)';
+  _shRound(ctx,W/2-w/2,y-40,w,80,40); ctx.fill();
+  ctx.fillStyle='#06231D'; ctx.fillText(url,W/2,y+2);
+}
+
 function _shFrame(ctx,plan,t,fx){
   const W=SH.W,H=SH.H;
   const i=_shAt(plan,t), tin=t-plan.starts[i], per=plan.secs[i];
+  const bg=_shBgOf(plan,i), prevBg=i>0?_shBgOf(plan,i-1):null;
 
-  // 배경 — ★아주 느린 줌은 배경에만 준다(글자는 늘 선명하게)
-  ctx.save();
-  const z=1+0.055*(t/plan.total);
-  ctx.translate(W/2,H/2); ctx.scale(z,z); ctx.translate(-W/2,-H/2);
-  _shBg(ctx,t,i,tin/per,fx);
-  ctx.restore();
-
-  // ★내용에 어울리는 그림 — 자막 아래 빈 자리를 그 씬의 뜻으로 채운다
-  const mo=_shMotif(plan.list[i]);
-  if(mo==='warn'){ ctx.fillStyle='rgba(150,52,20,0.17)'; ctx.fillRect(0,0,W,H); }  // 경고는 배경도 살짝 붉게
-  if(i>0 && tin<SH.TRANS){
-    const e2=1-Math.pow(1-tin/SH.TRANS,3);
-    _shArt(ctx,_shMotif(plan.list[i-1]),plan.secs[i-1],plan.secs[i-1],fx,1-e2);   // 앞 씬 그림은 사라지고
-    _shArt(ctx,mo,tin,per,fx,e2);                                                 // 새 그림이 들어온다
+  if(bg){
+    // ★사진 배경 — 켄번즈. 배경이 바뀌는 순간에만 크로스페이드로 겹친다.
+    const q=(t-bg.t0)/Math.max(0.001,bg.t1-bg.t0);
+    if(prevBg&&prevBg!==bg&&tin<SH.TRANS){
+      const e=1-Math.pow(1-tin/SH.TRANS,3);
+      _shDrawPhoto(ctx,prevBg,1,1);                          // 앞 사진은 끝자락에서
+      _shDrawPhoto(ctx,bg,q,e);                              // 새 사진이 겹쳐 들어온다
+    }else{
+      _shDrawPhoto(ctx,bg,q,1);
+    }
+    _shVeil(ctx);
   }else{
-    _shArt(ctx,mo,tin,per,fx,1);
+    // ★폴백 — 사진이 없으면 지금까지의 캔버스 배경·도형 그림으로 그대로 만든다
+    ctx.save();
+    const z=1+0.055*(t/plan.total);
+    ctx.translate(W/2,H/2); ctx.scale(z,z); ctx.translate(-W/2,-H/2);
+    _shBg(ctx,t,i,tin/per,fx);
+    ctx.restore();
+    const mo=_shMotif(plan.list[i]);
+    if(mo==='warn'){ ctx.fillStyle='rgba(150,52,20,0.17)'; ctx.fillRect(0,0,W,H); }
+    if(i>0 && tin<SH.TRANS){
+      const e2=1-Math.pow(1-tin/SH.TRANS,3);
+      _shArt(ctx,_shMotif(plan.list[i-1]),plan.secs[i-1],plan.secs[i-1],fx,1-e2);
+      _shArt(ctx,mo,tin,per,fx,e2);
+    }else{
+      _shArt(ctx,mo,tin,per,fx,1);
+    }
   }
 
   // 상단 진행 타임바 — 카드뉴스엔 없는 ★영상 문법(씬 점을 대신한다)
@@ -2179,7 +2255,8 @@ function _shFrame(ctx,plan,t,fx){
     _shText(ctx,plan.list[i],tin,0,1);
   }
 
-  // 서명 — 하단 세이프존 ★위(400px 아래는 플랫폼 UI 자리라 비운다)
+  // 하단 CTA(배치5 실주소) + 서명 — 둘 다 하단 세이프존 ★위에 둔다
+  _shCta(ctx,plan.cta);
   ctx.textAlign='center'; ctx.textBaseline='middle';
   ctx.font='700 38px '+_shFONT; ctx.fillStyle='rgba(242,178,62,0.9)';
   ctx.fillText('오원트금융연구소',W/2,H-SH.BOT-30);
@@ -2298,18 +2375,89 @@ async function _shRecord(plan,onPct){
   return fixed?new Blob([fixed],{type:'video/webm'}):blob;                        // 못 쓰면 원본 그대로
 }
 
+// ── 3-b. ★2안 배경 사진 준비 (지니야 침투) ──────────────────────────
+//   ①원고 자막 → /api/media/shorts/scenes (장면 2~3개 + 영어 프롬프트)
+//   ②그 프롬프트 → /api/media/image (기존 모듈 그대로 · gpt-image-1)
+//   ③base64 → 이미지 객체
+//   ★어느 단계에서 막히든 ★빈 배열을 돌려준다 — 그러면 쇼츠는 캔버스 배경으로 나온다.
+//     비용은 ★서버가 판정한다(대표님만). 화면은 "물어볼지 말지"만 정한다.
+function _shImg(b64){
+  return new Promise(function(res,rej){
+    const im=new Image();
+    im.onload=function(){ res(im); };
+    im.onerror=function(){ rej(new Error('사진을 못 읽었어요')); };
+    im.src='data:image/png;base64,'+b64;
+  });
+}
+async function _shBackgrounds(subs,say){
+  try{
+    // 이 계정이 쓸 수 있나 — ★공짜 조회. 못 쓰면 돈 드는 호출을 아예 안 한다(6-12 ⑦).
+    const d=await fetch('/api/media/shorts/scenes/diag',{credentials:'same-origin'}).then(r=>r.json()).catch(()=>null);
+    if(!d||d.사용가능!==true)return {list:[],사유:'대표님 계정에서만 배경 사진을 만듭니다'};
+    if(!confirm('쇼츠 배경을 ★사진으로 만들까요?\n\n· 원고 내용에 맞는 배경 2~3장을 만듭니다\n· 비용 약 '
+      +(SH.IMG_WON*2)+'~'+(SH.IMG_WON*3)+'원 (대표님 계정에서 나갑니다)\n· 1~2분쯤 걸려요\n\n[취소]를 누르면 지금까지의 배경으로 만듭니다.'))
+      return {list:[],사유:'대표님이 취소하셨어요(배경 없이 만듦)'};
+
+    if(say)say('쇼츠 장면 나누는 중…');
+    const 카피=(document.getElementById('msgInput')||{}).value||'';
+    const r1=await fetch('/api/media/shorts/scenes',{method:'POST',credentials:'same-origin',
+      headers:{'Content-Type':'application/json'},body:JSON.stringify({자막들:subs,한줄카피:카피})});
+    const j1=await r1.json();
+    if(!r1.ok||!j1.ok||!j1.scenes||!j1.scenes.length)return {list:[],사유:(j1&&j1.error)||'장면을 못 나눴어요'};
+
+    if(say)say('배경 사진 '+j1.scenes.length+'장 만드는 중… 1~2분');
+    const r2=await fetch('/api/media/image',{method:'POST',credentials:'same-origin',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({prompts:j1.scenes.map(s=>s.prompt),max:j1.scenes.length})});
+    const j2=await r2.json();
+    if(!r2.ok||!j2.ok||!j2.images||!j2.images.length)return {list:[],사유:(j2&&j2.error)||'배경 사진을 못 만들었어요'};
+
+    // ★만들어진 장만 쓴다. 3장 요청 중 2장만 됐으면 2장으로 간다(있는 척 금지).
+    const out=[];
+    for(const im of j2.images){
+      const 장면=j1.scenes[im.index]; if(!장면)continue;
+      try{ out.push({img:await _shImg(im.base64), covers:장면.covers, label:장면.label,
+                     prompt:장면.prompt, dir:(out.length%2===0)?1:-1}); }catch(e){}
+    }
+    return {list:out, 비용원:j2.비용원||0,
+            사유:out.length?'':'사진을 읽지 못했어요', 장면:j1.scenes.map(s=>s.label)};
+  }catch(e){ return {list:[],사유:e.message}; }
+}
+// 배경마다 "언제부터 언제까지 보이는지"를 적어 둔다 — 켄번즈가 그 구간에 맞춰 움직인다
+function _shBgTimes(plan){
+  (plan.bg||[]).forEach(function(b){
+    const idx=b.covers.map(function(n){ return n-1; }).filter(function(i){ return i>=0&&i<plan.starts.length; });
+    const first=idx.length?Math.min.apply(null,idx):0;
+    let last=idx.length?Math.max.apply(null,idx):0;
+    if(b===plan.bg[plan.bg.length-1])last=plan.starts.length-1;      // 마지막 배경이 CTA 씬까지 덮는다
+    b.t0=plan.starts[first];
+    b.t1=plan.starts[last]+plan.secs[last];
+  });
+}
+
 // ── 4. ②콘텐츠에서 부르는 입구 ───────────────────────────────────────
-async function _makeShorts(onPct){
+async function _makeShorts(onPct,say){
   const won=WON['쇼츠원고']||'';
   const scenes=_shScenes(won);
   if(!scenes.length)throw new Error('쇼츠 원고에서 [자막] 줄을 못 찾았어요 (원고 형식이 달라요)');
   const plan=_shPlan(scenes);
+
+  // ★하단 CTA = 배치5 URL 라이브러리가 만든 실주소(꼬리표는 떼고 보기 좋게)
+  const u=((document.getElementById('autoUrl')||{}).textContent||'').trim();
+  plan.cta=u?u.split('?')[0].replace(/^https?:\/\//,'').replace(/\/$/,''):'';
+
+  // ★배경 사진(2안) — 없으면 빈 배열. 그래도 쇼츠는 나온다.
+  const bg=await _shBackgrounds(scenes,say);
+  plan.bg=bg.list; _shBgTimes(plan);
+
   const blob=await _shRecord(plan,onPct);
   const r1=function(v){ return Math.round(v*10)/10; };
   return { blob, url:URL.createObjectURL(blob),
            scenes:plan.list.length, 원고씬:scenes.length,     // CTA 한 장을 더해 상영한다
            secs:r1(plan.total), per:r1(plan.per),
            stat:window._SH_STAT||null,                        // ★실측(그린 장수·끊김·효과단계)
+           배경장수:plan.bg.length, 배경사유:bg.사유||'', 배경비용:bg.비용원||0,
+           장면:bg.장면||[], cta:plan.cta,
            size:blob.size, list:plan.list.map(function(s){ return s.text; }) };
 }
 function dlShorts(){
