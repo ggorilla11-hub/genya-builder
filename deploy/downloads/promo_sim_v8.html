@@ -441,7 +441,7 @@
         <span class="addinput" id="cb3add"><input placeholder="새 진단" onkeydown="if(event.key==='Enter')doCb3Add()"><button onclick="doCb3Add()">추가</button></span>
       </div>
       <div class="urlrow">
-        <span class="lbl">자동 URL</span><span class="url" id="autoUrl">https://ohwant.net/bootcamp?utm=insta_0802</span>
+        <span class="lbl">자동 URL</span><span class="url" id="autoUrl">https://ohwant.net/bootcamp</span>
         <button onclick="openAutoUrl()" title="이 주소가 실제로 열리는지 새 탭에서 확인합니다">↗ 이 URL로 직접가기</button>
         <button onclick="lib.classList.add('show')">라이브러리</button>
         <button onclick="urlForm.classList.toggle('show')">URL 추가</button>
@@ -1739,7 +1739,7 @@ function addDeploy(ch,subs,content,when){
   const scoreReasons=['후킹 문구가 명확함','CTA가 뚜렷함','썸네일 대비 좋음','도입 3초가 약함 — 보완 권장','해시태그 최적화 필요','길이가 적정함'];
   const reason=score>=85?scoreReasons[0]:(score>=78?scoreReasons[2]:scoreReasons[3]);
   const dr=document.createElement('tr');dr.className='dashrow';dr.id='dash-'+id;
-  dr.innerHTML=`<td colspan="13"><div class="dashgrid"><div class="dcard"><div class="dl">노출</div><div class="dv">${imp.toLocaleString()}</div></div><div class="dcard"><div class="dl">유입</div><div class="dv">${vis}</div></div><div class="dcard"><div class="dl">신청</div><div class="dv">${app}</div></div><div class="dcard"><div class="dl">결제</div><div class="dv">${pay}</div></div><div class="dcard"><div class="dl">유입율</div><div class="dv">${vr}%</div></div><div class="dcard"><div class="dl">전환율</div><div class="dv">${cr}%</div></div><div class="dcard"><div class="dl">콘텐츠점수</div><div class="dv score">${score}점</div></div></div><div class="score-reason">💡 점수 근거: ${reason} · UTM: ${autoUrl.textContent.split('utm=')[1]||'insta_0802'} 유입 집계</div></td>`;
+  dr.innerHTML=`<td colspan="13"><div class="dashgrid"><div class="dcard"><div class="dl">노출</div><div class="dv">${imp.toLocaleString()}</div></div><div class="dcard"><div class="dl">유입</div><div class="dv">${vis}</div></div><div class="dcard"><div class="dl">신청</div><div class="dv">${app}</div></div><div class="dcard"><div class="dl">결제</div><div class="dv">${pay}</div></div><div class="dcard"><div class="dl">유입율</div><div class="dv">${vr}%</div></div><div class="dcard"><div class="dl">전환율</div><div class="dv">${cr}%</div></div><div class="dcard"><div class="dl">콘텐츠점수</div><div class="dv score">${score}점</div></div></div><div class="score-reason">💡 점수 근거: ${reason} · UTM: ${autoUrl.textContent.split('utm=')[1]||('insta_'+_오늘압축())} 유입 집계</div></td>`;
   deployBody.appendChild(dr);
   deploy.scrollIntoView({behavior:'smooth',block:'nearest'});
 }
@@ -1848,6 +1848,8 @@ function askGenya(){
 // ★날짜·발행번호를 오늘로 세팅한 뒤 URL 을 만든다(하드코딩 대신)
 dateInput.value=_오늘();
 document.getElementById('pubNo').textContent='발행 번호 #'+_오늘().replace(/-/g,'').slice(0,4)+'-'+_오늘().replace(/-/g,'').slice(4)+'-001';
+// ★로드 시 자동 URL 의 utm 도 오늘로 — 옛 날짜가 박혀 들어와도 여기서 오늘로 덮는다
+autoUrl.textContent=autoUrl.textContent.replace(/utm=insta_\d+/,'utm=insta_'+_오늘압축());
 onCb1();buildUrl();renderChannels();drawRadar('landing',null);
 </script>
   <div class="overlay" id="apiConnModal"><div class="modal"><div class="mh"><b>API 연결 — <span id="apiTargetName" style="color:var(--teal)"></span></b><span class="x" onclick="apiConnModal.classList.remove('show')">✕</span></div><div class="mb">    <div style="font-size:12px;color:var(--soft);line-height:1.7;margin-bottom:14px">이 채널로 자동 발행하려면 계정 연결이 필요해요. 아래 방법 중 하나로 연결하세요.</div>
