@@ -1180,17 +1180,18 @@ function _cardLines(text){              // 카드뉴스 원고를 장별로 자�
 let MADE={};                            // 만들어진 콘텐츠(카드 PNG 등)
 
 // ═══════════════════════════════════════════════════════════════════
-// 🎨🎙️ 배치3-B — 이미지·오디오를 ★진짜 파일로 (서버 /api/media/*)
+// 🖼️🎙️ 이미지 칸 · 오디오 칸 — ★진짜 파일로
 //
-//   왜: 이미지는 "그림 지시문까지", 오디오는 "아직 못 만들어요(다음 단계)"였다.
-//       그 두 칸을 ★진짜로 채운다. 원고는 이미 나와 있으니 파일만 만들면 된다.
+//   ★2026-08-04 이미지 칸이 바뀌었다: AI 사진(gpt-image-1) → ★캔버스 포스터.
+//     한글이 깨지고 장당 60원씩 나가던 것을 버리고, 브라우저에서 직접 그린다(비용 0).
+//     이 화면은 이제 /api/media/image 를 ★부르지 않는다. 서버 코드는 그대로 두었다(안 부를 뿐).
+//     → 아래 "🖼️ 홍보 포스터" 블록 참고.
 //
-//   ★②콘텐츠생성에 끼워 넣지 않는다 — 누를 때마다 ★돈이 나가기 때문이다.
-//     각 칸의 [생성] 버튼을 눌렀을 때만, 비용을 먼저 알려 드리고 만든다.
-//   ★서버가 만들고 base64로 준다. 서버 디스크에는 아무것도 안 남는다(원칙4).
-//   ★대표님 계정에서만 열린다(서버가 판정) — 교육생 화면에선 정직히 "대표님만"이라고 말한다.
+//   오디오는 그대로다 — 서버가 만들고 base64로 준다(원칙4 · 서버 디스크에 안 남는다).
+//   ★②콘텐츠생성에 끼워 넣지 않는다 — 누를 때마다 ★돈이 나가기 때문이다(오디오).
+//   ★오디오는 대표님 계정에서만 열린다(서버가 판정). 포스터는 비용이 0이라 누구나 된다.
 // ═══════════════════════════════════════════════════════════════════
-const IMG_WON = 60, AUD_WON_PER_MAN = 21;   // 이미지 장당 원 · 음성 만 자당 원(대략)
+const AUD_WON_PER_MAN = 21;                 // 음성 만 자당 원(대략) · 포스터는 비용 0이라 단가가 없다
 
 function _mediaBusy(kind, on, msg){
   const b=document.getElementById(kind==='img'?'genImgBtn':'genAudBtn');
@@ -1206,65 +1207,331 @@ function _repaint(kind){
   if(d) d.innerHTML=(kind==='img'?_imgPv():_audPv());
 }
 
-// ── 🎨 이미지 ─────────────────────────────────────────────────────
-async function genImages(){
-  const 원고=WON['이미지원고']||'';
-  if(!원고){ alert('먼저 ① 원고를 만들어 주세요.'); return; }
-  const n=Math.min(3,(원고.match(/[A-Za-z]{40,}/g)||[1]).length||1);
-  if(!confirm('그림을 만들까요?\n\n· 최대 3장 · 한 장씩 순서대로 만들어요(1분쯤)\n· 비용 약 '+(IMG_WON*3)+'원 (대표님 계정에서 나갑니다)')) return;
-  _mediaBusy('img',true,'그리는 중… 1분쯤');
-  try{
-    const r=await fetch('/api/media/image',{method:'POST',credentials:'same-origin',
-      headers:{'Content-Type':'application/json'},body:JSON.stringify({text:원고})});
-    const j=await r.json();
-    if(!j||j.ok!==true){
-      // ★실패를 성공처럼 넘기지 않는다. 왜 안 됐는지 그대로 말한다.
-      _mediaBusy('img',false);
-      _mediaErr('img', (j&&j.error)||'이미지를 만들지 못했어요');
-      if(j&&j.code==='NO_PROMPT') _mediaErr('img','원고에서 영어 프롬프트를 찾지 못했어요 — 원고를 확인해 주세요.');
-      if(j&&j.code==='NOT_REP')   _mediaErr('img','이미지 만들기는 아직 대표님 계정에서만 됩니다.');
-      return;
-    }
-    MADE.images=(j.images||[]).map((im,i)=>{
-      const u8=Uint8Array.from(atob(im.base64),c=>c.charCodeAt(0));
-      return {name:'이미지_'+(i+1)+'.png',data:u8,prompt:im.prompt,
-        url:URL.createObjectURL(new Blob([u8],{type:'image/png'}))};
-    });
-    MADE.imageCost=j.비용원||0; MADE.imageNote=j.안내||'';
-    _mediaBusy('img',false); _repaint('img');
-  }catch(e){ _mediaBusy('img',false); _mediaErr('img','만들지 못했어요 — '+e.message); }
+// ═══════════════════════════════════════════════════════════════════
+// 🖼️ 홍보 포스터 — ★캔버스로 직접 그린다 (2026-08-04 · 대표님 승인)
+//
+//   왜 AI 사진(gpt-image-1)을 버렸나:
+//     ① 한글이 깨진다 — 포스터는 글자가 전부인데 AI 그림은 한글을 못 쓴다.
+//     ② 돈이 나간다(장당 60원) — 고칠 때마다 또 나간다.
+//     ③ 같은 걸 두 번 못 만든다 — 브랜드 포스터는 매번 같아야 한다.
+//   → 카드뉴스(genya.html:_whCardBytes)가 이미 캔버스로 PNG를 만들고 있다. 그 기술을 넓힌다.
+//
+//   ★카드뉴스처럼 SVG 문자열로는 못 만든다: 글자 폭을 못 재서 줄바꿈·자동축소가 안 된다.
+//     그래서 캔버스에 ★직접 그린다. 폭 재기(_shWrap)·둥근 사각(_shRound)은
+//     쇼츠에서 이미 검증된 것을 ★그대로 부른다(복사하지 않는다 · 쇼츠 코드는 한 글자도 안 건드린다).
+//
+//   ★비용 0 — 서버도 생성모델도 안 쓴다. 전부 브라우저에서 그린다.
+//   ★흐름 배치 — 좌표를 박지 않는다. 블록마다 높이를 재고 남는 공간을 나눈다.
+//     그래서 문구가 길어지거나 블록이 빠져도 무너지지 않는다.
+//   ★못 뽑은 칸은 억지로 안 채운다 — 그 블록을 빼고 나머지를 다시 배치한다(6-9).
+// ═══════════════════════════════════════════════════════════════════
+const PO={
+  W:1080, H:1440, SAFE:48,                       // 3:4 세로 · 안전여백 48
+  navy:'#0B2340', navy2:'#16345C', gold:'#F2B23E', ivory:'#F5F1E6',
+  dim:'rgba(245,241,230,0.74)',
+  // ★Pretendard가 없는 PC에서는 맑은 고딕으로 떨어진다(대표님 승인). 웹폰트는 안 싣는다(수 MB).
+  FONT:'"Pretendard","Malgun Gothic","AppleSDGothicNeo","Noto Sans KR",sans-serif',
+};
+// ★고정 — 원고와 상관없이 늘 같은 값(코드 상수). 화면에서 고치실 수 있다.
+const PO_FIXED={
+  process:['발굴','홍보','상담','관리','보상','채용'],
+  credit:'오상열 · CFP 25년 · 오원트금융연구소 대표',
+  note:'내 업무에 맞춰 함께 만듭니다',
+  brand:'오원트금융연구소',
+};
+// ★compliance — 결과 약속·환불 보증은 포스터에 못 들어간다.
+//   ★조용히 지우지 않는다. 걸리면 ★렌더를 멈추고 "못 씁니다"라고 보여드린다.
+//     (몰래 지우면 대표님은 그 문구가 빠진 줄 모르신다. 그게 더 위험하다.)
+//   ★"보장"을 통째로 막지 않는다 — 보험에서 정상적으로 쓰는 말이다("먼저 보장, 다음이 저축").
+//     결과·수익·환불에 붙은 보장만 잡는다.
+const PO_BAN=[
+  {re:/100\s*%|백\s*퍼센트/,                            why:'100% 같은 단정'},
+  {re:/(수익|원금|성과|결과|효과|합격|취업|매출)[^가-힣]{0,4}(보장|보증)/, why:'결과를 보장하는 표현'},
+  {re:/환불[^가-힣]{0,5}(보장|보증|약속|해\s*드)/,        why:'환불 보증'},
+  {re:/(무조건|반드시|틀림없)[^가-힣]{0,8}(됩니다|성공|수익|법니다|벌|해결)/, why:'무조건 된다는 약속'},
+  {re:/(완성|완벽)[^가-힣]{0,4}(보장|약속|해\s*드립)/,     why:'완성을 약속하는 표현'},
+];
+function _poCheck(D){
+  const 칸={eyebrow:'윗줄', headline:'큰 제목', subhead:'설명', cta:'행동 문구',
+            credit:'강사 소개', note:'맞춤 안내'};
+  const 걸림=[];
+  Object.keys(칸).forEach(k=>{
+    const t=String(D[k]||'');
+    PO_BAN.forEach(b=>{ const m=t.match(b.re); if(m)걸림.push({칸:칸[k], 말:m[0], why:b.why}); });
+  });
+  (D.features||[]).forEach((f,i)=>{
+    PO_BAN.forEach(b=>{ const m=String(f||'').match(b.re); if(m)걸림.push({칸:'특징 '+(i+1), 말:m[0], why:b.why}); });
+  });
+  return 걸림;
 }
-function dlImages(){
-  const h=_host(); if(!MADE.images||!MADE.images.length){alert('먼저 이미지를 만들어 주세요.');return;}
-  if(h&&typeof h._whZip==='function'&&MADE.images.length>1){
-    h._whDownloadBlob(h._whZip(MADE.images.map(m=>({name:m.name,data:m.data}))),'이미지_'+Date.now()+'.zip'); return;
+
+// ── 글자 맞추기 — 칸에 들어갈 때까지 줄인다(줄바꿈은 쇼츠의 _shWrap 재사용) ──
+function _poFit(ctx,txt,weight,start,min,maxW,maxLines){
+  for(let fs=start; fs>=min; fs-=4){
+    ctx.font=weight+' '+fs+'px '+PO.FONT;
+    const lines=_shWrap(ctx,txt,maxW);
+    if(lines.length<=maxLines)return {lines,fs,lh:Math.round(fs*1.3)};
   }
-  MADE.images.forEach(m=>{ const a=document.createElement('a'); a.href=m.url; a.download=m.name;
-    document.body.appendChild(a); a.click(); a.remove(); });
+  ctx.font=weight+' '+min+'px '+PO.FONT;
+  const lines=_shWrap(ctx,txt,maxW);       // ★안 맞아도 자르지 않는다 — 배치가 흡수한다
+  return {lines,fs:min,lh:Math.round(min*1.3)};
+}
+// ── 아이콘 — 캔버스 패스로 그린다(이모지는 PC마다 달라 보이고 색이 튄다) ──
+//   ★복합 라인 일러스트(손+캘린더+전구)는 캔버스로는 조잡해져서 넣지 않는다(대표님 승인).
+function _poIcon(ctx,kind,cx,cy,r){
+  ctx.save();
+  ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2);
+  ctx.fillStyle='rgba(242,178,62,0.13)'; ctx.fill();
+  ctx.strokeStyle=PO.gold; ctx.lineWidth=Math.max(3,r*0.075); ctx.lineCap='round'; ctx.lineJoin='round';
+  const s=r*0.5;
+  if(kind==='person'){
+    ctx.beginPath(); ctx.arc(cx,cy-s*0.42,s*0.44,0,Math.PI*2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(cx,cy+s*0.92,s*0.86,Math.PI*1.15,Math.PI*1.85); ctx.stroke();
+  }else if(kind==='phone'){
+    ctx.beginPath(); _shRound(ctx,cx-s*0.52,cy-s*0.92,s*1.04,s*1.84,s*0.22); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx-s*0.22,cy-s*0.66); ctx.lineTo(cx+s*0.22,cy-s*0.66); ctx.stroke();
+    ctx.beginPath(); ctx.arc(cx,cy+s*0.6,s*0.11,0,Math.PI*2); ctx.stroke();
+  }else{                                       // gift
+    ctx.beginPath(); _shRound(ctx,cx-s*0.9,cy-s*0.35,s*1.8,s*1.25,s*0.14); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx,cy-s*0.35); ctx.lineTo(cx,cy+s*0.9); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx-s*0.9,cy+s*0.15); ctx.lineTo(cx+s*0.9,cy+s*0.15); ctx.stroke();
+    ctx.beginPath(); ctx.arc(cx-s*0.3,cy-s*0.62,s*0.3,0,Math.PI*2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(cx+s*0.3,cy-s*0.62,s*0.3,0,Math.PI*2); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// ── 원고에서 값 뽑기 ────────────────────────────────────────────────
+//   ★엔진 프롬프트는 안 건드린다(danger zone). 이미 나온 원고를 조립할 뿐이다.
+//   ★못 뽑으면 빈 값으로 둔다 — 억지로 채우지 않는다. 빈 블록은 배치에서 빠진다.
+function _poPick(){
+  const copy=(typeof GEN12!=='undefined'&&GEN12&&GEN12.copy)?String(GEN12.copy).trim():'';
+  const 단문=String(WON['단문']||'').trim();
+  const 인포=String(WON['인포그래픽']||'').trim();
+  const 문장=(단문||'').split(/[.!?…]\s+|\n+/).map(s=>s.trim()).filter(s=>s.length>3);
+
+  const headline=(copy||문장[0]||'').replace(/^["'“”]+|["'“”]+$/g,'').slice(0,40);
+  const subhead=(문장.find(s=>s!==headline)||'').slice(0,60);
+
+  // 특징 3개 — 인포그래픽의 짧은 줄에서. 없으면 단문 문장 앞머리에서.
+  let feats=인포.split(/\n+/).map(l=>l.replace(/^[\s\-•·▪◦*\d.)\]]+/,'').trim())
+                 .filter(l=>l.length>=3&&l.length<=18).slice(0,3);
+  if(feats.length<3) feats=feats.concat(문장.slice(1,4).map(s=>s.slice(0,14))).slice(0,3);
+
+  // 일정 — 화면의 날짜 칸을 읽는다(없으면 빈 값)
+  let when='';
+  const di=document.getElementById('dateInput');
+  if(di&&di.value){ const p=String(di.value).split('-'); if(p.length===3) when=p[1]*1+'월 '+p[2]*1+'일 시작'; }
+
+  // 주소 — 배치5가 정한 실주소를 ★읽기만 한다(고치지 않는다)
+  let url='';
+  const au=document.getElementById('autoUrl');
+  if(au) url=String(au.textContent||'').trim();
+
+  return {eyebrow:when, headline, subhead, features:feats.filter(Boolean),
+          cta:'지금 신청하기', url,
+          credit:PO_FIXED.credit, note:PO_FIXED.note};
+}
+
+// ── 블록 만들기 — 각 블록은 {h, draw}. 값이 없으면 ★블록 자체가 안 생긴다 ──
+function _poBlocks(ctx,D,CW,작게){
+  const B=[], X=PO.W/2;
+  const 선=(c,y,w)=>{ c.strokeStyle='rgba(242,178,62,0.8)'; c.lineWidth=3;
+    c.beginPath(); c.moveTo(X-w/2,y); c.lineTo(X+w/2,y); c.stroke(); };
+
+  if(D.eyebrow){                                       // ① 윗줄 — 골드 라인 양옆
+    ctx.font='700 32px '+PO.FONT;
+    const w=ctx.measureText(D.eyebrow).width;
+    B.push({h:38, draw:(c,y)=>{
+      c.font='700 32px '+PO.FONT; c.fillStyle=PO.gold; c.textAlign='center'; c.textBaseline='middle';
+      c.fillText(D.eyebrow,X,y+19);
+      const g=Math.min(150,(CW-w)/2-24);
+      if(g>30){ c.strokeStyle='rgba(242,178,62,0.75)'; c.lineWidth=3;
+        c.beginPath(); c.moveTo(X-w/2-20-g,y+19); c.lineTo(X-w/2-20,y+19);
+        c.moveTo(X+w/2+20,y+19); c.lineTo(X+w/2+20+g,y+19); c.stroke(); }
+    }});
+  }
+  if(D.headline){                                      // ② 큰 제목 — XXL 800
+    const f=_poFit(ctx,D.headline,'800',작게?68:86,48,CW,3);
+    B.push({h:f.lines.length*f.lh, draw:(c,y)=>{
+      c.font='800 '+f.fs+'px '+PO.FONT; c.fillStyle=PO.ivory; c.textAlign='center'; c.textBaseline='middle';
+      f.lines.forEach((l,k)=>c.fillText(l,X,y+f.lh/2+k*f.lh));
+    }});
+  }
+  if(D.subhead){                                       // ③ 설명
+    const f=_poFit(ctx,D.subhead,'500',작게?30:36,24,CW-40,2);
+    B.push({h:f.lines.length*f.lh, draw:(c,y)=>{
+      c.font='500 '+f.fs+'px '+PO.FONT; c.fillStyle=PO.dim; c.textAlign='center'; c.textBaseline='middle';
+      f.lines.forEach((l,k)=>c.fillText(l,X,y+f.lh/2+k*f.lh));
+    }});
+  }
+  if(D.features&&D.features.length){                   // ④ 골드 디바이더 + ⑤ 3열 아이콘·특징
+    B.push({h:18, draw:(c,y)=>{
+      선(c,y+9,CW*0.56);
+      c.fillStyle=PO.navy; c.beginPath(); c.arc(X,y+9,16,0,Math.PI*2); c.fill();   // 마름모 자리를 비운다
+      c.fillStyle=PO.gold; c.beginPath();
+      c.moveTo(X,y+9-9); c.lineTo(X+9,y+9); c.lineTo(X,y+9+9); c.lineTo(X-9,y+9); c.closePath(); c.fill();
+    }});
+    const 아이콘=['person','phone','gift'], r=작게?38:46, colW=CW/D.features.length;
+    const fits=D.features.map(t=>_poFit(ctx,t,'700',작게?26:30,20,colW-18,2));
+    const th=Math.max.apply(null,fits.map(f=>f.lines.length*f.lh));
+    B.push({h:r*2+18+th, draw:(c,y)=>{
+      D.features.forEach((t,i)=>{
+        const cx=X-CW/2+colW*i+colW/2;
+        _poIcon(c,아이콘[i%3],cx,y+r,r);
+        const f=fits[i];
+        c.font='700 '+f.fs+'px '+PO.FONT; c.fillStyle=PO.ivory; c.textAlign='center'; c.textBaseline='middle';
+        f.lines.forEach((l,k)=>c.fillText(l,cx,y+r*2+18+f.lh/2+k*f.lh));
+      });
+    }});
+  }
+  {                                                    // ⑥ 프로세스 점 타임라인 (고정)
+    const n=PO_FIXED.process.length, gw=CW-60, step=gw/(n-1);
+    B.push({h:70, draw:(c,y)=>{
+      const x0=X-gw/2, cy=y+14;
+      c.strokeStyle='rgba(242,178,62,0.55)'; c.lineWidth=3;
+      c.beginPath(); c.moveTo(x0,cy); c.lineTo(x0+gw,cy); c.stroke();
+      PO_FIXED.process.forEach((p,i)=>{
+        const x=x0+step*i;
+        c.beginPath(); c.arc(x,cy,10,0,Math.PI*2); c.fillStyle=PO.gold; c.fill();
+        c.font='700 28px '+PO.FONT; c.fillStyle='rgba(245,241,230,0.92)'; c.textAlign='center'; c.textBaseline='middle';
+        c.fillText(p,x,y+52);
+      });
+    }});
+  }
+  if(D.credit||D.note){                                // ⑦⑧ 강사 자격 + 맞춤노트 (고정)
+    const f1=D.credit?_poFit(ctx,D.credit,'700',28,22,CW,2):null;
+    const f2=D.note?_poFit(ctx,D.note,'500',26,20,CW,2):null;
+    const h=(f1?f1.lines.length*f1.lh:0)+(f2?f2.lines.length*f2.lh+6:0);
+    B.push({h, draw:(c,y)=>{
+      c.textAlign='center'; c.textBaseline='middle'; let yy=y;
+      if(f1){ c.font='700 '+f1.fs+'px '+PO.FONT; c.fillStyle=PO.gold;
+        f1.lines.forEach((l,k)=>c.fillText(l,X,yy+f1.lh/2+k*f1.lh)); yy+=f1.lines.length*f1.lh+6; }
+      if(f2){ c.font='500 '+f2.fs+'px '+PO.FONT; c.fillStyle=PO.dim;
+        f2.lines.forEach((l,k)=>c.fillText(l,X,yy+f2.lh/2+k*f2.lh)); }
+    }});
+  }
+  if(D.cta){                                           // ⑨ CTA 바 + 주소
+    const bh=D.url?126:96;
+    B.push({h:bh, draw:(c,y)=>{
+      c.fillStyle=PO.gold; _shRound(c,X-CW/2,y,CW,bh,16); c.fill();
+      c.textAlign='center'; c.textBaseline='middle';
+      const f=_poFit(c,D.cta,'800',42,28,CW-60,1);
+      c.font='800 '+f.fs+'px '+PO.FONT; c.fillStyle=PO.navy;
+      c.fillText(f.lines[0]||D.cta,X,y+(D.url?46:bh/2));
+      if(D.url){
+        const u=_poFit(c,D.url,'600',26,17,CW-60,1);
+        c.font='600 '+u.fs+'px '+PO.FONT; c.fillStyle='rgba(11,35,64,0.82)';
+        c.fillText(u.lines[0]||D.url,X,y+92);
+      }
+    }});
+  }
+  return B;
+}
+
+// ── 한 장 그리기 — ★흐름 배치(좌표를 박지 않는다) ──────────────────
+function _poDraw(ctx,D){
+  const W=PO.W,H=PO.H,S=PO.SAFE, X=W/2, CW=W-S*2-64;
+  const g=ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,PO.navy); g.addColorStop(1,PO.navy2);
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+  const r=ctx.createRadialGradient(X,H*0.3,60,X,H*0.3,W*0.9);
+  r.addColorStop(0,'rgba(242,178,62,0.10)'); r.addColorStop(1,'rgba(242,178,62,0)');
+  ctx.fillStyle=r; ctx.fillRect(0,0,W,H);
+  ctx.strokeStyle='rgba(242,178,62,0.45)'; ctx.lineWidth=2;
+  _shRound(ctx,S,S,W-S*2,H-S*2,20); ctx.stroke();
+
+  const 위=S+44, 아래=H-S-58;                    // 아래 58 = 브랜드 줄 자리
+  let 작게=false, B=_poBlocks(ctx,D,CW,작게);
+  const 필요=b=>b.reduce((a,x)=>a+x.h,0)+18*Math.max(0,b.length-1);
+  if(필요(B)>아래-위){ 작게=true; B=_poBlocks(ctx,D,CW,작게); }   // ★넘치면 한 번 더 작게
+
+  const 합=B.reduce((a,x)=>a+x.h,0);
+  let 사이=B.length>1?(아래-위-합)/(B.length-1):0;
+  사이=Math.max(16,Math.min(58,사이));
+  let y=위+Math.max(0,(아래-위-(합+사이*(B.length-1)))/2);
+  B.forEach(b=>{ b.draw(ctx,y); y+=b.h+사이; });
+
+  ctx.font='700 28px '+PO.FONT; ctx.fillStyle='rgba(242,178,62,0.85)';
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText(PO_FIXED.brand,X,H-S-26);
+  return {작게, 블록수:B.length};
+}
+
+// ── 만들기 ──────────────────────────────────────────────────────────
+let POSTER=null;                                  // 화면에서 고치신 값이 여기 남는다
+async function makePoster(다시){
+  if(!POSTER||!다시) POSTER=_poPick();
+  const 걸림=_poCheck(POSTER);
+  const msg=document.getElementById('genImgMsg');
+  if(걸림.length){                                // ★몰래 지우지 않는다 — 멈추고 알린다
+    if(msg){ msg.style.color='var(--red)';
+      msg.innerHTML='★이 문구는 포스터에 못 씁니다 — 고쳐 주세요.<br>'
+        +걸림.map(x=>'· '+x.칸+': "'+_esc(x.말)+'" ('+x.why+')').join('<br>'); }
+    return;
+  }
+  if(!POSTER.headline){
+    if(msg){ msg.style.color='var(--red)'; msg.textContent='큰 제목이 없어요 — ① 원고를 먼저 만들거나 아래에서 직접 넣어 주세요.'; }
+    return;
+  }
+  const cv=document.createElement('canvas'); cv.width=PO.W; cv.height=PO.H;
+  const info=_poDraw(cv.getContext('2d'),POSTER);
+  const blob=await new Promise(res=>cv.toBlob(res,'image/png'));
+  const u8=new Uint8Array(await blob.arrayBuffer());
+  MADE.poster={ name:'포스터_'+Date.now()+'.png', data:u8, blob,
+                url:URL.createObjectURL(blob), size:u8.length, info };
+  console.log('[포스터] 그림 — '+PO.W+'x'+PO.H+' · 블록 '+info.블록수+'개 · '
+    +(info.작게?'좁아서 작게 그림':'기본 크기')+' · '+Math.round(u8.length/1024)+'KB');
+  _repaint('img');
+}
+function dlPoster(){
+  const h=_host(); if(!MADE.poster){alert('먼저 포스터를 만들어 주세요.');return;}
+  if(h&&typeof h._whDownloadBlob==='function'){ h._whDownloadBlob(MADE.poster.blob,MADE.poster.name); return; }
+  const a=document.createElement('a'); a.href=MADE.poster.url; a.download=MADE.poster.name;
+  document.body.appendChild(a); a.click(); setTimeout(()=>a.remove(),800);
+}
+// 화면에서 고치기 — 고친 값으로 ★바로 다시 그린다
+function poEdit(k,v){
+  if(!POSTER) POSTER=_poPick();
+  if(k.indexOf('feat')===0){ const i=+k.slice(4); POSTER.features=POSTER.features||[];
+    POSTER.features[i]=v; POSTER.features=POSTER.features.filter(x=>String(x||'').trim()); }
+  else POSTER[k]=v;
+}
+function _poRow(라벨,키,값){
+  return '<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">'
+    +'<span style="font-size:10px;color:var(--soft);width:52px;flex:none">'+라벨+'</span>'
+    +'<input value="'+_esc(값||'')+'" oninput="poEdit(\''+키+'\',this.value)" '
+    +'style="flex:1;font-size:11px;padding:3px 6px;border:1px solid var(--line);border-radius:5px;background:transparent;color:var(--ink)"></div>';
 }
 function _imgPv(){
-  const 그림=WON['이미지원고']||'', 인포=WON['인포그래픽']||'', ims=MADE.images||[];
-  let h='<div style="font-size:11px;font-weight:800;color:var(--ink);margin-bottom:3px">🎨 이미지 (png)</div>';
-  if(ims.length){
-    // ★[15] 미리보기 실물화 — 진짜 나온 그림을 그대로 띄운다(그림 흉내가 아니다).
-    h+='<div class="cpreview"><div class="cards">'
-      +ims.map((m,i)=>'<img src="'+m.url+'" alt="이미지 '+(i+1)+'" title="'+_esc(m.prompt||'')+'" '
-        +'style="width:82px;height:123px;border-radius:8px;object-fit:cover">').join('')
-      +'</div></div>'
-      +'<div style="font-size:11px;color:var(--soft);margin-top:6px">실제로 만든 PNG <b>'+ims.length+'장</b>'
-      +' · 세로 1024×1536'+(MADE.imageCost?(' · 약 '+MADE.imageCost+'원 썼어요'):'')+'</div>'
-      +(MADE.imageNote?'<div style="font-size:10px;color:var(--red);margin-top:3px">'+_esc(MADE.imageNote)+'</div>':'')
-      +'<div style="margin-top:6px"><button class="save" onclick="event.stopPropagation();dlImages()">⬇️ 이미지 '+ims.length+'장 내려받기</button>'
-      +' <button class="save" id="genImgBtn" onclick="event.stopPropagation();genImages()" style="background:transparent;border:1px solid var(--line);color:var(--soft)">🔁 다시 만들기</button></div>'
-      +'<div id="genImgMsg" style="font-size:10px;margin-top:4px"></div>';
-  } else {
-    h+='<div class="dtext">'+(그림?_esc(그림.slice(0,350))+(그림.length>350?'…':''):'아직 없어요 — ① 원고를 먼저 만들어 주세요.')+'</div>';
-    if(그림){
-      h+='<div style="margin-top:6px"><button class="save" id="genImgBtn" onclick="event.stopPropagation();genImages()">🎨 이미지 만들기</button></div>'
-        +'<div style="font-size:10px;color:var(--soft);margin-top:4px">위 그림 지시문으로 <b>진짜 png</b>를 만들어요 · 최대 3장 · 약 '+(IMG_WON*3)+'원 · 1분쯤</div>'
-        +'<div id="genImgMsg" style="font-size:10px;margin-top:4px"></div>';
-    }
+  const p=MADE.poster, D=POSTER||_poPick(), 인포=WON['인포그래픽']||'';
+  let h='<div style="font-size:11px;font-weight:800;color:var(--ink);margin-bottom:3px">🖼️ 홍보 포스터 (png)</div>';
+  if(p){
+    h+='<div style="text-align:center"><img src="'+p.url+'" alt="포스터" '
+      +'style="width:200px;border-radius:8px;border:1px solid var(--line)"></div>'
+      +'<div style="font-size:11px;color:var(--soft);margin-top:6px">실제로 그린 PNG <b>1장</b> · 1080×1440(3:4) · '
+      +(p.size/1024).toFixed(0)+'KB · <b style="color:var(--teal)">비용 0원</b>'
+      +(p.info&&p.info.작게?' · 글이 많아 조금 작게 그렸어요':'')+'</div>'
+      +'<div style="margin-top:6px"><button class="save" onclick="event.stopPropagation();dlPoster()">⬇️ 포스터 내려받기</button>'
+      +' <button class="save" id="genImgBtn" onclick="event.stopPropagation();makePoster(true)" style="background:transparent;border:1px solid var(--line);color:var(--soft)">🔁 다시 그리기</button></div>';
+  }else{
+    h+='<div class="dtext">아직 안 만들었어요. 아래 값으로 <b>바로</b> 그려 드려요 — 비용 0원이에요.</div>'
+      +'<div style="margin-top:6px"><button class="save" id="genImgBtn" onclick="event.stopPropagation();makePoster(false)">🖼️ 포스터 만들기</button></div>';
   }
+  h+='<div id="genImgMsg" style="font-size:10px;margin-top:5px"></div>'
+    +'<div style="margin-top:8px;padding-top:7px;border-top:1px dashed var(--line)">'
+    +'<div style="font-size:10px;color:var(--soft);margin-bottom:5px">고쳐서 다시 그리실 수 있어요 (원고에서 자동으로 채웠어요)</div>'
+    +_poRow('윗줄','eyebrow',D.eyebrow)
+    +_poRow('큰제목','headline',D.headline)
+    +_poRow('설명','subhead',D.subhead)
+    +_poRow('특징1','feat0',(D.features||[])[0])
+    +_poRow('특징2','feat1',(D.features||[])[1])
+    +_poRow('특징3','feat2',(D.features||[])[2])
+    +_poRow('행동','cta',D.cta)
+    +_poRow('주소','url',D.url)
+    +'<div style="font-size:10px;color:var(--soft);margin-top:3px">'
+    +'· 프로세스(발굴·홍보·상담·관리·보상·채용)·강사 소개는 <b>늘 같게</b> 들어가요.<br>'
+    +'· 결과·환불을 약속하는 문구는 <b>못 들어갑니다</b> — 걸리면 멈추고 알려 드려요.</div></div>';
   h+='<div style="font-size:11px;font-weight:800;color:var(--ink);margin:11px 0 3px">📊 인포그래픽</div>'
     +'<div class="dtext">'+(인포?_esc(인포.slice(0,350))+(인포.length>350?'…':''):'아직 없어요 — ① 원고를 먼저 만들어 주세요.')+'</div>'
     +'<div style="font-size:10px;color:var(--soft);margin-top:4px">디자이너에게 그대로 넘기시면 되는 글이에요.</div>';
