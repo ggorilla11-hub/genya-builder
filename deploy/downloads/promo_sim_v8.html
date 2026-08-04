@@ -1380,15 +1380,50 @@ function dlCardsZip(){
 //              유튜브 쇼츠는 webm 그대로 올라간다. 인스타·틱톡은 mp4 필요 → 다음 단계.
 //   ★15초 영상은 15초 걸린다(실시간 녹화 · 승인 ③). 그래서 진행률을 보여준다.
 // ═══════════════════════════════════════════════════════════════════
-// ★2026-08-03 품질기준서 §1·§6② 반영
-//   훅=첫 프레임 큰 자막 / 총 15~25초(최적 20~25) / 큰 글씨·고대비·상하 세이프존 / 끝에 저장·공유 CTA
+// ═══════════════════════════════════════════════════════════════════
+// ★2026-08-04 쇼츠 재설계 — "슬라이드쇼"를 버리고 "키네틱 타이포"로
+//
+//   왜 다시 만드나 (대표님 진단): 쇼츠가 카드뉴스와 거의 같아 보였다.
+//     같은 딥그린 한 색 + 같은 골드 테두리 + 화면 정중앙 자막 + 페이드뿐 =
+//     사실상 PNG 5장 슬라이드쇼였다. 업계 쇼츠와 붙으면 경쟁력이 없다.
+//
+//   업계 조사에서 확인한 것(2026):
+//     · 첫 3초가 완주율의 80% — 훅 자막은 ★처음부터 크게 떠 있어야 한다
+//     · 하단 300~400px는 플랫폼 UI가 가린다 → 자막은 아래가 아니라 ★위
+//     · 얼굴 없는 채널의 주력 = ★키네틱 타이포(단어가 하나씩 등장·키워드 색)
+//     · 카드뉴스와의 결정적 차이 = ★매 프레임이 움직인다(정지화면으로 안 읽힌다)
+//
+//   그래서 바꾼 것 — ①자막을 상단에 훨씬 크게 ②단어별 팝인 + 숫자·금액 골드
+//     ③배경이 산다(톤 이동 · 흐르는 광원 · 금빛 입자 · 아주 느린 줌)
+//     ④전환을 페이드 대신 ★위로 밀어내기 ⑤훅은 짧고 CTA는 길게(가변 속도)
+//     ⑥카드뉴스와 같던 골드 사각 테두리는 뺐다 → 대신 상단 진행 타임바
+//
+//   ★안 바뀐 것: 서버·생성모델 안 쓴다(캔버스 + MediaRecorder). 나오는 건 webm.
+//     원고 파싱(_shScenes)·길이 써넣기(_shWithDuration)는 검증된 코드 그대로 둔다.
+//
+//   ★안전선(실시간 녹화라 필수): 한 프레임 그리는 데 8ms를 넘으면 효과를 한 단계씩
+//     스스로 끈다. 끊긴 영상보다 단순한 영상이 낫다. 몇 번 끊겼는지는 실측해 보고한다.
+// ═══════════════════════════════════════════════════════════════════
 const SH={
-  W:1080, H:1920, FPS:30, FADE:0.35,
-  TOP:0.15, BOT:0.20,          // ★세이프존 — 위 15%·아래 20%는 플랫폼 UI(계정명·설명·버튼)가 가린다
-  MIN:15, MAX:25, WANT:21,     // 총 길이(초). 기준서: 15초 미만은 훅이 얕고 최적은 20~25초
+  W:1080, H:1920, FPS:30,
+  TOP:150, BOT:400,            // ★세이프존(픽셀) — 위 150·아래 400은 플랫폼 UI(계정명·설명·버튼)가 가린다
+  TXT_TOP:300, TXT_H:700,      // ★자막 블록 = ★상단. 300~1000px 안에만 그린다(가운데 아님)
+  MIN:20, MAX:28, WANT:24,     // 총 길이(초) — 재무·금융은 20~28초가 강하다(증명은 되고 재시청 가능)
+  HOOK:2.6, CTA_S:3.8,         // 훅은 짧고 강하게 · CTA는 길게(저장할 시간을 준다)
+  BODY_MIN:2.4, BODY_MAX:4.5,
+  TRANS:0.42,                  // 장면 전환 — 위로 밀어내기
+  POP:0.55, POP_STEP:0.055,    // 단어 팝인(한 단어씩 0.055초 간격으로 등장)
+  FX_BUDGET:8,                 // ★안전선 — 한 프레임 8ms 넘으면 효과를 끈다
   CTA:'저장하고 오늘 시작하세요',      // ★마지막 씬 = 저장·공유 CTA (기준서 §1 CTA)
   CTA2:'가장 큰 고민은? 댓글로',       // 구체적 댓글 유도(일반 대비 83%↑)
 };
+// 씬마다 배경 톤이 옮겨간다 — 딥그린 브랜드는 지키되, 카드뉴스의 "한 색 정지"와 갈린다
+const SH_TONE=[
+  {a:'#061C18', b:'#0C3329'},
+  {a:'#0A2620', b:'#124436'},
+  {a:'#08231F', b:'#16513F'},
+  {a:'#0B2A22', b:'#1A5B42'},
+];
 
 // ── 1. 원고 파싱 — 5씬의 [자막] 만 뽑는다 ────────────────────────────
 //   프롬프트 규칙(promo_prompts.js:28): 정확히 5씬 · 각 씬 [자막]16자 / [화면]25자
@@ -1433,82 +1468,265 @@ function _shWrap(ctx,txt,maxW){
 }
 const _shFONT='"Malgun Gothic","AppleSDGothicNeo","Noto Sans KR",sans-serif';
 
-// 세이프존 안에 들어갈 때까지 글자를 줄인다 — 잘리느니 조금 작게(기준서: 큰 글씨가 원칙이라 106부터 내려온다)
+// 자막 자리 안에 들어갈 때까지 글자를 줄인다 — 잘리느니 조금 작게.
+// ★훅은 150px에서 시작한다(옛 106px보다 훨씬 크다). 아무리 줄여도 76px 아래로는 안 내려간다.
 function _shFit(ctx,txt,startSize,maxW,maxH){
-  for(let fs=startSize; fs>=52; fs-=6){
-    ctx.font='800 '+fs+'px '+_shFONT;
+  for(let fs=startSize; fs>=76; fs-=8){
+    ctx.font='900 '+fs+'px '+_shFONT;
     const lines=_shWrap(ctx,txt,maxW);
-    const lh=Math.round(fs*1.36);
+    const lh=Math.round(fs*1.3);
     if(lines.length*lh<=maxH)return {lines,fs,lh};
   }
-  ctx.font='800 52px '+_shFONT;
-  return {lines:_shWrap(ctx,txt,maxW), fs:52, lh:71};
+  ctx.font='900 76px '+_shFONT;
+  return {lines:_shWrap(ctx,txt,maxW), fs:76, lh:99};
 }
 
-// sc = {text, sub, kind:'hook'|'body'|'cta'}
-function _shFrame(ctx,sc,i,total,alpha){
+// ── 2-a. 키워드 = 숫자·금액·기간. 여기만 골드로 튀긴다(업계 표준: 키워드 색 팝) ──
+function _shHot(w){
+  return /[0-9]/.test(w) || /(원|억|배|%|퍼센트|무료|공짜|절반|두배|세배)/.test(w);
+}
+// 색 섞기 — 씬이 바뀔 때 배경 톤이 뚝 끊기지 않고 옮겨가게
+function _shMix(a,b,k){
+  const p=h=>[parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)];
+  const x=p(a),y=p(b);
+  return 'rgb('+Math.round(x[0]+(y[0]-x[0])*k)+','+Math.round(x[1]+(y[1]-x[1])*k)+','+Math.round(x[2]+(y[2]-x[2])*k)+')';
+}
+
+// ── 2-b. 자막 배치는 ★한 번만 재고 캐시한다 ─────────────────────────
+//   왜: 1초에 30장을 그린다. 매 프레임 글자 폭을 재면 예산을 다 쓴다.
+//       씬 객체를 열쇠로 캐시하면 씬당 딱 한 번만 잰다.
+const _shCache=new Map();
+function _shLayout(ctx,sc){
+  if(_shCache.has(sc))return _shCache.get(sc);
+  const maxW=SH.W-150;
+  const start=(sc.kind==='hook')?150:(sc.kind==='cta'?128:122);   // ★훅 150 · CTA 128 · 본문 122
+  const subH=sc.sub?120:0;
+  const fit=_shFit(ctx,sc.text,start,maxW,SH.TXT_H-subH);
+  ctx.font='900 '+fit.fs+'px '+_shFONT;
+  const sp=ctx.measureText(' ').width;
+  let wi=0;
+  const lines=fit.lines.map(l=>{
+    const parts=l.split(/\s+/).filter(Boolean).map(w=>({w,width:ctx.measureText(w).width,hot:_shHot(w)}));
+    const total=parts.reduce((a,q)=>a+q.width,0)+sp*Math.max(0,parts.length-1);
+    let x=-total/2;
+    parts.forEach(q=>{ q.x=x+q.width/2; x+=q.width+sp; q.i=wi++; });
+    return {parts,width:total};
+  });
+  const o={fit,lines,subH,words:wi};
+  _shCache.set(sc,o);
+  return o;
+}
+
+// ── 2-c. 살아있는 배경 ───────────────────────────────────────────────
+//   fx 2 = 전부 · 1 = 입자 끔 · 0 = 광원까지 끔(그라디언트만). 무거우면 스스로 내려간다.
+function _shBg(ctx,t,idx,p,fx){
   const W=SH.W,H=SH.H;
-  ctx.globalAlpha=1;
-  ctx.fillStyle='#0B2620'; ctx.fillRect(0,0,W,H);                 // 카드뉴스와 같은 딥그린
-  const g=ctx.createRadialGradient(W/2,H*0.42,60,W/2,H*0.42,W*0.95);
-  g.addColorStop(0,'rgba(242,178,62,0.12)'); g.addColorStop(1,'rgba(11,38,32,0)');
+  const t0=SH_TONE[idx%SH_TONE.length], t1=SH_TONE[(idx+1)%SH_TONE.length];
+  const k=Math.min(1,Math.max(0,p))*0.65;               // 씬 안에서 다음 톤으로 서서히 옮겨간다
+  const g=ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,_shMix(t0.a,t1.a,k));
+  g.addColorStop(1,_shMix(t0.b,t1.b,k));
   ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
-  ctx.strokeStyle='#F2B23E'; ctx.lineWidth=4;                     // 카드뉴스와 같은 골드 테두리
-  _shRound(ctx,44,44,W-88,H-88,28); ctx.stroke();
-
-  // ★세이프존 — 글자는 전부 이 안에만 그린다
-  const top=H*SH.TOP, bot=H*(1-SH.BOT), zoneH=bot-top, maxW=W-200;
-
-  // 씬 진행 점 — 세이프존 ★안쪽 위에 둔다(밖에 두면 플랫폼 UI에 가린다)
-  const d=18,gap=38,x0=W/2-((total-1)*gap)/2;
-  for(let k=0;k<total;k++){
-    ctx.beginPath(); ctx.arc(x0+k*gap,top+34,d/2,0,Math.PI*2);
-    ctx.fillStyle=(k===i)?'#F2B23E':'rgba(234,243,241,0.28)'; ctx.fill();
+  if(fx>=1){                                            // 흐르는 광원 — 천천히 도는 금빛
+    const cx=W/2+Math.sin(t*0.35)*W*0.24, cy=H*0.36+Math.cos(t*0.27)*H*0.07;
+    const r=ctx.createRadialGradient(cx,cy,40,cx,cy,W*0.9);
+    r.addColorStop(0,'rgba(242,178,62,0.17)'); r.addColorStop(1,'rgba(242,178,62,0)');
+    ctx.fillStyle=r; ctx.fillRect(0,0,W,H);
   }
-
-  ctx.textAlign='center'; ctx.textBaseline='middle';
-  // ★훅(첫 씬)은 제일 크게. 그 다음이 CTA, 본문은 기본.
-  const start=(sc.kind==='hook')?106:(sc.kind==='cta'?96:88);
-  const subH=sc.sub?96:0;
-  const fit=_shFit(ctx,sc.text,start,maxW,zoneH-140-subH);
-  const blockH=fit.lines.length*fit.lh;
-  const cy=(top+bot)/2-(subH?34:0);
-  const y0=cy-(fit.lines.length-1)*fit.lh/2;
-
-  ctx.globalAlpha=alpha;                                          // 페이드는 글자에만(배경은 안 깜빡이게)
-
-  // ★고대비 — 자막 뒤에 어두운 판을 깐다. 배경 광원 위에서도 글자가 또렷해진다.
-  let bw=0; fit.lines.forEach(l=>{ bw=Math.max(bw,ctx.measureText(l).width); });
-  ctx.fillStyle='rgba(6,26,22,0.55)';
-  _shRound(ctx,W/2-bw/2-46,y0-fit.lh/2-30,bw+92,blockH+60+subH,26); ctx.fill();
-
-  ctx.font='800 '+fit.fs+'px '+_shFONT;
-  ctx.shadowColor='rgba(0,0,0,0.55)'; ctx.shadowBlur=18; ctx.shadowOffsetY=4;
-  ctx.fillStyle='#EAF3F1';
-  fit.lines.forEach((l,k)=>ctx.fillText(l,W/2,y0+k*fit.lh));
-  if(sc.sub){                                                     // CTA 씬의 댓글 유도 한 줄
-    ctx.font='700 46px '+_shFONT; ctx.fillStyle='#F2B23E';
-    ctx.fillText(sc.sub,W/2,y0+blockH-fit.lh/2+62);
+  if(fx>=2){                                            // 떠오르는 금빛 입자 16개
+    for(let i=0;i<16;i++){
+      const s=(i*0.618)%1;
+      const x=s*W*1.06-W*0.03+Math.sin(t*0.5+i)*26;
+      const y=H-((t*(30+s*34)+s*H)%(H+140));
+      const a=0.10+0.15*(0.5+0.5*Math.sin(t*1.2+i));
+      ctx.beginPath(); ctx.arc(x,y,3+s*4,0,Math.PI*2);
+      ctx.fillStyle='rgba(242,178,62,'+a.toFixed(3)+')'; ctx.fill();
+    }
   }
-  ctx.shadowBlur=0; ctx.shadowOffsetY=0;
-  ctx.globalAlpha=1;
-
-  ctx.font='600 40px '+_shFONT;                                   // 카드뉴스와 같은 서명 — 세이프존 안쪽 아래
-  ctx.fillStyle='#F2B23E';
-  ctx.fillText('오원트금융연구소',W/2,bot-30);
 }
 
-// ── 2-a. 상영 계획 — 씬 목록 + 씬당 길이 ─────────────────────────────
-//   ★총 길이가 반드시 15~25초에 들어가게 씬당 길이를 맞춘다(기준서 §1).
-//     씬을 ★버리지 않는다 — 개수는 그대로 두고 시간만 늘리거나 줄인다.
+// ── 2-c-2. ★내용에 어울리는 그림 — 자막의 ★뜻을 보고 고른다 ─────────
+//   왜: 배경이 늘 같으면 무슨 말을 하든 같은 영상이다. 그리고 자막이 위로 올라가서
+//       화면 아래가 휑하다. 그 자리에 ★그 씬의 내용을 그린다.
+//   ★생성모델을 쓰지 않는다. 캔버스 도형 몇 개 + 시간 함수로 그린다(비용 0 · 빠르다).
+//   ★못 알아들으면 넓히지 않는다 — 기본(은은한 파동)으로 둔다(6-9: 조건이 안 먹을 때 전체가 되지 않게).
+const SH_MOTIF=[
+  {k:'up',   re:/(오르|상승|늘어|증가|빨라|불어|수익|배로|성장|억|만원|천만)/},
+  {k:'warn', re:/(위험|손해|실수|놓치|거꾸로|모르|늦|후회|함정|주의|절반|못 받)/},
+  {k:'coin', re:/(저축|통장|보험료|납입|적립|모으|월\s*\d|연금)/},
+  {k:'time', re:/(\d+\s*년|개월|오늘|내년|지금|나중|일찍|순서)/},
+];
+function _shMotif(sc){
+  if(sc.kind==='cta')return 'cta';
+  const t=String(sc.text||'');
+  for(const m of SH_MOTIF) if(m.re.test(t))return m.k;
+  return 'glow';
+}
+//   그림 자리 = 자막 아래 · 하단 세이프존 ★위 (1080~1440px)
+function _shArt(ctx,kind,tin,per,fx,al){
+  const W=SH.W, cx=W/2, cy=1170;      // 서명(1490)과 안 겹치게 — 그림은 자막과 서명 사이에 둔다
+  const e=Math.max(0,Math.min(1,tin/0.8)), ez=1-Math.pow(1-e,3);   // 나타나는 동안
+  ctx.save();
+  ctx.globalAlpha=0.9*ez*(al===undefined?1:al);
+  ctx.translate(cx,cy); ctx.scale(1.7,1.7); ctx.translate(-cx,-cy);  // ★크게 — 작으면 화면이 빈다
+  if(kind==='up'){                                   // 오르는 막대 + 상승선
+    const n=5, bw=64, gap=34, x0=cx-((n-1)*(bw+gap))/2;
+    for(let i=0;i<n;i++){
+      const g=Math.max(0,Math.min(1,(tin-0.15*i)/0.5));
+      const h=(50+i*46)*(1-Math.pow(1-g,3));
+      ctx.fillStyle='rgba(242,178,62,'+(0.25+0.11*i).toFixed(2)+')';
+      _shRound(ctx,x0+i*(bw+gap)-bw/2,cy+120-h,bw,h,10); ctx.fill();
+    }
+    ctx.strokeStyle='rgba(255,200,92,0.85)'; ctx.lineWidth=7; ctx.lineCap='round';
+    ctx.beginPath();
+    for(let i=0;i<n;i++){
+      const x=x0+i*(bw+gap), y=cy+112-(50+i*46);
+      if(i===0)ctx.moveTo(x,y); else ctx.lineTo(x,y);
+    }
+    ctx.stroke();
+  }else if(kind==='warn'){                           // 경고 삼각형 — 천천히 뛴다
+    const pu=1+0.045*Math.sin(tin*3.4), s=120*pu;
+    ctx.translate(cx,cy+40); ctx.scale(ez,ez);
+    ctx.strokeStyle='rgba(255,150,90,0.95)'; ctx.lineWidth=9; ctx.lineJoin='round';
+    ctx.beginPath(); ctx.moveTo(0,-s); ctx.lineTo(s*0.95,s*0.72); ctx.lineTo(-s*0.95,s*0.72); ctx.closePath(); ctx.stroke();
+    ctx.fillStyle='rgba(255,150,90,0.95)';
+    _shRound(ctx,-9,-s*0.42,18,s*0.85,9); ctx.fill();
+    ctx.beginPath(); ctx.arc(0,s*0.56,12,0,Math.PI*2); ctx.fill();
+  }else if(kind==='coin'){                           // 동전이 쌓인다
+    for(let i=0;i<4;i++){
+      const g=Math.max(0,Math.min(1,(tin-0.18*i)/0.55)), q=1-Math.pow(1-g,3);
+      const y=cy+130-i*54*q, r=86;
+      ctx.strokeStyle='rgba(242,178,62,'+(0.35+0.16*i).toFixed(2)+')'; ctx.lineWidth=8;
+      ctx.beginPath(); ctx.ellipse(cx,y,r,r*0.34,0,0,Math.PI*2); ctx.stroke();
+    }
+  }else if(kind==='time'){                           // 시간이 채워지는 링
+    const g=Math.max(0,Math.min(1,tin/Math.max(1,per*0.85)));
+    ctx.strokeStyle='rgba(234,243,241,0.18)'; ctx.lineWidth=14;
+    ctx.beginPath(); ctx.arc(cx,cy+30,108,0,Math.PI*2); ctx.stroke();
+    ctx.strokeStyle='rgba(242,178,62,0.95)'; ctx.lineCap='round';
+    ctx.beginPath(); ctx.arc(cx,cy+30,108,-Math.PI/2,-Math.PI/2+Math.PI*2*g); ctx.stroke();
+  }else if(kind==='cta'){                            // 저장 표시 — 아래로 내려앉는 화살표
+    const b=Math.sin(tin*2.6)*10;
+    ctx.strokeStyle='rgba(242,178,62,0.95)'; ctx.lineWidth=10; ctx.lineCap='round'; ctx.lineJoin='round';
+    ctx.beginPath(); ctx.moveTo(cx,cy-70+b); ctx.lineTo(cx,cy+52+b); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx-56,cy-4+b); ctx.lineTo(cx,cy+56+b); ctx.lineTo(cx+56,cy-4+b); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx-88,cy+104); ctx.lineTo(cx+88,cy+104); ctx.stroke();
+  }else if(fx>=1){                                   // 기본 — 은은한 파동
+    for(let i=0;i<3;i++){
+      const q=((tin*0.5+i/3)%1);
+      ctx.strokeStyle='rgba(242,178,62,'+(0.30*(1-q)).toFixed(3)+')'; ctx.lineWidth=6;
+      ctx.beginPath(); ctx.arc(cx,cy+30,60+q*130,0,Math.PI*2); ctx.stroke();
+    }
+  }
+  ctx.restore();
+  ctx.globalAlpha=1;
+}
+
+// ── 2-d. 자막 한 벌 그리기 — 단어가 하나씩 튀어나온다 ────────────────
+//   tin = 이 씬 안에서 흐른 시간(초) · dy = 세로 이동(장면 전환) · al = 투명도
+function _shText(ctx,sc,tin,dy,al){
+  const L=_shLayout(ctx,sc), W=SH.W, lh=L.fit.lh, top=SH.TXT_TOP+dy;
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+
+  // ★고대비 — 줄마다 어두운 판을 깐다(움직이는 배경 위에서도 글자가 또렷하다)
+  ctx.globalAlpha=al*0.82;
+  L.lines.forEach((ln,k)=>{
+    const y=top+k*lh+lh/2;
+    ctx.fillStyle='rgba(4,20,17,0.66)';
+    _shRound(ctx,W/2-ln.width/2-34,y-lh/2-4,ln.width+68,lh+8,18); ctx.fill();
+  });
+
+  ctx.font='900 '+L.fit.fs+'px '+_shFONT;
+  ctx.shadowColor='rgba(0,0,0,0.6)'; ctx.shadowBlur=14; ctx.shadowOffsetY=5;
+  L.lines.forEach((ln,k)=>{
+    const y=top+k*lh+lh/2;
+    ln.parts.forEach(q=>{
+      const wp=Math.max(0,Math.min(1,(tin-q.i*SH.POP_STEP)/SH.POP));
+      if(wp<=0)return;                                   // 아직 등장 전 — 안 그린다
+      const e=1-Math.pow(1-wp,3);                        // 부드럽게 멈춘다
+      const z=1.16-0.16*e;                               // 살짝 크게 왔다가 제자리로
+      ctx.globalAlpha=al*e;
+      ctx.save(); ctx.translate(W/2+q.x,y); ctx.scale(z,z);
+      ctx.fillStyle=q.hot?'#FFC85C':'#F2F8F6';           // ★숫자·금액만 골드
+      ctx.fillText(q.w,0,0); ctx.restore();
+    });
+  });
+  ctx.shadowBlur=0; ctx.shadowOffsetY=0;
+
+  if(sc.sub){                                            // CTA 씬의 댓글 유도 한 줄 — 조금 늦게
+    ctx.globalAlpha=al*Math.max(0,Math.min(1,(tin-0.5)/0.4));
+    ctx.font='800 52px '+_shFONT; ctx.fillStyle='#F2B23E';
+    ctx.fillText(sc.sub,W/2,top+L.lines.length*lh+58);
+  }
+  ctx.globalAlpha=1;
+}
+
+// ── 2-e. 한 프레임 = 시간 t(초) 하나로 전부 정해진다 ─────────────────
+function _shAt(plan,t){
+  let i=0;
+  for(let k=0;k<plan.starts.length;k++) if(t>=plan.starts[k]) i=k;
+  return i;
+}
+function _shFrame(ctx,plan,t,fx){
+  const W=SH.W,H=SH.H;
+  const i=_shAt(plan,t), tin=t-plan.starts[i], per=plan.secs[i];
+
+  // 배경 — ★아주 느린 줌은 배경에만 준다(글자는 늘 선명하게)
+  ctx.save();
+  const z=1+0.055*(t/plan.total);
+  ctx.translate(W/2,H/2); ctx.scale(z,z); ctx.translate(-W/2,-H/2);
+  _shBg(ctx,t,i,tin/per,fx);
+  ctx.restore();
+
+  // ★내용에 어울리는 그림 — 자막 아래 빈 자리를 그 씬의 뜻으로 채운다
+  const mo=_shMotif(plan.list[i]);
+  if(mo==='warn'){ ctx.fillStyle='rgba(150,52,20,0.17)'; ctx.fillRect(0,0,W,H); }  // 경고는 배경도 살짝 붉게
+  if(i>0 && tin<SH.TRANS){
+    const e2=1-Math.pow(1-tin/SH.TRANS,3);
+    _shArt(ctx,_shMotif(plan.list[i-1]),plan.secs[i-1],plan.secs[i-1],fx,1-e2);   // 앞 씬 그림은 사라지고
+    _shArt(ctx,mo,tin,per,fx,e2);                                                 // 새 그림이 들어온다
+  }else{
+    _shArt(ctx,mo,tin,per,fx,1);
+  }
+
+  // 상단 진행 타임바 — 카드뉴스엔 없는 ★영상 문법(씬 점을 대신한다)
+  const bw=W-120, prog=Math.max(0,Math.min(1,t/plan.total));
+  ctx.fillStyle='rgba(234,243,241,0.16)'; _shRound(ctx,60,SH.TOP-46,bw,10,5); ctx.fill();
+  ctx.fillStyle='#F2B23E'; _shRound(ctx,60,SH.TOP-46,Math.max(10,bw*prog),10,5); ctx.fill();
+
+  // 자막 — 전환 구간에는 이전 씬이 ★위로 밀려나가고 새 씬이 아래서 올라온다
+  if(i>0 && tin<SH.TRANS){
+    const e=1-Math.pow(1-tin/SH.TRANS,3);
+    _shText(ctx,plan.list[i-1],plan.secs[i-1],-e*230,1-e);
+    _shText(ctx,plan.list[i],tin,(1-e)*210,e);
+  }else{
+    _shText(ctx,plan.list[i],tin,0,1);
+  }
+
+  // 서명 — 하단 세이프존 ★위(400px 아래는 플랫폼 UI 자리라 비운다)
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.font='700 38px '+_shFONT; ctx.fillStyle='rgba(242,178,62,0.9)';
+  ctx.fillText('오원트금융연구소',W/2,H-SH.BOT-30);
+}
+
+// ── 2-f. 상영 계획 — 씬마다 ★길이가 다르다(속도감) ──────────────────
+//   훅은 짧고 강하게 · 본문은 읽을 만큼 · CTA는 길게(저장할 시간).
+//   총 길이는 반드시 20~28초 안에 넣는다. 씬은 ★버리지 않는다 — 시간만 조절한다.
 function _shPlan(subs){
   const list=subs.map((t,i)=>({text:t, kind:i===0?'hook':'body'}));
   list.push({text:SH.CTA, sub:SH.CTA2, kind:'cta'});   // ★마지막 = 저장·공유 CTA
-  const n=list.length;
-  let per=Math.min(4.5,Math.max(2.5,SH.WANT/n));
-  if(per*n<SH.MIN)per=SH.MIN/n;                        // 너무 짧으면 늘린다(15초 미만은 훅이 얕다)
-  if(per*n>SH.MAX)per=SH.MAX/n;                        // 너무 길면 줄인다(25초 넘으면 이탈)
-  return {list, per, total:per*n};
+  const nb=Math.max(0,list.length-2);
+  let body=nb?(SH.WANT-SH.HOOK-SH.CTA_S)/nb:0;
+  body=Math.min(SH.BODY_MAX,Math.max(SH.BODY_MIN,body));
+  let secs=list.map(s=>s.kind==='hook'?SH.HOOK:(s.kind==='cta'?SH.CTA_S:body));
+  let total=secs.reduce((a,b)=>a+b,0);
+  if(total<SH.MIN||total>SH.MAX){                      // 넘거나 모자라면 전체를 비율로 맞춘다
+    const k=(total<SH.MIN?SH.MIN:SH.MAX)/total;
+    secs=secs.map(v=>v*k); total=secs.reduce((a,b)=>a+b,0);
+  }
+  const starts=[]; let acc=0;
+  secs.forEach(v=>{ starts.push(acc); acc+=v; });
+  return {list, secs, starts, total, per:Math.round(total/list.length*10)/10};
 }
 
 // ── 2-b. 영상 길이 써넣기 ────────────────────────────────────────────
@@ -1543,39 +1761,50 @@ function _shWithDuration(u8, ms){
 }
 
 // ── 3. 녹화 — 캔버스 → MediaRecorder → webm ──────────────────────────
+//   ★실시간이다. 24초 영상은 24초 걸린다. 그래서 매 프레임 ★그리는 데 걸린 시간을 재고,
+//     예산(8ms)을 넘으면 효과를 스스로 한 단계 끈다. 끊긴 영상보다 단순한 영상이 낫다.
+//   ★재고 나면 실측값을 남긴다(window._SH_STAT) — "만들었습니다"가 아니라 숫자로 보고한다.
 async function _shRecord(plan,onPct){
   if(!window.MediaRecorder)throw new Error('이 브라우저는 영상 녹화를 지원하지 않아요(크롬으로 열어 주세요)');
   const mime=['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm']
     .find(m=>MediaRecorder.isTypeSupported(m));
   if(!mime)throw new Error('이 브라우저는 webm 녹화를 지원하지 않아요(크롬으로 열어 주세요)');
 
-  const scenes=plan.list, per=plan.per;
+  _shCache.clear();                                 // 이번 상영의 자막 배치만 캐시한다
   const cv=document.createElement('canvas'); cv.width=SH.W; cv.height=SH.H;
   const ctx=cv.getContext('2d');
-  _shFrame(ctx,scenes[0],0,scenes.length,1);        // 첫 프레임 미리 — 빈 화면으로 시작하지 않게
+  let fx=2;                                         // 2=전부 · 1=입자 끔 · 0=광원까지 끔
+  _shFrame(ctx,plan,0,fx);                          // 첫 프레임 미리 — 빈 화면으로 시작하지 않게
 
-  const rec=new MediaRecorder(cv.captureStream(SH.FPS),{mimeType:mime,videoBitsPerSecond:6000000});
+  const rec=new MediaRecorder(cv.captureStream(SH.FPS),{mimeType:mime,videoBitsPerSecond:8000000});
   const chunks=[];
   rec.ondataavailable=e=>{ if(e.data&&e.data.size)chunks.push(e.data); };
   const done=new Promise(res=>{ rec.onstop=()=>res(new Blob(chunks,{type:'video/webm'})); });
   rec.start(200);
 
-  const perMs=per*1000, total=perMs*scenes.length, t0=performance.now();
-  const fade=Math.min(SH.FADE,per*0.15);            // 씬이 짧아지면 페이드도 같이 짧게
+  const total=plan.total*1000, t0=performance.now();
+  let frames=0, lag=0, sum=0, last=t0;
+  const win=[];                                     // 최근 20프레임 그리기 시간
   await new Promise(res=>{
     (function tick(){
-      const el=performance.now()-t0;
-      if(el>=total){res();return;}
-      const i=Math.min(scenes.length-1,Math.floor(el/perMs));
-      const inS=(el-i*perMs)/1000;
-      // 씬 사이만 페이드한다.
-      //   ★첫 씬은 페이드인을 안 한다 — 첫 프레임이 투명하면 미리보기가 빈 화면으로 보이고,
-      //     쇼츠는 첫 3초가 승부라 훅 자막이 처음부터 떠 있어야 한다(기준서 §1).
-      //   ★마지막 씬(CTA)은 페이드아웃을 안 한다 — 저장·공유 문구는 끝까지 남아 있어야 한다.
-      let a=1;
-      if(inS<fade&&i>0)a=inS/fade;
-      else if(inS>per-fade&&i<scenes.length-1)a=Math.max(0,(per-inS)/fade);
-      _shFrame(ctx,scenes[i],i,scenes.length,a);
+      const now=performance.now(), el=now-t0;
+      if(el>=total){ _shFrame(ctx,plan,plan.total-0.001,fx); res(); return; }
+      if(now-last>40)lag++;                          // 33ms(30fps)를 넉넉히 넘긴 간격 = 끊긴 순간
+      last=now;
+
+      const d0=performance.now();
+      _shFrame(ctx,plan,el/1000,fx);
+      const d=performance.now()-d0;
+      frames++; sum+=d; win.push(d); if(win.length>20)win.shift();
+
+      // ★안전선 — 최근 20프레임 평균이 예산을 넘으면 효과를 한 단계 끈다
+      if(fx>0&&win.length===20){
+        const avg=win.reduce((a,b)=>a+b,0)/20;
+        if(avg>SH.FX_BUDGET){
+          fx--; win.length=0;
+          console.log('[쇼츠] 무거워서 효과를 낮췄어요 fx='+fx+' (한 장 평균 '+avg.toFixed(1)+'ms)');
+        }
+      }
       if(onPct)onPct(el/total);
       requestAnimationFrame(tick);
     })();
@@ -1583,6 +1812,12 @@ async function _shRecord(plan,onPct){
   rec.stop();
   const blob=await done;
   if(!blob||!blob.size)throw new Error('녹화된 내용이 비어 있어요');
+
+  window._SH_STAT={ frames, lag, fx, avgMs:Math.round(sum/Math.max(1,frames)*100)/100,
+                    secs:Math.round(plan.total*10)/10 };
+  console.log('[쇼츠] 실측 — 그린 장수 '+frames+' · 끊긴 순간 '+lag+' · 한 장 평균 '
+    +window._SH_STAT.avgMs+'ms · 효과단계 '+fx);
+
   const fixed=_shWithDuration(new Uint8Array(await blob.arrayBuffer()),total);   // 길이 써넣기
   return fixed?new Blob([fixed],{type:'video/webm'}):blob;                        // 못 쓰면 원본 그대로
 }
@@ -1598,6 +1833,7 @@ async function _makeShorts(onPct){
   return { blob, url:URL.createObjectURL(blob),
            scenes:plan.list.length, 원고씬:scenes.length,     // CTA 한 장을 더해 상영한다
            secs:r1(plan.total), per:r1(plan.per),
+           stat:window._SH_STAT||null,                        // ★실측(그린 장수·끊김·효과단계)
            size:blob.size, list:plan.list.map(function(s){ return s.text; }) };
 }
 function dlShorts(){
