@@ -1301,6 +1301,155 @@ function _poIcon(ctx,kind,cx,cy,r){
   ctx.restore();
 }
 
+// ═══ 📱 QR 코드 — ★진짜로 스캔되는 것을 직접 만든다 ═══════════════════
+//   왜 직접 만드나: 바깥 라이브러리(CDN)를 못 쓴다. 그리고 AI 그림이 만든 QR은
+//     ★모양만 QR이고 스캔이 안 된다(글자가 "1분무못 진만" 처럼 뭉개져 나왔었다).
+//   그래서 QR 규격대로 ★직접 계산한다. 만든 뒤에는 ★진짜 스캐너로 읽어 확인한다.
+//   ★범위: 바이트 모드 · 오류정정 M · 버전 1~6(주소 100자쯤까지).
+//     넘치면 ★QR을 안 만든다 — 안 읽히는 가짜를 그리느니 없는 게 낫다.
+const QR_EC={ 1:[26,10,1,16], 2:[44,16,1,28], 3:[70,26,1,44],      // [총, EC/블록, 블록수, 데이터/블록]
+              4:[100,18,2,32], 5:[134,24,2,43], 6:[172,16,4,27] };
+const QR_ALIGN={2:18,3:22,4:26,5:30,6:34};
+const QR_EXP=new Array(512), QR_LOG=new Array(256);
+(function(){ let x=1;
+  for(let i=0;i<255;i++){ QR_EXP[i]=x; QR_LOG[x]=i; x<<=1; if(x&0x100)x^=0x11D; }
+  for(let i=255;i<512;i++)QR_EXP[i]=QR_EXP[i-255];
+})();
+function _qrMul(a,b){ return (a===0||b===0)?0:QR_EXP[QR_LOG[a]+QR_LOG[b]]; }
+function _qrGen(n){                                   // 생성 다항식
+  let p=[1];
+  for(let i=0;i<n;i++){
+    const q=new Array(p.length+1).fill(0);
+    for(let j=0;j<p.length;j++){ q[j]^=p[j]; q[j+1]^=_qrMul(p[j],QR_EXP[i]); }
+    p=q;
+  }
+  return p;
+}
+function _qrRS(data,n){                               // 오류정정 코드워드
+  const g=_qrGen(n), r=data.slice().concat(new Array(n).fill(0));
+  for(let i=0;i<data.length;i++){
+    const f=r[i];
+    if(f) for(let j=0;j<g.length;j++) r[i+j]^=_qrMul(g[j],f);
+  }
+  return r.slice(data.length);
+}
+const QR_MASK=[
+  (r,c)=>((r+c)%2)===0,                (r,c)=>(r%2)===0,
+  (r,c)=>(c%3)===0,                    (r,c)=>((r+c)%3)===0,
+  (r,c)=>((((r/2)|0)+((c/3)|0))%2)===0, (r,c)=>((r*c)%2+(r*c)%3)===0,
+  (r,c)=>(((r*c)%2+(r*c)%3)%2)===0,    (r,c)=>(((r+c)%2+(r*c)%3)%2)===0,
+];
+function _qrFormat(mask){                             // 오류정정 M(00) + 마스크 → BCH
+  const d=(0<<3)|mask;
+  let e=d<<10;
+  for(let i=14;i>=10;i--) if((e>>i)&1) e^=0b10100110111<<(i-10);
+  return (((d<<10)|e)^0b101010000010010);
+}
+function _qrBuild(text){
+  const bytes=new TextEncoder().encode(text);
+  let v=0;
+  for(let k=1;k<=6;k++){
+    const cap=QR_EC[k][2]*QR_EC[k][3]*8;
+    if(4+8+bytes.length*8+4<=cap){ v=k; break; }
+  }
+  if(!v)return null;                                  // ★너무 길면 안 만든다
+  const [,ecw,blocks,dpb]=QR_EC[v], total=blocks*dpb, cap=total*8;
+  const bits=[], put=(val,n)=>{ for(let i=n-1;i>=0;i--)bits.push((val>>i)&1); };
+  put(4,4); put(bytes.length,8); bytes.forEach(b=>put(b,8));
+  for(let i=0;i<4&&bits.length<cap;i++)bits.push(0);
+  while(bits.length%8)bits.push(0);
+  const dc=[];
+  for(let i=0;i<bits.length;i+=8){ let b=0; for(let j=0;j<8;j++)b=(b<<1)|bits[i+j]; dc.push(b); }
+  const pad=[0xEC,0x11]; let pi=0;
+  while(dc.length<total)dc.push(pad[pi++%2]);
+  const db=[],eb=[];
+  for(let i=0;i<blocks;i++){ const d=dc.slice(i*dpb,(i+1)*dpb); db.push(d); eb.push(_qrRS(d,ecw)); }
+  const cw=[];                                        // 블록 섞기(인터리빙)
+  for(let i=0;i<dpb;i++) for(let b=0;b<blocks;b++) cw.push(db[b][i]);
+  for(let i=0;i<ecw;i++) for(let b=0;b<blocks;b++) cw.push(eb[b][i]);
+
+  const n=17+4*v, m=[], fx=[];                        // fx = 함수 패턴(건드리면 안 되는 칸)
+  for(let i=0;i<n;i++){ m.push(new Array(n).fill(0)); fx.push(new Array(n).fill(0)); }
+  const set=(r,c,val)=>{ if(r<0||c<0||r>=n||c>=n)return; m[r][c]=val; fx[r][c]=1; };
+  const finder=(r0,c0)=>{
+    for(let r=-1;r<=7;r++)for(let c=-1;c<=7;c++){
+      const on=(r>=0&&r<=6&&(c===0||c===6))||(c>=0&&c<=6&&(r===0||r===6))||(r>=2&&r<=4&&c>=2&&c<=4);
+      set(r0+r,c0+c,on?1:0);
+    }
+  };
+  finder(0,0); finder(0,n-7); finder(n-7,0);
+  for(let i=8;i<n-8;i++){ set(6,i,i%2===0?1:0); set(i,6,i%2===0?1:0); }
+  if(v>=2){ const p=QR_ALIGN[v];
+    for(let r=-2;r<=2;r++)for(let c=-2;c<=2;c++)
+      set(p+r,p+c,(Math.abs(r)===2||Math.abs(c)===2||(r===0&&c===0))?1:0); }
+  set(4*v+9,8,1);                                     // 다크 모듈
+  for(let i=0;i<9;i++){ if(!fx[8][i])set(8,i,0); if(!fx[i][8])set(i,8,0); }
+  for(let i=0;i<8;i++){ if(!fx[8][n-1-i])set(8,n-1-i,0); if(!fx[n-1-i][8])set(n-1-i,8,0); }
+
+  let bi=0;                                           // 데이터 지그재그 배치
+  for(let col=n-1, up=true; col>0; col-=2, up=!up){
+    if(col===6)col--;
+    for(let k=0;k<n;k++){
+      const row=up?(n-1-k):k;
+      for(let c=0;c<2;c++){
+        const cc=col-c;
+        if(fx[row][cc])continue;
+        m[row][cc]=(bi<cw.length*8)?((cw[bi>>3]>>(7-(bi&7)))&1):0;
+        bi++;
+      }
+    }
+  }
+  // 마스크 8종 중 벌점이 가장 적은 것
+  const 벌점=g=>{
+    let p=0;
+    for(let a=0;a<2;a++)for(let i=0;i<n;i++){
+      let run=1;
+      for(let j=1;j<n;j++){
+        const cur=a?g[j][i]:g[i][j], prv=a?g[j-1][i]:g[i][j-1];
+        if(cur===prv)run++; else { if(run>=5)p+=3+(run-5); run=1; }
+      }
+      if(run>=5)p+=3+(run-5);
+    }
+    for(let i=0;i<n-1;i++)for(let j=0;j<n-1;j++)
+      if(g[i][j]===g[i][j+1]&&g[i][j]===g[i+1][j]&&g[i][j]===g[i+1][j+1])p+=3;
+    const pat=[1,0,1,1,1,0,1,0,0,0,0];
+    const 찾기=arr=>{ let c=0;
+      for(let i=0;i+11<=arr.length;i++){
+        let ok=true,ok2=true;
+        for(let k=0;k<11;k++){ if(arr[i+k]!==pat[k])ok=false; if(arr[i+k]!==pat[10-k])ok2=false; }
+        if(ok||ok2)c++;
+      } return c; };
+    for(let i=0;i<n;i++){ p+=40*찾기(g[i]); p+=40*찾기(g.map(r=>r[i])); }
+    let dark=0; g.forEach(r=>r.forEach(x=>dark+=x));
+    p+=Math.floor(Math.abs(dark*100/(n*n)-50)/5)*10;
+    return p;
+  };
+  let best=null,bestP=Infinity,bestMask=0;
+  for(let mk=0;mk<8;mk++){
+    const g=m.map(r=>r.slice());
+    for(let r=0;r<n;r++)for(let c=0;c<n;c++) if(!fx[r][c]&&QR_MASK[mk](r,c)) g[r][c]^=1;
+    const fmt=_qrFormat(mk);
+    for(let i=0;i<15;i++){
+      // ★맨 위 비트부터 넣는다. 거꾸로 넣으면 그림은 QR 같지만 ★스캔이 안 된다.
+      //   (실제로 그렇게 만들었다가 디코더가 못 읽어서 잡았다 — 데이터는 멀쩡한데 이 8칸 때문이었다)
+      const b=(fmt>>(14-i))&1;
+      if(i<6)g[8][i]=b; else if(i===6)g[8][7]=b; else if(i===7)g[8][8]=b;
+      else if(i===8)g[7][8]=b; else g[14-i][8]=b;
+      if(i<7)g[n-1-i][8]=b; else g[8][n-15+i]=b;
+    }
+    const p=벌점(g);
+    if(p<bestP){ bestP=p; best=g; bestMask=mk; }
+  }
+  return {m:best, n, v, mask:bestMask};
+}
+function _qrDraw(ctx,q,x,y,size){                     // 흰 바탕 + 검은 모듈(스캔이 잘 되는 대비)
+  const quiet=4, tot=q.n+quiet*2, u=size/tot;
+  ctx.fillStyle='#FFFFFF'; ctx.fillRect(x,y,size,size);
+  ctx.fillStyle='#000000';
+  for(let r=0;r<q.n;r++)for(let c=0;c<q.n;c++)
+    if(q.m[r][c]) ctx.fillRect(x+(c+quiet)*u, y+(r+quiet)*u, Math.ceil(u), Math.ceil(u));
+}
+
 // ── 원고에서 값 뽑기 ────────────────────────────────────────────────
 //   ★엔진 프롬프트는 안 건드린다(danger zone). 이미 나온 원고를 조립할 뿐이다.
 //   ★못 뽑으면 빈 값으로 둔다 — 억지로 채우지 않는다. 빈 블록은 배치에서 빠진다.
@@ -1411,18 +1560,32 @@ function _poBlocks(ctx,D,CW,작게){
         f2.lines.forEach((l,k)=>c.fillText(l,X,yy+f2.lh/2+k*f2.lh)); }
     }});
   }
-  if(D.cta){                                           // ⑨ CTA 바 + 주소
-    const bh=D.url?126:96;
-    B.push({h:bh, draw:(c,y)=>{
+  if(D.cta){                                           // ⑨ CTA 바 + 주소 + ★QR
+    // 주소에 http가 없으면 붙인다 — 안 붙이면 스캔해도 안 열린다
+    const qrUrl=D.url?(/^https?:\/\//i.test(D.url)?D.url:('https://'+D.url.replace(/^\/+/,''))):'';
+    const q=qrUrl?_qrBuild(qrUrl):null;                // ★못 만들면 null — 안 읽히는 가짜를 그리지 않는다
+    const qs=146, bh=q?174:(D.url?126:96);
+    B.push({h:bh, qr:!!q, draw:(c,y)=>{
       c.fillStyle=PO.gold; _shRound(c,X-CW/2,y,CW,bh,16); c.fill();
+      const tw=q?(CW-qs-64):CW;                        // 글자가 쓸 수 있는 폭
+      const tx=q?(X-CW/2+tw/2+16):X;
       c.textAlign='center'; c.textBaseline='middle';
-      const f=_poFit(c,D.cta,'800',42,28,CW-60,1);
+      const f=_poFit(c,D.cta,'800',42,26,tw-36,1);
       c.font='800 '+f.fs+'px '+PO.FONT; c.fillStyle=PO.navy;
-      c.fillText(f.lines[0]||D.cta,X,y+(D.url?46:bh/2));
+      c.fillText(f.lines[0]||D.cta,tx,y+(D.url?bh*0.37:bh/2));
       if(D.url){
-        const u=_poFit(c,D.url,'600',26,17,CW-60,1);
+        const u=_poFit(c,D.url,'600',26,16,tw-36,1);
         c.font='600 '+u.fs+'px '+PO.FONT; c.fillStyle='rgba(11,35,64,0.82)';
-        c.fillText(u.lines[0]||D.url,X,y+92);
+        c.fillText(u.lines[0]||D.url,tx,y+bh*0.63);
+        if(q){
+          c.font='700 19px '+PO.FONT; c.fillStyle='rgba(11,35,64,0.7)';
+          c.fillText('QR을 찍으면 바로 열려요',tx,y+bh*0.83);
+        }
+      }
+      if(q){                                           // ★흰 판 위에 검정 — 스캐너가 잘 읽는 대비
+        const qx=X+CW/2-qs-18, qy=y+(bh-qs)/2;
+        c.fillStyle='#FFFFFF'; _shRound(c,qx-7,qy-7,qs+14,qs+14,10); c.fill();
+        _qrDraw(c,q,qx,qy,qs);
       }
     }});
   }
@@ -1455,7 +1618,7 @@ function _poDraw(ctx,D){
   ctx.font='700 28px '+PO.FONT; ctx.fillStyle='rgba(242,178,62,0.85)';
   ctx.textAlign='center'; ctx.textBaseline='middle';
   ctx.fillText(PO_FIXED.brand,X,H-S-26);
-  return {작게, 블록수:B.length};
+  return {작게, 블록수:B.length, qr:B.some(b=>b.qr)};
 }
 
 // ── 만들기 ──────────────────────────────────────────────────────────
@@ -1512,6 +1675,9 @@ function _imgPv(){
       +'<div style="font-size:11px;color:var(--soft);margin-top:6px">실제로 그린 PNG <b>1장</b> · 1080×1440(3:4) · '
       +(p.size/1024).toFixed(0)+'KB · <b style="color:var(--teal)">비용 0원</b>'
       +(p.info&&p.info.작게?' · 글이 많아 조금 작게 그렸어요':'')+'</div>'
+      +(p.info&&p.info.qr
+        ? '<div style="font-size:10px;color:var(--teal);margin-top:3px">📱 QR 들어감 — <b>진짜로 스캔되는 코드</b>예요(위 주소가 열립니다)</div>'
+        : (D.url?'<div style="font-size:10px;color:var(--red);margin-top:3px">📱 QR은 못 넣었어요 — 주소가 너무 길어요(안 읽히는 가짜는 안 그립니다)</div>':''))
       +'<div style="margin-top:6px"><button class="save" onclick="event.stopPropagation();dlPoster()">⬇️ 포스터 내려받기</button>'
       +' <button class="save" id="genImgBtn" onclick="event.stopPropagation();makePoster(true)" style="background:transparent;border:1px solid var(--line);color:var(--soft)">🔁 다시 그리기</button></div>';
   }else{
