@@ -796,8 +796,12 @@ function toggleC(el){
           +'style="width:168px;border-radius:10px;display:block;background:#0B2620"></video>'
         +'<div style="font-size:11px;color:var(--soft);margin-top:6px">실제로 그려서 녹화한 세로 영상이에요 — '
           +'원고 '+sh.원고씬+'씬 + 저장·공유 CTA 1장 = <b>'+sh.scenes+'장</b> · <b>'+sh.secs+'초</b>'
-          +'(장당 '+sh.per+'초) · 1080×1920 · '+(sh.size/1048576).toFixed(1)+'MB</div>'
-        +'<div style="font-size:10px;color:var(--teal);margin-top:4px">✓ 품질기준 — 훅 첫 화면 · 큰 글씨 고대비 · 상하 세이프존 · 15~25초 · 끝에 저장·공유 CTA</div>'
+          +'(평균 장당 '+sh.per+'초 · 훅은 더 짧고 CTA는 더 길어요) · 1080×1920 · '+(sh.size/1048576).toFixed(1)+'MB</div>'
+        +'<div style="font-size:10px;color:var(--teal);margin-top:4px">✓ 품질기준 — 훅 첫 화면 · <b>상단 큰 자막</b> · 단어별 등장 · 움직이는 배경 · <b>내용에 맞는 그림</b> · 20~28초 · 끝에 저장·공유 CTA</div>'
+        // ★실측을 그대로 보여드린다 — "잘 만들었다"가 아니라 숫자로(끊긴 순간이 많으면 대표님이 바로 아신다)
+        +(sh.stat?('<div style="font-size:10px;color:var(--soft);margin-top:3px">실측 — 그린 장수 '+sh.stat.frames
+          +' · 끊긴 순간 '+sh.stat.lag+' · 한 장 평균 '+sh.stat.avgMs+'ms'
+          +(sh.stat.fx<2?' · <span style="color:var(--red)">무거워서 효과를 낮췄어요('+sh.stat.fx+'단계)</span>':'')+'</div>'):'')
         +'<div style="margin-top:6px"><button class="save" onclick="event.stopPropagation();dlShorts()">⬇️ 쇼츠 영상 내려받기(webm)</button></div>'
         +'<div style="font-size:10px;color:var(--soft);margin-top:5px;line-height:1.6">'
           +'· 유튜브 쇼츠는 이 파일 <b>그대로</b> 올라가요.<br>'
