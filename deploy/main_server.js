@@ -662,6 +662,7 @@ const allowlist = require('./login_allowlist');
 // 🎨🎙️ 배치3 — 이미지·음성 생성. 독립 모듈(라우터만 꽂는다). init은 VIP_EMAIL 정의 뒤에서 한다.
 const imageGen = require('./image_gen');
 const ttsGen = require('./tts');
+const shortsScene = require('./shorts_scene');   // 🎬 쇼츠 2안 — 원고 → 배경 장면(독립 모듈)
 
 const SESSION_ABS_MS = 30 * 24 * 60 * 60 * 1000;  // 절대 만료 30일
 const SESSION_IDLE_MS = 7 * 24 * 60 * 60 * 1000;  // 유휴 만료 7일(접속할 때마다 리셋)
@@ -3889,6 +3890,8 @@ allowlist.init({ vipEmail: VIP_EMAIL });
   ttsGen.init({ isRep: _isRepReq, bill: _billKrw });
   app.use('/api/media', imageGen.router);
   app.use('/api/media', ttsGen.router);
+  shortsScene.init({ isRep: _isRepReq, anthropic: _anthropic });
+  app.use('/api/media', shortsScene.router);
 }
 async function findOrCreateMemberSheet(ma) {
   const drive = google.drive({ version: 'v3', auth: ma }), sheets = google.sheets({ version: 'v4', auth: ma });
