@@ -23,6 +23,7 @@ const connectors = require('./connectors_index');     // 🔌 커넥터창고
 const memory = require('./memory_module');                   // 🧠 기억 엔진(회원 시트)
 const genyaMem = require('./genya_mem_module');               // 🧠 MEM 하이브리드C(Firestore genya_mem · 설계요약 저장/검색 · 주민번호·전화 마스킹 · userId 격리)
 const personalMem = require('./personal_memory');             // 🧠 개인화 벡터 메모리(v4.0 Step2-A · Pinecone 대표·고객 이중 네임스페이스). PINECONE_API_KEY 없으면 no-op.
+const authorRag = require('./author_rag');                    // 📚 대표님 자산 검색(책·상담·강의 2,766청크 · author_knowledge NS). 키 없으면 빈 결과만 준다.
 const sheetsCrud = require('./sheets_crud_skill');            // 🗂️ Step 2-B · 시트 자연어 CRUD(독립 모듈 · 하이브리드 라우터 무접촉)
 const approval = require('./approval_skill');                 // 🗂️ Step 2-C · 결재함 백엔드(독립 모듈 · 라우터 무접촉)
 const campaign = require('./campaign_skill');                 // 📣 캠페인(명단 일괄) 발송(독립 모듈 · 승인 버튼만 · 기존 발송함수 재사용)
@@ -2661,7 +2662,8 @@ app.get('/api/diag/find', (req, res) => {
 
 // 답글 초안(LLM) — ★게시는 교육생 직접(자동 0). [링크]는 화면에서 진단링크+교육생 꼬리표로 치환.
 app.post('/api/find/reply-draft', async (req, res) => {
-  if (!sessionOf(req)) return res.status(401).json({ ok: false, error: '로그인이 필요해요' });
+  // 🔑 tryfind와 같은 X-Genya-Key. 열쇠가 맞으면 세션 없이 통과 · 없으면 ★예전 그대로(하위호환)
+  if (!_hasApiKey(req) && !sessionOf(req)) return res.status(401).json({ ok: false, error: '로그인 또는 API 키가 필요해요' });
   try {
     const b = req.body || {};
     const text = String(b.text || '').slice(0, 500);
@@ -2686,6 +2688,15 @@ app.post('/api/find/reply-draft', async (req, res) => {
       b.why ? `지니야가 뽑은 이유: ${String(b.why).slice(0, 60)}` : '',
       b.quote ? `검수AI가 짚은 구절: "${String(b.quote).slice(0, 80)}"` : '',
     ].filter(Boolean).join(' / ');
+    // 📚 대표님 자산(책·상담·강의 2,766청크)에서 이 고민에 가까운 대목을 찾아 ★근거로 준다.
+    //   ★일반 AI 답글 → 대표님 관점 답글. 검색은 author_knowledge NS만 본다(약관·개인기억은 안 연다).
+    //   ★실패해도 초안은 그대로 나온다 — author_rag는 모든 실패를 빈 결과로 돌린다(원칙).
+    let ragText = '', ragUsed = [];
+    try {
+      const rag = await authorRag.searchAsSource(발췌 + ' ' + String(b.why || ''), 5);
+      ragText = (rag && rag.text) || '';
+      ragUsed = (rag && rag.used) || [];
+    } catch (e) { ragText = ''; ragUsed = []; }
     const sys = '너는 재무설계사를 돕는 어시스턴트다. 공개 글(카페·블로그·지식iN·유튜브 댓글)에 달 "답글 초안"을 쓴다. 톤: 친절하고 전문적.\n'
       + '★★가장 중요: 아래 [본문 발췌]를 ★실제로 읽고★ 그 사람의 구체적인 고민에 답해라.\n'
       + '   두루뭉술한 인사글은 실패다. 발췌에 나온 상황(예: 신혼집 대출·재건축·전세·목돈·연금 등)을\n'
@@ -2713,7 +2724,12 @@ app.post('/api/find/reply-draft', async (req, res) => {
       + '  ⑤ 마무리 — 마지막 줄은 "감사합니다."로 끝낸다\n'
       + '전체 5~8문장. 강매·전화번호·과장·이모지 남발 금지.\n'
       + '★자격·경력을 지어내지 마라. 위 인사말에 없는 자격을 덧붙이지 않는다.\n'
-      + '답글 본문만 출력(설명 없이).';
+      + '답글 본문만 출력(설명 없이).'
+      // 📚 대표님 자료가 있을 때만 붙인다. 없으면 예전 프롬프트와 ★한 글자도 다르지 않다(하위호환).
+      + (ragText ? '\n\n[대표님(오상열 CFP) 실제 자료 — 이 내용을 근거로 답해라]\n' + ragText
+        + '\n★위 자료에 있는 관점·표현을 우선 반영해라. 없는 건 지어내지 마라.\n'
+        + '★단 이 자료는 ★다른 사람의 사례다 — 여기 나온 나이·금액·가족은 이 글쓴이의 것이 아니다.\n'
+        + '  글쓴이의 사실로 옮겨 적지 마라(발췌에 없는 사실 금지 규칙이 여전히 우선이다).\n' : '');
     const usr = `[출처: ${source}]${맥락 ? '\n[맥락] ' + 맥락 : ''}\n\n[본문 발췌]\n"""${발췌}"""\n\n`
       + '위 발췌를 읽고, 이 사람의 고민에 맞춘 답글 초안을 써줘. 발췌에 없는 사실은 넣지 마.';
     const cr = await _anthropic.messages.create({ model: WS_CHAT_MODEL, max_tokens: 1200, system: sys, messages: [{ role: 'user', content: usr }] });
@@ -2769,11 +2785,13 @@ app.post('/api/find/reply-draft', async (req, res) => {
     }
     const 반영최종 = 핵심.filter((w) => draft.indexOf(w) >= 0).length;
     const 결론최종 = _hasConcl(draft) && !_dodges(draft);
-    console.log(`[✍️답글] 발췌 ${발췌.length}자 · 핵심낱말 ${핵심.length} · 반영 ${반영최종} · 결론 ${결론최종 ? 'O' : 'X'}${재작성 ? ' (재작성함)' : ''}${짧음 ? ' · 발췌짧음' : ''}`);
+    console.log(`[✍️답글] 발췌 ${발췌.length}자 · 핵심낱말 ${핵심.length} · 반영 ${반영최종} · 결론 ${결론최종 ? 'O' : 'X'}${재작성 ? ' (재작성함)' : ''}${짧음 ? ' · 발췌짧음' : ''}`
+      + ` · 📚RAG ${ragUsed.length}건${ragUsed.length ? '(' + ragUsed.map((u) => u.book).join(',') + ')' : ' — 대표님 자료 못 붙임'}`);
 
     // ★무엇을 읽고 썼는지 화면에 보여주기 위해 발췌를 함께 돌려준다(서버 저장 0 — 응답에만)
     res.json({ ok: true, draft, basedOn: 발췌.slice(0, 200), thin: 짧음,
       grounded: 반영최종 >= 2, matched: 반영최종, hasConclusion: 결론최종,
+      RAG참고: ragUsed.length, RAG출처: ragUsed,      // 📚 후임이 "RAG N건 참고"로 표시 · 책 이름·점수 포함
       truncated: cr.stop_reason === 'max_tokens' });
   } catch (e) { res.json({ ok: false, error: e.message }); }
 });
