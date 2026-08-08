@@ -65,7 +65,7 @@ function makeLead(o) {
     hunter: String(o.hunter || ''),         // 어느 기자가 물어왔나
     source: String(o.source || ''),         // 유튜브 / 지식인 …
     author: String(o.author || ''),         // 화면 표시용(서버 저장 안 함)
-    text: String(o.text || '').slice(0, 300),
+    text: String(o.text || '').slice(0, 600),   // ★2026-08-09 300→600 (판별관문이 연락처·직함을 보게)
     sourceUrl: String(o.sourceUrl || ''),   // ★발행인이 직접 가서 확인할 링크(필수)
     postedAt: o.postedAt || '',
     context: o.context || {},               // 판별에 필요한 맥락(작성자 채널ID 등)

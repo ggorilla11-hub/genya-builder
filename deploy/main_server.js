@@ -2490,6 +2490,29 @@ app.post('/api/admin/job', (req, res) => {
   res.json({ ok: true, 지금직업: j, 직업이름: jobKw.직업이름(j), 검색어: jobKw.기본검색어(j),
     설정: jobProf.불러오기(j), 발송함: false });
 });
+// 🗂️ 채널 이름(사람이 쓰는 말) → 기자 key. ★key는 hunters 실물에서 확인한 값이다(추측 금지).
+//   ★'다음 카페'를 '카페'보다 먼저 본다 — 순서를 바꾸면 다음카페가 네이버카페로 샌다.
+const _CH_MAP = [
+  ['daumCafe', /(다음\s*카페|daum)/i],
+  ['naverKin', /(지식\s*in|지식인|kin)/i],
+  ['naverCafe', /(카페|cafe)/i],
+  ['naverBlog', /(블로그|blog)/i],
+  ['naverNews', /(뉴스|news)/i],
+  ['googleSearch', /(구글|google)/i],
+  ['youtube', /(유튜브|유투브|youtube)/i],
+];
+// 못 알아들은 이름은 ★버린다(지어내지 않는다). 하나도 못 알아들으면 빈 배열 → 전체 발굴(하위호환).
+function _channelsToKeys(v) {
+  const arr = Array.isArray(v) ? v : (v ? [v] : []);
+  const keys = [], 모름 = [];
+  for (const raw of arr) {
+    const s = String(raw || '').trim();
+    if (!s) continue;
+    const hit = _CH_MAP.find(([k, re]) => k.toLowerCase() === s.toLowerCase() || re.test(s));
+    if (hit) { if (!keys.includes(hit[0])) keys.push(hit[0]); } else 모름.push(s);
+  }
+  return { keys, 모름 };
+}
 // 🎭 그 직업으로 ★시험 발굴 — 기존 발굴 라우트는 손대지 않고, 밤샘 엔진을 1회 빌려 쓴다.
 app.post('/api/admin/tryfind', async (req, res) => {
   // 🔑 열쇠가 맞으면 세션 없이 통과 · 열쇠가 없으면 ★예전 그대로 로그인+VIP 검사(하위호환)
@@ -2499,14 +2522,29 @@ app.post('/api/admin/tryfind', async (req, res) => {
   const kw = jobKw.기본검색어(j);
   if (!kw.length) return res.json({ ok: false, error: `"${j}"는 검색어 표에 없어요 — 지어내지 않습니다.` });
   try {
-    console.log(`[🎭직업전환] 시험 발굴 "${j}" · 검색어 ${kw.length}개 · ★저장 안 함·발송 안 함`);
-    const desk = await hunterDesk.collect({ 키워드: kw, 직업: j }, { max: 20 });
+    // 🗂️ 채널을 골라 보냈으면 그 기자만 부른다. 안 보내면 ★전체(기존과 동일).
+    const ch = _channelsToKeys(req.body && req.body.채널);
+    // ★6-9 교훈: 거르기가 실패하면 "0건"이 아니라 ★"전체"가 된다. 채널을 보냈는데 하나도
+    //   못 알아들었으면 ★전체로 넓히지 말고 멈춘다(안 부른 것이 잘못 부른 것보다 낫다).
+    const 채널보냄 = Array.isArray(req.body && req.body.채널) ? req.body.채널.length > 0 : !!(req.body && req.body.채널);
+    if (채널보냄 && !ch.keys.length) {
+      return res.json({ ok: false, error: `채널 이름을 못 알아들었어요: ${ch.모름.join(', ')}`,
+        고를수있는채널: _CH_MAP.map(([k]) => k), 발굴함: false,
+        안내: '★못 알아들은 채로 전체를 뒤지지 않았습니다. 채널 이름을 확인해 주세요.' });
+    }
+    console.log(`[🎭직업전환] 시험 발굴 "${j}" · 검색어 ${kw.length}개 · 채널 ${ch.keys.length ? ch.keys.join(',') : '전체'} · ★저장 안 함·발송 안 함`);
+    const desk = await hunterDesk.collect({ 키워드: kw, 직업: j }, { max: 20, only: ch.keys });
     const leads = ((desk && desk.leads) || []).map((l) => ({
       채널: String(l.channel || l.source || ''), 링크: String(l.sourceUrl || l.link || ''),
-      발췌: String(l.text || '').replace(/\s+/g, ' ').trim().slice(0, 120),
+      발췌: String(l.text || '').replace(/\s+/g, ' ').trim().slice(0, 600),
       등급: String(l.grade || l.tier || ''), 점수: Number(l.score || 0) || 0, 판정: String(l.verdict || ''),
+      // ★자리만 만들어 둔다 — 네이버 검색 API가 값을 안 준다. 후임 앱이 링크를 열어 채운다.
+      //   ★모르면 null. 0으로 두면 "답변 0개"라는 ★거짓말이 된다.
+      답변수: Number(l.answerCount || l.answers || 0) || null,
+      조회수: Number(l.viewCount || l.views || 0) || null,
     })).filter((x) => x.링크);
     res.json({ ok: true, 직업: j, 검색어: kw, 건수: leads.length, 리드: leads.slice(0, 30),
+      채널: ch.keys.length ? ch.keys : '전체', 못알아들은채널: ch.모름,
       저장함: false, 발송함: false, 안내: '체험용이라 저장하지 않습니다. 대표님 밤샘 설정도 그대로입니다.' });
   } catch (e) { res.status(502).json({ ok: false, error: e.message, 발송함: false }); }
 });

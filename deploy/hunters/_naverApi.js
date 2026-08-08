@@ -108,7 +108,9 @@ function makeNaverHunter(cfg) {
         const title = clean(it.title);
         const desc = clean(it.description);
         // 제목+요약을 합쳐 판별·채점에 쓴다(고민이 제목에 많이 담긴다)
-        const text = (title + (desc ? (' — ' + desc) : '')).slice(0, 300);
+        // ★2026-08-09 300→600: 판별관문(lead_filter)이 연락처·"해드립니다"·직함을 볼 수 있게.
+        //   ★_contract.makeLead도 같이 600으로 올려야 실제로 늘어난다(거기서 다시 자른다).
+        const text = (title + (desc ? (' — ' + desc) : '')).slice(0, 600);
         if (!text) return;
         out.push(C.makeLead({
           id: C.makeId(cfg.idPrefix, it.link || title),

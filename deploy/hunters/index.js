@@ -81,6 +81,9 @@ async function collect(persona, opts) {
   const stats = {};   // 기자별 숫자 — ★개인정보 없음
   const leads = [];
   const skip = new Set(opts.exclude || []);   // 이미 다른 경로로 처리한 채널은 건너뛴다(중복 방지)
+  // ★2026-08-09 only — "이 채널만" 부르기. 비었거나 없으면 ★전체(기존과 동일·하위호환).
+  //   ★검색·판정 로직은 안 건드린다. 누구를 부를지만 고른다.
+  const only = (Array.isArray(opts.only) ? opts.only : []).filter(Boolean);
 
   // ★2026-07-27 "발굴 중…에서 멈춤" 사고 대응 — 3중 안전장치
   //   ① 병렬: 11명이 동시에 나간다(순차면 채널 6개 도는 데만 1~2분)
@@ -98,6 +101,7 @@ async function collect(persona, opts) {
   const jobs = [];
   for (const h of hunters()) {
     if (skip.has(h.key)) continue;
+    if (only.length && !only.includes(h.key)) continue;   // ★고른 채널만
     // ★한 채널에 AI 여러 명. 없으면 기본 1명(자동 이름).
     const agents = (Array.isArray(h.agents) && h.agents.length) ? h.agents : [{ name: C.autoName(h.key) }];
     for (const agent of agents) jobs.push({ h, agent });
