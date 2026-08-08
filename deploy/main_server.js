@@ -2462,6 +2462,14 @@ const jobProf = require('./job_profiles');            // 🏭 직업별 지니�
 //     밤샘 발굴은 대표님 원래 직업(재무) 그대로 돈다(체험 때문에 실제 밤샘이 바뀌면 안 된다).
 //   ★발송 0 — 여기엔 보내는 코드가 없다.
 const _ADMIN_MODE = {};                                // { 이메일: 직업 } — 서버 메모리(체험용·개인정보 아님)
+// 🔑 서버-대-서버 열쇠 — 후임 앱이 ★로그인 세션 없이 부를 수 있게 하는 유일한 통로.
+//   ★키가 없으면(환경변수 미설정) 항상 false → 기존 로그인 검사만 남는다(하위호환·빈 키로 뚫림 0).
+//   ★여기 통과 = 대표님 권한. 그러니 붙이는 라우트를 함부로 늘리지 않는다.
+function _hasApiKey(req) {
+  const k = String(req.get('X-Genya-Key') || '');
+  const real = String(process.env.GENYA_API_KEY || '');
+  return real.length > 0 && k === real;
+}
 function _isAdmin(req) { return String((sessionOf(req) || {}).email || '').toLowerCase() === VIP_EMAIL; }
 app.get('/api/admin/jobs', (req, res) => {
   if (!sessionOf(req)) return res.status(401).json({ ok: false, error: '로그인이 필요해요' });
@@ -2484,8 +2492,9 @@ app.post('/api/admin/job', (req, res) => {
 });
 // 🎭 그 직업으로 ★시험 발굴 — 기존 발굴 라우트는 손대지 않고, 밤샘 엔진을 1회 빌려 쓴다.
 app.post('/api/admin/tryfind', async (req, res) => {
-  if (!sessionOf(req)) return res.status(401).json({ ok: false, error: '로그인이 필요해요' });
-  if (!_isAdmin(req)) return res.status(403).json({ ok: false, error: '대표님 전용 기능이에요' });
+  // 🔑 열쇠가 맞으면 세션 없이 통과 · 열쇠가 없으면 ★예전 그대로 로그인+VIP 검사(하위호환)
+  if (!_hasApiKey(req) && !sessionOf(req)) return res.status(401).json({ ok: false, error: '로그인 또는 API 키가 필요해요' });
+  if (!_hasApiKey(req) && !_isAdmin(req)) return res.status(403).json({ ok: false, error: '대표님 전용 기능이에요' });
   const j = String((req.body && req.body.직업) || '').trim();
   const kw = jobKw.기본검색어(j);
   if (!kw.length) return res.json({ ok: false, error: `"${j}"는 검색어 표에 없어요 — 지어내지 않습니다.` });
