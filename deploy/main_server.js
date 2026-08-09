@@ -4540,6 +4540,10 @@ app.post('/api/proposal/build', async (req, res) => {
   }
 });
 app.post('/api/coverage/analyze', async (req, res) => {
+  // 🔑 ★게이트를 호출 ★앞에 둔다 — 이 라우트는 한 번에 Sonnet5를 부르므로 돈이 바로 나간다.
+  //   막힌 사용자는 Claude가 ★아예 안 불린다(6-12 ⑦: 응답만 막으면 돈은 이미 나간 뒤다).
+  //   tryfind·reply-draft와 ★같은 방식: 회원 세션 또는 X-Genya-Key.
+  if (!_hasApiKey(req) && !sessionOf(req)) return res.status(401).json({ ok: false, error: '로그인 또는 API 키가 필요해요' });
   try {
     const dataUrl = String((req.body && req.body.dataUrl) || '');
     const mime = String((req.body && req.body.mime) || '');
@@ -4554,8 +4558,10 @@ app.post('/api/coverage/analyze', async (req, res) => {
     const isDoc = /wordprocessing|msword/i.test(mime) || ['docx', 'doc'].includes(ext);
     const isHwp = ['hwp', 'hwpx'].includes(ext);
     const sys = '너는 서류 분석 비서 "지니야"다. 주어진 자료가 무엇인지 먼저 파악하고(보험증권/제안서/고객명단/계약서/보상서류/견적서 등), 그에 맞게 핵심을 비전문가도 알기 쉽게 정리한다. 담보·금액·조건은 표로. 자료에서 확실히 안 보이는 수치는 지어내지 말고 "자료에서 확인 필요"라고 한다. 마지막 줄에 반드시 "※ 제출·발송 전 반드시 검토하세요"를 붙인다.';
+    // ★긴급수정(2026-08-09): 아래 3곳 모두 Sonnet5의 생각(thinking)이 max_tokens를 나눠 써서
+    //   분석이 잘리거나 빈 답이 됐다. reply-draft·1129·1164줄과 ★같은 방식으로 끈다.
     async function claudeText(userText) {
-      const ar = await _anthropic.messages.create({ model: WS_CHAT_MODEL, max_tokens: 1400, system: sys, messages: [{ role: 'user', content: userText }] });
+      const ar = await _anthropic.messages.create({ model: WS_CHAT_MODEL, max_tokens: 1400, thinking: { type: 'disabled' }, system: sys, messages: [{ role: 'user', content: userText }] });
       return (ar.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
     }
     let analysis = '';
@@ -4564,7 +4570,7 @@ app.post('/api/coverage/analyze', async (req, res) => {
       const mediaType = (m && m[1]) || (/^image\//i.test(mime) ? mime : 'image/jpeg');
       const data = m ? m[2] : b64;
       try {
-        const ar = await _anthropic.messages.create({ model: WS_CHAT_MODEL, max_tokens: 1400, system: sys, messages: [{ role: 'user', content: [{ type: 'text', text: '이 자료를 분석해줘.' }, { type: 'image', source: { type: 'base64', media_type: mediaType, data: data } }] }] });
+        const ar = await _anthropic.messages.create({ model: WS_CHAT_MODEL, max_tokens: 1400, thinking: { type: 'disabled' }, system: sys, messages: [{ role: 'user', content: [{ type: 'text', text: '이 자료를 분석해줘.' }, { type: 'image', source: { type: 'base64', media_type: mediaType, data: data } }] }] });
         analysis = (ar.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
         if (!analysis) throw new Error('빈 응답');
       } catch (e) {
@@ -4574,7 +4580,7 @@ app.post('/api/coverage/analyze', async (req, res) => {
     } else if (isPdf) {
       try {
         // ★PDF = Claude 문서모드(표·담보를 시각적으로 정확히 봄, 서버 변환 라이브러리 불필요)
-        const ar = await _anthropic.messages.create({ model: WS_CHAT_MODEL, max_tokens: 1600, system: sys, messages: [{ role: 'user', content: [{ type: 'text', text: '이 문서를 분석해줘.' }, { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: b64 } }] }] });
+        const ar = await _anthropic.messages.create({ model: WS_CHAT_MODEL, max_tokens: 1600, thinking: { type: 'disabled' }, system: sys, messages: [{ role: 'user', content: [{ type: 'text', text: '이 문서를 분석해줘.' }, { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: b64 } }] }] });
         analysis = (ar.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
         if (!analysis) throw new Error('빈 응답');
       } catch (e) {
