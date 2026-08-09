@@ -1192,10 +1192,11 @@ const _EXPAND6 = [
 ];
 app.post('/api/promo/expand6', async (req, res) => {
   // 🔑 6번 LLM을 부르므로 돈이 나간다 — 게이트를 호출 ★앞에 둔다(6-12 ⑦).
-  //   ★당분간 대표님(VIP)만. 교육생에게 열면 한 번 누를 때마다 Sonnet5가 6번 불린다.
-  //   ★판정은 서버가 한다 — 화면에서 버튼을 숨기는 것은 게이트가 아니다(6-12 ⑧).
+  //   ★VIP 제한은 걸지 않는다(대표님 지시) — 비용은 부트캠프 가치의 일부다.
+  //     교육생도 대표님과 ★똑같이 6종을 쓴다. 승인된 교육생은 로그인 세션으로 통과하고
+  //     (로그인 자체가 허용계정 게이트를 이미 지난다), 후임 앱은 X-Genya-Key로 통과한다.
+  //     막히는 것은 ★아무 인증도 없는 남뿐이다. coverage/analyze와 같은 방식.
   if (!_hasApiKey(req) && !sessionOf(req)) return res.status(401).json({ ok: false, error: '로그인 또는 API 키가 필요해요' });
-  if (!_hasApiKey(req) && !_isAdmin(req)) return res.status(403).json({ ok: false, error: '대표님 전용 기능이에요' });
   try {
     const b = req.body || {};
     const text = String(b.text || '').trim();
