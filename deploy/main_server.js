@@ -1190,6 +1190,17 @@ const _EXPAND6 = [
   { key: 'poster', label: '포스터·썸네일 문구', max: 700, 링크: false,
     rule: '짧게. ★큰 글자 1줄(한눈에 읽히는 핵심) + 작은 글자 1~2줄. 그 외에는 아무것도 쓰지 마라.' },
 ];
+// 🚫 금융광고 금지어 — ★오상열 CFP 이름으로 나가는 글이라 규정 위반이 곧 사고다.
+//   프롬프트로만 막으면 새 나간다(실제로 "확정 수익"이 long에 나왔다) → ★생성 뒤 코드로 다시 검사한다.
+const _PROMO_BANNED = ['확정 수익', '확정수익', '원금 보장', '원금보장', '보장 수익률', '보장수익률',
+  '손실 없', '무조건', '반드시 오른', '100%', '절대'];
+const _PROMO_보험사 = ['삼성생명', '한화생명', '교보생명', '신한라이프', '농협생명', '동양생명', '흥국생명',
+  '미래에셋생명', 'KB라이프', '메트라이프', '푸본현대생명', 'ABL생명',
+  '삼성화재', '현대해상', 'DB손해', 'KB손해', '메리츠화재', '한화손해', '롯데손해', '흥국화재', 'MG손해'];
+function _promo금지어(s) {
+  const t = String(s || '');
+  return _PROMO_BANNED.concat(_PROMO_보험사).filter((w) => t.indexOf(w) >= 0);
+}
 app.post('/api/promo/expand6', async (req, res) => {
   // 🔑 6번 LLM을 부르므로 돈이 나간다 — 게이트를 호출 ★앞에 둔다(6-12 ⑦).
   //   ★VIP 제한은 걸지 않는다(대표님 지시) — 비용은 부트캠프 가치의 일부다.
@@ -1209,7 +1220,10 @@ app.post('/api/promo/expand6', async (req, res) => {
       '너는 1인 사업자(재무설계 전문가)의 콘텐츠 작가다.',
       '★아래 [원본]은 이미 결론이 나와 있는 글이다. 너는 ★새로 생각하지 않는다.',
       '  같은 결론·같은 근거를 ★형태만 바꿔 담는다. 원본에 없는 사실·숫자·사례를 지어내지 마라.',
-      '공통 규칙: ① 과장·허위·확정수익 표현 금지(금융 콘텐츠다) ② 쉬운 말로 — 70대도 알아듣게',
+      '★★금융광고 금지어(절대 쓰지 마라): 확정 수익·원금 보장·보장 수익률·손실 없음·무조건·',
+      '  반드시 오른다·100%·절대·특정 상품명·특정 보험사 이름.',
+      '  ★대신 "~일 수 있습니다"·"~를 보셔야 합니다"·"사람마다 다릅니다"로 쓴다.',
+      '공통 규칙: ① 과장·허위 표현 금지(금융 콘텐츠다) ② 쉬운 말로 — 70대도 알아듣게',
       '③ 결과물만 출력한다. "네, 만들어 드릴게요" 같은 인사말·설명 금지.',
       지은이 ? `④ 필요하면 지은이는 "${지은이}"로 쓴다. 자격·경력을 지어내지 마라.` : '④ 지은이 이름·자격을 지어내지 마라.',
     ].join('\n');
@@ -1225,12 +1239,33 @@ app.post('/api/promo/expand6', async (req, res) => {
       });
       let out = (r.content || []).filter((x) => x.type === 'text').map((x) => x.text).join('').trim();
       if (!out) return { key: k.key, error: '빈 응답' };      // ★거짓 성공 금지
+      // 🚫 ★금지어 검사 — 프롬프트로 시켰어도 새 나간다. 여기서 ★코드로 다시 본다.
+      let 금지 = _promo금지어(out);
+      let 고쳐씀 = false;
+      if (금지.length) {
+        고쳐씀 = true;
+        try {
+          const r2 = await _anthropic.messages.create({
+            model: WS_CHAT_MODEL, max_tokens: k.max,
+            thinking: { type: 'disabled' },   // ★재작성도 생각을 끈다(예산을 본문에 다 쓴다)
+            system: sys + '\n\n★방금 쓴 글에 ★금융광고 금지어가 들어 있다: ' + 금지.join(', ') + '\n'
+              + '  그 말을 빼고 다시 써라. 내용·구성·분량은 그대로 두고 표현만 바꾼다.\n'
+              + '  "~일 수 있습니다"·"~를 보셔야 합니다"·"사람마다 다릅니다" 로 바꿔 쓴다.\n'
+              + '  특정 보험사·상품 이름은 아예 지우고 일반적인 말로 바꾼다.\n',
+            messages: [{ role: 'user', content: '[원본]\n' + text }],
+          });
+          const o2 = (r2.content || []).filter((x) => x.type === 'text').map((x) => x.text).join('').trim();
+          if (o2) { const 금2 = _promo금지어(o2); if (!금2.length) { out = o2; 금지 = []; } else 금지 = 금2; }
+        } catch (e) { /* 재작성 실패 — 아래에서 실패로 처리한다 */ }
+      }
+      // ★한 번 고쳐 써도 남으면 ★내보내지 않는다. 오상열 CFP 이름으로 나가는 글이다.
+      if (금지.length) return { key: k.key, error: '금지어 포함: ' + 금지.join(', ') };
       // 링크는 말로만 시키지 않고 ★여기서 못 박는다(모델이 빠뜨려도 결과가 흔들리지 않게)
       if (landing) {
         if (k.링크 && out.indexOf(landing) < 0) out += '\n\n' + landing;
         if (!k.링크 && !/프로필\s*링크/.test(out)) out += '\n\n프로필 링크 확인해 주세요.';
       }
-      return { key: k.key, label: k.label, text: out, 글자수: out.length, 잘림: r.stop_reason === 'max_tokens' };
+      return { key: k.key, label: k.label, text: out, 글자수: out.length, 잘림: r.stop_reason === 'max_tokens', 금지어고침: 고쳐씀 };
     };
     // ★6종을 동시에 — 순서대로 부르면 3,000자짜리 둘 때문에 화면이 오래 멈춘다.
     //   한 종류가 실패해도 나머지는 그대로 나간다(전부 실패로 만들지 않는다).
@@ -1241,7 +1276,7 @@ app.post('/api/promo/expand6', async (req, res) => {
       if (r.error) { out[r.key] = ''; 실패.push({ 종류: r.key, 오류: r.error }); return; }
       out[r.key] = r.text;
     });
-    out.요약 = 결과.filter((r) => !r.error).map((r) => ({ 종류: r.key, 이름: r.label, 글자수: r.글자수, 잘림: r.잘림 }));
+    out.요약 = 결과.filter((r) => !r.error).map((r) => ({ 종류: r.key, 이름: r.label, 글자수: r.글자수, 잘림: r.잘림, 금지어고침: !!r.금지어고침 }));
     if (실패.length) out.실패 = 실패;                          // ★안 된 것은 안 됐다고 말한다
     console.log(`[📣6종각색] 원본 ${text.length}자 → ${결과.filter((r) => !r.error).length}/6종`
       + ` · ${out.요약.map((s) => s.종류 + ' ' + s.글자수 + '자').join(' · ')}${실패.length ? ' · ★실패 ' + 실패.map((f) => f.종류).join(',') : ''}`);
