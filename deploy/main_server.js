@@ -2533,8 +2533,15 @@ app.post('/api/admin/tryfind', async (req, res) => {
         고를수있는채널: _CH_MAP.map(([k]) => k), 발굴함: false,
         안내: '★못 알아들은 채로 전체를 뒤지지 않았습니다. 채널 이름을 확인해 주세요.' });
     }
-    console.log(`[🎭직업전환] 시험 발굴 "${j}" · 검색어 ${kw.length}개 · 채널 ${ch.keys.length ? ch.keys.join(',') : '전체'} · ★저장 안 함·발송 안 함`);
-    const desk = await hunterDesk.collect({ 키워드: kw, 직업: j }, { max: 20, only: ch.keys });
+    // 📏 몇 건까지 가져올까 — 안 보내면 20(기존과 동일) · 상한 100.
+    //   ★왜 필요한가: B트랙(1인 전문직)은 본체 점수표가 설계사 기준이라 사장님 글이 뒤로 밀린다.
+    //     정렬 로직은 ★안 건드리고(=A트랙·밤샘이 그대로 써야 한다) 가져오는 양만 늘려서 푼다.
+    //   ★후임이 자기 점수표로 다시 매긴다.
+    //   ★0·음수·글자는 안 믿고 20으로 — 이상한 값이 슬그머니 개수를 줄이면 "왜 안 나오지"가 된다.
+    const _n = Math.floor(Number(req.body && req.body.max));
+    const _max = Math.min(_n > 0 ? _n : 20, 100);
+    console.log(`[🎭직업전환] 시험 발굴 "${j}" · 검색어 ${kw.length}개 · 채널 ${ch.keys.length ? ch.keys.join(',') : '전체'} · 최대 ${_max}건 · ★저장 안 함·발송 안 함`);
+    const desk = await hunterDesk.collect({ 키워드: kw, 직업: j }, { max: _max, only: ch.keys });
     const leads = ((desk && desk.leads) || []).map((l) => ({
       채널: String(l.channel || l.source || ''), 링크: String(l.sourceUrl || l.link || ''),
       발췌: String(l.text || '').replace(/\s+/g, ' ').trim().slice(0, 600),
@@ -2544,7 +2551,11 @@ app.post('/api/admin/tryfind', async (req, res) => {
       답변수: Number(l.answerCount || l.answers || 0) || null,
       조회수: Number(l.viewCount || l.views || 0) || null,
     })).filter((x) => x.링크);
-    res.json({ ok: true, 직업: j, 검색어: kw, 건수: leads.length, 리드: leads.slice(0, 30),
+    // ★응답도 같이 늘려야 뜻이 있다 — 100건을 모아도 여기서 30으로 자르면 후임에겐 30건만 간다.
+    //   ★하위호환: max를 안 보내면 예전처럼 30건까지 그대로(20으로 줄어들지 않게 Math.max).
+    const _cap = Math.max(_max, 30);
+    res.json({ ok: true, 직업: j, 검색어: kw, 건수: leads.length, 리드: leads.slice(0, _cap),
+      최대: _max, 보낸건수: Math.min(leads.length, _cap),
       채널: ch.keys.length ? ch.keys : '전체', 못알아들은채널: ch.모름,
       저장함: false, 발송함: false, 안내: '체험용이라 저장하지 않습니다. 대표님 밤샘 설정도 그대로입니다.' });
   } catch (e) { res.status(502).json({ ok: false, error: e.message, 발송함: false }); }
