@@ -2548,7 +2548,14 @@ app.post('/api/admin/tryfind', async (req, res) => {
     //   ② 코드로: 아래 줄의 !== 'off' 를 && false 로 바꾸면 끝 (★한 줄)
     //   끄면 tryfind도 기자 고정 beat로 돌아간다 = 이 수정 전과 완전히 같다.
     const _useJobKw = String(process.env.TRYFIND_JOBKW || '').trim().toLowerCase() !== 'off';
-    const desk = await hunterDesk.collect({ 키워드: kw, 직업: j }, { max: _max, only: ch.keys, useJobKeywords: _useJobKw });
+    // 🎓 B트랙(교육생 후보)일 때만 판별에서 ★직함을 눈감아 준다.
+    //   B트랙이 찾는 사람이 곧 설계사·원장·세무사·지점장이라 A트랙 규칙 그대로면 전부 탈락한다.
+    //   ★판별을 건드리는 일이라 ★스위치를 따로 뒀다 — 검색어(TRYFIND_JOBKW)와 별개로 끌 수 있어야
+    //     "경쟁자에게 답글" 사고가 보일 때 판별만 즉시 되돌릴 수 있다.
+    //   ① 배포 없이: Render 환경변수 TRYFIND_B2B=off  ② 코드로: 아래 줄 끝에 && false (★한 줄)
+    const _btrack = String((jobKw.찾기(j) || {}).key || '') === 'bootcamp';
+    const _b2b = _btrack && String(process.env.TRYFIND_B2B || '').trim().toLowerCase() !== 'off';
+    const desk = await hunterDesk.collect({ 키워드: kw, 직업: j }, { max: _max, only: ch.keys, useJobKeywords: _useJobKw, b2b: _b2b });
     const leads = ((desk && desk.leads) || []).map((l) => ({
       채널: String(l.channel || l.source || ''), 링크: String(l.sourceUrl || l.link || ''),
       발췌: String(l.text || '').replace(/\s+/g, ' ').trim().slice(0, 600),
@@ -2561,14 +2568,22 @@ app.post('/api/admin/tryfind', async (req, res) => {
     // 🧹 ★중복 제거 — 여러 검색어·여러 AI가 ★같은 글을 물어와 두 번씩 나오던 것을 여기서 정리한다.
     //   ★발굴 로직은 안 건드린다(결과를 만드는 단계에서만 거른다).
     //   ①링크가 같으면 같은 글 ②링크가 달라도 발췌가 같으면 같은 글(같은 원문이 여러 주소로 퍼진 경우)
+    //   ★2026-08-09 되돌림: 발췌(본문) 기준으로도 지웠더니 ★70건이 1건이 됐다.
+    //     지식iN은 같은 질문의 답변마다 항목이 따로 오고 제목·요약 앞부분이 같아, 본문 비교가
+    //     서로 다른 리드를 통째로 삼켰다. → ★지시대로 링크 기준만 지운다.
+    //     본문이 같은 건은 ★세기만 하고 지우지 않는다(숫자로 보이면 나중에 판단할 수 있다).
     const _본자리 = new Set(), _본글 = new Set();
     const _고른것 = [];
+    let _본문겹침 = 0;
     for (const x of leads) {
-      const 링크키 = String(x.링크).replace(/[?#].*$/, '').replace(/\/+$/, '');
+      // ★★쿼리(?…)를 자르면 안 된다 — 지식iN은 ?docId=…&answerNo=7 이 ★곧 그 글의 신원이다.
+      //   잘랐더니 70건이 전부 같은 주소로 뭉개져 1건이 됐다(2026-08-09 발굴 급감 사고의 진범).
+      //   ★#뒷부분(같은 문서 안 위치)과 끝 슬래시만 정리한다.
+      const 링크키 = String(x.링크).replace(/#.*$/, '').replace(/\/+$/, '');
+      if (_본자리.has(링크키)) continue;                      // ★같은 주소 = 같은 글. 이것만 지운다
+      _본자리.add(링크키);
       const 글키 = String(x.발췌).replace(/\s+/g, '').slice(0, 120);
-      if (_본자리.has(링크키)) continue;
-      if (글키.length >= 20 && _본글.has(글키)) continue;
-      _본자리.add(링크키); if (글키.length >= 20) _본글.add(글키);
+      if (글키.length >= 20) { if (_본글.has(글키)) _본문겹침++; else _본글.add(글키); }
       _고른것.push(x);
     }
     const _중복 = leads.length - _고른것.length;
@@ -2583,10 +2598,10 @@ app.post('/api/admin/tryfind', async (req, res) => {
         수집: s.수집, 채택: s.채택, 홍보자제외: s.홍보자제외, 근거반려: s.근거반려, 에러: s.에러 || '' }))
       .sort((a, b) => (b.채택 || 0) - (a.채택 || 0));
     res.json({ ok: true, 직업: j, 검색어: kw,
-      건수: _고른것.length, 중복제거: _중복, 중복제거전: leads.length,
+      건수: _고른것.length, 중복제거: _중복, 중복제거전: leads.length, 본문겹침: _본문겹침,
       리드: _고른것.slice(0, _cap),
       최대: _max, 보낸건수: Math.min(_고른것.length, _cap),
-      검색어표사용: _useJobKw, 검색어별수확: _진단,
+      검색어표사용: _useJobKw, B트랙판별: _b2b, 검색어별수확: _진단,
       채널: ch.keys.length ? ch.keys : '전체', 못알아들은채널: ch.모름,
       저장함: false, 발송함: false, 안내: '체험용이라 저장하지 않습니다. 대표님 밤샘 설정도 그대로입니다.' });
   } catch (e) { res.status(502).json({ ok: false, error: e.message, 발송함: false }); }

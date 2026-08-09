@@ -133,7 +133,8 @@ async function collect(persona, opts) {
     for (const item of raw) {
       const lead = (h.enrich ? h.enrich(item) : item);
       // ★판별은 여기 한 곳에서만 — 기자가 스스로 하지 않는다(경쟁자 오인 사고의 재발 방지)
-      const scr = leadFilter.preScreen(lead.text, lead.context || {});
+      // ★b2b 신호는 tryfind만 켠다 — 밤샘·A트랙·화면 일반 발굴은 신호가 없어 예전 판별 그대로다.
+      const scr = leadFilter.preScreen(lead.text, Object.assign({}, lead.context || {}, { b2b: !!opts.b2b }));
       if (scr.verdict === '공급자') { st.홍보자제외++; continue; }
       // ★근거 의무 — 기자가 근거를 만들고 편집장이 검증한다
       lead.reason = (h.reason ? h.reason(lead, persona) : null);

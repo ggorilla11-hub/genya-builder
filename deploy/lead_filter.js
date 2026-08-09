@@ -47,7 +47,13 @@ function preScreen(text, opts) {
   }
   if (SUP_CONTACT.test(t)) reasons.push('연락 유도(문의·카톡·링크)');
   if (SUP_OFFER.test(t)) reasons.push('서비스 제공 표현(해드립니다·무료상담)');
-  if (SUP_TITLE.test(t)) reasons.push('업계 직함 노출');
+  // ★2026-08-09 B트랙(b2b) 신호 — 이때만 ★직함 검사를 건너뛴다.
+  //   왜: B트랙이 찾는 사람이 바로 ★설계사·원장·세무사·지점장이다. 그들이 신분을 밝히는 것은
+  //       "경쟁자"라는 뜻이 아니라 "찾던 사람"이라는 뜻이다(A트랙에서는 정반대다).
+  //   ★신호가 없으면 아래 한 줄은 예전과 완전히 같다 — A트랙·밤샘·화면 일반 발굴 무접촉.
+  //   ★직함만 눈감아 준다. 연락 유도·해드립니다·연락처·링크는 b2b여도 그대로 공급자다
+  //     (진짜 광고·경쟁자는 여전히 거른다 — 남의 홍보글에 답글 다는 사고는 트랙과 무관하다).
+  if (!opts.b2b && SUP_TITLE.test(t)) reasons.push('업계 직함 노출');
   if (SUP_NUMBER.test(t)) reasons.push('연락처·아이디·링크 노출');
 
   const demand = DEM_ASK.test(t) || DEM_HOT.test(t);
