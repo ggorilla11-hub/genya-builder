@@ -2789,7 +2789,9 @@ app.post('/api/find/reply-draft', async (req, res) => {
         + '  글쓴이의 사실로 옮겨 적지 마라(발췌에 없는 사실 금지 규칙이 여전히 우선이다).\n' : '');
     const usr = `[출처: ${source}]${맥락 ? '\n[맥락] ' + 맥락 : ''}\n\n[본문 발췌]\n"""${발췌}"""\n\n`
       + '위 발췌를 읽고, 이 사람의 고민에 맞춘 답글 초안을 써줘. 발췌에 없는 사실은 넣지 마.';
-    const cr = await _anthropic.messages.create({ model: WS_CHAT_MODEL, max_tokens: 1200, system: sys, messages: [{ role: 'user', content: usr }] });
+    // ★긴급수정(2026-08-09): Sonnet5는 생각(thinking)이 기본 ON이고 max_tokens를 생각과 본문이
+    //   나눠 쓴다 → 본문이 중간에 잘려 게시를 못 했다. 본체 1129·1164줄이 이미 같은 방식으로 고쳤다.
+    const cr = await _anthropic.messages.create({ model: WS_CHAT_MODEL, max_tokens: 1200, thinking: { type: 'disabled' }, system: sys, messages: [{ role: 'user', content: usr }] });
     let draft = (cr.content || []).filter((x) => x.type === 'text').map((x) => x.text).join('').trim();
     // ★끝까지 왔는지 확인하고, 빠진 조각은 여기서 채운다(잘린 채로 내보내지 않는다)
     // 🔗 CTA 주소 — ①바디의 landing ②바디의 link ③기본값 순.
@@ -2821,7 +2823,8 @@ app.post('/api/find/reply-draft', async (req, res) => {
       재작성 = true;
       try {
         const cr2 = await _anthropic.messages.create({
-          model: WS_CHAT_MODEL, max_tokens: 1200,
+          // ★재작성도 같은 이유로 thinking을 끈다 — 여기가 잘리면 첫 초안보다 나빠진다.
+          model: WS_CHAT_MODEL, max_tokens: 1200, thinking: { type: 'disabled' },
           system: sys + '\n\n★방금 쓴 답글이 부족하다. 다시 써라.\n'
             + (결론없음
               ? '★★가장 큰 문제: ★핵심 결론이 없다★. 공감·요약만 하고 정작 그 사람이 물은 것에 답하지 않았다.\n'
