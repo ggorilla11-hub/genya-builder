@@ -1170,6 +1170,84 @@ app.post('/api/promo/expand', async (req, res) => {
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
+// ═══ 📣 하나의 질답(또는 결론) → ★6종 각색 (새 엔드포인트) ═══
+//   ★위의 /api/promo/draft·expand 는 교육생이 쓰는 중이라 한 글자도 안 건드린다. 여기는 새 길이다.
+//   ★핵심: 6번 다시 쓰는 게 아니라 ★같은 결론을 6가지 그릇에 담는다. 내용은 같고 형태만 다르다.
+const _EXPAND6 = [
+  { key: 'short', label: '짧은 글(쓰레드·카톡·SNS)', max: 1500, 링크: true,
+    rule: '300~500자. 한 호흡에 읽히게 문장을 짧게 끊는다. 소제목 없이 이어 쓴다. 첫 문장이 훅이다.' },
+  { key: 'long', label: '블로그 글(검색 유입)', max: 5000, 링크: true,
+    rule: '1,500~3,000자. 네이버 블로그용. ★소제목 3~4개를 달고 [결론 먼저 → 이유 → 사례 → 정리] 순서로 쓴다. '
+      + '★분량을 반드시 채운다 — 1,500자 아래로 짧게 끝내면 실패다.' },
+  { key: 'shorts', label: '쇼츠 45초 대본', max: 1800, 링크: false,
+    rule: '45초 대본. 구간을 [0-3초 훅] [3-12초 반전] [12-38초 핵심] [38-45초 CTA] 로 나누고 각 구간 머리에 시간을 적는다. '
+      + '★말로 읽는 대본이다 — 자막으로 띄울 짧은 문장으로 쓴다. 한 문장이 길면 끊는다.' },
+  { key: 'cards', label: '카드뉴스(인스타 1080×1350)', max: 1800, 링크: false,
+    rule: '6~8장. "1장", "2장" 처럼 장 번호를 달고 ★장당 한 문장만 쓴다. 1장은 훅, 마지막 장은 CTA다.' },
+  { key: 'audio', label: '팟캐스트 대본(8분)', max: 5000, 링크: true,
+    rule: '2,000~3,000자. ★귀로 듣는 글이다 — 오프닝·본론·마무리로 흐르게 쓰고, 숫자·표는 ★말로 풀어서 읽는다'
+      + '(표·불릿·기호를 쓰지 마라). ★분량을 반드시 채운다 — 2,000자 아래로 짧게 끝내면 실패다.' },
+  { key: 'poster', label: '포스터·썸네일 문구', max: 700, 링크: false,
+    rule: '짧게. ★큰 글자 1줄(한눈에 읽히는 핵심) + 작은 글자 1~2줄. 그 외에는 아무것도 쓰지 마라.' },
+];
+app.post('/api/promo/expand6', async (req, res) => {
+  // 🔑 6번 LLM을 부르므로 돈이 나간다 — 게이트를 호출 ★앞에 둔다(6-12 ⑦).
+  //   ★당분간 대표님(VIP)만. 교육생에게 열면 한 번 누를 때마다 Sonnet5가 6번 불린다.
+  //   ★판정은 서버가 한다 — 화면에서 버튼을 숨기는 것은 게이트가 아니다(6-12 ⑧).
+  if (!_hasApiKey(req) && !sessionOf(req)) return res.status(401).json({ ok: false, error: '로그인 또는 API 키가 필요해요' });
+  if (!_hasApiKey(req) && !_isAdmin(req)) return res.status(403).json({ ok: false, error: '대표님 전용 기능이에요' });
+  try {
+    const b = req.body || {};
+    const text = String(b.text || '').trim();
+    if (!text) return res.status(400).json({ ok: false, error: '원본 글이 없어요 — 질문·답변이나 결론을 넣어 주세요' });
+    const landing = String(b.landing || '').trim();
+    const who = String(b.name || '').trim();
+    const cert = String(b.cert || '').trim();
+    const 지은이 = who ? `${who}${cert ? ' ' + cert : ''}` : '';
+    const 공통 = [
+      '너는 1인 사업자(재무설계 전문가)의 콘텐츠 작가다.',
+      '★아래 [원본]은 이미 결론이 나와 있는 글이다. 너는 ★새로 생각하지 않는다.',
+      '  같은 결론·같은 근거를 ★형태만 바꿔 담는다. 원본에 없는 사실·숫자·사례를 지어내지 마라.',
+      '공통 규칙: ① 과장·허위·확정수익 표현 금지(금융 콘텐츠다) ② 쉬운 말로 — 70대도 알아듣게',
+      '③ 결과물만 출력한다. "네, 만들어 드릴게요" 같은 인사말·설명 금지.',
+      지은이 ? `④ 필요하면 지은이는 "${지은이}"로 쓴다. 자격·경력을 지어내지 마라.` : '④ 지은이 이름·자격을 지어내지 마라.',
+    ].join('\n');
+    const 한개 = async (k) => {
+      const sys = 공통 + '\n\n' + `만들 것: ${k.label}\n구성 규칙: ${k.rule}\n`
+        + (k.링크
+          ? (landing ? `★마지막에 안내 링크를 ★한 줄에 혼자 넣는다: ${landing}\n  주소 뒤에 조사나 다른 글자를 붙이지 마라.\n` : '★링크는 넣지 마라(줄 주소가 없다).\n')
+          : (landing ? '★이 형식은 링크를 걸 수 없다 — 주소를 적지 말고 "프로필 링크 확인" 같은 말로 안내한다.\n' : '★링크·주소를 적지 마라.\n'));
+      const r = await _anthropic.messages.create({
+        model: WS_CHAT_MODEL, max_tokens: k.max,
+        thinking: { type: 'disabled' },   // ★긴 원고라 생각이 예산을 먹으면 본문이 잘린다(본체 교훈)
+        system: sys, messages: [{ role: 'user', content: '[원본]\n' + text }],
+      });
+      let out = (r.content || []).filter((x) => x.type === 'text').map((x) => x.text).join('').trim();
+      if (!out) return { key: k.key, error: '빈 응답' };      // ★거짓 성공 금지
+      // 링크는 말로만 시키지 않고 ★여기서 못 박는다(모델이 빠뜨려도 결과가 흔들리지 않게)
+      if (landing) {
+        if (k.링크 && out.indexOf(landing) < 0) out += '\n\n' + landing;
+        if (!k.링크 && !/프로필\s*링크/.test(out)) out += '\n\n프로필 링크 확인해 주세요.';
+      }
+      return { key: k.key, label: k.label, text: out, 글자수: out.length, 잘림: r.stop_reason === 'max_tokens' };
+    };
+    // ★6종을 동시에 — 순서대로 부르면 3,000자짜리 둘 때문에 화면이 오래 멈춘다.
+    //   한 종류가 실패해도 나머지는 그대로 나간다(전부 실패로 만들지 않는다).
+    const 결과 = await Promise.all(_EXPAND6.map((k) => 한개(k).catch((e) => ({ key: k.key, error: e.message }))));
+    const out = { ok: true, 원본길이: text.length, landing: landing || '' };
+    const 실패 = [];
+    결과.forEach((r) => {
+      if (r.error) { out[r.key] = ''; 실패.push({ 종류: r.key, 오류: r.error }); return; }
+      out[r.key] = r.text;
+    });
+    out.요약 = 결과.filter((r) => !r.error).map((r) => ({ 종류: r.key, 이름: r.label, 글자수: r.글자수, 잘림: r.잘림 }));
+    if (실패.length) out.실패 = 실패;                          // ★안 된 것은 안 됐다고 말한다
+    console.log(`[📣6종각색] 원본 ${text.length}자 → ${결과.filter((r) => !r.error).length}/6종`
+      + ` · ${out.요약.map((s) => s.종류 + ' ' + s.글자수 + '자').join(' · ')}${실패.length ? ' · ★실패 ' + 실패.map((f) => f.종류).join(',') : ''}`);
+    res.json(out);
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
 // ═══ 📣 홍보마케팅비서 2단계 — 카피 1건 → 원고 12종 (독립 모듈 · CLAUDE.md 6-2 ⑦) ═══
 //   위의 /api/promo/draft·expand 는 교육생이 쓰는 중이라 한 글자도 안 건드린다.
 //   새 기능은 /api/promo2/* 로 따로 낸다. 이 파일이 바뀌는 건 아래 3줄뿐이다.
