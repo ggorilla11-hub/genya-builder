@@ -2735,8 +2735,14 @@ app.post('/api/find/reply-draft', async (req, res) => {
     const cr = await _anthropic.messages.create({ model: WS_CHAT_MODEL, max_tokens: 1200, system: sys, messages: [{ role: 'user', content: usr }] });
     let draft = (cr.content || []).filter((x) => x.type === 'text').map((x) => x.text).join('').trim();
     // ★끝까지 왔는지 확인하고, 빠진 조각은 여기서 채운다(잘린 채로 내보내지 않는다)
-    const link = String(b.link || '').trim() || 'https://ohwant.net';
-    // ★옛 진단페이지 주소가 섞여 나오면 홈페이지로 정리(2026-07-27 대표님 지시: CTA는 홈페이지 하나)
+    // 🔗 CTA 주소 — ①바디의 landing ②바디의 link ③기본값 순.
+    //   ★2026-08-09 기본값을 ohwant.net(홈페이지)에서 ★consult.html로 바꿨다.
+    //     홈페이지에는 문의 창구가 없어 답글을 보고 온 사람이 아무것도 못 하고 돌아갔다.
+    //   ★landing으로 트랙별 다른 랜딩을 줄 수 있다(A트랙 상담 / B트랙 부트캠프 등).
+    const link = String(b.landing || b.link || '').trim() || 'https://ohwant-class.netlify.app/consult.html';
+    // ★LLM이 실수로 넣은 주소를 [링크] 토큰으로 되돌린다.
+    //   ★이 치환은 아래 _linkOwnLine ★보다 먼저 돈다 — 그래서 기본값이 같은 도메인이어도 안 지워진다
+    //     (여기서 지우는 것은 LLM이 지어낸 주소이고, 진짜 주소는 그 뒤에 link 변수로 들어간다).
     draft = draft.replace(/https?:\/\/ohwant-class\.netlify\.app\/\S*/g, '[링크]');
     if (draft.indexOf('[링크]') < 0) draft += '\n\n[링크]\n편하게 문의해주시면 자세히 안내해드리겠습니다.';
     if (!/감사합니다/.test(draft.slice(-40))) draft += '\n\n감사합니다.';
