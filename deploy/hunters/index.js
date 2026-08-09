@@ -114,7 +114,8 @@ async function collect(persona, opts) {
     try {
       const pr = h.probe();
       if (!pr || !pr.ok) { st.에러 = pr && pr.reason ? pr.reason : '사용 불가'; return Promise.resolve({ h, agent, aiName, st, raw: [] }); }
-      p = Promise.resolve(h.search(persona, { max: opts.max || 30, agent }));
+      // ★useJobKeywords는 tryfind만 켠다 — 밤샘·A트랙 일반 발굴은 신호가 없어 beat 그대로 돈다.
+      p = Promise.resolve(h.search(persona, { max: opts.max || 30, agent, useJobKeywords: !!opts.useJobKeywords }));
     } catch (e) { st.에러 = e.message; return Promise.resolve({ h, agent, aiName, st, raw: [] }); }
     return withCap(p, AGENT_MS, () => { st.에러 = `시간 초과(${Math.round(AGENT_MS / 1000)}초) — 다음엔 나올 수 있어요`; })
       .then((raw) => {

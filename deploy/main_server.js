@@ -2541,7 +2541,14 @@ app.post('/api/admin/tryfind', async (req, res) => {
     const _n = Math.floor(Number(req.body && req.body.max));
     const _max = Math.min(_n > 0 ? _n : 20, 100);
     console.log(`[🎭직업전환] 시험 발굴 "${j}" · 검색어 ${kw.length}개 · 채널 ${ch.keys.length ? ch.keys.join(',') : '전체'} · 최대 ${_max}건 · ★저장 안 함·발송 안 함`);
-    const desk = await hunterDesk.collect({ 키워드: kw, 직업: j }, { max: _max, only: ch.keys });
+    // ★useJobKeywords: 이 창구에서만 검색어 표(job_keywords)가 기자 고정 beat를 이긴다.
+    //   밤샘(/api/cron/find)·A트랙 일반 발굴은 이 신호를 안 보내므로 예전 그대로 돈다.
+    // 🔙 ★롤백 스위치 — 엔진을 건드린 수정이라 두 가지 길을 열어 둔다.
+    //   ① 배포 없이 즉시: Render 환경변수 TRYFIND_JOBKW=off (서버 재시작만으로 예전 동작)
+    //   ② 코드로: 아래 줄의 !== 'off' 를 && false 로 바꾸면 끝 (★한 줄)
+    //   끄면 tryfind도 기자 고정 beat로 돌아간다 = 이 수정 전과 완전히 같다.
+    const _useJobKw = String(process.env.TRYFIND_JOBKW || '').trim().toLowerCase() !== 'off';
+    const desk = await hunterDesk.collect({ 키워드: kw, 직업: j }, { max: _max, only: ch.keys, useJobKeywords: _useJobKw });
     const leads = ((desk && desk.leads) || []).map((l) => ({
       채널: String(l.channel || l.source || ''), 링크: String(l.sourceUrl || l.link || ''),
       발췌: String(l.text || '').replace(/\s+/g, ' ').trim().slice(0, 600),

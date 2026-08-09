@@ -68,8 +68,11 @@ function ymd(s) {
   return m ? `${m[1]}-${m[2]}-${m[3]}` : '';
 }
 
-/** 검색어: 담당(beat) 우선 → 내 키워드 → 기본값 */
-function keywords(persona, agent, fallback) {
+/** 검색어: ★tryfind 신호 → 담당(beat) → 내 키워드 → 기본값 */
+function keywords(persona, agent, fallback, opts) {
+  // ★신호가 있을 때만 검색어 표가 beat를 이긴다. 신호가 없으면 아래는 ★예전 코드 그대로다
+  //   (= 밤샘 발굴·A트랙 일반 발굴은 한 글자도 안 바뀐다).
+  if (opts && opts.useJobKeywords) { const jk = C.jobKeywords(persona, agent, 6); if (jk.length) return jk; }
   const beat = (agent && Array.isArray(agent.beat)) ? agent.beat : [];
   if (beat.length) return beat.slice(0, 4);
   const mine = ((persona && persona.키워드) || []).map((k) => String(k).replace(/^#/, '').trim()).filter(Boolean);
@@ -89,7 +92,7 @@ function makeNaverHunter(cfg) {
     if (!id || !sec) return [];
     const out = [];
     const max = opts.max || 30;
-    for (const kw of keywords(persona, opts.agent, cfg.fallbackKw)) {
+    for (const kw of keywords(persona, opts.agent, cfg.fallbackKw, opts)) {
       let j;
       // ★줄 세워 보낸다(속도 제한 방지) + ★타임아웃 필수(매달리면 발굴 전체가 멈춘다)
       try {

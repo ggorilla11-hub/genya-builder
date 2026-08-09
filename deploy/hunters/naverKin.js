@@ -37,7 +37,9 @@ function probe() {
 }
 
 /** 검색어: 담당(beat) 우선, 없으면 내 키워드 + 기본 */
-function _keywords(persona, agent) {
+function _keywords(persona, agent, opts) {
+  // ★tryfind 신호가 있을 때만 검색어 표가 beat를 이긴다(없으면 아래는 예전 그대로 · 밤샘 무접촉)
+  if (opts && opts.useJobKeywords) { const jk = C.jobKeywords(persona, agent, 6); if (jk.length) return jk; }
   const beat = (agent && Array.isArray(agent.beat)) ? agent.beat : [];
   if (beat.length) return beat.slice(0, 4);
   const mine = ((persona && persona.키워드) || []).map((k) => String(k).replace(/^#/, '').trim()).filter(Boolean);
@@ -59,7 +61,7 @@ async function search(persona, opts) {
   if (!id || !sec) return [];
   const out = [];
   const max = opts.max || 30;
-  for (const kw of _keywords(persona, opts.agent)) {
+  for (const kw of _keywords(persona, opts.agent, opts)) {
     let j;
     try {
       const r = await fetch(`${API}?query=${encodeURIComponent(kw)}&display=20&sort=date`, {

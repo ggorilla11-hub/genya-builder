@@ -120,4 +120,27 @@ function validateHunter(mod) {
   return { ok: true };
 }
 
-module.exports = { FORBIDDEN, makeLead, makeReason, makeId, validateHunter, autoName, displayName, fetchJson, FETCH_MS };
+/**
+ * 🗂️ ★tryfind 전용 — 검색어 표(persona.키워드)를 기자·AI별로 나눠 쓴다.
+ *
+ * 왜 필요한가: 표가 28개인데 기자마다 ★앞 3개만 쓰면 뒤 25개는 영영 검색되지 않는다.
+ *   (2026-08-09 진단: B트랙 검색어를 넣어도 결과가 전부 신혼부부·청약이었던 이유의 절반이 이것이다.)
+ * 어떻게: AI 이름으로 ★시작 위치를 정하고 거기서부터 n개를 돌려가며 뽑는다.
+ *   AI가 여러 명이면 서로 다른 자리에서 시작하므로 표 전체가 골고루 덮인다.
+ * ★무작위가 아니다 — 같은 입력이면 늘 같은 결과다(시험이 흔들리면 원인을 못 판다 · 6-8 ②).
+ * ★이 함수는 신호(useJobKeywords)가 있을 때만 불린다. 밤샘·A트랙 일반 발굴은 beat 그대로다.
+ */
+function jobKeywords(persona, agent, n) {
+  const mine = ((persona && persona.키워드) || []).map((k) => String(k).replace(/^#/, '').trim()).filter(Boolean);
+  if (!mine.length) return [];
+  const take = Math.min(Math.max(Math.floor(Number(n)) || 6, 1), mine.length);
+  const name = String((agent && agent.name) || '');
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % 1000003;
+  const start = h % mine.length;
+  const out = [];
+  for (let i = 0; i < take; i++) out.push(mine[(start + i) % mine.length]);
+  return out;
+}
+
+module.exports = { FORBIDDEN, makeLead, makeReason, makeId, validateHunter, autoName, displayName, fetchJson, FETCH_MS, jobKeywords };

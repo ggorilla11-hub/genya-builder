@@ -31,7 +31,9 @@ function probe() {
   return { ok: true, quotaNote: 'Custom Search 100회/일(무료)' };
 }
 
-function _keywords(persona, agent) {
+function _keywords(persona, agent, opts) {
+  // ★tryfind 신호가 있을 때만 검색어 표가 beat를 이긴다(없으면 아래는 예전 그대로 · 밤샘 무접촉)
+  if (opts && opts.useJobKeywords) { const jk = C.jobKeywords(persona, agent, 6); if (jk.length) return jk; }
   const beat = (agent && Array.isArray(agent.beat)) ? agent.beat : [];
   if (beat.length) return beat.slice(0, 4);
   const mine = ((persona && persona.키워드) || []).map((k) => String(k).replace(/^#/, '').trim()).filter(Boolean);
@@ -46,7 +48,7 @@ async function search(persona, opts) {
   if (!k || !cx) return [];
   const out = [];
   const max = opts.max || 30;
-  for (const kw of _keywords(persona, opts.agent)) {
+  for (const kw of _keywords(persona, opts.agent, opts)) {
     let j;
     // ★타임아웃 필수 — 구글이 매달리면 발굴 전체가 멈춘다(2026-07-27 사고)
     try {

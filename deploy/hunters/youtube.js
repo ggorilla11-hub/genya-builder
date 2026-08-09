@@ -25,7 +25,10 @@ function probe() {
 
 /** 홍보대사 정체성으로 검색어를 만든다 — 내 키워드가 있으면 섞어서 내 색깔의 사람을 찾는다 */
 //   agent.beat(담당 영역)이 있으면 그 AI는 자기 담당만 돈다 — 여러 명이 겹치지 않게.
-function _keywords(persona, agent) {
+function _keywords(persona, agent, opts) {
+  // ★tryfind 신호가 있을 때만 검색어 표가 beat를 이긴다(없으면 아래는 예전 그대로 · 밤샘 무접촉)
+  //   ★여기서는 BASE_KEYWORDS(재무 고정)도 안 섞는다 — 섞으면 B트랙 절반이 다시 재무가 된다.
+  if (opts && opts.useJobKeywords) { const jk = C.jobKeywords(persona, agent, 6); if (jk.length) return jk; }
   const beat = (agent && Array.isArray(agent.beat)) ? agent.beat : [];
   if (beat.length) return beat.slice(0, 4);
   const mine = ((persona && persona.키워드) || []).map((k) => String(k).replace(/^#/, '').trim()).filter(Boolean);
@@ -48,7 +51,7 @@ async function search(persona, opts) {
   //   ★비용은 거의 그대로: 검색은 maxResults와 무관하게 1회 100 units, 댓글 조회만 영상당 1 unit.
   //     영상 3→6, 댓글 10→20이면 댓글 풀이 4배인데 비용은 3 units만 는다.
   const since = new Date(Date.now() - 90 * 24 * 3600 * 1000).toISOString();
-  for (const kw of _keywords(persona, opts.agent)) {
+  for (const kw of _keywords(persona, opts.agent, opts)) {
     let s;
     // ★타임아웃 필수 — 유튜브가 매달리면 발굴 전체가 멈춘다(2026-07-27 사고)
     try {
