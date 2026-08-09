@@ -2558,11 +2558,35 @@ app.post('/api/admin/tryfind', async (req, res) => {
       답변수: Number(l.answerCount || l.answers || 0) || null,
       조회수: Number(l.viewCount || l.views || 0) || null,
     })).filter((x) => x.링크);
+    // 🧹 ★중복 제거 — 여러 검색어·여러 AI가 ★같은 글을 물어와 두 번씩 나오던 것을 여기서 정리한다.
+    //   ★발굴 로직은 안 건드린다(결과를 만드는 단계에서만 거른다).
+    //   ①링크가 같으면 같은 글 ②링크가 달라도 발췌가 같으면 같은 글(같은 원문이 여러 주소로 퍼진 경우)
+    const _본자리 = new Set(), _본글 = new Set();
+    const _고른것 = [];
+    for (const x of leads) {
+      const 링크키 = String(x.링크).replace(/[?#].*$/, '').replace(/\/+$/, '');
+      const 글키 = String(x.발췌).replace(/\s+/g, '').slice(0, 120);
+      if (_본자리.has(링크키)) continue;
+      if (글키.length >= 20 && _본글.has(글키)) continue;
+      _본자리.add(링크키); if (글키.length >= 20) _본글.add(글키);
+      _고른것.push(x);
+    }
+    const _중복 = leads.length - _고른것.length;
     // ★응답도 같이 늘려야 뜻이 있다 — 100건을 모아도 여기서 30으로 자르면 후임에겐 30건만 간다.
     //   ★하위호환: max를 안 보내면 예전처럼 30건까지 그대로(20으로 줄어들지 않게 Math.max).
     const _cap = Math.max(_max, 30);
-    res.json({ ok: true, 직업: j, 검색어: kw, 건수: leads.length, 리드: leads.slice(0, _cap),
-      최대: _max, 보낸건수: Math.min(leads.length, _cap),
+    // 🔎 검색어별 수확량 — 어떤 검색어 묶음이 실제로 무엇을 물어왔나(★숫자와 검색어만 · 개인정보 0).
+    //   ★AI 한 명이 검색어 6개를 함께 쓰므로 ★묶음 단위다. 낱개 검색어별 집계는 발굴 로직을
+    //     건드려야 알 수 있어 넣지 않았다(지어내지 않는다).
+    const _진단 = Object.values((desk && desk.stats) || {})
+      .map((s) => ({ AI: s.AI, 채널: s.채널, 검색어: s.검색어 || (s.담당 ? String(s.담당).split(',') : []),
+        수집: s.수집, 채택: s.채택, 홍보자제외: s.홍보자제외, 근거반려: s.근거반려, 에러: s.에러 || '' }))
+      .sort((a, b) => (b.채택 || 0) - (a.채택 || 0));
+    res.json({ ok: true, 직업: j, 검색어: kw,
+      건수: _고른것.length, 중복제거: _중복, 중복제거전: leads.length,
+      리드: _고른것.slice(0, _cap),
+      최대: _max, 보낸건수: Math.min(_고른것.length, _cap),
+      검색어표사용: _useJobKw, 검색어별수확: _진단,
       채널: ch.keys.length ? ch.keys : '전체', 못알아들은채널: ch.모름,
       저장함: false, 발송함: false, 안내: '체험용이라 저장하지 않습니다. 대표님 밤샘 설정도 그대로입니다.' });
   } catch (e) { res.status(502).json({ ok: false, error: e.message, 발송함: false }); }

@@ -110,6 +110,9 @@ async function collect(persona, opts) {
   const harvest = await Promise.all(jobs.map(({ h, agent }) => {
     const aiName = `${agent.name}(${h.label})`;
     const st = stats[h.key + '::' + agent.name] = { AI: aiName, 채널: h.label, 담당: (agent.beat || []).join(','), 수집: 0, 홍보자제외: 0, 근거반려: 0, 채택: 0, 확인필요: 0, 에러: '' };
+    // 🔎 진단용 — 이 AI가 ★실제로 어떤 검색어로 나가는지 적어 둔다(숫자·검색어만 · 개인정보 0).
+    //   ★기자가 쓰는 것과 ★같은 함수·같은 입력이라 추측이 아니라 실제 값이다(jobKeywords는 결정적).
+    if (opts.useJobKeywords) { const jk = C.jobKeywords(persona, agent, 6); if (jk.length) st.검색어 = jk; }
     let p;
     try {
       const pr = h.probe();
