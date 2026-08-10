@@ -5949,6 +5949,9 @@ window.runOCR=function(mode){
         var _payload=_isPen?{images:imgs}:{images:imgs,job:_pj};
         fetch(_url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(_payload)})
          .then(function(r){return r.json();}).then(function(d){ w.remove();
+           // ★2026-08-11: 구글 데이터 미연결인데 "결과가 없어요"라고 떠서 오해를 샀다(연결 문제인 걸 모른다).
+           //   서버(gateGoogle)가 주는 안내 문구를 그대로 보여준다. 못 받으면 기본 문구.
+           if(d&&(d.needsConnect||d.needsGoogle)){ pushMsg('gen', renderMd(d.message||'구글 데이터 연결이 필요해요')); return; }
            if(!d||!d.ok||!d.html){ pushMsg('gen', renderMd((d&&(d.report||d.error))|| (_isPen?'연금 제안서 결과가 없어요. 변액연금 설계서 2개를 다시 올려주세요.':'증권 분석 결과가 없어요. 담보가 보이는 페이지로 다시 올려주세요.'))); return; }
            _renderPolicy(d, names, _isPen?{title:'📊 연금 제안서', csv:'연금제안서'}:null);
            if(typeof _HIST!=='undefined'){ _HIST.push({role:'user',content:'['+(_isPen?'연금 설계서':'증권')+' 업로드: '+names+']'}); _HIST.push({role:'assistant',content:_isPen?('[연금 제안서 생성] '+((d.data&&d.data.요약)||'')):_policySummary(d)}); _persistHist(); }
