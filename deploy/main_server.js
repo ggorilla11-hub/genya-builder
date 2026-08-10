@@ -1178,7 +1178,9 @@ const _EXPAND6 = [
     rule: '300~500자. 한 호흡에 읽히게 문장을 짧게 끊는다. 소제목 없이 이어 쓴다. 첫 문장이 훅이다.' },
   { key: 'long', label: '블로그 글(검색 유입)', max: 5000, 링크: true,
     rule: '1,500~3,000자. 네이버 블로그용. ★소제목 3~4개를 달고 [결론 먼저 → 이유 → 사례 → 정리] 순서로 쓴다. '
-      + '★분량을 꼭 채운다 —1,500자 아래로 짧게 끝내면 실패다.' },
+      + '★분량을 꼭 채운다 —1,500자 아래로 짧게 끝내면 실패다. '
+      + '★첫 문단(글 시작 150자 안)에 이 글의 ★핵심 검색어(사람들이 네이버에 실제로 쳐 넣을 말)를 '
+      + '자연스러운 문장 안에 넣는다 — 검색으로 들어오는 글이라 앞머리에 없으면 안 걸린다. 낱말만 나열하지는 마라.' },
   { key: 'shorts', label: '쇼츠 45초 대본', max: 1800, 링크: false,
     rule: '45초 대본. 구간을 [0-3초 훅] [3-12초 반전] [12-38초 핵심] [38-45초 CTA] 로 나누고 각 구간 머리에 시간을 적는다. '
       + '★말로 읽는 대본이다 — 자막으로 띄울 짧은 문장으로 쓴다. 한 문장이 길면 끊는다.' },
@@ -1186,7 +1188,9 @@ const _EXPAND6 = [
     rule: '6~8장. "1장", "2장" 처럼 장 번호를 달고 ★장당 한 문장만 쓴다. 1장은 훅, 마지막 장은 CTA다.' },
   { key: 'audio', label: '팟캐스트 대본(8분)', max: 5000, 링크: true,
     rule: '2,000~3,000자. ★귀로 듣는 글이다 — 오프닝·본론·마무리로 흐르게 쓰고, 숫자·표는 ★말로 풀어서 읽는다'
-      + '(표·불릿·기호를 쓰지 마라). ★분량을 반드시 채운다 — 2,000자 아래로 짧게 끝내면 실패다.' },
+      + '(표·불릿·기호를 쓰지 마라). ★분량을 꼭 채운다 — 2,000자 아래로 짧게 끝내면 실패다.' },
+      // ↑ ★2026-08-10: "반드시"를 "꼭"으로 바꿨다. '반드시'는 금지어라 모델이 지시문을 따라 쓰면
+      //   그 글이 통째로 실패로 비워졌다(audio가 자주 비던 원인 중 하나). long은 앞서 고쳤고 여기가 남아 있었다.
   { key: 'poster', label: '포스터·썸네일 문구', max: 700, 링크: false,
     rule: '짧게. ★큰 글자 1줄(한눈에 읽히는 핵심) + 작은 글자 1~2줄. 그 외에는 아무것도 쓰지 마라.' },
 ];
@@ -1202,6 +1206,100 @@ const _PROMO_보험사 = ['삼성생명', '한화생명', '교보생명', '신�
 function _promo금지어(s) {
   const t = String(s || '');
   return _PROMO_BANNED.concat(_PROMO_보험사).filter((w) => t.indexOf(w) >= 0);
+}
+
+// ═══ 🏷️ 블로그 글(long) 전용 — 제목 후보 3개 + 태그 5~10개 ═══
+//   ★왜 따로 부르나: 네이버 블로그 API는 2020년에 끝나서 대표님이 ★직접 복붙하신다.
+//     그때 제목·태그가 없어 매번 손으로 지으셨다. 그래서 글과 같이 뽑아 드린다.
+//   ★왜 long 프롬프트에 안 넣나(CTO 권장): 본문 프롬프트에 제목·태그 지시를 얹으면 ★본문이 흔들린다.
+//     본문을 다 만든 ★뒤에, 그 본문을 재료로 뽑는 게 정확하다. 그래서 호출이 하나 더 늘어난다.
+const _TT_TOOL = {
+  name: 'title_tags',
+  description: '블로그 글의 제목 후보와 태그를 돌려준다',
+  input_schema: {
+    type: 'object',
+    properties: {
+      titles: { type: 'array', items: { type: 'string' }, description: '제목 후보 3개. 각 32자 이내' },
+      tags:   { type: 'array', items: { type: 'string' }, description: '태그 5~10개. # 없이 낱말만' },
+    },
+    required: ['titles', 'tags'],
+  },
+};
+const _TT_제목최대 = 32;   // 네이버 검색결과에서 제목이 잘리지 않는 길이
+// ★도구로 받아도 모양이 한 가지가 아니다(쇼츠2 실측) — 배열·JSON 글자·한 겹 더 싸인 것까지 받아 준다.
+//   못 알아보면 ★넓히지 않는다. 빈 배열을 돌려주고 위에서 정직히 실패한다.
+function _tt배열(v, key) {
+  let x = v;
+  for (let i = 0; i < 3; i++) {
+    if (Array.isArray(x)) return x;
+    if (typeof x === 'string') { try { x = JSON.parse(x); } catch (e) { return []; } continue; }
+    if (x && typeof x === 'object') { x = x[key]; continue; }
+    return [];
+  }
+  return Array.isArray(x) ? x : [];
+}
+// 다듬기 — 앞뒤 공백·따옴표·번호·★태그의 # 를 떼고, 빈 것·겹치는 것을 버린다.
+function _tt다듬기(list, { 태그 }) {
+  const 본 = new Set();
+  const out = [];
+  (list || []).forEach((v) => {
+    let s = String(v == null ? '' : v).trim();
+    s = s.replace(/^[0-9]+[.)]\s*/, '').replace(/^["'“”‘’]+|["'“”‘’]+$/g, '').trim();
+    if (태그) s = s.replace(/^#+/, '').replace(/\s+/g, ' ').trim();
+    if (!s) return;
+    if (!태그 && s.length > _TT_제목최대) return;       // ★긴 제목은 자르지 않고 ★버린다(중간에서 끊긴 제목은 쓸 수 없다)
+    if (_promo금지어(s).length) return;                  // 🚫 제목·태그도 오상열 CFP 이름으로 나간다
+    const key = s.replace(/\s/g, '');
+    if (본.has(key)) return;
+    본.add(key);
+    out.push(s);
+  });
+  return out;
+}
+// long 본문 → { titles, tags }. ★실패해도 6종 본문은 그대로 나간다(여기서 던지지 않는다).
+async function _promo제목태그(longText) {
+  const 본문 = String(longText || '').trim();
+  if (!본문) return { titles: [], tags: [], error: '본문이 없음' };   // ★long이 실패하면 여기도 빈 배열
+  const sys = [
+    '너는 네이버 블로그 운영자다. 아래 [본문]을 읽고 ★제목 후보와 태그만 뽑는다.',
+    '★본문에 없는 사실·숫자·사례를 지어내지 마라. 본문에 실제로 있는 말로만 뽑는다.',
+    `제목: 3개. ★각 ${_TT_제목최대}자 이내(검색결과에서 잘린다). 사람들이 실제로 검색할 말을 제목 ★앞쪽에 넣는다.`,
+    '  낚시·과장 금지. 세 개는 서로 다른 각도로(질문형·숫자형·상황형 등) 쓴다.',
+    '태그: 5~10개. ★# 없이 낱말만. 본문 주제와 실제로 맞는 검색어로.',
+    '★★금융광고 금지어(제목·태그에도 절대 쓰지 마라): 확정 수익·원금 보장·보장 수익률·손실 없음·',
+    '  무조건·반드시·100%·절대·특정 상품명·특정 보험사 이름.',
+    '결과물만 도구로 돌려준다. 설명·인사말을 쓰지 마라.',
+  ].join('\n');
+  const 부르기 = async (덧말) => {
+    const r = await _anthropic.messages.create({
+      model: WS_CHAT_MODEL, max_tokens: 700,
+      thinking: { type: 'disabled' },            // ★생각이 예산을 먹으면 도구 호출이 아예 안 나온다(본체 교훈)
+      system: sys + (덧말 || ''),
+      tools: [_TT_TOOL], tool_choice: { type: 'tool', name: _TT_TOOL.name },
+      messages: [{ role: 'user', content: '[본문]\n' + 본문.slice(0, 6000) }],
+    });
+    const use = (r.content || []).find((c) => c.type === 'tool_use');
+    if (!use || !use.input) return { titles: [], tags: [] };
+    return {
+      titles: _tt다듬기(_tt배열(use.input, 'titles'), { 태그: false }).slice(0, 3),
+      tags:   _tt다듬기(_tt배열(use.input, 'tags'),   { 태그: true  }).slice(0, 10),
+    };
+  };
+  try {
+    let got = await 부르기('');
+    // 부족하면 ★한 번만 다시 부른다(금지어·32자 초과로 버려져 개수가 모자란 경우).
+    if (got.titles.length < 3 || got.tags.length < 5) {
+      try {
+        const got2 = await 부르기('\n\n★방금 준 것이 모자랐다. 제목은 ' + _TT_제목최대 + '자 이내로 ★3개를 다 채우고,'
+          + ' 태그는 ★5개 이상 채워라. 금지어가 든 것은 아예 빼고 다른 말로 다시 뽑는다.');
+        if (got2.titles.length + got2.tags.length > got.titles.length + got.tags.length) got = got2;
+      } catch (e) { /* 재작성 실패 — 아래에서 있는 만큼만 내보낸다 */ }
+    }
+    if (!got.titles.length && !got.tags.length) return { titles: [], tags: [], error: '제목·태그를 받지 못했어요' };
+    return got;   // ★모자라도 있는 만큼 정직히 내보낸다(억지로 채우지 않는다)
+  } catch (e) {
+    return { titles: [], tags: [], error: e.message };
+  }
 }
 app.post('/api/promo/expand6', async (req, res) => {
   // 🔑 6번 LLM을 부르므로 돈이 나간다 — 게이트를 호출 ★앞에 둔다(6-12 ⑦).
@@ -1279,9 +1377,17 @@ app.post('/api/promo/expand6', async (req, res) => {
       out[r.key] = r.text;
     });
     out.요약 = 결과.filter((r) => !r.error).map((r) => ({ 종류: r.key, 이름: r.label, 글자수: r.글자수, 잘림: r.잘림, 금지어고침: !!r.금지어고침 }));
+    // 🏷️ 블로그 글(long)이 나온 ★뒤에 그 본문으로 제목·태그를 뽑는다(호출 1개 추가).
+    //   ★long이 실패했으면 부르지도 않는다 — 돈이 나가는 호출이고, 재료가 없으면 지어내게 된다.
+    const tt = await _promo제목태그(out.long);
+    out.titles = tt.titles;
+    out.tags = tt.tags;
+    if (tt.error && out.long) 실패.push({ 종류: 'titles/tags', 오류: tt.error });
     if (실패.length) out.실패 = 실패;                          // ★안 된 것은 안 됐다고 말한다
     console.log(`[📣6종각색] 원본 ${text.length}자 → ${결과.filter((r) => !r.error).length}/6종`
-      + ` · ${out.요약.map((s) => s.종류 + ' ' + s.글자수 + '자').join(' · ')}${실패.length ? ' · ★실패 ' + 실패.map((f) => f.종류).join(',') : ''}`);
+      + ` · ${out.요약.map((s) => s.종류 + ' ' + s.글자수 + '자').join(' · ')}`
+      + ` · 제목 ${out.titles.length}개·태그 ${out.tags.length}개`
+      + `${실패.length ? ' · ★실패 ' + 실패.map((f) => f.종류).join(',') : ''}`);
     res.json(out);
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
