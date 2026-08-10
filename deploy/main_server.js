@@ -3206,11 +3206,35 @@ app.post('/api/compare', async (req, res) => {
 // ── 🛡️ 증권분석비서(배선A): 증권 사진/PDF → 유형판별 + 보장분석(필요·준비·부족) + 상품제안 + 코치 완성본 HTML ──
 //   ★원칙1(Zero data ingress): base64로 받아 메모리에서 지니야 눈에 넘기고 버린다(서버 디스크 저장 0).
 //   ★필요자금=오상열 금융집짓기 공식 · 정직(없는 값 지어내기 금지) · "제출 전 검토"(휴먼인더루프).
+// ── 🔒 증권분석 게이트(2026-08-11) — 열려 있던 /api/policy를 닫는다 ──
+//   왜: 로그인 없이 누구나 부를 수 있었다 = "주소만 알면 대표님 돈으로 사진을 읽는" 구멍.
+//   ★분석 로직(analyzePolicy)은 한 글자도 안 건드린다. 게이트만 앞에 얹는다.
+//   ★게이트는 화면이 아니라 서버가 판정한다(CLAUDE.md 6-12 ⑧).
+//   ★비용 드는 호출은 막힌 사람에겐 아예 안 불린다(6-12 ⑦) — 세기·차단이 analyzePolicy보다 앞.
+const POLICY_DAILY_LIMIT = Number(process.env.POLICY_DAILY_LIMIT || 10);
+const _policyQuota = { date: '', byEmail: {} };  // 메모리(재배포 시 리셋 = 느슨해지는 쪽이라 사고 없음)
+//   ★자정 리셋은 KST(_kstDate) — UTC로 세면 하루가 밀린다.
+function _policyQuotaTake(email) {
+  const d = _kstDate();
+  if (_policyQuota.date !== d) { _policyQuota.date = d; _policyQuota.byEmail = {}; }
+  const k = String(email || '').toLowerCase() || 'unknown';  // 이메일이 비면 한 통에 몰아 센다(넓히지 않고 좁히는 쪽)
+  const used = _policyQuota.byEmail[k] || 0;
+  if (used >= POLICY_DAILY_LIMIT) return { ok: false, used, limit: POLICY_DAILY_LIMIT };
+  _policyQuota.byEmail[k] = used + 1;
+  return { ok: true, used: used + 1, limit: POLICY_DAILY_LIMIT };
+}
 app.post('/api/policy', async (req, res) => {
   try {
+    const ma = gateGoogle(req, res); if (!ma) return;  // ★비로그인 차단(청구서 /api/claim 과 같은 게이트)
+    const _email = String((sessionOf(req) || {}).email || '').toLowerCase();
+    const _vipPolicy = !!_email && _email === VIP_EMAIL;  // ★대표는 무제한 — 세지도 않는다
     const b = req.body || {};
     const images = Array.isArray(b.images) ? b.images : [];
     if (!images.length) return res.json({ ok: true, note: '분석할 증권을 사진(jpg·png)이나 PDF로 올려주세요. 연소득·직업·부채를 함께 주시면 필요자금까지 정확히 계산해요.' });
+    if (!_vipPolicy) {  // ★사진이 실제로 있을 때만 센다(빈 요청은 몫을 깎지 않는다)
+      const q = _policyQuotaTake(_email);
+      if (!q.ok) return res.status(429).json({ ok: false, limit: true, error: `오늘 몫을 다 쓰셨습니다 (증권 분석은 하루 ${q.limit}회예요). 내일 다시 이용해 주세요.` });
+    }
     const r = await skills.policy.analyzePolicy({ images, annualIncome: b.annualIncome, job: b.job, debt: b.debt });
     _memSaveDesign(req, r, '증권분석'); // ★MEM-1: 설계요약 Firestore 저장(마스킹·격리·fire-and-forget)
     res.json({ ok: true, ...r });
