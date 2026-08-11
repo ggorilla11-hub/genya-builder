@@ -812,9 +812,36 @@ function killSession(req, res) {
 }
 // ★핵심: 로그인했으면 회원 구글 OAuth 클라이언트(회원 토큰), 아니면 null → 각 함수가 SA로 폴백
 //   카카오 로그인 세션은 구글 토큰이 없어(s.tokens 없음) → null → 데이터 기능엔 구글 연결 필요(정직).
-function memberAuth(req) { const s = sessionOf(req); if (!s || !s.tokens) return null; const c = oaClient(); c.setCredentials(s.tokens); return c; }
+// ★SCOUT 다리 공통 헬퍼(2026-08-11): 세션이 없는 요청에서만, genya-scout 서버 프록시가 실어보낸
+//   앱키(X-Genya-Key)+회원 구글토큰(X-Member-Token)을 파싱해 반환. 아니면 null.
+//   ▸ SCOUT_BRIDGE=on 일 때만 작동. off면 항상 null → 이 다리가 없는 것과 100% 동일(기존 무접촉).
+//   ▸ 토큰은 ★요청(req) 안에서만 꺼낸다 → 요청 문맥 밖으로 새어 대표 토큰으로 떨어지는 함정 없음.
+function _scoutMemberToken(req) {
+  if (process.env.SCOUT_BRIDGE !== 'on') return null;
+  if (!_hasApiKey(req)) return null;
+  const raw = String(req.get('X-Member-Token') || '');
+  if (!raw) return null;
+  try {
+    const t = JSON.parse(raw);
+    if (!t || typeof t !== 'object' || Array.isArray(t)) return null; // ★객체 아니면 거부("문자열"·123·[]·null)
+    if (!t.access_token && !t.refresh_token) return null;             // ★토큰 알맹이 없으면 거부
+    return t;
+  } catch (e) { return null; }
+}
+function memberAuth(req) {
+  const s = sessionOf(req);
+  if (s && s.tokens) { const c = oaClient(); c.setCredentials(s.tokens); return c; } // ★세션 우선(기존 경로 그대로)
+  const mt = _scoutMemberToken(req);                                                 // ★세션이 없을 때만 SCOUT 다리
+  if (mt) { const c = oaClient(); c.setCredentials(mt); return c; }
+  return null;
+}
 // ★스코프 판별: 로그인만(email/profile) vs 데이터(캘린더·시트·드라이브) 동의 여부. 일반 대화는 데이터 불필요.
-function grantedScope(req) { const s = sessionOf(req); if (!s) return ''; return String(s.scope || (s.tokens && s.tokens.scope) || ''); }
+function grantedScope(req) {
+  const s = sessionOf(req);
+  if (s) return String(s.scope || (s.tokens && s.tokens.scope) || '');
+  const mt = _scoutMemberToken(req); // ★SCOUT 다리: 세션이 없으면 회원토큰 안의 scope를 본다(gateGoogle의 데이터 관문 통과용)
+  return mt ? String(mt.scope || '') : '';
+}
 function hasDataScope(req) { return /calendar|spreadsheets|\/drive/.test(grantedScope(req)); }
 function isScopeError(e) { return /insufficient.*scope|ACCESS_TOKEN_SCOPE_INSUFFICIENT|Insufficient Permission|invalid_scope|PERMISSION_DENIED/i.test((e && e.message) || ''); }
 
