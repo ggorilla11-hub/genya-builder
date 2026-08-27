@@ -3122,8 +3122,41 @@ app.post('/api/find/reply-draft', async (req, res) => {
   } catch (e) { res.json({ ok: false, error: e.message }); }
 });
 
+// ═══ 🔒 /api/yakgwan 잠금 — ★환경변수 스위치(2026-08-27) ═══════════════════
+// [왜] 이 라우트는 인증이 없어 주소만 알면 누구나 칠 수 있었다. 한 번 칠 때마다
+//      임베딩 + Claude 호출 비용이 나간다. API 전용 서버가 되면 ★이게 유일한 문이다.
+// [원칙] ★하드코딩하지 않는다. 환경변수로만 켜고 끈다 → 되돌리는 데 재배포가 필요 없다.
+//   YAKGWAN_AUTH      : 'on' 일 때만 잠근다. 그 밖(미설정 포함)은 ★지금과 100% 동일 동작.
+//   YAKGWAN_KEY       : 맞춰볼 열쇠. ★on 인데 이 값이 비어 있으면 전부 401(일부러 잠기는 쪽으로).
+//   YAKGWAN_DAILY_MAX : 하루 호출 상한(기본 300). 넘으면 429 — ★두뇌를 부르기 전에 막는다.
+// [열쇠는 헤더로만] x-yakgwan-key. ★쿼리스트링으로 안 받는다(서버 로그·브라우저 기록에 남는다).
+// ★SCOUT(X-Genya-Key)은 ★받지 않는다 — 버리기로 한 물건이라 문을 하나 더 열지 않는다(대표님 확정).
+// ★한계(숨기지 않는다): 카운터는 ★이 프로세스 메모리에 있다. 재시작·재배포하면 0으로 돌아가고,
+//   인스턴스를 2개 이상으로 늘리면 인스턴스마다 따로 센다(실질 상한 = 300 × 인스턴스 수).
+//   이 서버엔 영구 디스크가 없어(확인함) 파일로 남길 곳이 없다.
+const _yakDay = { 날: '', 수: 0 };
+function _yakBump() {
+  const d = new Date().toISOString().slice(0, 10);   // ★UTC 자정 기준 = 한국시간 오전 9시에 리셋된다
+  if (_yakDay.날 !== d) { _yakDay.날 = d; _yakDay.수 = 0; }
+  return ++_yakDay.수;
+}
+/** 막았으면 true(호출부는 즉시 return). 통과면 false. */
+function _yakGate(req, res) {
+  const on = String(process.env.YAKGWAN_AUTH || '').toLowerCase() === 'on';
+  if (!on) { _yakBump(); return false; }             // ★off: 세기만 하고 그대로 통과(응답·상태코드 무변)
+  const key = String(process.env.YAKGWAN_KEY || '');
+  const got = String(req.get('x-yakgwan-key') || '');
+  // ★키가 틀린 호출은 세지 않는다 — 세면 남이 스팸으로 우리 하루 상한을 태워버린다
+  if (!key || got !== key) { res.status(401).json({ ok: false, error: '인증이 필요합니다' }); return true; }
+  const n = _yakBump();
+  const max = Number(process.env.YAKGWAN_DAILY_MAX || 300);
+  if (max > 0 && n > max) { res.status(429).json({ ok: false, error: '오늘 호출 한도를 넘었습니다', 한도: max }); return true; }
+  return false;
+}
+
 // ── 📄 약관 검색: 약관 창고(RAG 모듈)에서 근거 찾아 쉽게 답 + 출처(페이지). 없으면 "확인 필요" ──
 app.get('/api/yakgwan', async (req, res) => {
+  if (_yakGate(req, res)) return;                    // ★막혔으면 여기서 끝 — askYakgwan(두뇌)을 부르지 않는다
   try {
     const q = String(req.query.q || '').trim();
     if (!q) return res.json({ ok: true, note: '질문을 입력하세요(예: 무보험차상해가 뭐야? / 자기신체사고와 자동차상해 차이?)' });
